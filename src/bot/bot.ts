@@ -5,6 +5,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
 import { registerStart } from './handlers/start.js';
 import { registerText } from './handlers/text.js';
+import { registerToday } from './handlers/today.js';
 import { registerUndo } from './handlers/undo.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
@@ -39,6 +40,7 @@ export function createBot(options: BotOptions): Bot {
 
   // Commands first: the text handler treats any other text as an expense attempt.
   registerStart(bot, options);
+  registerToday(bot, options);
   registerUndo(bot, options);
   registerText(bot, options);
 

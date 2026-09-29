@@ -198,3 +198,57 @@ describe('callback data', () => {
     expect(() => assertCallbackData('я'.repeat(33))).toThrow(/66 bytes/);
   });
 });
+
+describe('/today', () => {
+  const NOW = new Date('2026-09-30T10:00:00Z');
+
+  it('shows the local day per currency, excluding the previous local day and undone', async () => {
+    const { bot, calls, db } = createTestBot({ now: NOW });
+    const sends: [string, string][] = [
+      ['450 coffee', '2026-09-29T22:30:00Z'],
+      ['12.50 bread', '2026-09-30T08:00:00Z'],
+      ['12.50 EUR taxi', '2026-09-30T09:00:00Z'],
+      ['100 late snack', '2026-09-29T21:30:00Z'],
+      ['50 mistake', '2026-09-30T09:30:00Z'],
+    ];
+    for (const [i, [text, sentAt]] of sends.entries()) {
+      await bot.handleUpdate(
+        textUpdate({ updateId: i + 1, messageId: i + 10, text, date: new Date(sentAt) }),
+      );
+    }
+    const mistakeId = db
+      .prepare("SELECT id FROM expenses WHERE description = 'mistake'")
+      .pluck()
+      .get() as string;
+    await bot.handleUpdate(callbackUpdate({ updateId: 20, data: `exp:undo:${mistakeId}` }));
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 21, messageId: 30, text: '/today' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Сегодня, 30 сентября — «Личные расходы»\n462.50 RSD\n12.50 EUR',
+        },
+      },
+    ]);
+  });
+
+  it('answers an empty day with the nothing-recorded text', async () => {
+    const { bot, calls } = createTestBot({ now: NOW });
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/today' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Сегодня, 30 сентября — «Личные расходы»\nТрат нет. Отправьте, например, «450 кофе».',
+        },
+      },
+    ]);
+  });
+});

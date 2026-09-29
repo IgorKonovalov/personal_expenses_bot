@@ -286,8 +286,8 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 |---|---|---|---|
 | 1: Tooling and a bot that answers /start | dev | done | e0005cd |
 | 2: Domain: money, expense text, local days, sums | dev | done | de745c3 |
-| 3: Storage and idempotent recording | dev | done | committed with this row |
-| 4: /today | dev | not started | |
+| 3: Storage and idempotent recording | dev | done | 35f817e |
+| 4: /today | dev | done | committed with this row |
 | 5: Create the bot and smoke-test locally | human | not started | |
 
 ### Notes
@@ -333,6 +333,12 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
   that `450` and `coffee` are absent, since those fields can contain any digits.
 - Followup: `runMigrations` reads `.sql` files next to `migrate.ts` (`import.meta.url`). A
   compiled build must copy `src/db/migrations/`.
+- Phase 4: outside Files touched: `src/bot/bot.ts` (registers `/today`, user-approved) and
+  `src/bot/bot.test.ts` (the plan's scenario and the empty day, asserted on the full reply
+  text).
+- Phase 4: the `/today` reply is `Сегодня, 30 сентября — «Личные расходы»` followed by one line
+  per currency (`462.50 RSD`, `12.50 EUR`). An empty day uses the same header plus
+  `Трат нет. Отправьте, например, «450 кофе».`. The welcome text now mentions `/today`.
 
 ### Close triggers
 

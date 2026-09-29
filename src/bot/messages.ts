@@ -1,6 +1,7 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
+import type { LocalDate } from '../domain/time.js';
 
 // Every user-facing string, in Russian with polite "вы". Handlers pick a message here and never
 // build copy themselves. Amounts are rendered only through formatMoney.
@@ -23,6 +24,15 @@ interface AmbiguousView {
   readonly defaultCurrency: CurrencyCode;
 }
 
+interface TodayView {
+  readonly ledger: LedgerRef;
+  readonly date: LocalDate;
+  readonly totals: ReadonlyMap<CurrencyCode, number>;
+}
+
+// `2026-09-30` -> `30 сентября`. The date is already local, so it is formatted in UTC.
+const dayMonth = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+
 function ledgerName(ledger: LedgerRef): string {
   return ledger.kind === 'personal' ? 'Личные расходы' : ledger.name;
 }
@@ -38,7 +48,9 @@ function retypeable(money: Money): string {
 }
 
 export const messages = {
-  welcome: 'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу.',
+  welcome:
+    'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. ' +
+    'Итоги за сегодня: /today.',
   genericError: 'Что-то пошло не так. Попробуйте ещё раз.',
   help:
     'Чтобы записать трату, отправьте сумму и описание, например «450 кофе». ' +
@@ -64,4 +76,13 @@ export const messages = {
   alreadyUndone: 'Эта трата уже отменена',
   undoForbidden: 'Отменить трату может только тот, кто её записал',
   expenseNotFound: 'Трата не найдена',
+
+  today: ({ ledger, date, totals }: TodayView) => {
+    const header = `Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»`;
+    if (totals.size === 0) return `${header}\nТрат нет. Отправьте, например, «450 кофе».`;
+    const lines = [...totals].map(([currency, amountMinor]) =>
+      formatMoney({ amountMinor, currency }),
+    );
+    return [header, ...lines].join('\n');
+  },
 } as const;
