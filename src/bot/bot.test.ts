@@ -66,6 +66,25 @@ describe('recording an expense', () => {
     ]);
   });
 
+  it('stores a 4096-character message whole and confirms it with the description cut', async () => {
+    const { bot, calls, db } = createTestBot();
+    const description = 'я'.repeat(4092);
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: `450 ${description}` }));
+
+    expect(db.prepare('SELECT description FROM expenses').pluck().get()).toBe(description);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: `Записано в «Личные расходы»: 450.00 RSD — ${'я'.repeat(200)}…`,
+          reply_markup: undoKeyboard,
+        },
+      },
+    ]);
+  });
+
   it('re-sends the same confirmation for a redelivered message and stores one row', async () => {
     const { bot, calls, db } = createTestBot();
     const update = textUpdate({ updateId: 1, messageId: 10, text: '450 coffee' });

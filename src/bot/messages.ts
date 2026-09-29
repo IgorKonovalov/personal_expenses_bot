@@ -47,6 +47,17 @@ function retypeable(money: Money): string {
     .replace(/\.$/, '');
 }
 
+// Telegram rejects messages over 4096 characters, and a description can be almost that long.
+// Replies show at most this many code points of it; the stored description is untouched.
+const MAX_SHOWN_DESCRIPTION = 200;
+
+function shownDescription(description: string): string {
+  const codePoints = Array.from(description);
+  return codePoints.length <= MAX_SHOWN_DESCRIPTION
+    ? description
+    : `${codePoints.slice(0, MAX_SHOWN_DESCRIPTION).join('')}…`;
+}
+
 export const messages = {
   welcome:
     'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. ' +
@@ -60,13 +71,15 @@ export const messages = {
     'Тысячи отделяйте пробелом: «1 200 обед».',
 
   expenseRecorded: ({ expense, ledger }: ExpenseView) =>
-    `Записано в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${expense.description}`,
+    `Записано в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${shownDescription(expense.description)}`,
   undoButton: 'Отменить',
 
   ambiguousAmount: ({ readings, description, currency, defaultCurrency }: AmbiguousView) => {
     const code = currency === defaultCurrency ? '' : ` ${currency}`;
     const shown = readings.map(formatMoney).join(' или ');
-    const resend = readings.map((r) => `«${retypeable(r)}${code} ${description}»`).join(' или ');
+    const resend = readings
+      .map((r) => `«${retypeable(r)}${code} ${shownDescription(description)}»`)
+      .join(' или ');
     // One reading when the other is invalid for the currency: `1.234` RSD, `1.200` JPY.
     const question =
       readings.length === 1
@@ -76,7 +89,7 @@ export const messages = {
   },
 
   expenseUndone: ({ expense, ledger }: ExpenseView) =>
-    `Отменено в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${expense.description}`,
+    `Отменено в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${shownDescription(expense.description)}`,
   undoneToast: 'Трата отменена',
   alreadyUndone: 'Эта трата уже отменена',
   undoForbidden: 'Отменить трату может только тот, кто её записал',
