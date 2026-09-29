@@ -1,6 +1,6 @@
 # 0001: Scaffold and walking skeleton: record "450 coffee", see it in /today
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Related ADRs:** [ADR-0001](../adrs/0001-tech-stack.md), [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md)
 
@@ -284,7 +284,7 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Tooling and a bot that answers /start | dev | not started | |
+| 1: Tooling and a bot that answers /start | dev | done | committed with this row |
 | 2: Domain: money, expense text, local days, sums | dev | not started | |
 | 3: Storage and idempotent recording | dev | not started | |
 | 4: /today | dev | not started | |
@@ -292,9 +292,20 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 
 ### Notes
 
-_(Deviations from the plan, with the commit, stated without justification. Done-whens not
-satisfiable as stated, and what was done instead. Followups noticed and not acted on. One line
-each. Empty is fine.)_
+- Phase 1: gates ran on Node 26.8.2 (host), not Node 24 (user decision). The Node 24 install
+  check for `better-sqlite3` is unmet. `better-sqlite3@13.0.3` ships bundled prebuilds
+  (`prebuilds/linux-x64.node` etc., `engines: >=22`) and loads on 26.8.2 (SQLite 3.53.4).
+  pnpm warns "Unsupported engine" on every run because `engines` is `>=24 <25`.
+- Phase 1: added `src/logger.ts` (pino factory, user-approved) and `src/bot/bot.test.ts` (error
+  boundary test). Neither is in Files touched.
+- Phase 1: user-facing copy is Russian (the `CLAUDE.md` rule from f0e7eda, user decision). Tests
+  assert messages-module keys, not the plan's English literals.
+- Phase 1: `typescript` pinned to 6.0.3; 7.0.2 resolved first, but `typescript-eslint@8.70.1`
+  peers `<6.1.0`. `@types/node` pinned to 24.x.
+- Phase 1: layer-boundary lint demonstrated with throwaway files in `src/domain/`,
+  `src/services/`, `src/db/` (11 errors: grammy in all three, `node:fs`, `process`, bot-layer
+  import, `new Date()`, `Date.now()`, `toFixed`, `parseFloat`), then deleted. The rules also ban
+  wall-clock reads, `parseFloat` and `toFixed` (the latter two in all of `src/`).
 
 ### Close triggers
 

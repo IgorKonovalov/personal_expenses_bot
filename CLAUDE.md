@@ -7,13 +7,20 @@ did I spend on food this month".
 This file is the **orientation map**: it says which part owns what and how work flows. It does
 not explain how the code works. Decisions live in `docs/adrs/`, work in flight in `docs/plans/`.
 
-> **Stack status:** proposed in **ADR-0001** (Node 24 + strict TS, grammY long polling,
-> better-sqlite3, pnpm, Vitest, Docker Compose). Plan 0001 builds the scaffold and adds the
-> `src/` layout to the "Where things live" tree.
+> **Stack:** Node 24 + strict TS, grammY long polling, better-sqlite3, pnpm, Vitest (ADR-0001).
+> Canonical commands: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm dev`.
 
 ## Where things live
 
 ```
+src/
+├── domain/          # pure: money, expense text, time windows, aggregation. No I/O, no framework
+├── db/              # connection, migrations, repositories: the only place with SQL
+├── services/        # use-cases orchestrating domain + db
+├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module
+├── config.ts        # env -> typed config, validated at boot
+├── logger.ts        # pino factory
+└── index.ts         # boot: config, db, bot
 docs/
 ├── adrs/            # NNNN-<slug>.md: decisions + rejected alternatives. Append-only once accepted.
 │   └── README.md    #   ADR index + next free number
