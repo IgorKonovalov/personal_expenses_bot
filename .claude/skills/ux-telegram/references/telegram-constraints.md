@@ -23,17 +23,28 @@ about how those limits shape what the user sees.
 - **Rows of 1 to 3 buttons, with labels of about 20 characters or fewer**, or they wrap on a
   phone. More than about 8 choices means paging or a filter, not one giant keyboard.
 - A toast (`answerCallbackQuery({ text })`) is limited to about 200 characters and disappears.
-  Use it for "Already undone", never for anything the user needs to keep.
+  Use it for "Уже отменено", never for anything the user needs to keep.
 
 ## Editing and deleting
 
 - **Edit in place** (`editMessageText` / `editMessageReplyMarkup`) for drilldowns and state
-  changes on the same object, such as an Undo that turns the confirmation into "Undone". Use a
+  changes on the same object, such as an Undo that turns the confirmation into "Отменено". Use a
   new message for a new event.
 - An edit with identical content returns 400 "message is not modified". It's benign, and the
   adapter swallows it, so a design can re-render freely.
+- `editMessageText` works only on text messages. A photo or document (a receipt, an export)
+  needs `editMessageCaption` or a new message, so decide which one is the anchor.
 - A bot can **delete** its own messages only within **48 hours** in private chats. Undo should
   edit the confirmation rather than delete it.
+
+## Input routing
+
+- **Free text is both the expense entry point and the answer to flow prompts** (rename a
+  ledger, type a correction). The design must say how text is routed while a flow is waiting
+  for input: the active session claims it, and anything else falls through to expense parsing.
+  A prompt that swallows an unrelated `450 кофе` is a bug.
+- Commands are matched before the free-text handler. Typing a command mid-flow should leave
+  the flow (or cancel it explicitly), not be parsed as input.
 
 ## Updates
 
@@ -63,5 +74,5 @@ about how those limits shape what the user sees.
 
 ## Rate limits
 
-- Roughly 1 message/second per chat and about 30/second globally. A flow shouldn't answer one
-  user action with a burst of several messages. Combine them into one.
+- Roughly 1 message/second per chat, 20/minute per group, and about 30/second globally. A flow
+  shouldn't answer one user action with a burst of several messages. Combine them into one.

@@ -30,9 +30,17 @@ and ask which flow or screen to look at.
 
 1. **Goal and entry point.** A command, free text, a button, a photo? What does the user type,
    and what does the bot answer?
-2. **Draw the states.** Use a `stateDiagram-v2` or a numbered list. Each state = the message the
-   user sees + the buttons available + what each one does. Mark which message is the anchor
-   that gets edited in place.
+2. **Draw the states.** Use a `stateDiagram-v2` or the flow-spec tree below. Each state = the
+   message the user sees + the buttons available + what each one does. Mark which message is
+   the anchor that gets edited in place.
+
+   ```
+   450 кофе
+     -> [Reply: confirmation, ledger named] [Keyboard: Отменить]
+        -> Tap Отменить -> [Edit anchor: "Отменено"] [no keyboard]
+        -> Tap again    -> [Toast: already undone]
+     -> Stale tap (restart / not anchor) -> [answerCallbackQuery, silent]
+   ```
 3. **Write the copy.** Give every string as a proposed messages-module entry (key + text +
    parameters), not inline in the prose.
 4. **Edge cases.** Go through each: ambiguous or invalid amount, unknown currency, a stale button
