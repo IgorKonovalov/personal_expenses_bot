@@ -284,8 +284,8 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Tooling and a bot that answers /start | dev | done | committed with this row |
-| 2: Domain: money, expense text, local days, sums | dev | not started | |
+| 1: Tooling and a bot that answers /start | dev | done | e0005cd |
+| 2: Domain: money, expense text, local days, sums | dev | done | committed with this row |
 | 3: Storage and idempotent recording | dev | not started | |
 | 4: /today | dev | not started | |
 | 5: Create the bot and smoke-test locally | human | not started | |
@@ -306,6 +306,14 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
   `src/services/`, `src/db/` (11 errors: grammy in all three, `node:fs`, `process`, bot-layer
   import, `new Date()`, `Date.now()`, `toFixed`, `parseFloat`), then deleted. The rules also ban
   wall-clock reads, `parseFloat` and `toFixed` (the latter two in all of `src/`).
+- Phase 2: an ambiguous amount returns only the readings valid for the currency. `1.234` RSD
+  and `12,505` RSD return the thousands reading alone.
+- Phase 2: an expense text with no description (`450`, `450 eur`) or with the amount token not
+  followed by whitespace (`450coffee`) is `invalid`. The plan doesn't specify these.
+- Phase 2: `sumByCurrency` returns a `ReadonlyMap` (first-seen order), not an object. The test
+  compares `Object.fromEntries(totals)` against `{ RSD: 46250, EUR: 1250 }`.
+- Followup: the lint rule bans `new Date()` and `Date.now()` in `src/domain/`, but not the
+  no-argument `TZDate` constructor or `TZDate.tz(tz)`, which also read the clock.
 
 ### Close triggers
 
