@@ -81,6 +81,10 @@ ignored.
   enter. Past that point, domain code receives well-typed values and doesn't re-check.
 - Config is parsed and validated at boot into a typed object. Fail fast with a clear message
   naming the missing variable.
+- **Only the boot entry reads `process.env`.** It hands it to the config parser once, and
+  everything else takes the typed config. A stray `process.env.X` skips validation and hides
+  the variable from `.env.example`. The sibling stated this rule without a lint gate. Ours should
+  get one (`no-restricted-properties` outside `src/index.ts`).
 
 ## Tests
 

@@ -130,7 +130,9 @@ lifecycle), `erDiagram` (the schema). Keep each under about 12 nodes. Draw layer
 ## Mode 4: Review an implemented plan (fresh session, once per plan)
 
 The review runs after `dev` finishes the last phase, in a session that did not write the code.
-Review the whole plan's changes, not one phase. Run the lenses in order.
+Review the whole plan's changes, not one phase. Run the lenses in order. **Validate against what
+was planned, not against what could be better.** An improvement the plan didn't ask for is a
+followup for a future plan, not a finding.
 
 ### 1. Alignment with the plan and ADRs
 - **Start with the plan's `## Implementation log`.** It gives you the phase-to-commit map,

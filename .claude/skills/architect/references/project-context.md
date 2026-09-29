@@ -76,6 +76,32 @@ From **traditional-medicine-notifier-bot**:
 - A post-deploy "what's new" broadcast keyed on `package.json` version, idempotent via a per-user
   `notified_version` watermark. This is worth considering once there are users.
 - `.claude/` was gitignored there, and its skills and hooks were lost. Here it is committed.
+- **Formatting** (its ADR 011): it started plain-text-only and later needed rich text. The design
+  it settled on is `parse_mode` lint-banned outside one render module, a branded `Html` type
+  that can only be made by an auto-escaping `html` template, and tag-aware truncation. One
+  unescaped `<` or `&` in user text makes Telegram reject the whole message. Decide plain vs.
+  HTML by ADR before copy echoes user text in any formatted way.
+- **Timezone UX** (its ADR 015): Telegram exposes no timezone, and `language_code` is far too
+  coarse. Use a curated city list with index callbacks (`set:tz:<i>`), plus a resolver that
+  falls back to the default when the stored zone is corrupt.
+- **Deploy** (input for the deploy plan):
+  - Liveness is a **heartbeat file** the process touches every 30s. Docker/Compose
+    `HEALTHCHECK` fails if it's older than 120s, since a long-polling bot has no HTTP port.
+  - **Backups** use better-sqlite3's online `db.backup()` into dated files with rotation, plus
+    a best-effort run at boot, written to a host-mounted directory.
+  - CI runs `build` as well as `--noEmit`. A `concurrency` group stops overlapping deploys, and
+    deploys run on push only.
+  - The Dockerfile is multi-stage: prod-only `node_modules`, then `pnpm rebuild better-sqlite3`.
+    It runs as the non-root `node` user (uid 1000), and the base image is pinned by digest.
+  - Container logs rotate via json-file `max-size`/`max-file`.
+  - Graceful shutdown stops the bot, then scheduled jobs and sweepers, then closes the DB.
+- **Later plans:**
+  - Sends that honour `retry_after` on 429, before any proactive or broadcast messages. With
+    grammY that means `@grammyjs/auto-retry`.
+  - A per-user rate limiter before open signup (the sibling used 20 updates per 10s, dropping
+    callback floods silently).
+  - Flow sessions persisted in SQLite, not memory, so a restart doesn't kill a half-done
+    multi-step flow.
 
 From **Ritmolux** (harness and process):
 - The plan → go → implement → fresh-session review loop, with owner tags per phase and the
