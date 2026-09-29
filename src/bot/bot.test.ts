@@ -97,6 +97,25 @@ describe('recording an expense', () => {
     ]);
   });
 
+  it('asks about the one valid reading of 1.234 lunch and records nothing', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '1.234 lunch' }));
+
+    expect(db.prepare('SELECT COUNT(*) AS n FROM expenses').get()).toEqual({ n: 0 });
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text:
+            'Уточните сумму: вы имели в виду 1 234.00 RSD? Ничего не записано. ' +
+            'Отправьте ещё раз так: «1234 lunch».',
+        },
+      },
+    ]);
+  });
+
   it('answers non-expense text with the help hint', async () => {
     const { bot, calls } = createTestBot();
 

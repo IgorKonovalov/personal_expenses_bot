@@ -67,7 +67,12 @@ export const messages = {
     const code = currency === defaultCurrency ? '' : ` ${currency}`;
     const shown = readings.map(formatMoney).join(' или ');
     const resend = readings.map((r) => `«${retypeable(r)}${code} ${description}»`).join(' или ');
-    return `Сумму можно понять по-разному: ${shown}. Ничего не записано. Отправьте ещё раз так: ${resend}.`;
+    // One reading when the other is invalid for the currency: `1.234` RSD, `1.200` JPY.
+    const question =
+      readings.length === 1
+        ? `Уточните сумму: вы имели в виду ${shown}?`
+        : `Сумму можно понять по-разному: ${shown}.`;
+    return `${question} Ничего не записано. Отправьте ещё раз так: ${resend}.`;
   },
 
   expenseUndone: ({ expense, ledger }: ExpenseView) =>
