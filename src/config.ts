@@ -1,10 +1,11 @@
 import type { Level } from 'pino';
+import { toCurrencyCode, type CurrencyCode } from './domain/currencies.js';
 
 export interface Config {
   readonly botToken: string;
   readonly allowedTelegramIds: ReadonlySet<number>;
   readonly defaultTimezone: string;
-  readonly defaultCurrency: string;
+  readonly defaultCurrency: CurrencyCode;
   readonly databasePath: string;
   readonly logLevel: Level | 'silent';
 }
@@ -39,9 +40,12 @@ export function loadConfig(env: Env): Config {
     throw new Error(`DEFAULT_TIMEZONE must be an IANA timezone such as Europe/Belgrade`);
   }
 
-  const defaultCurrency = required(env, 'DEFAULT_CURRENCY');
-  if (!/^[A-Z]{3}$/.test(defaultCurrency)) {
-    throw new Error(`DEFAULT_CURRENCY must be an ISO-4217 code such as RSD`);
+  const rawCurrency = required(env, 'DEFAULT_CURRENCY');
+  const defaultCurrency = /^[A-Z]{3}$/.test(rawCurrency) ? toCurrencyCode(rawCurrency) : undefined;
+  if (defaultCurrency === undefined) {
+    throw new Error(
+      `DEFAULT_CURRENCY must be an ISO-4217 code listed in src/domain/currencies.ts, such as RSD`,
+    );
   }
 
   const logLevel = optional(env, 'LOG_LEVEL') ?? 'info';

@@ -33,6 +33,8 @@ describe('loadConfig', () => {
     ['ALLOWED_TELEGRAM_IDS', '1001,abc'],
     ['DEFAULT_TIMEZONE', 'Mars/Olympus'],
     ['DEFAULT_CURRENCY', 'dinar'],
+    ['DEFAULT_CURRENCY', 'XYZ'],
+    ['DEFAULT_CURRENCY', 'rsd'],
     ['LOG_LEVEL', 'loud'],
   ])('names %s when it is invalid', (name, value) => {
     expect(() => loadConfig({ ...valid, [name]: value })).toThrow(new RegExp(name));
