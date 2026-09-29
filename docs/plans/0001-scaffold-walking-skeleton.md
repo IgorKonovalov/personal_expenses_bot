@@ -342,6 +342,14 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 - Close: a boot smoke on `pnpm start` with a fake token and a scratch `DATABASE_PATH` logged
   `applied: ["0001"]`, then failed at `deleteWebhook` (401 Unauthorized). A second boot logged
   `applied: []`. The smoke DB was deleted.
+- Fix pass (close review, minor 4): `loadConfig` rejects a `DEFAULT_CURRENCY` not in
+  `src/domain/currencies.ts` and returns a `CurrencyCode`. The boot check in `src/index.ts` is
+  gone. aa12991
+- Fix pass (minor 2): an ambiguous amount with one valid reading (`1.234 lunch`) replies
+  `Уточните сумму: вы имели в виду 1 234.00 RSD? …`. c0062df
+- Fix pass (minor 3): replies show at most 200 code points of a description, followed by `…`.
+  The stored description is unchanged. 7a20d4d
+- Fix pass: nits 5 to 7 and major 1 (Node 24 install check, `human`) not acted on.
 
 ### Close triggers
 
@@ -351,8 +359,8 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
   `BOT_TOKEN`, `ALLOWED_TELEGRAM_IDS`, `DEFAULT_TIMEZONE`, `DEFAULT_CURRENCY`, `DATABASE_PATH`,
   `LOG_LEVEL`. Schema migration `0001_init.sql` (`users`, `auth_identities`, `ledgers`,
   `ledger_members`, `expenses`, plus `schema_migrations`).
-- **Gate at the tip (e5c73a4, Node 26.8.2):** `pnpm typecheck` exit 0. `pnpm lint` exit 0.
-  `pnpm test` exit 0: 12 files, 98 tests. `node scripts/check-doc-links.mjs` exit 0 (22 links).
+- **Gate at the tip (7a20d4d, Node 26.8.2):** `pnpm typecheck` exit 0. `pnpm lint` exit 0.
+  `pnpm test` exit 0: 12 files, 102 tests. `node scripts/check-doc-links.mjs` exit 0 (22 links).
   No build script exists.
 - **Outstanding `human` phases:** Phase 5 (BotFather, `.env`, local smoke test).
 
