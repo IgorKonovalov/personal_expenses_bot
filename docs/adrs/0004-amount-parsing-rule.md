@@ -1,8 +1,8 @@
 # ADR-0004: Amount parsing: one decimal separator, space thousands, ask on ambiguity
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-29)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0001](../plans/0001-scaffold-walking-skeleton.md)
+> **Related plan(s):** [Plan 0001](../plans/done/0001-scaffold-walking-skeleton.md)
 
 ## Context
 

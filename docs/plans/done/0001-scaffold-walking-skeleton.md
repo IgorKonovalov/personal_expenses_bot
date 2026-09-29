@@ -1,8 +1,8 @@
 # 0001: Scaffold and walking skeleton: record "450 coffee", see it in /today
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-09-29). Verdict: built as planned; the close review's two fixes (5f4fed2, b2b2a50) are verified and Node 24 is confirmed.
 > **Created:** 2026-09-29
-> **Related ADRs:** [ADR-0001](../adrs/0001-tech-stack.md), [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md)
+> **Related ADRs:** [ADR-0001](../../adrs/0001-tech-stack.md), [ADR-0002](../../adrs/0002-ledgers-and-identity.md), [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md), [ADR-0004](../../adrs/0004-amount-parsing-rule.md)
 
 ## TL;DR
 

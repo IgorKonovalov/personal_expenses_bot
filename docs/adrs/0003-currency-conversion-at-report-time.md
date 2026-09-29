@@ -1,8 +1,8 @@
 # ADR-0003: Store original amounts; convert to the viewer's home currency at report time
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-29)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0001](../plans/0001-scaffold-walking-skeleton.md) (storage shape only; conversion is a later plan)
+> **Related plan(s):** [Plan 0001](../plans/done/0001-scaffold-walking-skeleton.md) (storage shape only; conversion is a later plan)
 
 ## Context
 

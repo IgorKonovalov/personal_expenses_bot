@@ -1,8 +1,8 @@
 # ADR-0001: Tech stack: Node 24 + strict TypeScript, grammY long polling, better-sqlite3
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-29)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0001](../plans/0001-scaffold-walking-skeleton.md)
+> **Related plan(s):** [Plan 0001](../plans/done/0001-scaffold-walking-skeleton.md)
 
 ## Context
 
@@ -78,3 +78,10 @@ JS/WASM decoders (to be confirmed in the receipts ADR).
 It's a single, capable library. It lost to `date-fns` + `@date-fns/tz` on tree-shaking and
 because we only need a handful of pure functions (local date of an instant, start/end of a local
 day/month).
+
+## Outcome (2026-09-29)
+
+The unverified prebuild claim is confirmed for local Node 24. On Node 24.21.0,
+`better-sqlite3@13.0.3` installed with `pnpm install --frozen-lockfile`, loaded (SQLite
+3.53.4), and the full gate passed. It ships bundled prebuilds. The Docker base image half of the
+claim is checked by Plan 0002.

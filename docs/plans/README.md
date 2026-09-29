@@ -10,7 +10,6 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
-| [0001](0001-scaffold-walking-skeleton.md) | Scaffold and walking skeleton: record "450 coffee", see it in /today | in-progress (2026-09-29) |
 | [0002](0002-deploy-docker-vps.md) | Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups | approved (2026-09-29) |
 | [0003](0003-categories.md) | Categories: preset per ledger, suggestion from history, change and manage | approved (2026-09-29) |
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
@@ -18,4 +17,6 @@ status and date. What a plan did lives in the plan.
 
 ## Recently closed
 
-_(none yet)_
+| Plan | Title | Status |
+|---|---|---|
+| [0001](done/0001-scaffold-walking-skeleton.md) | Scaffold and walking skeleton: record "450 coffee", see it in /today | done (2026-09-29): built as planned, v0.1.0 |
