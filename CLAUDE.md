@@ -26,6 +26,7 @@ docs/
 │                    #   block-push-and-history-rewrite.cjs. They DENY, not advise.
 │                    #   Bite tests: `node --test .claude/hooks/`
 └── skills/          # architect (designs docs/) + dev (writes code)
+                     #   + ux-telegram (reviews/designs chat UX, writes nothing; ADR-0005)
 scripts/
 └── check-doc-links.mjs   # every relative markdown link resolves (run at every plan close)
 ```
@@ -35,12 +36,13 @@ lost its skills and hooks. Don't repeat that.
 
 ## How we work
 
-Two skills run a plan-driven loop:
+Two skills run a plan-driven loop, and `ux-telegram` advises on chat UX:
 
 | Skill       | Owns | Triggers on |
 |-------------|------|-------------|
 | `architect` | `docs/`: plans, ADRs, diagrams, close reviews | "how should we build X", "plan the …", "A or B?", "review/close plan N" |
 | `dev`       | all code, tests, config, CI | "implement plan N", "do phase 2", "code up the …" |
+| `ux-telegram` | nothing: flow/copy/keyboard designs and reviews, delivered in chat | "review the /today UX", "design the edit flow", "what should the button say" |
 
 ```
 interview -> ADR (if a real tradeoff) -> phased plan -> "go" -> dev implements all phases -> fresh-session close review
@@ -76,7 +78,8 @@ The architect reviews against these. The long form, with reasons, is in
   repeated update must not record an expense twice.
 - **Expense data is private.** No amounts or descriptions in logs above debug. No real user data
   in fixtures, commits, plans or issues. Runtime data and `.env` are gitignored and deny-read.
-- **All user-facing strings live in one messages module.** Handlers never hardcode copy.
+- **All user-facing strings live in one messages module, in Russian.** Handlers never hardcode
+  copy.
 - **Dependencies are a cost.** Pin exact versions, commit the lockfile, and use a supply-chain
   release-age cooldown.
 - **A comment carries the mechanism. The decision record stays in `docs/`.** Cite it by bare

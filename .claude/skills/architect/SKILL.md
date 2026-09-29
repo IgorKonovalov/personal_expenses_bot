@@ -24,6 +24,9 @@ work on. The reads below are task-grounded, not startup routines.
   phases in one session. It never writes plans or ADRs. It writes only the plan's `Status:` line
   and `## Implementation log`. You hand it plans (via the user's "go"). It hands finished plans
   back to you (via a three-line pointer the user carries into a **fresh** `/architect` session).
+- **`ux-telegram`** designs and reviews chat flows and copy, and writes nothing (ADR-0005). When
+  the user brings its design into a planning session, treat it as interview input. Its states and
+  copy become phase `What`/`Done when`, not a separate owner tag.
 - **Never auto-invoke `dev`, and no lane auto-invokes you.** The fresh-context boundary is the
   whole mechanism of the close review.
 

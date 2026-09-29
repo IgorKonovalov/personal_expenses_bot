@@ -21,6 +21,8 @@ which plan. Then wait.
 - **`architect`** writes plans and ADRs and runs the close review. You hand a finished plan back
   with a three-line pointer, and the user carries it into a **fresh** session. **Never
   auto-invoke `architect`.** A review from inside the session that wrote the code is worthless.
+- **`ux-telegram`** reviews flows and copy in chat (ADR-0005). The user may bring its findings to
+  a fix pass. Treat them like review findings. Copy changes still go through the messages module.
 
 ## How plans ship
 

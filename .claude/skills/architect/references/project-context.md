@@ -5,6 +5,8 @@ Facts the architect needs to ground decisions. **This file does not enumerate AD
 
 ## The product
 
+The bot's UI language is **Russian** (owner decision, 2026-09-29).
+
 A Telegram bot for tracking one person's expenses (possibly a household later, which is an open
 question for the interview). The core loop:
 
