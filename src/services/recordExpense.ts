@@ -1,0 +1,113 @@
+import {
+  findExpenseById,
+  findExpenseBySourceKey,
+  insertExpenseOrGetExisting,
+  softDeleteExpense,
+  type Expense,
+  type ExpenseId,
+} from '../db/expenses.js';
+import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
+import type { User } from '../db/users.js';
+import type { CurrencyCode } from '../domain/currencies.js';
+import { parseExpenseText } from '../domain/expenseText.js';
+import type { AmountReading } from '../domain/money.js';
+import { localDateOf } from '../domain/time.js';
+import type { Logger } from '../logger.js';
+import type { ServiceDeps } from './provisionUser.js';
+
+export interface RecordDeps extends ServiceDeps {
+  readonly logger: Logger;
+}
+
+export interface RecordExpenseInput {
+  readonly user: User;
+  readonly text: string;
+  // Opaque dedupe key built by the adapter, e.g. `tg:<chat_id>:<message_id>`.
+  readonly sourceKey: string;
+  // When the user sent it (the Telegram message date), not when it is processed.
+  readonly occurredAt: Date;
+  readonly now: Date;
+}
+
+export type RecordExpenseResult =
+  | {
+      readonly kind: 'recorded';
+      readonly expense: Expense;
+      readonly ledger: Ledger;
+      readonly duplicate: boolean;
+    }
+  | {
+      readonly kind: 'ambiguous';
+      readonly readings: readonly AmountReading[];
+      readonly currency: CurrencyCode;
+      readonly description: string;
+      readonly ledger: Ledger;
+    }
+  | { readonly kind: 'invalid' }
+  | { readonly kind: 'notExpense' };
+
+// Records free text into the user's active ledger. A source key seen before returns the
+// stored expense unchanged, so a redelivered update records nothing new.
+export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): RecordExpenseResult {
+  const { db, logger } = deps;
+  const { user } = input;
+
+  const seen = findExpenseBySourceKey(db, input.sourceKey);
+  if (seen !== undefined) {
+    const ledger = findLedgerForMember(db, seen.ledgerId, user.id);
+    if (ledger === undefined) throw new Error(`source key reused across users (${seen.id})`);
+    logger.info({ expenseId: seen.id, userId: user.id }, 'duplicate expense delivery');
+    return { kind: 'recorded', expense: seen, ledger, duplicate: true };
+  }
+
+  const ledger = findActiveLedger(db, user.id);
+  if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+
+  const parsed = parseExpenseText(input.text, ledger.defaultCurrency);
+  if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
+  if (parsed.kind !== 'expense') return parsed;
+
+  const { expense, created } = insertExpenseOrGetExisting(db, {
+    id: newExpenseId(deps),
+    ledgerId: ledger.id,
+    createdBy: user.id,
+    amountMinor: parsed.amountMinor,
+    currency: parsed.currency,
+    description: parsed.description,
+    occurredAt: input.occurredAt,
+    occurredOn: localDateOf(input.occurredAt, user.timezone),
+    sourceKey: input.sourceKey,
+    createdAt: input.now,
+  });
+  logger.info(
+    { expenseId: expense.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },
+    'expense recorded',
+  );
+  return { kind: 'recorded', expense, ledger, duplicate: !created };
+}
+
+export type UndoExpenseResult =
+  | { readonly kind: 'undone'; readonly expense: Expense; readonly ledger: Ledger }
+  | { readonly kind: 'alreadyUndone' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'notFound' };
+
+// Soft-deletes an expense. Only its creator may undo it; a repeat leaves deleted_at unchanged.
+export function undoExpense(
+  deps: RecordDeps,
+  input: { readonly user: User; readonly expenseId: ExpenseId; readonly now: Date },
+): UndoExpenseResult {
+  const { db, logger } = deps;
+  const expense = findExpenseById(db, input.expenseId);
+  if (expense === undefined) return { kind: 'notFound' };
+  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
+  if (ledger === undefined) return { kind: 'forbidden' };
+  if (!softDeleteExpense(db, expense.id, input.now)) return { kind: 'alreadyUndone' };
+  logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense undone');
+  return { kind: 'undone', expense, ledger };
+}
+
+function newExpenseId({ newId }: ServiceDeps): ExpenseId {
+  return newId() as ExpenseId;
+}

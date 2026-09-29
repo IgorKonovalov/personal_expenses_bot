@@ -1,13 +1,26 @@
 import { Bot, type MiddlewareFn } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
+import type { Db } from '../db/connection.js';
+import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
+import { registerStart } from './handlers/start.js';
+import { registerText } from './handlers/text.js';
+import { registerUndo } from './handlers/undo.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
 
-export interface BotOptions {
+export interface HandlerDeps {
+  readonly db: Db;
+  readonly logger: Logger;
+  readonly newId: () => string;
+  readonly now: () => Date;
+  readonly defaultTimezone: string;
+  readonly defaultCurrency: CurrencyCode;
+}
+
+export interface BotOptions extends HandlerDeps {
   readonly token: string;
   readonly allowedTelegramIds: ReadonlySet<number>;
-  readonly logger: Logger;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
 }
@@ -24,9 +37,10 @@ export function createBot(options: BotOptions): Bot {
   bot.use(errorBoundary(logger));
   bot.use(allowlist(options.allowedTelegramIds, logger));
 
-  bot.command('start', async (ctx) => {
-    await ctx.reply(messages.welcome);
-  });
+  // Commands first: the text handler treats any other text as an expense attempt.
+  registerStart(bot, options);
+  registerUndo(bot, options);
+  registerText(bot, options);
 
   bot.catch((err) => {
     logger.error(

@@ -285,8 +285,8 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Tooling and a bot that answers /start | dev | done | e0005cd |
-| 2: Domain: money, expense text, local days, sums | dev | done | committed with this row |
-| 3: Storage and idempotent recording | dev | not started | |
+| 2: Domain: money, expense text, local days, sums | dev | done | de745c3 |
+| 3: Storage and idempotent recording | dev | done | committed with this row |
 | 4: /today | dev | not started | |
 | 5: Create the bot and smoke-test locally | human | not started | |
 
@@ -314,6 +314,25 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
   compares `Object.fromEntries(totals)` against `{ RSD: 46250, EUR: 1250 }`.
 - Followup: the lint rule bans `new Date()` and `Date.now()` in `src/domain/`, but not the
   no-argument `TZDate` constructor or `TZDate.tz(tz)`, which also read the clock.
+- Phase 3: outside Files touched: `src/bot/bot.ts` (handler registration and `HandlerDeps`,
+  user-approved), new `src/bot/testHarness.ts`, and changes to `src/bot/bot.test.ts` and
+  `src/bot/middleware/allowlist.test.ts` (`createBot` now needs db deps). Handler-level
+  done-whens (confirmation text, redelivery re-send, `1.200 lunch` reply, help hint, undo taps,
+  callback data length) are tested in `src/bot/bot.test.ts`.
+- Phase 3: `undoExpense` lives in `src/services/recordExpense.ts`. No undo service file is listed.
+- Phase 3: every handler provisions the user if needed (`ensureUser`), so an expense sent before
+  `/start` still gets a personal ledger.
+- Phase 3: the personal ledger is stored with `name = 'Personal'`. Replies show it as «Личные
+  расходы», which the messages module picks by `kind`. The confirmation reads
+  `Записано в «Личные расходы»: 450.00 RSD — coffee` [Отменить].
+- Phase 3: a successful Undo answers the callback and edits the confirmation to
+  `Отменено в «…»: …`, which drops the button. Unknown callback data is answered silently.
+- Phase 3: `src/index.ts` rejects a `DEFAULT_CURRENCY` that isn't in `src/domain/currencies.ts`.
+  `config.ts` only checks the three-letter shape.
+- Phase 3: the log-privacy tests drop pino's `time`, `pid` and `hostname` fields before asserting
+  that `450` and `coffee` are absent, since those fields can contain any digits.
+- Followup: `runMigrations` reads `.sql` files next to `migrate.ts` (`import.meta.url`). A
+  compiled build must copy `src/db/migrations/`.
 
 ### Close triggers
 
