@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (SQLite, backups, exports): real users' financial records
+/data/
+
+# Coverage / logs
+coverage/
+*.log
+
+# Claude Code: commit skills, hooks and settings.json. Ignore only the local overrides
+.claude/settings.local.json
+.claude/worktrees/
+
+# Scratch for one-off plan work
+docs/plans/scratch/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
