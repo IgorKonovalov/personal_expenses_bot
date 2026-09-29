@@ -76,13 +76,13 @@ SQLite path and the log level. Runtime data lives in `./data/` (gitignored).
 
 ## Development
 
-| Command          | What it does                                            |
-| ---------------- | ------------------------------------------------------- |
-| `pnpm dev`       | Runs the bot with `tsx watch`                           |
-| `pnpm typecheck` | `tsc --noEmit`, strict                                  |
-| `pnpm lint`      | ESLint (type-aware), including the layer-boundary rules |
-| `pnpm test`      | Vitest, against real in-memory SQLite (no DB mocks)     |
-| `pnpm format`    | Prettier                                                |
+| Command          | What it does                                             |
+| ---------------- | -------------------------------------------------------- |
+| `pnpm dev`       | Runs the bot with `tsx watch`, loading `.env` if present |
+| `pnpm typecheck` | `tsc --noEmit`, strict                                   |
+| `pnpm lint`      | ESLint (type-aware), including the layer-boundary rules  |
+| `pnpm test`      | Vitest, against real in-memory SQLite (no DB mocks)      |
+| `pnpm format`    | Prettier                                                 |
 
 The pre-commit hook runs Prettier on staged files, then typecheck, lint and tests.
 
