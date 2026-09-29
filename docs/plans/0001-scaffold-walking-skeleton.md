@@ -287,7 +287,7 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 | 1: Tooling and a bot that answers /start | dev | done | e0005cd |
 | 2: Domain: money, expense text, local days, sums | dev | done | de745c3 |
 | 3: Storage and idempotent recording | dev | done | 35f817e |
-| 4: /today | dev | done | committed with this row |
+| 4: /today | dev | done | e5c73a4 |
 | 5: Create the bot and smoke-test locally | human | not started | |
 
 ### Notes
@@ -339,15 +339,22 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 - Phase 4: the `/today` reply is `Сегодня, 30 сентября — «Личные расходы»` followed by one line
   per currency (`462.50 RSD`, `12.50 EUR`). An empty day uses the same header plus
   `Трат нет. Отправьте, например, «450 кофе».`. The welcome text now mentions `/today`.
+- Close: a boot smoke on `pnpm start` with a fake token and a scratch `DATABASE_PATH` logged
+  `applied: ["0001"]`, then failed at `deleteWebhook` (401 Unauthorized). A second boot logged
+  `applied: []`. The smoke DB was deleted.
 
 ### Close triggers
 
-_(Facts for the architect. No recommendations, and no suggested version bump.)_
-
-- **What shipped:** feature / fix-only / docs-chore-only
-- **User-visible surface changed:** commands, messages, config/env keys, schema migrations (list them, or none)
-- **Gate at the tip:** the commands run (typecheck, lint, full test suite), exit codes, test counts
-- **Outstanding `human` phases:** which, or none
+- **What shipped:** feature
+- **User-visible surface changed:** commands `/start` and `/today`. Free-text expense recording
+  with an inline Undo button (`exp:undo:<uuid>`). Russian copy in `src/bot/messages.ts`. Env keys
+  `BOT_TOKEN`, `ALLOWED_TELEGRAM_IDS`, `DEFAULT_TIMEZONE`, `DEFAULT_CURRENCY`, `DATABASE_PATH`,
+  `LOG_LEVEL`. Schema migration `0001_init.sql` (`users`, `auth_identities`, `ledgers`,
+  `ledger_members`, `expenses`, plus `schema_migrations`).
+- **Gate at the tip (e5c73a4, Node 26.8.2):** `pnpm typecheck` exit 0. `pnpm lint` exit 0.
+  `pnpm test` exit 0: 12 files, 98 tests. `node scripts/check-doc-links.mjs` exit 0 (22 links).
+  No build script exists.
+- **Outstanding `human` phases:** Phase 5 (BotFather, `.env`, local smoke test).
 
 ## Followups
 
