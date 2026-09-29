@@ -288,7 +288,7 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 | 2: Domain: money, expense text, local days, sums | dev | done | de745c3 |
 | 3: Storage and idempotent recording | dev | done | 35f817e |
 | 4: /today | dev | done | e5c73a4 |
-| 5: Create the bot and smoke-test locally | human | not started | |
+| 5: Create the bot and smoke-test locally | human | done (user-reported) | |
 
 ### Notes
 
@@ -350,6 +350,15 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
 - Fix pass (minor 3): replies show at most 200 code points of a description, followed by `…`.
   The stored description is unchanged. 7a20d4d
 - Fix pass: nits 5 to 7 and major 1 (Node 24 install check, `human`) not acted on.
+- Second review: major 1 closed by the architect. On Node 24.21.0, `pnpm install
+  --frozen-lockfile` succeeded, `better-sqlite3` loaded (SQLite 3.53.4), and the gate passed.
+- Fix pass (second review, minor 2): Vitest runs with `TZ=Pacific/Kiritimati`
+  (`vitest.config.ts`). A deliberately host-local `localDateOf` fails 5 tests under it. 5f4fed2
+- Fix pass (second review, major 5): `pnpm dev` loads `.env` via
+  `--env-file-if-exists=.env`. With only a fake `.env` it logged `applied: ["0001"]` and
+  failed at `getMe` (401). Without `.env` it failed on `BOT_TOKEN`. `README.md` updated. b2b2a50
+- Phase 5: the user reports the smoke test passed. It ran before b2b2a50, with `.env` loaded
+  by hand.
 
 ### Close triggers
 
@@ -359,10 +368,10 @@ Intended order of the next plans. They're not numbered yet, and each gets its ow
   `BOT_TOKEN`, `ALLOWED_TELEGRAM_IDS`, `DEFAULT_TIMEZONE`, `DEFAULT_CURRENCY`, `DATABASE_PATH`,
   `LOG_LEVEL`. Schema migration `0001_init.sql` (`users`, `auth_identities`, `ledgers`,
   `ledger_members`, `expenses`, plus `schema_migrations`).
-- **Gate at the tip (7a20d4d, Node 26.8.2):** `pnpm typecheck` exit 0. `pnpm lint` exit 0.
-  `pnpm test` exit 0: 12 files, 102 tests. `node scripts/check-doc-links.mjs` exit 0 (22 links).
+- **Gate at the tip (b2b2a50, Node 26.8.2):** `pnpm typecheck` exit 0. `pnpm lint` exit 0.
+  `pnpm test` exit 0: 12 files, 102 tests. `node scripts/check-doc-links.mjs` exit 0 (55 links).
   No build script exists.
-- **Outstanding `human` phases:** Phase 5 (BotFather, `.env`, local smoke test).
+- **Outstanding `human` phases:** none.
 
 ## Followups
 
