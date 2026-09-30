@@ -292,6 +292,15 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
   the [Изменить] flow of Phase 3 (README is in Phase 2's Files touched only).
 - Followup noticed, not acted on: `messages.flowExpired` still says "Начните заново: /categories."
   for every flow kind, the edit flows included.
+- Round 1 M1 (ac04f0b): the edit prompts' [Отмена] is `exp:show:<uuid>`, not the done-when's
+  `flow:cancel`, a deviation forced by the stranding. It cancels the pending flow only when that
+  flow edits the same expense.
+- Round 1 m1 (e69734d): a date quick-button tap clears the pending flow only when it is that
+  expense's `editDate`.
+- Round 1 m2 (5dd1081): `messages.flowExpired` reads "Время ответа истекло. Начните заново." for
+  every flow kind.
+- Round 1 n1 (cfdf5f2): the description prompt text is asserted in `bot.test.ts`.
+- Round 1 m3 (6d3d2c4): README rows for the date words and [Изменить].
 
 ### Close triggers
 
