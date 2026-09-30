@@ -1,9 +1,9 @@
 # 0005: /settings: timezone from a city list, and the ledger's default currency
 
-> **Status:** in-progress
+> **Status:** done (2026-09-30): built as planned, one minor open (expired `setTimezone` prompt points to `/categories`), v0.4.0
 > **Created:** 2026-09-29
-> **Depends on:** [Plan 0007](done/0007-navigation-shell.md), [Plan 0003](done/0003-categories.md) (screen kit, flow sessions, list pager, `/categories` screen)
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md), [Plan 0003](0003-categories.md) (screen kit, flow sessions, list pager, `/categories` screen)
+> **Related ADRs:** [ADR-0002](../../adrs/0002-ledgers-and-identity.md), [ADR-0009](../../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../../adrs/0011-navigation-model.md), [ADR-0012](../../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
@@ -235,4 +235,86 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
   `src/db/ledgers.test.ts`.
 - No migration. No dependency added.
 
+## Close review
+
+Round 1 (conductor review, tip `5238097`), in full:
+
+**Verdict:** Plan 0005 is implemented as planned: both phases land, every done-when has a test
+that asserts the claim, and the gate is green. The one finding is a minor copy defect in the new
+flow kind's expiry path, so the plan can close.
+
+### Gate (run in the review session, lane root)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 29 files, 327 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 89 relative links resolve.
+
+### Lens 1: alignment
+
+- Phase 1 is `8cf41ba` and Phase 2 is `9ee7e57`. Each has one `**Owner skill:** dev` tag. No phase was added or skipped.
+- I opened the assertions for each done-when:
+  - Hub on `/settings` and on `⚙️ Настройки`: `src/bot/bot.test.ts` "opens the hub as a new screen". It asserts the exact text, the keyboard (`set:tz`, `set:cur` / `set:cat`), and that the older message goes stale. The menu layout is asserted in `menuKeyboard`.
+  - City list: "pages the city list...". It asserts both pages exactly: 2 per row, `✓ Белград`, `pagerRow`, [Другой…] and [« Назад] each on its own row, and `set:open` back to the hub. `src/domain/timezones.test.ts` pins slugs at 20 bytes or less, checks that each `iana` is valid in `Intl`, and checks the four required cities.
+  - Moscow day shift: "moves the local day with the zone". It asserts `Europe/Moscow` is stored, `кофе` gets `2026-09-30`, the earlier `чай` keeps `2026-09-29`, and `/today` is headed `30 сентября`.
+  - tzdata guard: `localDateOf(2026-09-29T18:30:00Z, 'Asia/Almaty') === '2026-09-29'`.
+  - [Другой…]: the prompt text and [Отмена] restore the hub. `asia/tbilisi` is stored as `Asia/Tbilisi`. `Mars/Base` and `+03:00` re-ask, and the test proves the flow is still pending by then accepting `europe/istanbul`. A redelivered answer after a later change leaves `Europe/Moscow` in place and makes no API calls.
+  - Corrupt stored zone: `/today` uses Belgrade's date. There is exactly one level-40 log line, and its keys are exactly `hostname, level, msg, pid, time, userId`. `/settings` shows the fallback zone.
+  - Already-selected city: `total_changes()` is unchanged.
+  - Welcome and `setMyCommands`: the exact `WELCOME` string, and a `settings` entry in the command list.
+  - [Категории]: the back row appears, survives a picker round trip, and `/categories` sent directly has no back row.
+  - Currency keyboard: every `CURRENCY_CODES` entry, four per row, `✓ RSD`, 11 bytes each, back row. `set:cur:XYZ` is answered silently and `total_changes()` is unchanged.
+  - EUR: the new row is `45000 EUR`, the RSD rows are deep-equal to their snapshot, and `/today` lists both currencies.
+  - JPY: `amount_minor = 450`, `450 JPY` is rendered, and `12,5 кофе` gets `invalidAmount` and records nothing.
+  - Member refusal: toast text checked, `total_changes()` unchanged, the ledger stays `RSD`.
+  - The ledger name «Личные расходы» appears in the hub text.
+- Deviations are disclosed in the log:
+  - Files outside `Files touched`.
+  - `periodSummary.ts` is absent (Plan 0004 has not landed).
+  - The owner check reads `ledger_members.role`. This is consistent with Plan 0005's "member (not owner)" wording.
+- No ADR is reversed. Timezone changes never rewrite `occurred_on` (ADR-0002), and a currency change converts nothing (ADR-0003).
+- The log is shorter than the phases section.
+
+### Lens 2: layering
+
+grammY is imported only under `src/bot/`. `src/domain/timezones.ts` is pure. Each SQL statement sits in `src/db/users.ts` or `src/db/ledgers.ts`. Copy lives in `src/bot/messages.ts`, and the handlers only select messages from it.
+
+### Lens 3: correctness
+
+- Every read of `users.timezone` goes through `resolveUserTimezone`. `git grep "\.timezone\b" -- src` finds only `src/services/settings.ts:29` as a reader.
+- Callback data is at most 28 bytes (`set:tz:` plus a slug of 20 bytes or less).
+- Double taps are idempotent: `unchanged` results write nothing. The typed-zone answer commits its write and `completeFlow` in one transaction, keyed by `inputKey`.
+- Logs carry ids only, never zones, amounts or text.
+
+### Findings
+
+- **blocker:** none.
+- **major:** none.
+- **minor 1 (open): an expired `setTimezone` prompt tells the user to restart from `/categories`.**
+  - **Where:** `src/bot/messages.ts:209` (`flowExpired`: `Время ответа истекло. Начните заново: /categories.`), sent from `src/bot/handlers/text.ts:74`.
+  - **Why it matters:** Plan 0005 adds a second flow kind. A user who taps [Другой…], waits more than 10 minutes and then types `Europe/Istanbul` is sent to the wrong screen. The dev log discloses this as a followup it did not act on. It is still a user-visible defect that this plan introduced.
+  - **Suggested fix:** have `routeText` return the expired flow, or its kind, instead of a boolean `expiredFlow`; make `messages.flowExpired` take the command to restart from (`/settings` for `setTimezone`, `/categories` for the category flows); add a bot test next to "answers Дача at T+10m01s with flowExpired" for a late `Europe/Istanbul` after [Другой…].
+- **nit:** none.
+
+### Bookkeeping owed (close ceremony)
+
+- Flip `Status:` to `done` with the date and verdict, `git mv` the plan to `docs/plans/done/`, repair the links, and run `node scripts/check-doc-links.mjs`.
+- No ADR is paired with this plan, so there is nothing to accept.
+- Refresh `docs/plans/README.md`: move the row to recently closed.
+- Bump the version to a minor release, since this is a feature plan: `package.json` goes from `0.3.0` to `0.4.0`, and `CHANGELOG.md` gets an entry for `/settings` (timezone city list, [Другой…], ledger default currency) and the two-row menu.
+- Record the minor finding under the plan's `## Followups` if the close does not fix it first.
+- **Plan 0004 heads-up (queued next):** Plan 0004 creates `src/services/periodSummary.ts` and computes "today − 1" in the user's timezone. Since Plan 0005, every read of `users.timezone` must go through `resolveUserTimezone(deps, user)`, and the service deps need `logger` and `defaultTimezone`. Plan 0004 does not say this. Its implementer or reviewer should check it.
+
+### Close notes
+
+- Earlier rounds: none. This was the only review round, so no finding was resolved by a fix round.
+- The review's minor is a code change, not copy the close may repair. It stays open under `## Followups`.
+- `messages.versionAnnouncements` does not exist on this branch or on `main` at close (Plan 0008
+  has not landed), so v0.4.0 has no announcement body. Plan 0008's close owes it one.
+
 ## Followups
+
+- An expired `setTimezone` flow answers with `messages.flowExpired`, which points to
+  `/categories`. Make the restart command depend on the flow kind (close review minor 1).
+- Plan 0004 must read `users.timezone` through `resolveUserTimezone(deps, user)` in
+  `src/services/periodSummary.ts`, with `logger` and `defaultTimezone` in its deps.
