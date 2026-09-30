@@ -13,16 +13,17 @@ when an amount could be read two ways.
 
 ## Using the bot
 
-| You send          | The bot does                                                                                                                           |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `/start`          | Creates your account and a personal ledger («Личные расходы»)                                                                          |
-| `450 кофе`        | Records 450.00 in the ledger's default currency and replies `Записано в «Личные расходы»: 450.00 RSD — кофе` with an [Отменить] button |
-| `12,50 EUR такси` | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                           |
-| `1 200 обед`      | Records 1 200.00. Group thousands with a space                                                                                         |
-| `1.200 обед`      | Records **nothing** and asks whether you meant 1 200.00 or 1.20, then asks you to resend                                               |
-| `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                 |
-| [Отменить]        | Soft-deletes that expense. A second tap says it's already cancelled                                                                    |
-| `/help`           | How to record an expense, and what the menu buttons do                                                                                 |
+| You send          | The bot does                                                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start`          | Creates your account and a personal ledger («Личные расходы»)                                                                                                          |
+| `450 кофе`        | Records 450.00 in the ledger's default currency and replies `Записано в «Личные расходы»: 450.00 RSD — кофе` with an [Удалить] button                                  |
+| `12,50 EUR такси` | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                                                           |
+| `1 200 обед`      | Records 1 200.00. Group thousands with a space                                                                                                                         |
+| `1.200 обед`      | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more |
+| `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                                                 |
+| [Удалить]         | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                        |
+| [Вернуть]         | Restores the expense, and `/today` counts it again                                                                                                                     |
+| `/help`           | How to record an expense, and what the menu buttons do                                                                                                                 |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. Unknown commands,
