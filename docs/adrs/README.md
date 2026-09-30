@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0017`
+- **Next free number:** `0018`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -23,3 +23,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0014](0014-group-chats-bind-to-shared-ledgers.md) | A group chat binds to one shared ledger, and the chat, not the active ledger, routes its messages | proposed (2026-09-30) |
 | [0015](0015-shared-ledgers-carry-a-timezone.md) | A shared ledger carries its own timezone, used for its dates and periods | proposed (2026-09-30) |
 | [0016](0016-readiness-runs-before-a-plan-is-queued.md) | The readiness check runs before a plan is queued, and `run` refuses a plan without one | proposed (2026-09-30) |
+| [0017](0017-budgets-payday-periods-cumulative-allowance.md) | Budgets run over payday periods, with a cumulative daily allowance in the budget's currency | proposed (2026-09-30) |
