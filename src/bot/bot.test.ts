@@ -1524,7 +1524,14 @@ describe('editing an expense from its card', () => {
   });
 
   it('sets the description and its key, keeping the category; 450 кофе re-asks', async () => {
-    const { say, calls, db } = await prompting('d');
+    const { tap, say, calls, db } = await recorded();
+    await tap(`exp:edit:${ID}`);
+    calls.length = 0;
+    await tap(`exp:ef:${ID}:d`);
+    expect(calls[1]).toEqual(
+      cardEdit('Сейчас: кофе. Введите новое описание.', { inline_keyboard: [cancelRow] }),
+    );
+    calls.length = 0;
     const { category_id } = row(db);
 
     await say('450 кофе', 11);
