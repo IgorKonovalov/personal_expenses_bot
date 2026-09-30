@@ -105,8 +105,6 @@ reviews once at the end, in a fresh session.
     version announcements.
   - Boot calls the announcer before `bot.start`, without awaiting it on the boot path, so a slow
     or failing Telegram call never delays polling.
-  - By hand after deploy: the admin gets the 0.3.0 message once, and `docker compose restart`
-    sends nothing more.
 
 ### Phase 2: /changelog
 - **Owner skill:** dev
@@ -156,6 +154,9 @@ not add claims):
 
 ## Risks & open questions
 
+- **Checked by hand after the push, not by `dev`:** the admin gets one announcement for the
+  version the close bumps to, and `docker compose restart` sends nothing more.
+
 - **At-least-once.** A crash between `send` and the row write repeats the message on the next
   boot. Accepted: one duplicate to one person. The reverse order (write, then send) would lose
   announcements on a failed send, which is worse.
@@ -200,6 +201,4 @@ not add claims):
 
 ## Followups
 
-- At this plan's close, the architect skill's close step 5 gains "write the
-  `messages.versionAnnouncements` entry for the new version in the same commit", and the
-  `CHANGELOG.md` header notes that every bump is announced to the admin.
+- The `CHANGELOG.md` header could note that every bump is announced to the admin.

@@ -33,5 +33,8 @@ the next boot. A failed send is logged at `warn`, left unrecorded, and retried o
 ## Consequences
 
 - Every version bump needs an entry in `messages.versionAnnouncements`. A test makes a bump
-  without one fail the gate, so the close ceremony writes the copy together with the bump.
+  without one fail the gate, so the close ceremony writes the copy together with the bump. That
+  map is the one production file the architect edits, at a close only, and the conductor's close
+  prompt says so too. We rejected having `dev` pre-write the next version's entry during a plan:
+  the number is decided at close, and two plans closing out of order would claim the same one.
 - `/changelog` renders the same map, so the push and the on-demand history never disagree.
