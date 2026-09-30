@@ -188,7 +188,7 @@ not add claims):
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: the admin gets a message for a new version | dev | done | 03114c0 |
-| 2: /changelog | dev | done | committed with this row |
+| 2: /changelog | dev | done | 8c7501d |
 
 ### Notes
 
@@ -210,13 +210,26 @@ not add claims):
 - Phase 2: the tests are in `src/bot/bot.test.ts`, and there is no `changelog.test.ts`. The budget
   is `CHANGELOG_BUDGET = 3900` in `src/bot/messages.ts`. It is measured in UTF-16 units of the entries'
   HTML plus their separators, and it drops older entries whole.
+- Followup noticed, not acted on: no test drives `adminNotifier` / `sendHtml`, and no test covers
+  the `src/index.ts` wiring (the payload's chat id and parse mode).
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** migration `0005_app_state.sql` (`app_state` key/value table),
+  `src/db/appState.ts`, `src/domain/version.ts`, `src/version.ts`,
+  `src/services/announceVersion.ts`, `src/bot/adminNotifier.ts`, `sendHtml` in
+  `src/bot/render/html.ts`, `Config.adminTelegramId`, the boot wiring in `src/index.ts`, and
+  `src/bot/handlers/changelog.ts`.
+- **User-visible surface changed:** a boot on a version not yet recorded sends the admin
+  «🆕 Версия X.Y.Z», its body, and «Все изменения: /changelog». There is a new `/changelog`
+  command («Что нового в боте» in the command menu), and a new `/help` line «/changelog — что нового в боте».
+  `messages.versionAnnouncements` has entries `0.3.0`, `0.2.0` and `0.1.0`. `package.json`
+  version: `0.3.0`, unchanged. The first deploy of `0.3.0` announces `0.3.0`, because no row is
+  recorded yet.
+- **Gate at the tip (8c7501d):** `pnpm typecheck` exit 0. `pnpm lint` exit 0. `pnpm test` exit 0
+  with 29 files and 309 tests. `pnpm build` exit 0. `dist/version.js` `readAppVersion()` printed `0.3.0`.
+- **Outstanding `human` phases:** none. The by-hand check in Risks is still open: one announcement
+  after the push, and nothing after `docker compose restart`.
 
 ## Followups
 
