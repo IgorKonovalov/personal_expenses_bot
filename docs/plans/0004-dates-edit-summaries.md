@@ -79,8 +79,8 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
   stores the resolved `occurred_on`, and the confirmation names the date when it isn't today.
 - **Files touched:** `src/domain/dateText.ts`, `src/domain/dateText.test.ts`,
   `src/domain/expenseText.ts`, `src/domain/expenseText.test.ts`, `src/services/recordExpense.ts`,
-  `src/services/recordExpense.test.ts`, `src/bot/handlers/text.ts`, `src/bot/messages.ts`,
-  `src/bot/bot.test.ts`.
+  `src/services/recordExpense.test.ts`, `src/bot/handlers/text.ts`, `src/bot/handlers/card.ts`
+  (`recordedCard` renders the confirmation), `src/bot/messages.ts`, `src/bot/bot.test.ts`.
 - **Done when:** (today = `2026-09-29` local)
   - `450 такси вчера` → 45000 RSD, `такси`, `2026-09-28`. `450 такси Позавчера` → `2026-09-27`.
     `450 такси 25.09` → `2026-09-25`. `450 такси 5.09` → `2026-09-05`.
@@ -112,7 +112,9 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
   `src/services/periodSummary.test.ts`, `src/bot/handlers/summary.ts`, `src/bot/nav.ts`,
   `src/bot/keyboards.ts`,
   `src/bot/callbackData.ts`, `src/bot/messages.ts`, `src/bot/bot.ts`, `src/bot/bot.test.ts`,
-  `src/index.ts` (command menu), `README.md` (commands).
+  `src/services/flowSessions.ts`, `src/services/flowSessions.test.ts` (the `Screen` union and
+  `parseScreen`), `src/bot/screens.ts`, `src/bot/handlers/menu.ts` (menu labels route like their
+  commands), `src/index.ts` (command menu), `README.md` (commands).
 - **Done when:** (clock `2026-09-30T10:00:00Z`, Wednesday 30 September local)
   - `weekOf('2026-09-30')` = `2026-09-28` … `2026-10-04` (Monday to Sunday).
     `weekOf('2026-09-27')` = `2026-09-21` … `2026-09-27`. `monthOf('2026-09-30')` =
@@ -159,7 +161,9 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
 - **Files touched:** `src/db/migrations/NNNN_expense_updated_at.sql` (the next free number when you start; check the tree), `src/db/expenses.ts`,
   `src/db/expenses.test.ts`, `src/services/editExpense.ts`, `src/services/editExpense.test.ts`,
   `src/bot/handlers/edit.ts`, `src/bot/flows.ts`, `src/bot/callbackData.ts`,
-  `src/bot/messages.ts`, `src/bot/handlers/text.ts`, `src/bot/bot.test.ts`.
+  `src/bot/messages.ts`, `src/bot/handlers/text.ts`, `src/bot/handlers/card.ts` (`recordedCard`
+  carries [Изменить]), `src/services/flowSessions.ts`, `src/services/flowSessions.test.ts` (the
+  edit `Flow` kinds and `parseFlow`), `src/bot/bot.test.ts`.
 - **Done when:**
   - The confirmation keyboard is row 1 [Категория] [Изменить] `exp:edit:<uuid>` (45 bytes),
     row 2 [Удалить]. The field picker is [Сумма] [Описание] [Дата] as `exp:ef:<uuid>:a|d|t`
