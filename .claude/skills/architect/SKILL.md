@@ -202,6 +202,20 @@ Commit by explicit path, in this order:
 
 ---
 
+## Conductor mode
+
+Inert unless the system prompt carries a `CONDUCTOR-MODE:` line. When it does, the conductor
+started this session headless (ADR-0010), and nobody reads it or answers:
+
+- The prompt's instructions win over every interactive step above. `CONDUCTOR-MODE:` names the
+  task: `readiness` (read-only), `review` (Mode 4, written to the review file the prompt names) or
+  `close` (the close ceremony plus a `## Close review` section in the plan, with no tag).
+- Don't wait or ask. End on the `conductor-outcome` block the prompt specifies.
+- The rest still holds: validate against the plan, read the assertions, stage by explicit path,
+  and never push.
+
+---
+
 ## Commit hygiene (your doc commits)
 
 Stage by explicit path, never broadly. Use a quoted-heredoc message (`git commit -F - <<'EOF'`)

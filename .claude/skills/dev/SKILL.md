@@ -137,6 +137,18 @@ behave as assumed, or a done-when is impossible:
 - "Change the plan" is an architect task. Stop and let the user run `/architect`, then resume.
   Don't edit phase blocks yourself.
 
+## Conductor mode
+
+Inert unless the system prompt carries a `CONDUCTOR-MODE:` line. When it does, the conductor
+started this session headless (ADR-0010), and nobody reads it or answers:
+
+- The prompt's instructions win over every interactive step above. `CONDUCTOR-MODE:` names the
+  task (`implement`, `fix`, `repair` or `merge`), and the queued, approved plan is the "go".
+- Don't restate, wait, ask or print the pointer. End on the `conductor-outcome` block the prompt
+  specifies.
+- The rest still holds: `Files touched`, done-when checks, log rows, commit hygiene and the
+  cross-cutting rules.
+
 ## What you do NOT do
 
 - Edit anything in a plan except `Status:` and `## Implementation log`, or write ADRs.

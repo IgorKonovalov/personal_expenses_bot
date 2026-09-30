@@ -1,11 +1,6 @@
 {
   "permissions": {
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.local)",
-      "Read(./.env.production)",
-      "Read(./data/**)"
-    ]
+    "deny": ["Read(./.env)", "Read(./.env.local)", "Read(./.env.production)", "Read(./data/**)"]
   },
   "hooks": {
     "PreToolUse": [
@@ -23,6 +18,10 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-push-and-history-rewrite.cjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/conductor-no-background.cjs\""
           }
         ]
       }

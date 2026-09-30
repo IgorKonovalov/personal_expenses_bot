@@ -255,148 +255,9 @@ committed.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: engine runs a fixture plan | dev | done | committed with this row |
-| 2: harness speaks this workflow | dev | not started | |
+| 1: engine runs a fixture plan | dev | done | 1373b82 |
+| 2: harness speaks this workflow | dev | done | committed with this row |
 | 3: trial run and verdict | human | not started | |
-
-### Notes` holds the figures: per plan,
-    the outcome and every park reason, fix rounds, spend, and wall time. Also the number of
-    conductor fix commits the trial forced, and `project.mjs`'s line count. It ends with the
-    verdict word, `go` or `no-go`.
-
-## Data shapes
-
-```jsonc
-// illustrative: tools/conductor/queue.json (committed; the architect owns its order)
-{ "lanes": { "a": ["0007", "0003"], "b": [] }, "plans": { "0003": { "after": ["0007"] } } }
-```
-
-```js
-// illustrative: tools/conductor/project.mjs, the whole adapter surface
-export const project = {
-  owners: ["dev", "human"],
-  implementers: ["dev"],
-  planTitle: /^# (\d{4}): (.+)$/m,
-  lanePrefix: "peb-plan-",
-  laneInstall: ["pnpm", "install", "--frozen-lockfile"],
-  gate: [
-    { name: "typecheck", cmd: ["pnpm", "typecheck"] },
-    { name: "lint", cmd: ["pnpm", "lint"] },
-    { name: "test", cmd: ["pnpm", "test"] },
-    { name: "doc links", cmd: ["node", "scripts/check-doc-links.mjs"] },
-    { name: "hooks", cmd: ["node", "--test", ".claude/hooks/*.test.mjs"] },
-    { name: "conductor", cmd: ["node", "--test", "tools/conductor/test/*.test.mjs"] },
-  ],
-};
-```
-
-`local.json` keeps Ritmolux's shape (`budget_usd` per step, `run_budget_usd`,
-`max_open_worktrees`, optional `model` per step). Its figures are the owner's and are never
-committed.
-
-## Risks & open questions
-
-- **Plan 0007 must not be started by hand first.** Phases 1 and 2 of this plan land before 0007
-  starts. If 0007 is implemented manually in the meantime, the trial pair becomes 0003 then 0004.
-
-- **Readiness may park both plans.** The readiness session checks that every done-when can run under
-  the allowlist, one command per call. Plans 0007 and 0003 were written for interactive sessions,
-  and a done-when written as a pipe would park them `plan_wrong`. That is a real trial outcome: the
-  architect repairs the plan, the owner resumes, and the park counts in the figures.
-- **Lane install.** `better-sqlite3` is a native module. `pnpm install --frozen-lockfile` in a fresh
-  worktree reuses the pnpm store, but a failed build parks `deps_install`, not the whole run.
-- **Pre-commit hooks run in lanes.** Husky runs `lint-staged`, `pnpm typecheck`, `pnpm lint` and
-  `pnpm test` on every commit a session makes. That makes sessions slower, not wrong.
-- **Privacy.** `tools/conductor/state/` records commit subjects, test names and spend, never expense
-  data. It is gitignored. Conductor sessions keep the deny-read on `.env*` and `data/**` (the Phase 2
-  test asserts it).
-- **Version bumps happen unread.** A conductor close bumps the version the way the manual close would
-  (minor for a feature plan). 0007 and 0003 will each move `package.json` and `CHANGELOG.md` before
-  the owner reads them.
-- **Idempotency of the trial itself.** An `abort` mid-step reruns that step from scratch on the next
-  `run`, and its spend is lost. `pause` is the stop that loses nothing.
-- **Open:** whether the conductor's CLI-version check (verified list copied from Ritmolux, which
-  includes the installed 2.1.283) should be shared with Ritmolux. That is deferred to the package
-  decision.
-
-## What this plan does NOT do
-
-- **No package.** Where a shared conductor lives, how it's pinned and what harness ships with it is
-  its own ADR and plan, after a `go` verdict.
-- **No Ritmolux changes.** Moving Ritmolux onto a package is a Ritmolux plan.
-- **No second lane.** The backlog is one chain (0007, then 0003, then 0004 and 0005), so the trial
-  runs lane `a` only.
-- **Plans 0002, 0004 and 0005 are not queued.** Plan 0002's `human` VPS phase would exercise the
-  park path, a candidate for a second trial run. 0004 and 0005 wait on 0003 and follow a `go`.
-- **No CI job for the conductor's tests.** Plan 0002 introduces CI, and the job is a followup.
-- **No porting of later Ritmolux conductor fixes.** The fork is frozen at its recorded commit for the
-  trial.
-
-## Implementation log
-
-> Written by `dev`: one row per phase as its commit lands, then the close block. **The phases
-> above are the contract. This section records what happened.** Observations, never conclusions:
-> no pass list, no self-assessment. Deviations and unmet done-whens are **always** disclosed.
-> Keep it shorter than `## Implementation phases`.
-
-| phase | owner | state | commit |
-|---|---|---|---|
-| 1: engine runs a fixture plan | dev | done | committed with this row |
-| 2: harness speaks this workflow | dev | not started | |
-| 3: trial run and verdict | human | not started | |
-
-### Resume notes (delete when Phase 1 lands)
-
-Phase 1 is stopped for `/architect`. The plan's `node --test tools/conductor/test/` and
-`node --test .claude/hooks/` exit 1 on Node 24.21 without running a test: node loads a directory
-argument as a module. The quoted glob `node --test ".claude/hooks/*.test.mjs"` exits 0 (28 pass). The
-owner chose a plan amendment over a logged deviation. The Phase 1 work is **uncommitted and untracked
-in the working tree** under `tools/conductor/`, plus the `eslint.config.js` edit. Don't delete it.
-Gate state at the tip: `node conductor.mjs check` exits 1 naming `local.json` without one, and 0
-with one (warning: installed CLI is 2.1.284, not in the verified list). The conductor suite has not
-run a test yet, because of the command above.
-
-- **Source:** `git -C ../Ritmolux archive b0c0aa42 tools/conductor | tar -x`. That is the last
-  Ritmolux commit touching `tools/conductor/` (Ritmolux `main` was `22a665a4`, same conductor tree).
-  Recorded here for Phase 2's README.
-- **Owner decisions this session:** Phase 1 copies Ritmolux `prompts/*.md` and
-  `settings.conductor.json` as scaffolding, because the engine and lane tests read them. Phase 2
-  rewrites them. Log it as a deviation.
-- **Deleted:** `with-lock.mjs`, `suite-record.mjs`, `lib/ledger.mjs`, `spike/`, `temp-dir-leak.md`,
-  `test/ledger.test.mjs`, `test/with-lock.test.mjs`. Also deleted, and to be logged as deviations:
-  `test/hooks.test.mjs` (it tests Ritmolux's `.claude/hooks/*.js`; its bite tests belong to Phase 2's
-  `.claude/hooks/hooks.test.mjs`) and `test/settings.test.mjs` (Phase 2 writes it fresh).
-- **Done:** `project.mjs` (owners, `planTitle`, `phaseHeading`, `logRow`/`logRowPrefix`,
-  `lanePrefix`, `laneInstall`, `gate` with `announce`/`tests` flags, `shellCall`, `testCounts`,
-  `failingTests` for Vitest). Rewritten: `lib/gate.mjs` (no ledger, no lock, no onlyIf),
-  `lib/locks.mjs` (absorbs `acquire`/`holder`/`pidAlive`/`lockDir` from with-lock; `close` lock only;
-  env `CONDUCTOR_LOCK_DIR`), `test/gate.test.mjs`. Adapted: `conductor.mjs` (pidAlive from
-  locks, no withLock path, CLI-version text), `lib/sources.mjs`, `lib/cleanup.mjs`, `lib/plan.mjs`,
-  `lib/outcome.mjs` (`conductor-outcome` fence, `DEPS_INSTALL`, closed version allowed with a null
-  tag), `lib/step.mjs` (`CONDUCTOR_HOOK_LOG`, `CONDUCTOR_SESSION`), `lib/live.mjs` (via
-  `project.shellCall`/`testCounts`, `announce` gate steps), and `lib/digest.mjs` (no ledger,
-  suite wait or upstream; "version, no tag" line; test-vs-other gate time).
-- **Also done:** `eslint.config.js` ignores `tools/`. Without it the pre-commit `eslint .` fails on
-  the untracked conductor files.
-- **Done in the second session:** `lib/lane.mjs` (no upstream-CI read, ledger, `RLX_*` env or
-  `with_lock` vars; `installDeps` runs `project.laneInstall` whenever `node_modules/` is absent and
-  parks `deps_install`, `INSTALL_RETRY_MS`/`INSTALL_RETRIES`; every implementer choice is
-  `project.implementers[0]`; the owed-row regex uses `project.logRowPrefix`; `RESUME_PROMPT` names
-  `conductor-outcome`; `ctx.laneInstall` overrides the command for tests). `lib/state.mjs`: no
-  `lockLog`. `lib/close.mjs`: `verifyClose` checks a claimed version against the tip's
-  `package.json`, and `adoptedClose` reads the version from `package.json` when there is no tag.
-  Prompts: `CONDUCTOR-` markers, `conductor-outcome` fence, no `{{with_lock}}`. `queue.json` as the
-  plan specifies. `grep -rniE 'ritmolux|cargo|nextest|studio|RLX' tools/conductor/lib
-  tools/conductor/conductor.mjs tools/conductor/project.mjs` finds nothing.
-- **Remaining in tests:** adapt `helpers.mjs`, `fake-claude.mjs`, `lane-scenario.mjs` (no
-  `runWrapped`; fixture plan `# 0099: Fixture` with `### Phase N: ` headings and `| N: ` rows; close
-  bumps `package.json` and makes no tag), and `lane`/`cli`/`live`/`step`/`digest`/`plan`/`close`/
-  `outcome`/`tmp` tests. Add the plan-reader test for `# 0007: Navigation shell: menu, ...` and the
-  `studio-builder` owner error. Then `queue.json`, `local.example.json`, `.gitignore`,
-  `eslint.config.js` (ignore `tools/`) and `.prettierignore`, then the Phase 1 done-when greps and
-  checks.
-- `pnpm test` measured 3.36s Vitest duration (102 tests) before any change. Take a wall-clock figure
-  for the log.
 
 ### Notes
 
@@ -417,6 +278,21 @@ run a test yet, because of the command above.
   and in the `claude_dir` park detail. They name Ritmolux decisions, not this repository's.
 - Phase 1 figures: `pnpm test` took 2.9 s wall (Vitest duration 1.97 s, 102 tests). The conductor
   suite ran 217 tests in 34 s.
+- Phase 2 deviation: the conductor settings restate the project's four deny-read rules as they
+  are (`.env`, `.env.local`, `.env.production`, `data/**`), not a `.env*` glob, so `.env.example`
+  stays readable. They also allow `mkdir`, `rm` and `ls` in the lane and deny `pnpm dev` and
+  `pnpm start`. Ritmolux's `cat`, `grep`, `sed -n`, `npx`, `python3` and `git tag` are not allowed.
+- Phase 2 observation: `conductor-no-background.cjs` also writes the per-call `CONDUCTOR_HOOK_LOG`
+  line the engine's `cli_contract` check reads. In Ritmolux the suite-lock hook wrote it, and that
+  hook was not forked.
+- Phase 2 observation: Ritmolux's CLI probe (`spike/`) was not forked, so `VERIFIED_CLI` stays
+  Ritmolux's list. The installed CLI, 2.1.284, passes `check` with the patch-above warning.
+- Phase 2 observation: Prettier reformatted all of `.claude/hooks/hooks.test.mjs` and
+  `.claude/settings.json`, because the pre-commit `prettier --check` failed on both once they
+  were staged.
+- Phase 1's commit `1373b82` left this plan with a duplicated block (from Phase 3's done-when to a
+  second copy of the log). The Phase 2 commit rebuilds the file from `561417a` with both phases'
+  log edits.
 
 ### Close triggers
 
