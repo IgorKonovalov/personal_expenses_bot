@@ -341,20 +341,24 @@ describe('command registration at boot', () => {
 describe('/changelog', () => {
   const TRUNCATED = 'Более ранние версии не поместились.';
 
-  it('lists 0.3.0, 0.2.0 and 0.1.0, newest first', async () => {
+  it('lists every announced version, newest first', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/changelog' }));
 
-    const { versionAnnouncements: a } = messages;
+    // Derived from the live map, so a close that adds the next version's entry keeps this green.
+    const newestFirst = Object.keys(messages.versionAnnouncements).sort((x, y) =>
+      y.localeCompare(x, 'en', { numeric: true }),
+    );
+    const sections = newestFirst.map(
+      (v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`,
+    );
     expect(calls).toEqual([
       {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text:
-            `<b>Что нового</b>\n\n<b>0.3.0</b>\n${String(a['0.3.0'])}\n\n` +
-            `<b>0.2.0</b>\n${String(a['0.2.0'])}\n\n<b>0.1.0</b>\n${String(a['0.1.0'])}`,
+          text: `<b>Что нового</b>\n\n${sections.join('\n\n')}`,
           ...htmlParseMode,
         },
       },
