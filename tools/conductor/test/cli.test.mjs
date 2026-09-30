@@ -9,7 +9,8 @@ import { test } from "node:test";
 
 import { VERIFIED_CLI, cliVerdict, main, paths } from "../conductor.mjs";
 import { resumeCommand } from "../lib/inbox.mjs";
-import { loadState, statePaths } from "../lib/state.mjs";
+import { findPlan } from "../lib/plan.mjs";
+import { loadState, planContractHash, planRecord, saveState, statePaths } from "../lib/state.mjs";
 import { FAKE, TEST_DIR, TOOL_DIR, tmp, writePlan } from "./helpers.mjs";
 
 const QUEUE_NOTICE = "conductor: notice: plan 0090: already merged (0090-fixture.md is under docs/plans/done/); `prune` drops it from the queue";
@@ -23,7 +24,21 @@ function sh(args, cwd) {
 const dev = (id) => ({ id, owner: "dev" });
 const human = (id) => ({ id, owner: "human" });
 
-function setup(plans, lanes, { gate, maxOpenWorktrees = 3, spec = {}, stopRequested, idlePollMs } = {}) {
+/**
+ * Records a passing readiness check for each plan against `main` as it stands, which is what
+ * `ready NNNN` leaves, so a `run` passes the queue-time gate (ADR-0016) without a session.
+ */
+function seedReadiness(p, plans) {
+  const state = loadState(p.stateDir);
+  const main = sh(["rev-parse", "main"], p.repo);
+  for (const plan of plans) {
+    const found = findPlan(p.repo, plan);
+    planRecord(state, plan).readiness = { hash: planContractHash(readFileSync(found.path, "utf8")), main, at: "2026-09-30T00:00:00.000Z" };
+  }
+  saveState(p.stateDir, state);
+}
+
+function setup(plans, lanes, { gate, maxOpenWorktrees = 3, spec = {}, stopRequested, idlePollMs, ready = true } = {}) {
   const repo = tmp("peb-cli-repo-");
   sh(["init", "-q", "-b", "main"], repo);
   for (const [k, v] of [["user.email", "t@example.invalid"], ["user.name", "T"], ["commit.gpgsign", "false"], ["tag.gpgSign", "false"], ["core.autocrlf", "false"]]) {
@@ -41,6 +56,8 @@ function setup(plans, lanes, { gate, maxOpenWorktrees = 3, spec = {}, stopReques
   writeFileSync(join(toolDir, "queue.json"), JSON.stringify({ lanes }));
   writeFileSync(join(toolDir, "local.json"), JSON.stringify({ budget_usd: { readiness: 1, implement: 5, fix: 3, review: 4, close: 3, merge: 2, repair: 3 }, run_budget_usd: 60, max_open_worktrees: maxOpenWorktrees }));
   const p = { ...paths({ repo, toolDir }), settings: join(TOOL_DIR, "settings.conductor.json"), prompts: join(TOOL_DIR, "prompts") };
+
+  if (ready) seedReadiness(p, plans.map((plan) => plan.number).filter((n) => Object.values(lanes).some((l) => l.includes(n))));
 
   const specFile = join(toolDir, "spec.json");
   writeFileSync(specFile, JSON.stringify({ plans: spec }));
@@ -88,7 +105,7 @@ test("run --once runs one plan; a second run skips the park and merges the next;
   assert.equal(first.code, 0, first.err.join("\n"));
   let state = loadState(p.stateDir);
   assert.equal(state.plans["0101"].status, "parked");
-  assert.equal(state.plans["0102"], undefined, "--once stopped after one plan");
+  assert.deepEqual(state.plans["0102"].steps, [], "--once stopped after one plan");
   assert.equal(existsSync(join(p.stateDir, "conductor.pid")), false, "the pid file is removed when the run ends");
   assert.ok(first.out.at(-1).startsWith("digest: "));
 
@@ -179,7 +196,8 @@ test("resume refuses a human-phase park the log does not mark done, and accepts 
   assert.equal(finish.code, 0);
   const done = loadState(p.stateDir).plans["0101"];
   assert.equal(done.status, "merged", JSON.stringify(done.park));
-  assert.deepEqual(done.steps.map((s) => s.kind), ["readiness", "implement", "implement", "review", "close"]);
+  // The readiness record `ready` left still matches the plan, so the lane runs no readiness session.
+  assert.deepEqual(done.steps.map((s) => s.kind), ["implement", "implement", "review", "close"]);
 });
 
 // ADR-0214: the page and `status` read the same verdict, so the owner cannot be told a record is
@@ -334,7 +352,7 @@ test("pause asked mid-run lets the plan in flight merge, starts no other, and cl
   assert.equal(r.code, 0, r.err.join("\n"));
   const state = loadState(p.stateDir);
   assert.equal(state.plans["0101"].status, "merged", JSON.stringify(state.plans["0101"].park));
-  assert.equal(state.plans["0102"], undefined, "the second plan never started");
+  assert.deepEqual(state.plans["0102"].steps, [], "the second plan never started");
   assert.deepEqual(state.runs.at(-1).paused.lanes, ["a"]);
   assert.deepEqual(state.runs.at(-1).notStarted, [{ plan: "0102", lane: "a", reason: "paused" }]);
   assert.equal(existsSync(statePaths(p.stateDir).pause), false, "the ask does not outlive the run");
@@ -367,7 +385,7 @@ test("a source changed mid-run pauses the run: the plan in flight merges, no oth
   assert.equal(r.code, 0, r.err.join("\n"));
   const state = loadState(p.stateDir);
   assert.equal(state.plans["0101"].status, "merged", JSON.stringify(state.plans["0101"].park));
-  assert.equal(state.plans["0102"], undefined, "the second plan never started");
+  assert.deepEqual(state.plans["0102"].steps, [], "the second plan never started");
   assert.equal(state.runs.at(-1).paused.reason, "stale_sources");
   assert.deepEqual(state.runs.at(-1).notStarted, [{ plan: "0102", lane: "a", reason: "paused" }]);
   const out = r.out.join("\n");
@@ -530,14 +548,20 @@ test("a queue listing a merged plan starts with a notice, and prune drops exactl
 });
 
 // The configuration ADR-0220 exists to enable: the committed queue and a state/ that knows nothing.
-// The notice must not turn into a session on a plan that merged before this checkout existed.
+// The notice must not turn into a session on a plan that merged before this checkout existed, and the
+// readiness gate (ADR-0016) names only the plan that still has to run.
 test("a run with no state of its own starts no plan already under done/", async () => {
-  const { repo, p, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: ["0090", "0101"] });
+  const { repo, p, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: ["0090", "0101"] }, { ready: false });
   writePlan(repo, { number: "0090", phases: [dev("1")], status: "done — closed" }, { done: true });
   sh(["add", "docs"], repo);
   sh(["commit", "-q", "-m", "0090 merged in an earlier run"], repo);
   assert.equal(existsSync(join(p.stateDir, "conductor.json")), false, "the state the picker would read does not exist");
 
+  const refused = await cli("run", "--lane", "a", "--until-idle");
+  assert.equal(refused.code, 1);
+  assert.deepEqual(refused.err, ["conductor: plan 0101: queued with no readiness check; run `node tools/conductor/conductor.mjs ready 0101` first (ADR-0016)"]);
+
+  assert.equal((await cli("ready", "0101")).code, 0);
   const r = await cli("run", "--lane", "a", "--until-idle");
   assert.equal(r.code, 0, r.err.join("\n"));
   assert.equal(r.out[0], QUEUE_NOTICE);
@@ -562,12 +586,18 @@ test("prune is refused while a conductor runs, and says so when the queue cannot
   assert.match(broken.err.join("\n"), /queue\.json is not valid JSON/);
 });
 
-test("run on a checkout with no state/ writes the pid file for the run and removes it after", async () => {
+test("run on a checkout with no state/ refuses before writing any; once ready, it writes the pid file for the run and removes it after", async () => {
   // The gate runs mid-run, inside the lane: it is green only while the pid file exists.
   const { p, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: ["0101"] }, {
+    ready: false,
     gate: (p) => [{ name: "pid-file-present", cmd: [process.execPath, "-e", `process.exit(require("fs").existsSync(${JSON.stringify(join(p.stateDir, "conductor.pid"))}) ? 0 : 1)`] }],
   });
   assert.equal(existsSync(p.stateDir), false);
+  const refused = await cli("run", "--until-idle");
+  assert.equal(refused.code, 1);
+  assert.equal(existsSync(p.stateDir), false, "a refused run writes nothing");
+
+  seedReadiness(p, ["0101"]);
   const r = await cli("run", "--until-idle");
   assert.equal(r.code, 0, r.err.join("\n"));
   const rec = loadState(p.stateDir).plans["0101"];
@@ -920,4 +950,63 @@ test("resume while a run is live leaves an ask for it rather than writing the re
     readFileSync(statePaths(p.stateDir).resumeAsks, "utf8").trim().split("\n").map((l) => JSON.parse(l).plan),
     ["0101"],
   );
+});
+
+// ADR-0016: readiness runs against main before a plan is queued, in a worktree that does not outlive it.
+test("ready on a plan the check parks exits 1 naming the phase and detail, and leaves no record and no worktree", async () => {
+  const { repo, p, cli } = setup([{ number: "0101", phases: [dev("1"), dev("2")] }], { a: [] }, { ready: false, spec: { "0101": { readiness: "plan_wrong" } } });
+  const worktrees = sh(["worktree", "list"], repo);
+  const r = await cli("ready", "0101");
+  assert.equal(r.code, 1);
+  assert.equal(r.err[0], "conductor: plan 0101 is not ready (plan_wrong) at Phase 1: Phase 1's What and Done when name different stages");
+  assert.match(r.err[1], /^read: .*0101-01-readiness\.jsonl$/);
+  const rec = loadState(p.stateDir).plans["0101"];
+  assert.equal(rec.readiness, undefined);
+  assert.deepEqual(rec.steps.map((s) => s.kind), ["readiness"], "the step and its spend are recorded like any other");
+  assert.equal(rec.steps[0].result.spendUsd, 0.3);
+  assert.equal(sh(["worktree", "list"], repo), worktrees);
+});
+
+test("ready on a plan the check passes records the contract hash and main's tip, and leaves no worktree", async () => {
+  const { repo, p, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: [] }, { ready: false });
+  const worktrees = sh(["worktree", "list"], repo);
+  const r = await cli("ready", "0101");
+  assert.equal(r.code, 0, r.err.join("\n"));
+  const main = sh(["rev-parse", "main"], repo);
+  assert.deepEqual(r.out, [`conductor: plan 0101 is ready against main ${main.slice(0, 7)}; \`run\` takes it once it is approved and queued`]);
+  const { readiness } = loadState(p.stateDir).plans["0101"];
+  assert.equal(readiness.hash, planContractHash(readFileSync(join(repo, "docs", "plans", "0101-fixture.md"), "utf8")));
+  assert.equal(readiness.main, main);
+  assert.equal(sh(["worktree", "list"], repo), worktrees);
+});
+
+test("check refuses a queued, unstarted plan with no readiness record, passes after ready, and refuses again after a phase edit", async () => {
+  const { repo, p, cli } = setup(
+    [
+      { number: "0101", phases: [dev("1")] },
+      { number: "0102", phases: [dev("1"), human("2")] },
+    ],
+    { a: ["0101", "0102"] },
+    { ready: false },
+  );
+  // 0102 has an implement step, so it is past the gate whatever its record says.
+  const state = loadState(p.stateDir);
+  planRecord(state, "0102").steps.push({ kind: "implement", owner: "dev", started: "2026-09-30T00:00:00.000Z", ended: "2026-09-30T00:01:00.000Z", result: { status: "ok" } });
+  saveState(p.stateDir, state);
+
+  const refused = await cli("check");
+  assert.equal(refused.code, 1);
+  assert.deepEqual(refused.err, ["conductor: plan 0101: queued with no readiness check; run `node tools/conductor/conductor.mjs ready 0101` first (ADR-0016)"]);
+
+  assert.equal((await cli("ready", "0101")).code, 0);
+  const passed = await cli("check");
+  assert.equal(passed.code, 0, passed.err.join("\n"));
+
+  const planPath = join(repo, "docs", "plans", "0101-fixture.md");
+  writeFileSync(planPath, readFileSync(planPath, "utf8").replace("- **What:** phase 1.", "- **What:** phase 1, and a second output."));
+  sh(["commit", "-q", "-am", "docs(plans): edit Phase 1"], repo);
+  const stale = await cli("check");
+  assert.equal(stale.code, 1);
+  assert.equal(stale.err.length, 1);
+  assert.match(stale.err[0], /^conductor: plan 0101: its phases changed since the readiness check of .+; run `node tools\/conductor\/conductor\.mjs ready 0101` again \(ADR-0016\)$/);
 });

@@ -5,6 +5,7 @@
 // pushes. Every judgement it cannot make parks the plan. `run` is resident (ADR-0250): it lasts until
 // `pause`, `abort` or Ctrl+C, and `--until-idle` ends it once no lane can move.
 //
+//   node tools/conductor/conductor.mjs ready NNNN
 //   node tools/conductor/conductor.mjs run [--lane a|b] [--once | --until-idle]
 //   node tools/conductor/conductor.mjs status
 //   node tools/conductor/conductor.mjs digest [--history]
@@ -30,9 +31,10 @@ import { adoptedClose, verifyClose } from "./lib/close.mjs";
 import { settledPark, writeDigest, writeHistory } from "./lib/digest.mjs";
 import { currentBranch, head } from "./lib/git.mjs";
 import { appendPark, dirtyWorktree } from "./lib/inbox.mjs";
-import { parkStillTrue, runLanes } from "./lib/lane.mjs";
+import { parkStillTrue, readyOnMain, runLanes } from "./lib/lane.mjs";
 import { ascii } from "./lib/live.mjs";
 import { pidAlive } from "./lib/locks.mjs";
+import { findPlan } from "./lib/plan.mjs";
 import { loadLocal, loadQueue, pruneQueue, readQueue, startedPlans } from "./lib/queue.mjs";
 import { changedSources, clearSources, recordSources, sourceDigest, staleLine, staleSince } from "./lib/sources.mjs";
 import {
@@ -47,6 +49,7 @@ import {
   findingWhere,
   loadState,
   pauseAsk,
+  planContractHash,
   planRecord,
   recoverInterrupted,
   saveState,
@@ -112,6 +115,16 @@ export function claudeVersion(claude) {
  * `claude` overrides local.json's command vector (tests pass the fake).
  */
 export function preflight(p = paths(), { claude } = {}) {
+  const { errors, warnings, local, command, cli } = sessionPreflight(p, { claude });
+  const state = loadState(p.stateDir);
+  const queue = loadQueue(p.queue, p.repo, startedPlans(state));
+  errors.push(...queue.errors);
+  errors.push(...readinessErrors(p, queue, state));
+  return { errors, warnings, notices: queue.notices ?? [], local, queue, state, claude: command, cli };
+}
+
+/** What any command that starts a session needs: a valid local.json and a CLI it may run. */
+function sessionPreflight(p, { claude } = {}) {
   const errors = [];
   const warnings = [];
   const { errors: localErrors, local } = loadLocal(p.local);
@@ -126,10 +139,29 @@ export function preflight(p = paths(), { claude } = {}) {
     if (verdict.warning) warnings.push(verdict.warning);
     cli = { version: v.version, warning: verdict.warning ?? null };
   }
-  const state = loadState(p.stateDir);
-  const queue = loadQueue(p.queue, p.repo, startedPlans(state));
-  errors.push(...queue.errors);
-  return { errors, warnings, notices: queue.notices ?? [], local, queue, state, claude: command, cli };
+  return { errors, warnings, local, command, cli };
+}
+
+/**
+ * The queue-time readiness gate (ADR-0016): every queued plan that has no implement step yet needs a
+ * readiness record whose hash matches the plan's contract as it stands in the main checkout. A plan
+ * that has started implementing is past the gate; the lane's own readiness check covers it.
+ */
+export function readinessErrors(p, queue, state) {
+  const errors = [];
+  for (const plan of Object.keys(queue.plans ?? {}).sort()) {
+    const found = findPlan(p.repo, plan);
+    if (!found || found.done) continue;
+    const rec = state.plans[plan];
+    if (rec?.steps?.some((s) => s.kind === "implement")) continue;
+    const command = `node tools/conductor/conductor.mjs ready ${plan}`;
+    if (!rec?.readiness) {
+      errors.push(`plan ${plan}: queued with no readiness check; run \`${command}\` first (ADR-0016)`);
+    } else if (rec.readiness.hash !== planContractHash(readFileSync(found.path, "utf8"))) {
+      errors.push(`plan ${plan}: its phases changed since the readiness check of ${rec.readiness.at}; run \`${command}\` again (ADR-0016)`);
+    }
+  }
+  return errors;
 }
 
 const pidFile = (p) => join(p.stateDir, "conductor.pid");
@@ -184,6 +216,54 @@ export function eventLine(name, d) {
 
 const minutes = (iso) => (iso ? `${Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000))} min` : "?");
 const isPlan = (s) => /^\d{4}$/.test(s ?? "");
+
+/**
+ * `ready NNNN` (ADR-0016): the readiness session against `main`, in a worktree removed after it. It
+ * writes the plan's record, so a live run, which rewrites the record whole, refuses it.
+ */
+async function cmdReady(args, o) {
+  const p = o.p;
+  const [plan] = args;
+  if (!isPlan(plan)) {
+    o.err("usage: conductor.mjs ready NNNN");
+    return 2;
+  }
+  if (runningPid(p)) {
+    o.err("conductor: a run is in progress and would overwrite the record; run `ready` after it ends, or `abort` it first");
+    return 1;
+  }
+  const pf = sessionPreflight(p, { claude: o.claude });
+  if (pf.errors.length) {
+    for (const e of pf.errors) o.err(`conductor: ${e}`);
+    return 1;
+  }
+  for (const w of pf.warnings) o.err(`conductor: warning: ${w}`);
+  const state = loadState(p.stateDir);
+  const ctx = {
+    repo: p.repo,
+    worktreeRoot: o.worktreeRoot ?? p.worktreeRoot,
+    stateDir: p.stateDir,
+    promptsDir: p.prompts,
+    settingsFile: p.settings,
+    claude: pf.command,
+    local: pf.local,
+    queue: loadQueue(p.queue, p.repo, startedPlans(state)),
+    state,
+    onChange: () => regenerate(p, state),
+  };
+  const r = await readyOnMain(ctx, plan);
+  if (r.error) {
+    o.err(`conductor: ${r.error}`);
+    return 1;
+  }
+  if (r.park) {
+    o.err(`conductor: plan ${plan} is not ready (${r.park.reason})${r.park.phase ? ` at Phase ${r.park.phase}` : ""}: ${r.park.detail}`);
+    if (r.park.read) o.err(`read: ${r.park.read}`);
+    return 1;
+  }
+  o.log(`conductor: plan ${plan} is ready against main ${r.record.main.slice(0, 7)}; \`run\` takes it once it is approved and queued`);
+  return 0;
+}
 
 async function cmdRun(args, o) {
   const p = o.p;
@@ -673,7 +753,7 @@ function cmdPrune(args, o) {
   return 0;
 }
 
-const COMMANDS = { run: cmdRun, status: cmdStatus, digest: cmdDigest, resume: cmdResume, park: cmdPark, finding: cmdFinding, "adopt-close": cmdAdoptClose, pause: cmdPause, abort: cmdAbort, prune: cmdPrune, check: cmdCheck };
+const COMMANDS = { ready: cmdReady, run: cmdRun, status: cmdStatus, digest: cmdDigest, resume: cmdResume, park: cmdPark, finding: cmdFinding, "adopt-close": cmdAdoptClose, pause: cmdPause, abort: cmdAbort, prune: cmdPrune, check: cmdCheck };
 
 /**
  * `overrides` exists for tests: { p, claude, gate, laneInstall, worktreeRoot, lockDir, lockPollMs,
@@ -690,7 +770,7 @@ export async function main(argv, overrides = {}) {
   const fn = COMMANDS[command];
   if (!fn) {
     o.err(
-      "usage: node tools/conductor/conductor.mjs run [--lane a|b] [--once | --until-idle] | status | digest [--history] | " +
+      "usage: node tools/conductor/conductor.mjs ready NNNN | run [--lane a|b] [--once | --until-idle] | status | digest [--history] | " +
         `resume NNNN | park NNNN | finding NNNN [<ref> --${FINDING_VERBS.join("|--")} <reason>] | adopt-close NNNN | pause [--off] | abort | prune | check`,
     );
     return 2;

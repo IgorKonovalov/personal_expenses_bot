@@ -1,6 +1,6 @@
 # 0010: Conductor followups: readiness at queue time, main before readiness, resume and idle fixes
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0016](../adrs/0016-readiness-runs-before-a-plan-is-queued.md), ADR-0010, ADR-0013
 
@@ -211,13 +211,20 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: `ready NNNN` and the preflight gate | dev | not started | |
+| 1: `ready NNNN` and the preflight gate | dev | done | committed with this row |
 | 2: merge main before readiness | dev | not started | |
 | 3: resume wording, idle takes asks | dev | not started | |
 | 4: operator docs and prompts | dev | not started | |
 | 5: stop pinning tests to live data | dev | not started | |
 
 ### Notes
+
+- Phase 1: the gate made `run` refuse the existing fixtures that queue a plan with no readiness
+  record. `test/queue.test.mjs` and `test/live.test.mjs` (outside Files touched, approved by the
+  owner) now seed one, and so does `test/cli.test.mjs`'s setup. As a result, `live.test.mjs`'s step
+  labels read `implement-01` and one `cli.test.mjs` step list has no lane readiness step.
+- Phase 1: `ready` refuses while a run is live, as `park` and `finding` do, because the live run
+  rewrites the record whole.
 
 ### Close triggers
 

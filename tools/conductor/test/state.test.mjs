@@ -12,6 +12,7 @@ import {
   completedSteps,
   endStep,
   loadState,
+  planContractHash,
   recoverInterrupted,
   saveState,
   startStep,
@@ -84,4 +85,13 @@ test("endStep records the result and the end time", () => {
   const again = loadState(dir).plans["0102"].steps[0];
   assert.ok(again.ended);
   assert.equal(again.result.reason, "budget");
+});
+
+test("the contract hash ignores the Status line and the log, and not a Files touched line", () => {
+  const plan = (status, files) =>
+    [`# 0101: A plan`, "", `> **Status:** ${status}`, "", "### Phase 1: One", "- **Owner skill:** dev", `- **Files touched:** ${files}`, "", "## Implementation log", "", "| 1: One | dev | done | |", ""].join("\n");
+  const drafted = planContractHash(plan("draft", "`src/a.ts`"));
+  assert.equal(planContractHash(plan("approved (2026-09-30)", "`src/a.ts`")), drafted);
+  assert.equal(planContractHash(plan("draft", "`src/a.ts`").replace("| done |", "| not started |")), drafted);
+  assert.notEqual(planContractHash(plan("draft", "`src/a.ts`, `src/b.ts`")), drafted);
 });

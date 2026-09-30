@@ -232,8 +232,7 @@ function readTail(path) {
  * `## Implementation log` row reads done after it. `stop()` takes one last look, so a commit made
  * just before the session ended is still printed before its end line.
  */
-function watchCommits(ctx, rec, plan) {
-  const wt = rec.worktree;
+function watchCommits(ctx, wt, plan) {
   const base = head(wt);
   const seen = new Set();
   const donePrinted = new Set();
@@ -620,33 +619,80 @@ async function mergeMain(ctx, rec, where) {
 }
 
 /**
- * The readiness check (ADR-0248): a read-only architect session that reads the plan against itself
- * and the tree before any implementation spend, and ends `ready` or parks `plan_wrong`. It runs before
- * the plan's first implement session, and again only when the plan's contract (planContractHash) has
- * changed since a `ready`: a park is never remembered as passing, so a plan resumed after one is read
- * again. A plan with implement steps and no readiness record predates the check and is not stopped
- * for it. Returns a park, or null.
+ * One readiness session (ADR-0248) on `file` in `cwd`: a read-only architect session that reads the
+ * plan against itself and the tree, and ends `ready` or parks `plan_wrong`. Returns a park, or null
+ * when it ended `ready` having left HEAD and the tree exactly as it found them. The lane runs it in
+ * its worktree; `ready NNNN` runs it in a detached worktree of `main` (readyOnMain).
+ */
+export async function readinessSession(ctx, rec, { cwd, file, branch }) {
+  const before = head(cwd);
+  const r = await session(ctx, rec, "readiness", {
+    owner: "architect",
+    prompt: `/architect conductor readiness plan ${rec.plan}`,
+    vars: { plan: rec.plan, plan_file: file.rel, lane: cwd, branch, settings: ctx.settingsFile },
+    budget: ctx.local.budget_usd.readiness,
+    cwd: cwd === rec.worktree ? null : cwd,
+  });
+  if (r.status === "parked") return { reason: r.reason, detail: r.detail, phase: r.outcome?.phase ?? null, read: r.transcript, resetsAt: r.resetsAt };
+  if (r.outcome.kind !== "ready") return { reason: "disagreement", detail: `readiness returned a ${r.outcome.kind} outcome`, read: r.transcript };
+  if (head(cwd) !== before || !isClean(cwd)) {
+    const where = cwd === rec.worktree ? "the lane" : "its worktree of main";
+    return { reason: "disagreement", detail: `the readiness session changed ${where}; it reads and changes nothing`, read: r.transcript };
+  }
+  return null;
+}
+
+/**
+ * The lane's readiness check: it runs before the plan's first implement session, and again only
+ * when the plan's contract (planContractHash) has changed since a `ready`. A park is never
+ * remembered as passing, so a plan resumed after one is read again. A plan with implement steps and
+ * no readiness record predates the check and is not stopped for it. Returns a park, or null.
  */
 async function readiness(ctx, rec, file) {
   const hash = planContractHash(readFileSync(file.path, "utf8"));
   if (rec.readiness?.hash === hash) return null;
   if (!rec.readiness && rec.steps.some((s) => s.kind === "implement")) return null;
-  const wt = rec.worktree;
-  const before = head(wt);
-  const r = await session(ctx, rec, "readiness", {
-    owner: "architect",
-    prompt: `/architect conductor readiness plan ${rec.plan}`,
-    vars: { plan: rec.plan, plan_file: file.rel, lane: wt, branch: rec.branch, settings: ctx.settingsFile },
-    budget: ctx.local.budget_usd.readiness,
-  });
-  if (r.status === "parked") return { reason: r.reason, detail: r.detail, phase: r.outcome?.phase ?? null, read: r.transcript, resetsAt: r.resetsAt };
-  if (r.outcome.kind !== "ready") return { reason: "disagreement", detail: `readiness returned a ${r.outcome.kind} outcome`, read: r.transcript };
-  if (head(wt) !== before || !isClean(wt)) {
-    return { reason: "disagreement", detail: "the readiness session changed the lane; it reads and changes nothing", read: r.transcript };
-  }
+  const parked = await readinessSession(ctx, rec, { cwd: rec.worktree, file, branch: rec.branch });
+  if (parked) return parked;
   rec.readiness = { hash, at: now() };
   save(ctx);
   return null;
+}
+
+/**
+ * `ready NNNN` (ADR-0016): the readiness session against `main`, before the plan is queued, in a
+ * detached worktree of `main` that is removed whatever the session ends on. A `ready` records
+ * { hash, main, at } on the plan's record; a park records none and drops any older record, since a
+ * verdict that no longer holds is not one `run` may start on. Returns { record } or { park }, or
+ * { error } when the check could not start.
+ */
+export async function readyOnMain(ctx, plan) {
+  const mainTip = resolveCommit("main", ctx.repo);
+  if (!mainTip) return { error: `the repository ${ctx.repo} has no main branch` };
+  const wt = join(ctx.worktreeRoot, `${project.lanePrefix}${plan}-ready`);
+  // A worktree of this name is only ever this command's, left behind by one that was killed.
+  if (existsSync(wt)) git(["worktree", "remove", "--force", wt], ctx.repo);
+  git(["worktree", "prune"], ctx.repo);
+  const add = git(["worktree", "add", "--detach", wt, mainTip], ctx.repo);
+  if (add.code !== 0) return { error: `git worktree add --detach ${wt} main: ${add.stderr}` };
+  try {
+    const file = planFileIn(wt, plan);
+    if (!file) return { error: `plan ${plan} is not on main (${mainTip.slice(0, 7)})` };
+    if (file.done) return { error: `plan ${plan} is already under docs/plans/done/ on main` };
+    const rec = planRecord(ctx.state, plan);
+    const parked = await readinessSession(ctx, rec, { cwd: wt, file, branch: `main (detached at ${mainTip.slice(0, 7)})` });
+    if (parked) {
+      delete rec.readiness;
+      save(ctx);
+      return { park: parked };
+    }
+    rec.readiness = { hash: planContractHash(readFileSync(file.path, "utf8")), main: mainTip, at: now() };
+    save(ctx);
+    return { record: rec.readiness };
+  } finally {
+    git(["worktree", "remove", "--force", wt], ctx.repo);
+    git(["worktree", "prune"], ctx.repo);
+  }
 }
 
 function planFileIn(cwd, plan) {
@@ -675,27 +721,35 @@ function cliRefusal(ctx, rec) {
   return null;
 }
 
-async function session(ctx, rec, kind, { owner, prompt, vars, budget, addDirs = [], info = {} }) {
+/**
+ * One headless session for `rec`, recorded as a step. It runs in the plan's lane, or in `cwd` when
+ * given, which is a worktree outside any lane: no lane record then names the step.
+ */
+async function session(ctx, rec, kind, { owner, prompt, vars, budget, addDirs = [], info = {}, cwd = null }) {
   const refused = cliRefusal(ctx, rec);
   if (refused) return refused;
+  const wt = cwd ?? rec.worktree;
+  const setLaneStep = (value) => {
+    if (!cwd) ctx.state.lanes[rec.lane] = value;
+  };
   const paths = statePaths(ctx.stateDir);
   const label = `${rec.plan}-${String(rec.steps.length + 1).padStart(2, "0")}-${kind}`;
   const appendPromptFile = renderPromptFile(join(ctx.promptsDir, `${kind}.md`), vars, join(paths.prompts, `${label}.md`));
   const entry = startStep(ctx.stateDir, ctx.state, rec.plan, { kind, owner, label, ...info });
-  ctx.state.lanes[rec.lane] = { plan: rec.plan, step: label, stepStarted: entry.started };
+  setLaneStep({ plan: rec.plan, step: label, stepStarted: entry.started });
   save(ctx);
   event(ctx, `${kind}-step`, { plan: rec.plan, label });
   live(ctx, rec.plan, stepStartBody({ label, kind, owner, phases: info.phases, round: info.round }));
   // The hook appends to a file in this directory; the file itself must not exist until a hook ran.
   mkdirSync(join(ctx.stateDir, "hooks"), { recursive: true });
   const reader = streamReader({ readOutput: ctx.readOutput ?? readTail, shared: (ctx.liveShared ??= {}) });
-  const watch = watchCommits(ctx, rec, rec.plan);
+  const watch = watchCommits(ctx, wt, rec.plan);
   const t0 = Date.now();
   const segment = (n, resume) =>
     runStep({
       onStreamEvent: ctx.live ? (e) => reader.lines(e).forEach((body) => live(ctx, rec.plan, body)) : undefined,
       claude: ctx.claude,
-      cwd: rec.worktree,
+      cwd: wt,
       prompt: resume ? RESUME_PROMPT : prompt,
       resume,
       settingsFile: ctx.settingsFile,
@@ -721,12 +775,12 @@ async function session(ctx, rec, kind, { owner, prompt, vars, budget, addDirs = 
     const waitMs = Math.max(0, result.resetsAt * 1000 - Date.now()) + (ctx.usageMarginMs ?? USAGE_MARGIN_MS);
     const until = new Date(Date.now() + waitMs);
     waits.push({ transcript: result.transcript, resetsAt: result.resetsAt, waitedMs: waitMs, at: now() });
-    ctx.state.lanes[rec.lane] = { ...ctx.state.lanes[rec.lane], waitingUntil: until.toISOString() };
+    setLaneStep({ ...ctx.state.lanes[rec.lane], waitingUntil: until.toISOString() });
     save(ctx);
     live(ctx, rec.plan, `  usage  limit reached; waiting ${Math.round(waitMs / 60000)} min, until ${until.toISOString().slice(11, 16)} UTC, then continuing the session`);
     event(ctx, "usage-wait", { plan: rec.plan, label, until: until.toISOString() });
     await (ctx.sleep ?? sleep)(waitMs);
-    ctx.state.lanes[rec.lane] = { plan: rec.plan, step: label, stepStarted: entry.started };
+    setLaneStep({ plan: rec.plan, step: label, stepStarted: entry.started });
     save(ctx);
     result = await segment(waits.length, result.sessionId);
     turns += result.numTurns ?? 0;
@@ -735,7 +789,7 @@ async function session(ctx, rec, kind, { owner, prompt, vars, budget, addDirs = 
   watch.stop();
   live(ctx, rec.plan, stepEndBody({ label, result, ms: Date.now() - t0 }));
   endStep(ctx.stateDir, ctx.state, entry, result);
-  ctx.state.lanes[rec.lane] = { plan: rec.plan, step: null };
+  setLaneStep({ plan: rec.plan, step: null });
   save(ctx);
   return result;
 }

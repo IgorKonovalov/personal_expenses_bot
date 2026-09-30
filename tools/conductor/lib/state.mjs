@@ -253,10 +253,14 @@ export function adoptClose(rec, adopted, headSha, at = new Date().toISOString())
  * What a readiness verdict is keyed on (ADR-0248): the plan's text above its `## Implementation log`,
  * which is the contract a readiness session read. The log below it changes with every phase commit,
  * so hashing the whole file would re-run readiness on every resume; an edit to a phase is what makes
- * the old verdict stale.
+ * the old verdict stale. The `> **Status:**` line is left out too (ADR-0016): a plan checked as
+ * `draft` stays checked once it reads `approved`, and `in-progress` once a lane starts it.
  */
 export function planContractHash(text) {
-  const contract = text.replace(/\r\n/g, "\n").split(/^## Implementation log\s*$/m)[0];
+  const contract = text
+    .replace(/\r\n/g, "\n")
+    .split(/^## Implementation log\s*$/m)[0]
+    .replace(/^> \*\*Status:\*\*.*$/m, "");
   return createHash("sha1").update(contract).digest("hex");
 }
 

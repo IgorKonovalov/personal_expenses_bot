@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import { VERIFIED_CLI, paths, preflight } from "../conductor.mjs";
 import { loadLocal, pruneQueue, validateQueue } from "../lib/queue.mjs";
+import { emptyState, planContractHash, planRecord, saveState } from "../lib/state.mjs";
 import { FAKE, TOOL_DIR, tmp, writePlan } from "./helpers.mjs";
 
 const dev = (id) => ({ id, owner: "dev" });
@@ -119,7 +120,13 @@ function scratchTool({ local, version }) {
   writeFileSync(join(toolDir, "queue.json"), JSON.stringify({ lanes: { a: ["0101"] } }));
   if (local) writeFileSync(join(toolDir, "local.json"), JSON.stringify(local));
   process.env.FAKE_CLAUDE_VERSION = version;
-  return paths({ repo, toolDir });
+  const p = paths({ repo, toolDir });
+  // What `ready 0101` leaves, so the queue passes the readiness gate (ADR-0016).
+  const state = emptyState();
+  const text = readFileSync(join(repo, "docs", "plans", "0101-fixture.md"), "utf8");
+  planRecord(state, "0101").readiness = { hash: planContractHash(text), main: null, at: "2026-09-30T00:00:00.000Z" };
+  saveState(p.stateDir, state);
+  return p;
 }
 
 const LOCAL = { budget_usd: { readiness: 1, implement: 5, fix: 3, review: 4, close: 3, merge: 2, repair: 3 }, run_budget_usd: 60, max_open_worktrees: 3 };
