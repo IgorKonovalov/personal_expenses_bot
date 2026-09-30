@@ -1,10 +1,10 @@
 # 0003: Categories: preset per ledger, suggestion from history, change and manage
 
-> **Status:** in-progress
+> **Status:** done (2026-09-30): built as planned after one fix round; the `/help` copy for categories (round 2 m1) is left open. v0.3.0
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: `src/bot/handlers/card.ts` (Plan 0007's card builder) added to Phases 1 and 2, `src/bot/bot.ts` to Phase 2 (conductor readiness park)
-> **Depends on:** [Plan 0007](done/0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
+> **Related ADRs:** [ADR-0002](../../adrs/0002-ledgers-and-identity.md), [ADR-0007](../../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../../adrs/0011-navigation-model.md), [ADR-0012](../../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
@@ -309,4 +309,159 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
   0, 23 files, 266 tests passed; `node scripts/check-doc-links.mjs` exit 0, 82 links resolve.
 - **Outstanding `human` phases:** none
 
+## Close review
+
+The round 2 review, in full (headings demoted one level):
+
+### Plan 0003 close review, round 2
+
+Reviewed at `7aa39e92477e173bdacce79b76f0605d98b0419b` on `plan-0003-categories`.
+
+**Verdict:** The round 1 major is fixed, and a test that fails on the old ordering now defends
+it. Plan 0003 has no blockers and no majors. Three minors remain, and a close session can settle
+them: the `/help` copy carried over from round 1, a stale implementation log, and a migration
+number that the next queued plan also claims.
+
+#### Gate (run by the reviewer at the tip)
+
+| command | result |
+|---|---|
+| `pnpm typecheck` | exit 0 |
+| `pnpm lint` | exit 0 |
+| `pnpm test` | exit 0: 23 files, 266 tests passed |
+| `node scripts/check-doc-links.mjs` | exit 0: 82 relative links resolve |
+
+After the run `git status --short` is empty and `HEAD` is still the tip above.
+
+#### Alignment
+
+- Round 1 read the assertions of every test the plan names (see `0003-round-1.md`,
+  "Alignment"). The fix commits touch only `src/db/expenses.test.ts`,
+  `src/services/changeCategory.test.ts` and `src/db/connection.test.ts` among the tests. I
+  re-read those three:
+  - `src/services/changeCategory.test.ts:178-190` (new) covers the round 1 scenario exactly.
+    `450 кофе` at minute 0 and `100 кофе` at minute 1 are both filed under Кафе и рестораны. The
+    older one then changes to Продукты at minute 2, and `200 кофе` at minute 3 must be Продукты.
+    Under the old `ORDER BY e.created_at DESC`, the minute-1 row would win and the test would
+    fail. The assertion therefore defends ADR-0008's "the corrected expense becomes the most
+    recent match".
+  - `src/services/changeCategory.test.ts:158-176`: the plan's Phase 2 learning sequence
+    (undo skipped, second ledger independent) is unchanged apart from the new `now` argument.
+  - `src/db/expenses.test.ts:165-174`: `setExpenseCategory` stamps `category_set_at` with the
+    time it was passed. A no-op repeat and a deleted row write nothing, and the assertion reads
+    the column.
+  - `src/db/connection.test.ts:36,45`: the migration list now includes `0004`.
+- The fix itself (`ce14240`):
+  - `src/db/migrations/0004_expense_category_set_at.sql` adds `category_set_at TEXT`.
+    `insertExpenseOrGetExisting` writes it as `created_at` when a category is set
+    (`src/db/expenses.ts:100`). `setExpenseCategory` writes the injected `now`
+    (`src/db/expenses.ts:165-178`).
+  - `findHistoryCategory` orders by `COALESCE(e.category_set_at, e.created_at) DESC, e.rowid DESC`
+    (`src/db/expenses.ts:155`). Both columns hold `toISOString()` output, so they compare
+    lexically in time order.
+  - The clock is injected: `deps.now()` is read in the handler (`src/bot/handlers/category.ts:79`)
+    and passed down, and there is no `new Date()` in the domain or the service.
+  - The migration is a new file, not an edit to `0002`, as round 1 advised.
+- No ADR is silently reversed. With this fix, ADR-0008's Decision matches the code.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+**m1. `/help` still doesn't mention categories, `/categories` or `/cancel` (carried from round 1).**
+
+- **What:** The fix round didn't address round 1's m1. `messages.help` lists only recording,
+  `📊 Сегодня` and `❓ Помощь`.
+- **Where:** `src/bot/messages.ts:84-92`.
+- **Why it matters:**
+  - Mode 4 lens 4 requires the `/help` text to follow any command change the user can observe.
+  - `/categories` has no menu button, so outside Telegram's `/` list, `/help` is the only way to
+    find it from inside the chat.
+- **Suggested fix (dev):** Add `html\`/categories — категории: добавить, переименовать, скрыть\``
+  to the `joinHtml` list. Optionally add a line saying that [Категория] under a confirmation
+  changes it. Then update the tests that pin the help text (`src/bot/bot.test.ts`, the `/help`
+  reply assertion) to the new copy.
+
+**m2. The implementation log contradicts the fixed code.**
+
+- **What:**
+  - The Phase 2 note still says a change doesn't move the corrected expense to the front, and
+    that "There is no column recording when a category was set". After `ce14240`, both claims
+    are false.
+  - The close triggers list the schema migrations as `0002` and `0003` only. They leave out
+    `0004_expense_category_set_at.sql`.
+  - The "Gate at the tip" line reports `2805ed9` with 265 tests. At this tip the count is 266.
+- **Where:** `docs/plans/0003-categories.md:272-276` (Phase 2 note) and `:310-313` (close
+  triggers).
+- **Why it matters:** The plan moves to `done/` as the record of what shipped. A reader of the
+  log would conclude that ADR-0008's rule is unmet, and a future plan would miss migration 0004.
+  Round 1 asked for the note to be deleted or reworded.
+- **Suggested fix (dev):**
+  - Delete the Phase 2 note at lines 272-276. The fix-round note at line 299 already records
+    what changed.
+  - Change the close triggers to "Schema migrations `0002_categories.sql`,
+    `0003_flow_sessions.sql` and `0004_expense_category_set_at.sql`".
+  - Refresh the gate line to the new tip and its counts.
+
+**m3. Migration number `0004` is now taken, and the queued Plan 0004 also plans a `0004`.**
+
+- **What:** Plan 0004 Phase 3 names `src/db/migrations/0004_expense_updated_at.sql`, and its
+  data-shapes block is labelled `0004_expense_updated_at.sql`. `runMigrations` keys a migration
+  by the first four characters of its filename (`src/db/migrate.ts:28,34`), and
+  `schema_migrations.version` is the primary key.
+- **Where:** `docs/plans/0004-dates-edit-summaries.md:157` and `:195`. The collision comes from
+  `src/db/migrations/0004_expense_category_set_at.sql`.
+- **Why it matters:** If Plan 0004 is implemented as written:
+  - On a database that has already applied this plan's `0004`, its migration is skipped
+    silently as already applied, so `updated_at` never exists.
+  - On a fresh database, the second `0004` insert violates the primary key and boot fails.
+  - Plan 0004 is approved and follows this plan in the chain.
+- **Suggested fix (architect, at close):** Amend Plan 0004 to name
+  `0005_expense_updated_at.sql` in both places, with an `Amended:` line citing this review. The
+  code of Plan 0003 needs no change.
+
+##### nit
+
+None.
+
+#### Bookkeeping owed at close
+
+- Apply m3's amendment to Plan 0004. If a dev fix round runs, it resolves m1 and m2 first.
+- Accept ADR-0008 and ADR-0009 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`. The
+  code now implements ADR-0008 as written, so no `## Outcome` is needed for the history rule.
+- Flip Plan 0003 to `done` and `git mv` it to `docs/plans/done/`. Repair the inbound links from
+  ADR-0007, ADR-0008, ADR-0009, ADR-0011 and the plans index, and the plan's outbound `../adrs/`
+  and `done/0007-…` links, which become `../../adrs/` and `0007-…`. Re-run
+  `node scripts/check-doc-links.mjs`.
+- Refresh `docs/plans/README.md` (move the row to recently closed, bump the next free number).
+- Version: a **minor** bump, because this is a feature plan. Update `package.json` and add a
+  `CHANGELOG.md` entry listing `/categories`, `/cancel`, the category on the confirmation, the
+  picker, and learning from a correction.
+- `CLAUDE.md` "Where things live" still matches the tree. `.env.example` needs no change,
+  because the plan adds no config keys.
+
+### Close session
+
+- Round 2 m1 (`/help` copy, `src/bot/messages.ts`) is code and stays open for a later fix.
+- Round 2 m2 (stale implementation log) fixed in 8132736.
+- Round 2 m3 (Plan 0004 migration number) fixed in 486e5b5: Plan 0004 now names
+  `0005_expense_updated_at.sql`.
+- ADR-0007, ADR-0008 and ADR-0009 accepted. The plans index's next free number stays `0008`,
+  because closing a plan allocates no number.
+
+### Earlier rounds
+
+- Round 1 finding 0 (major: the history step ignored a correction on an older expense) resolved
+  in ce14240.
+
 ## Followups
+
+- `/help` names categories, `/categories` and `/cancel` (round 2 m1).

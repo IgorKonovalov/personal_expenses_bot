@@ -1,8 +1,8 @@
 # ADR-0007: Categories belong to ledgers, seeded from a preset and editable
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0003](../plans/0003-categories.md)
+> **Related plan(s):** [Plan 0003](../plans/done/0003-categories.md)
 
 ## Context
 

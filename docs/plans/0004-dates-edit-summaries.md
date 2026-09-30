@@ -3,7 +3,7 @@
 > **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: the `updated_at` migration renumbered `0004` → `0005`, because Plan 0003's fix round took `0004_expense_category_set_at.sql` (Plan 0003 close review, round 2, m3)
-> **Depends on:** [Plan 0007](done/0007-navigation-shell.md), [Plan 0003](0003-categories.md) (screen kit, flow sessions, list pager)
+> **Depends on:** [Plan 0007](done/0007-navigation-shell.md), [Plan 0003](done/0003-categories.md) (screen kit, flow sessions, list pager)
 > **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR

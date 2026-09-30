@@ -2,6 +2,16 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.3.0 (2026-09-30)
+
+From Plan 0003 (categories).
+
+- Every new expense gets a category, shown at the end of the confirmation. It comes from what
+  you chose before for the same description, then from keywords, then «Другое».
+- [Категория] under a confirmation opens a paged picker. The choice is remembered for next time.
+- `/categories` adds, renames and hides categories in each ledger. `/cancel` stops a pending
+  question.
+
 ## 0.2.0 (2026-09-30)
 
 From Plan 0007 (navigation shell).

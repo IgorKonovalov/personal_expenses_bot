@@ -1,8 +1,8 @@
 # ADR-0008: Suggest a category from the ledger's history, then keyword rules, then «Другое»
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0003](../plans/0003-categories.md)
+> **Related plan(s):** [Plan 0003](../plans/done/0003-categories.md)
 
 ## Context
 
