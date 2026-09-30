@@ -8,6 +8,9 @@ export interface Config {
   readonly defaultCurrency: CurrencyCode;
   readonly databasePath: string;
   readonly logLevel: Level | 'silent';
+  // Unset means no backups (local dev).
+  readonly backupDir: string | undefined;
+  readonly backupKeep: number;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -53,6 +56,11 @@ export function loadConfig(env: Env): Config {
     throw new Error(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}`);
   }
 
+  const backupKeep = optional(env, 'BACKUP_KEEP') ?? '14';
+  if (!/^[1-9]\d*$/.test(backupKeep) || !Number.isSafeInteger(Number(backupKeep))) {
+    throw new Error(`BACKUP_KEEP must be a positive whole number of daily backups to keep`);
+  }
+
   return {
     botToken,
     allowedTelegramIds,
@@ -60,6 +68,8 @@ export function loadConfig(env: Env): Config {
     defaultCurrency,
     databasePath: optional(env, 'DATABASE_PATH') ?? './data/bot.sqlite',
     logLevel,
+    backupDir: optional(env, 'BACKUP_DIR'),
+    backupKeep: Number(backupKeep),
   };
 }
 

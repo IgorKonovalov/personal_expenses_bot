@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createBot, registerCommands } from './bot/bot.js';
 import { loadConfig } from './config.js';
+import { startBackups, type BackupSchedule } from './db/backup.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
@@ -15,6 +16,18 @@ const applied = runMigrations(db, new Date());
 logger.info({ node: process.version, applied }, 'migrations checked');
 const seeded = seedLedgersWithoutCategories(db, new Date());
 logger.info({ ledgers: seeded.length }, 'categories seeded');
+
+const backups: BackupSchedule | undefined =
+  config.backupDir === undefined
+    ? undefined
+    : startBackups({
+        db,
+        dir: config.backupDir,
+        keep: config.backupKeep,
+        now: () => new Date(),
+        logger,
+      });
+if (backups === undefined) logger.info('backups off: BACKUP_DIR unset');
 
 const bot = createBot({
   token: config.botToken,
@@ -36,13 +49,14 @@ const heartbeat = createHeartbeat(heartbeatPath(config.databasePath), (error) =>
   );
 });
 
-// Shutdown order: the heartbeat timer, then polling, then the DB. With nothing left on the event
-// loop the process exits 0 on its own.
+// Shutdown order: the heartbeat and backup timers, then polling and any backup in flight, then
+// the DB. With nothing left on the event loop the process exits 0 on its own.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     logger.info({ signal }, 'stopping');
     heartbeat.stop();
-    void bot.stop().finally(() => {
+    const backupSettled = backups?.stop();
+    void Promise.all([bot.stop(), backupSettled]).finally(() => {
       db.close();
       logger.info('stopped');
     });

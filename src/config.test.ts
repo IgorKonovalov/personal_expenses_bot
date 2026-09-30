@@ -17,6 +17,14 @@ describe('loadConfig', () => {
     expect(config.defaultCurrency).toBe('RSD');
     expect(config.databasePath).toBe('./data/bot.sqlite');
     expect(config.logLevel).toBe('info');
+    expect(config.backupDir).toBeUndefined();
+    expect(config.backupKeep).toBe(14);
+  });
+
+  it('reads BACKUP_DIR and BACKUP_KEEP', () => {
+    const config = loadConfig({ ...valid, BACKUP_DIR: '/var/backups/x', BACKUP_KEEP: '7' });
+    expect(config.backupDir).toBe('/var/backups/x');
+    expect(config.backupKeep).toBe(7);
   });
 
   it('names BOT_TOKEN when it is unset', () => {
@@ -36,6 +44,8 @@ describe('loadConfig', () => {
     ['DEFAULT_CURRENCY', 'XYZ'],
     ['DEFAULT_CURRENCY', 'rsd'],
     ['LOG_LEVEL', 'loud'],
+    ['BACKUP_KEEP', '0'],
+    ['BACKUP_KEEP', 'abc'],
   ])('names %s when it is invalid', (name, value) => {
     expect(() => loadConfig({ ...valid, [name]: value })).toThrow(new RegExp(name));
   });

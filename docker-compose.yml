@@ -3,9 +3,11 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    # Overrides .env: the database and the heartbeat always land on the bot-data volume.
+    # Overrides .env: the database and the heartbeat always land on the bot-data volume, and the
+    # backups in the bind-mounted host directory.
     environment:
       - DATABASE_PATH=/app/data/bot.sqlite
+      - BACKUP_DIR=/var/backups/personal-expenses-bot
     volumes:
       - bot-data:/app/data
       - ${HOST_BACKUP_DIR:-/var/backups/personal-expenses-bot}:/var/backups/personal-expenses-bot

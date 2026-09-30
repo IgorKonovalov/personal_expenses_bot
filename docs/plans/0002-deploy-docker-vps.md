@@ -216,18 +216,12 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The bot runs from a Docker image of compiled JS | dev | done | committed with this row |
-| 2: Daily SQLite backups with rotation | dev | not started | |
+| 1: The bot runs from a Docker image of compiled JS | dev | done | b71fab6 |
+| 2: Daily SQLite backups with rotation | dev | done | committed with this row |
 | 3: CI gate and deploy on push | dev | not started | |
 | 4: Provision on the VPS and first deploy | human | not started | |
 
 ### Notes
-
-> **Resume (delete when Phase 2 lands):** paused after Phase 1 for a reboot. The gate at the
-> tip is green (typecheck, lint, 272 tests). Phase 2 is not started. better-sqlite3's
-> `db.backup()` steps via `setImmediate`, so the scheduling test fakes only
-> `setInterval`/`clearInterval`/`Date`. Docker runs from the agent shell only through
-> `echo "<cmd>" | newgrp docker`, and `docker compose exec` in that pipe eats stdin.
 
 - Phase 1: base image `node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
   (multi-arch index, resolved from Docker Hub 2026-09-30). In the container: `node: "v24.21.0"`,
@@ -244,6 +238,13 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
   `docker-compose.yml`, with no Dockerfile `HEALTHCHECK`.
 - Phase 1 deviation: `tsconfig.build.json` also excludes `src/bot/testHarness.ts`; `start` runs
   `node --enable-source-maps` (ADR-0006).
+- Phase 2: host smoke of `dist/` with a fake token and a scratch `BACKUP_DIR` wrote
+  `expenses-2026-09-30.sqlite` (90112 bytes) into a new `0700` directory before the `getMe` 401.
+- Phase 2 deviation: `README.md` had no env table. The backup variables got their own table in
+  "Running in Docker"; the other variables stay documented in `.env.example`.
+- Phase 2 deviation: shutdown also clears the backup timer and waits for a backup in flight before
+  `db.close()`. Boot logs `backups off: BACKUP_DIR unset` when disabled. A rotated-out file logs
+  one `backup rotated out` line with its path.
 
 ### Close triggers
 

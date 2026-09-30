@@ -105,6 +105,17 @@ docker compose stop          # SIGTERM: heartbeat, polling, then the DB close cl
 - The container runs as uid 1000 (`node`). Backups go to the host directory `HOST_BACKUP_DIR`
   (default `/var/backups/personal-expenses-bot`), which must be owned by uid 1000.
 
+Backup settings (the full list is in [.env.example](.env.example)):
+
+| Variable          | Default                              | Meaning                                                                             |
+| ----------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `BACKUP_DIR`      | unset (no backups)                   | Where the bot writes `expenses-YYYY-MM-DD.sqlite` (UTC date) at boot and every 24 h |
+| `BACKUP_KEEP`     | `14`                                 | How many dated backup files to keep. Older ones are deleted                         |
+| `HOST_BACKUP_DIR` | `/var/backups/personal-expenses-bot` | Compose only: the host directory bind-mounted as the container's `BACKUP_DIR`       |
+
+Compose sets `BACKUP_DIR` itself. A same-day backup replaces that day's file, and a failed
+backup is logged as an `error` without stopping the bot.
+
 ## Development
 
 | Command          | What it does                                             |
