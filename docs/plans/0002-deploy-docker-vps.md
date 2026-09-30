@@ -223,6 +223,12 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 
 ### Notes
 
+> **Resume (delete when Phase 2 lands):** paused after Phase 1 for a reboot. The gate at the
+> tip is green (typecheck, lint, 272 tests). Phase 2 is not started. better-sqlite3's
+> `db.backup()` steps via `setImmediate`, so the scheduling test fakes only
+> `setInterval`/`clearInterval`/`Date`. Docker runs from the agent shell only through
+> `echo "<cmd>" | newgrp docker`, and `docker compose exec` in that pipe eats stdin.
+
 - Phase 1: base image `node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
   (multi-arch index, resolved from Docker Hub 2026-09-30). In the container: `node: "v24.21.0"`,
   `applied: ["0001","0002","0003","0004"]`, then exit 1 on the `getMe` 401. `id -u` = 1000;
