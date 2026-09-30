@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.6.0 (2026-09-30)
+
+From Plan 0004 (past dates, summaries by category, and the edit flow).
+
+- A date as the last word records the expense on that day: `450 такси вчера`, `позавчера`,
+  `25.09` (the most recent such date) or `25.09.2025`. The confirmation names the date when it
+  isn't today. A future full date records nothing.
+- `/week` (Monday to Sunday) and `/month` show, per currency, a total and then the categories by
+  amount. [◀ Август] [Октябрь ▶] page to the neighbouring period in the same message. The menu's
+  first row is now `[📊 Сегодня] [📅 Неделя] [🗓 Месяц]`.
+- [Изменить] under a confirmation changes the amount, the description or the date, with
+  [Сегодня] [Вчера] [Позавчера] for the date.
+
 ## 0.5.0 (2026-09-30)
 
 From Plan 0008 (version announcements).

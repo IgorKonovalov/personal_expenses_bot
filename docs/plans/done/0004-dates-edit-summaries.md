@@ -1,11 +1,11 @@
 # 0004: Past dates, /week and /month by category, and the edit flow
 
-> **Status:** in-progress
+> **Status:** done (2026-09-30): built as planned after one fix round, `/help` copy for past dates and [Изменить] owed, v0.6.0
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: the `updated_at` migration renumbered `0004` → `0005`, because Plan 0003's fix round took `0004_expense_category_set_at.sql` (Plan 0003 close review, round 2, m3)
 > **Amended:** 2026-09-30: the `updated_at` migration takes the next free number when implemented, because Plan 0008 is queued ahead and adds one too
-> **Depends on:** [Plan 0007](done/0007-navigation-shell.md), [Plan 0003](done/0003-categories.md) (screen kit, flow sessions, list pager)
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md), [Plan 0003](0003-categories.md) (screen kit, flow sessions, list pager)
+> **Related ADRs:** [ADR-0002](../../adrs/0002-ledgers-and-identity.md), [ADR-0004](../../adrs/0004-amount-parsing-rule.md), [ADR-0007](../../adrs/0007-categories-belong-to-ledgers.md), [ADR-0009](../../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../../adrs/0011-navigation-model.md), [ADR-0012](../../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
@@ -319,4 +319,146 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 - New callback data: `sum:m:<YYYY-MM>` (13 bytes), `sum:w:<Monday>` (16), `exp:edit:<uuid>` (45),
   `exp:ef:<uuid>:<a|d|t>` (45), `exp:dt:<uuid>:<YYYY-MM-DD>` (54).
 
+## Close review
+
+Closed 2026-09-30 on the round 2 review below, which is reproduced in full.
+
+### Plan 0004 close review, round 2
+
+Tip graded: `7b92d4ee167f36d00dc205d8db6d7bd8ffa620d8` (lane `plan-0004-dates-edit-summaries`).
+
+**Verdict:** clean. All five round 1 findings are fixed and pinned by tests, and the gate is green. One
+minor (`/help` doesn't mention past dates or [Изменить]) and one nit are left, and neither blocks the
+close.
+
+#### Gate (run in this session)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 37 files, 509 tests passed (505 in round 1, plus four new tests).
+- `node scripts/check-doc-links.mjs`: exit 0, 89 relative links resolve.
+
+#### Round 1 findings, re-checked against `git diff f4260c2 7b92d4e`
+
+- **M1 (ac04f0b), fixed.** `editPromptView` renders [Отмена] as `exp:show:<uuid>`
+  (`src/bot/handlers/edit.ts:85-92`), which is a card action with no anchor check. The `SHOW_EXPENSE`
+  handler calls `cancelFlowIf(deps, user, isEditOf(expenseId))` (`src/bot/handlers/category.ts:115`),
+  so it clears only a pending edit of that same expense. I read two new `bot.test.ts` assertions.
+  First, after Сумма then `/week`, tapping the card's [Отмена] yields exactly
+  `[answerCallbackQuery, cardEdit(CARD)]`, and the next `50 чай` records a second expense while the
+  first row stays unchanged, so the flow ended. Second, [Отмена] on card X leaves card Y's pending
+  amount edit alone, and a later `900` sets Y to `amount_minor = 90000`. The log records the
+  deviation from the done-when's literal `flow:cancel`. `/cancel` still reaches the card through
+  `restoreScreen`.
+- **m1 (e69734d), fixed.** `setDateFromButton` now calls
+  `cancelFlowIf(…, isEditOf(id, 'editDate'))` (`src/services/editExpense.ts:196`). A new
+  `editExpense.test.ts` case covers both halves. The date tap clears that expense's own `editDate`
+  (`pending()` is `'free'`). A pending `categoryRename` survives the tap, and `routeText` still
+  returns it.
+- **m2 (5dd1081), fixed.** `flowExpired` reads `Время ответа истекло. Начните заново.`
+  (`src/bot/messages.ts:388`). A new `bot.test.ts` case expires a description flow, and `капучино`
+  then gets exactly that text with the row unchanged. The category-flow test was updated to the
+  same string.
+- **m3 (6d3d2c4), fixed.** `README.md` gained a row for `450 такси вчера` / `25.09`, stating the
+  last-word rule, the most-recent `dd.mm` resolution and the future `dd.mm.yyyy` refusal. It also
+  gained an [Изменить] row, and the `450 кофе` row now lists [Изменить].
+- **n1 (cfdf5f2), fixed.** The description test asserts the prompt edit
+  `Сейчас: кофе. Введите новое описание.` with the `exp:show` [Отмена] row.
+
+#### Lens 1: alignment
+
+Round 1's reading of the phase tests still stands: I re-ran them and they pass at this tip. The
+round 1 diff touches only the files above. Every phase has one `dev` owner tag. The log stays
+shorter than the phases section and records each round 1 fix with its commit. No ADR was reversed.
+
+#### Lens 2: layering
+
+`cancelFlowIf` and `isEditOf` live in `src/services/flowSessions.ts` and use only repository calls.
+The bot layer only calls them. No grammY import moved outside `src/bot/`, and the new copy is in
+`messages.ts`.
+
+#### Lens 3: correctness
+
+- `cancelFlowIf` parses the pending flow with the existing `parseFlow`. An unparseable payload clears
+  nothing, which is the safe side. The tapping user's own session is the only one touched, so a
+  co-member's tap in a shared ledger can't clear the author's flow.
+- [« Назад] from the field picker and from the category picker now also clears a pending edit of
+  that same expense. That is consistent: the card that button restores no longer shows a prompt.
+- No new money or time arithmetic. Callback data stays within 54 bytes (`exp:show:<uuid>` is 45).
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+**m1. `/help` doesn't mention past-date entry or [Изменить].**
+- *What:* `messages.help` (`src/bot/messages.ts:257-268`) still teaches only `450 кофе` and
+  `12,50 EUR такси`. Nothing in chat tells a user that `450 такси вчера` or `450 такси 25.09`
+  works. The only in-chat hints are `futureDate`, which appears after a mistake, and
+  `editedMessageHint`, which appears after editing a message.
+- *Why it matters:* Lens 4 asks that user-observable changes reach the README and the `/help` text.
+  The README is now fixed, but `/help` is the only place a Telegram user reads. Round 1
+  missed this. The plan's Files touched never listed a `/help` change, so this counts as a gap in
+  docs freshness, not a failed done-when.
+- *Suggested fix:* add one line after the first sentence of `help`, for example
+  `html`Дату можно добавить последним словом: «450 такси вчера» или «450 такси 25.09». Исправить
+  запись — кнопка «Изменить» под подтверждением.``. Pin it in the existing `/help` test in
+  `bot.test.ts`. Fold this into the next plan that touches `messages.help`, or into the close as a
+  Followup. It doesn't need a fix round of its own.
+
+##### nit
+
+**n1. The README `/cancel` row still describes only the list.**
+- *What:* `README.md`'s `/cancel` row reads "Drops a pending question (like the new category's name)
+  and puts the list back". For an edit prompt, `/cancel` puts the expense card back.
+- *Suggested fix:* "…and puts the list or the expense card back".
+
+#### Bookkeeping owed at close
+
+- Note the plan's done-when errata, which the code handles correctly. `sum:m:2026-09` is 13 bytes,
+  not 12. An answer typed after an undo gets `editGone` and the deleted card, not a toast. The edit
+  prompts' [Отмена] is `exp:show:<uuid>`, not `flow:cancel` (round 1 M1).
+- The log's close triggers still quote the pre-merge gate (33 files, 477 tests). The close should
+  cite this round's run: 37 files, 509 tests.
+- Bump the version minor for this feature plan (`package.json` 0.5.0 → 0.6.0). Add a `CHANGELOG.md`
+  entry covering the date words, `/week`/`/month` with their menu buttons, and [Изменить].
+- Flip `Status:` to `done`, `git mv` the plan to `docs/plans/done/`, and repair its links:
+  `done/0007-…` / `done/0003-…` become siblings, and `../adrs/` becomes `../../adrs/`. Verify with
+  `node scripts/check-doc-links.mjs`. Then refresh `docs/plans/README.md`.
+- Add two entries to the plan's Followups: m1 (`/help` past dates and [Изменить]), and the category
+  drill-down already named under "does NOT do".
+- `CLAUDE.md` "Where things live" needs no change, because no new top-level module was added.
+
+### Resolved in the fix round
+
+- Round 1 major M1 (the edit prompts' [Отмена] stranded the flow): fixed in `ac04f0b`.
+- Round 1 minor m1 (a date quick-button tap cleared an unrelated pending flow): fixed in `e69734d`.
+- Round 1 minor m2 (`flowExpired` pointed every flow at /categories): fixed in `5dd1081`.
+- Round 1 minor m3 (README had no rows for the date words or [Изменить]): fixed in `6d3d2c4`.
+- Round 1 nit n1 (the description prompt text was not asserted): fixed in `cfdf5f2`.
+
+### Close notes
+
+- Round 2 nit n1 (README `/cancel` row): fixed at close in `4b20e07`.
+- Round 2 minor m1 (`/help` copy for past dates and [Изменить]) is left open. It is copy in
+  `src/bot/messages.ts`, so it goes to a later plan, recorded under Followups.
+- Done-when errata, each handled correctly in code: `sum:m:2026-09` is 13 bytes, not 12. An answer
+  typed after an undo gets `editGone` and the deleted card, not a toast. The edit prompts' [Отмена]
+  is `exp:show:<uuid>`, not `flow:cancel`.
+- The close triggers' gate numbers (33 files, 477 tests) predate the merge and the fix round. The
+  round 2 review ran 37 files and 509 tests.
+- Version bumped minor to 0.6.0, with a `CHANGELOG.md` entry and a `'0.6.0'` entry in
+  `messages.versionAnnouncements`.
+
 ## Followups
+
+- `/help` should teach past-date entry (`450 такси вчера`, `450 такси 25.09`) and [Изменить]
+  under the confirmation, pinned in the `/help` test (round 2 m1).
+- Category drill-down: tap a category in `/week` or `/month` to list its expenses.
