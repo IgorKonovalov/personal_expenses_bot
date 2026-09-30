@@ -6,6 +6,8 @@ import { messages } from './messages.js';
 export function menuKeyboard(): Keyboard {
   return new Keyboard()
     .text(messages.menu.today)
+    .text(messages.menu.week)
+    .text(messages.menu.month)
     .row()
     .text(messages.menu.settings)
     .text(messages.menu.help)

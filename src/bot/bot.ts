@@ -14,6 +14,7 @@ import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
+import { registerSummary } from './handlers/summary.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { messages } from './messages.js';
@@ -57,6 +58,7 @@ export function createBot(options: BotOptions): Bot {
   // answer or an expense attempt, and whatever isn't text gets the help reply.
   registerStart(bot, options);
   registerToday(bot, options);
+  registerSummary(bot, options);
   registerCategories(bot, options);
   registerSettings(bot, options);
   registerCancel(bot, options);

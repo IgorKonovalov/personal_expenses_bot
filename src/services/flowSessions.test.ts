@@ -3,7 +3,14 @@ import { openDatabase, type Db } from '../db/connection.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
-import { cancelFlow, completeFlow, routeText, setAnchor, startFlow } from './flowSessions.js';
+import {
+  cancelFlow,
+  completeFlow,
+  currentAnchor,
+  routeText,
+  setAnchor,
+  startFlow,
+} from './flowSessions.js';
 import { provisionUser } from './provisionUser.js';
 
 const T = new Date('2026-09-30T10:00:00Z');
@@ -34,6 +41,28 @@ beforeEach(() => {
 });
 
 const route = (inputKey: string, now: Date) => routeText({ db }, { user, inputKey, now });
+
+describe('screen anchor', () => {
+  it('round-trips a summary screen with its ledger id', () => {
+    setAnchor({ db }, user, { chatId: 1001, messageId: 6, screen: { name: 'summary', ledgerId } });
+
+    expect(currentAnchor({ db }, user)).toEqual({
+      chatId: 1001,
+      messageId: 6,
+      screen: { name: 'summary', ledgerId },
+    });
+    expect(db.prepare('SELECT screen, screen_ctx FROM flow_sessions').get()).toEqual({
+      screen: 'summary',
+      screen_ctx: JSON.stringify({ ledgerId }),
+    });
+  });
+
+  it('reads a summary row without a ledger id as no screen', () => {
+    db.prepare("UPDATE flow_sessions SET screen = 'summary', screen_ctx = '{}'").run();
+
+    expect(currentAnchor({ db }, user)).toBeUndefined();
+  });
+});
 
 describe('routeText (ADR-0009)', () => {
   it('is free text with no expired flow when nothing was ever pending', () => {

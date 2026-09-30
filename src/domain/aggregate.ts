@@ -13,3 +13,80 @@ export function sumByCurrency(items: Iterable<Money>): ReadonlyMap<CurrencyCode,
   }
   return totals;
 }
+
+export interface CategorizedMoney extends Money {
+  // null for an expense without a category.
+  readonly category: { readonly id: number; readonly name: string } | null;
+}
+
+export interface CategoryLine {
+  readonly categoryId: number | null;
+  // null for the expenses without a category; the adapter names that line.
+  readonly name: string | null;
+  readonly amountMinor: number;
+}
+
+export interface CurrencySummary {
+  readonly currency: CurrencyCode;
+  // The sum of `lines`, an integer in minor units.
+  readonly totalMinor: number;
+  // By amount, largest first; a tie sorts by name (`ru` collation), the uncategorized line last.
+  readonly lines: readonly CategoryLine[];
+}
+
+// Per currency, the total and its split by category. `firstCurrency` (the ledger default) comes
+// first when present, the other currencies follow alphabetically. Never adds across currencies
+// (ADR-0003).
+export function summarizeByCurrencyAndCategory(
+  items: Iterable<CategorizedMoney>,
+  firstCurrency: CurrencyCode,
+): CurrencySummary[] {
+  const byCurrency = new Map<CurrencyCode, Map<number | null, CategoryLine>>();
+  for (const { amountMinor, currency, category } of items) {
+    const lines = byCurrency.get(currency) ?? new Map<number | null, CategoryLine>();
+    byCurrency.set(currency, lines);
+    const key = category?.id ?? null;
+    const line = lines.get(key);
+    lines.set(key, {
+      categoryId: key,
+      name: category?.name ?? null,
+      amountMinor: safeSum(currency, line?.amountMinor ?? 0, amountMinor),
+    });
+  }
+
+  return [...byCurrency]
+    .map(([currency, lines]) => {
+      const sorted = [...lines.values()].sort(byAmountThenName);
+      const totalMinor = sorted.reduce(
+        (total, line) => safeSum(currency, total, line.amountMinor),
+        0,
+      );
+      return { currency, totalMinor, lines: sorted };
+    })
+    .sort((a, b) =>
+      a.currency === b.currency
+        ? 0
+        : a.currency === firstCurrency
+          ? -1
+          : b.currency === firstCurrency
+            ? 1
+            : a.currency < b.currency
+              ? -1
+              : 1,
+    );
+}
+
+function byAmountThenName(a: CategoryLine, b: CategoryLine): number {
+  if (a.amountMinor !== b.amountMinor) return b.amountMinor - a.amountMinor;
+  if (a.name === null) return b.name === null ? 0 : 1;
+  if (b.name === null) return -1;
+  return a.name.localeCompare(b.name, 'ru');
+}
+
+function safeSum(currency: CurrencyCode, a: number, b: number): number {
+  const total = a + b;
+  if (!Number.isSafeInteger(total)) {
+    throw new RangeError(`${currency} total exceeds the safe integer range`);
+  }
+  return total;
+}

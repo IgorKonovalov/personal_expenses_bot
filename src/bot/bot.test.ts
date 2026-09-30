@@ -7,10 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
-import type { ExpenseId } from '../db/expenses.js';
+import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import type { LedgerId } from '../db/ledgers.js';
+import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
-import { CURRENCY_CODES, toCurrencyCode } from '../domain/currencies.js';
+import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
+import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { createBot, registerCommands } from './bot.js';
@@ -21,6 +24,7 @@ import {
   restoreExpenseData,
   setCategoryData,
   showExpenseData,
+  summaryPageData,
   undoExpenseData,
 } from './callbackData.js';
 import { messages } from './messages.js';
@@ -75,7 +79,10 @@ describe('error boundary', () => {
 });
 
 const menuKeyboard = {
-  keyboard: [[{ text: '📊 Сегодня' }], [{ text: '⚙️ Настройки' }, { text: '❓ Помощь' }]],
+  keyboard: [
+    [{ text: '📊 Сегодня' }, { text: '📅 Неделя' }, { text: '🗓 Месяц' }],
+    [{ text: '⚙️ Настройки' }, { text: '❓ Помощь' }],
+  ],
   is_persistent: true,
   resize_keyboard: true,
 };
@@ -99,6 +106,8 @@ describe('menu and help', () => {
   it('takes its labels from messages.menu', () => {
     expect(messages.menu).toEqual({
       today: '📊 Сегодня',
+      week: '📅 Неделя',
+      month: '🗓 Месяц',
       settings: '⚙️ Настройки',
       help: '❓ Помощь',
     });
@@ -311,7 +320,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /categories, /settings and /help with descriptions from messages', async () => {
+  it('registers /today, /week, /month, /categories, /settings and /help from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -322,9 +331,11 @@ describe('command registration at boot', () => {
         payload: {
           commands: [
             { command: 'today', description: messages.commands[0].description },
-            { command: 'categories', description: messages.commands[1].description },
+            { command: 'week', description: 'Траты за неделю по категориям' },
+            { command: 'month', description: 'Траты за месяц по категориям' },
+            { command: 'categories', description: messages.commands[3].description },
             { command: 'settings', description: 'Часовой пояс и валюта' },
-            { command: 'help', description: messages.commands[3].description },
+            { command: 'help', description: messages.commands[5].description },
           ],
         },
       },
@@ -1286,6 +1297,361 @@ describe('/today', () => {
         },
       },
     ]);
+  });
+});
+
+describe('/week and /month', () => {
+  // Wednesday 30 September, 12:00 local.
+  const NOW = new Date('2026-09-30T10:00:00Z');
+  const botInfo = createTestBot().bot.botInfo;
+
+  // A bot whose sendMessage answers with real message ids (the anchor needs them), holding the
+  // plan's fixture ledger A to H once `/start` has provisioned the user.
+  async function summaryBot(opts: { fixture?: boolean } = {}) {
+    const db = openDatabase(':memory:');
+    runMigrations(db, NOW);
+    let ids = 0;
+    // The /start reply takes 100, so the first screen after it is 101.
+    let messageId = 99;
+    const bot = createBot({
+      token: '123456:test-token',
+      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      logger: silentLogger(),
+      db,
+      newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+      now: () => NOW,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      botInfo,
+    });
+    const calls: ApiCall[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      calls.push({ method, payload });
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      const result =
+        method === 'sendMessage' ? { message_id: ++messageId, date: 0, chat, text: '' } : true;
+      return Promise.resolve({ ok: true, result: result as never });
+    });
+    let updateId = 0;
+    const say = (text: string, message: number, date = NOW) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: message, text, date }));
+    const tap = (data: string, message: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: message }));
+
+    await say('/start', 1);
+    const { userId, ledgerId } = db
+      .prepare('SELECT id AS userId, active_ledger_id AS ledgerId FROM users')
+      .get() as { userId: UserId; ledgerId: LedgerId };
+    const categoryOf = (preset: string) =>
+      db
+        .prepare('SELECT id FROM categories WHERE ledger_id = ? AND preset_key = ?')
+        .pluck()
+        .get(ledgerId, preset) as CategoryId;
+    const add = (
+      id: string,
+      occurredOn: string,
+      amountMinor: number,
+      currency: CurrencyCode,
+      preset: string | null,
+      ledger: LedgerId = ledgerId,
+    ) =>
+      insertExpenseOrGetExisting(db, {
+        id: id as ExpenseId,
+        ledgerId: ledger,
+        createdBy: userId,
+        amountMinor,
+        currency,
+        description: 'x',
+        occurredAt: NOW,
+        occurredOn: occurredOn as LocalDate,
+        sourceKey: `fixture:${id}`,
+        createdAt: NOW,
+        ...(preset === null ? {} : { categoryId: categoryOf(preset) }),
+      });
+    if (opts.fixture !== false) {
+      add('A', '2026-08-31', 10000, 'RSD', 'groceries');
+      add('B', '2026-09-01', 45000, 'RSD', 'cafe');
+      add('C', '2026-09-15', 120000, 'RSD', 'groceries');
+      add('D', '2026-09-28', 30000, 'RSD', 'cafe');
+      add('E', '2026-09-30', 1250, 'EUR', 'transport');
+      add('F', '2026-09-30', 5000, 'RSD', 'cafe');
+      softDeleteExpense(db, 'F' as ExpenseId, NOW);
+      add('G', '2026-09-27', 20000, 'RSD', 'transport');
+      add('H', '2026-09-29', 7000, 'RSD', null);
+    }
+    calls.length = 0;
+    return { bot, db, calls, say, tap, add, userId, ledgerId };
+  }
+
+  const button = (text: string, callback_data: string) => ({ text, callback_data });
+  const SEPTEMBER =
+    '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n' +
+    '<b>2 220.00 RSD</b>\nПродукты: 1 200.00\nКафе и рестораны: 750.00\nТранспорт: 200.00\n' +
+    'Без категории: 70.00\n\n' +
+    '<b>12.50 EUR</b>\nТранспорт: 12.50';
+  const THIS_WEEK =
+    '<b>Неделя, 28 сентября – 4 октября — «Личные расходы»</b>\n\n' +
+    '<b>370.00 RSD</b>\nКафе и рестораны: 300.00\nБез категории: 70.00\n\n' +
+    '<b>12.50 EUR</b>\nТранспорт: 12.50';
+
+  function editOf(message: number, text: string, inline_keyboard: unknown) {
+    return {
+      method: 'editMessageText',
+      payload: {
+        chat_id: ALLOWED_ID,
+        message_id: message,
+        text,
+        reply_markup: { inline_keyboard },
+        ...htmlParseMode,
+      },
+    };
+  }
+
+  it('shows /month per currency, the ledger default first, with only [◀ Август]', async () => {
+    const { say, calls } = await summaryBot();
+
+    await say('/month', 2);
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: SEPTEMBER,
+          reply_markup: { inline_keyboard: [[button('◀ Август', 'sum:m:2026-08')]] },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('shows /week Monday to Sunday without G (Sunday the 27th) or F (undone)', async () => {
+    const { say, calls } = await summaryBot();
+
+    await say('/week', 2);
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: THIS_WEEK,
+          reply_markup: { inline_keyboard: [[button('◀ 21–27 сен', 'sum:w:2026-09-21')]] },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('pages the month in place to August, which names July and September', async () => {
+    const { say, tap, calls } = await summaryBot();
+    await say('/month', 2);
+    calls.length = 0;
+
+    await tap('sum:m:2026-08', 101);
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
+      editOf(101, '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\nПродукты: 100.00', [
+        [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
+      ]),
+    ]);
+  });
+
+  it('pages the week to 21–27 September, which names both neighbours', async () => {
+    const { say, tap, calls } = await summaryBot();
+    await say('/week', 2);
+    calls.length = 0;
+
+    await tap('sum:w:2026-09-21', 101);
+
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        '<b>Неделя, 21–27 сентября — «Личные расходы»</b>\n\n<b>200.00 RSD</b>\nТранспорт: 200.00',
+        [
+          [
+            button('◀ 14–20 сен', 'sum:w:2026-09-14'),
+            button('28 сен – 4 окт ▶', 'sum:w:2026-09-28'),
+          ],
+        ],
+      ),
+    );
+  });
+
+  it('pages the ledger stored in the screen, not the one active at tap time', async () => {
+    const { db, say, tap, calls, add, userId } = await summaryBot();
+    await say('/month', 2);
+    const other = 'ledger-other' as LedgerId;
+    db.prepare(
+      `INSERT INTO ledgers (id, kind, name, default_currency, owner_user_id, created_at)
+       VALUES (?, 'shared', 'Дом', 'RSD', ?, ?)`,
+    ).run(other, userId, NOW.toISOString());
+    db.prepare("INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner')").run(
+      other,
+      userId,
+    );
+    add('Z', '2026-08-10', 99900, 'RSD', null, other);
+    db.prepare('UPDATE users SET active_ledger_id = ?').run(other);
+    calls.length = 0;
+
+    await tap('sum:m:2026-08', 101);
+
+    expect(calls[1]).toMatchObject({
+      payload: {
+        text: '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\nПродукты: 100.00',
+      },
+    });
+  });
+
+  it('holds the ledger id in screen_ctx', async () => {
+    const { db, say, ledgerId } = await summaryBot();
+
+    await say('/week', 2);
+
+    expect(
+      db.prepare('SELECT screen, screen_ctx, anchor_message_id FROM flow_sessions').get(),
+    ).toEqual({
+      screen: 'summary',
+      screen_ctx: JSON.stringify({ ledgerId }),
+      anchor_message_id: 101,
+    });
+  });
+
+  it('toasts staleScreen on a pager tap once /categories opened a newer screen', async () => {
+    const { say, tap, calls } = await summaryBot();
+    await say('/month', 2);
+    await say('/categories', 3);
+    calls.length = 0;
+
+    await tap('sum:m:2026-08', 101);
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-4', text: messages.staleScreen },
+      },
+    ]);
+  });
+
+  it('answers a malformed or future period silently and edits nothing', async () => {
+    const { say, tap, calls } = await summaryBot();
+    await say('/month', 2);
+    calls.length = 0;
+
+    await tap('sum:m:2026-13', 101);
+    await tap('sum:w:2026-09-29', 101);
+    await tap('sum:m:2026-10', 101);
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-4' } },
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-5' } },
+    ]);
+  });
+
+  it('interpolates category names through html', async () => {
+    const { db, say, calls, ledgerId } = await summaryBot();
+    db.prepare(
+      "UPDATE categories SET name = 'Кафе <b>&</b>' WHERE ledger_id = ? AND preset_key = 'cafe'",
+    ).run(ledgerId);
+
+    await say('/week', 2);
+
+    expect(sentTexts(calls)[0]).toContain('\nКафе &lt;b&gt;&amp;&lt;/b&gt;: 300.00\n');
+  });
+
+  it('shows the header and the no-expenses line for an empty period', async () => {
+    const { say, calls } = await summaryBot({ fixture: false });
+
+    await say('/month', 2);
+
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сентябрь 2026 — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    ]);
+  });
+
+  it('counts 450 кофе sent at 00:30 on 1 September local in September, not August', async () => {
+    const { say, tap, calls } = await summaryBot({ fixture: false });
+    await say('450 кофе', 2, new Date('2026-08-31T22:30:00Z'));
+    calls.length = 0;
+
+    await say('/month', 3);
+    await tap('sum:m:2026-08', 102);
+
+    expect(sentTexts(calls)[0]).toBe(
+      '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n<b>450.00 RSD</b>\nКафе и рестораны: 450.00',
+    );
+    expect(calls[2]).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        text: '<b>Август 2026 — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+      },
+    });
+  });
+
+  it.each([
+    ['📅 Неделя', '/week'],
+    ['🗓 Месяц', '/month'],
+  ])('answers the %s label exactly like %s', async (label, command) => {
+    const { say, calls } = await summaryBot();
+
+    await say(command, 2);
+    await say(label, 3);
+
+    expect(calls).toHaveLength(2);
+    expect((calls[1]?.payload as { text: string }).text).toBe(
+      (calls[0]?.payload as { text: string }).text,
+    );
+    expect(calls[1]).toEqual(calls[0]);
+  });
+
+  it('builds sum:m at 13 bytes and sum:w at 16', () => {
+    expect(Buffer.byteLength(summaryPageData(monthOf('2026-09-30' as LocalDate)))).toBe(13);
+    expect(summaryPageData(monthOf('2026-09-30' as LocalDate))).toBe('sum:m:2026-09');
+    expect(summaryPageData(weekOf('2026-09-30' as LocalDate))).toBe('sum:w:2026-09-28');
+    expect(Buffer.byteLength(summaryPageData(weekOf('2026-09-30' as LocalDate)))).toBe(16);
+  });
+
+  describe('length', () => {
+    // Tags and entity escapes are not visible text (ADR-0012).
+    const visible = (text: string) =>
+      text.replace(/<[^>]*>/g, '').replace(/&(?:lt|gt|amp|quot);/g, '_').length;
+    const view = (categories: number) => ({
+      ledger: { kind: 'personal' as const, name: 'Personal' },
+      period: {
+        kind: 'month' as const,
+        from: '2026-09-01' as LocalDate,
+        to: '2026-09-30' as LocalDate,
+      },
+      currencies: CURRENCY_CODES.map((currency) => ({
+        currency,
+        totalMinor: categories * 123456789,
+        lines: Array.from({ length: categories }, (_, i) => ({
+          name: `Категория с длинным именем ${String(i).padStart(5, '0')}`,
+          amountMinor: 123456789,
+        })),
+      })),
+    });
+
+    it('falls back to totals per currency within 4096 visible characters', () => {
+      const text = messages.periodSummary(view(30));
+
+      expect(visible(text)).toBeLessThanOrEqual(4096);
+      expect(text).not.toContain('Категория с длинным именем');
+      expect(text).toContain(
+        'Категорий слишком много для одного сообщения, поэтому показаны только итоги.',
+      );
+      for (const currency of CURRENCY_CODES) expect(text).toContain(` ${currency}</b>`);
+    });
+
+    it('keeps the categories when they fit', () => {
+      const text = messages.periodSummary(view(1));
+
+      expect(visible(text)).toBeLessThanOrEqual(4096);
+      expect(text).toContain('Категория с длинным именем 00000');
+      expect(text).not.toContain('Категорий слишком много');
+    });
   });
 });
 

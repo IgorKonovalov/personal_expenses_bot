@@ -52,6 +52,106 @@ interface TodayView {
   readonly totals: ReadonlyMap<CurrencyCode, number>;
 }
 
+interface PeriodRef {
+  readonly kind: 'week' | 'month';
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+}
+
+interface SummaryView {
+  readonly ledger: LedgerRef;
+  readonly period: PeriodRef;
+  readonly currencies: readonly {
+    readonly currency: CurrencyCode;
+    readonly totalMinor: number;
+    // `name` null: the expenses without a category.
+    readonly lines: readonly { readonly name: string | null; readonly amountMinor: number }[];
+  }[];
+}
+
+const MONTHS = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+] as const;
+// Genitive abbreviations for the pager: `28 сен – 4 окт`.
+const SHORT_MONTHS = [
+  'янв',
+  'фев',
+  'мар',
+  'апр',
+  'мая',
+  'июн',
+  'июл',
+  'авг',
+  'сен',
+  'окт',
+  'ноя',
+  'дек',
+] as const;
+const GENITIVE_MONTHS = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+] as const;
+
+function dateParts(date: LocalDate): { year: string; month: number; day: number } {
+  return {
+    year: date.slice(0, 4),
+    month: Number(date.slice(5, 7)) - 1,
+    day: Number(date.slice(8)),
+  };
+}
+
+// `21–27 сентября`, or `28 сентября – 4 октября` across a month end.
+function weekRange({ from, to }: PeriodRef, months: readonly string[]): string {
+  const a = dateParts(from);
+  const b = dateParts(to);
+  return a.month === b.month
+    ? `${a.day}–${b.day} ${months[b.month]}`
+    : `${a.day} ${months[a.month]} – ${b.day} ${months[b.month]}`;
+}
+
+// The pager's name for a period: `Август`, `21–27 сен`, `28 сен – 4 окт`.
+function periodLabel(period: PeriodRef): string {
+  return period.kind === 'month'
+    ? (MONTHS[dateParts(period.from).month] ?? '')
+    : weekRange(period, SHORT_MONTHS);
+}
+
+// Telegram rejects a message over 4096 characters of visible text (ADR-0012): tags and
+// entity escapes don't count.
+const MAX_VISIBLE_CHARS = 4096;
+
+function visibleLength(text: Html): number {
+  return text.replace(/<[^>]*>/g, '').replace(/&(?:lt|gt|amp|quot);/g, '_').length;
+}
+
+// `1 200.00 RSD` without the code, for a line under its currency's total.
+function amountOnly(money: Money): string {
+  return formatMoney(money).slice(0, -(money.currency.length + 1));
+}
+
+const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
+
 // `2026-09-30` -> `30 сентября`. The date is already local, so it is formatted in UTC.
 const dayMonth = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
@@ -75,6 +175,8 @@ function shownDescription(description: string): string {
 // expense (bot.test.ts pins this).
 const menu = {
   today: '📊 Сегодня',
+  week: '📅 Неделя',
+  month: '🗓 Месяц',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
 } as const;
@@ -118,6 +220,8 @@ export const messages = {
   // Bot command menu registered with setMyCommands at boot.
   commands: [
     { command: 'today', description: 'Траты за сегодня' },
+    { command: 'week', description: 'Траты за неделю по категориям' },
+    { command: 'month', description: 'Траты за месяц по категориям' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'settings', description: 'Часовой пояс и валюта' },
     { command: 'help', description: 'Как записать трату' },
@@ -137,6 +241,7 @@ export const messages = {
       html`Чтобы записать трату, отправьте сумму и описание, например «450 кофе». Валюту можно указать после суммы: «12,50 EUR такси».`,
       html``,
       html`${menu.today} — траты за сегодня`,
+      html`${menu.week} и ${menu.month} — траты по категориям`,
       html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
     ],
@@ -276,12 +381,46 @@ export const messages = {
 
   today: ({ ledger, date, totals }: TodayView): Html => {
     const header = html`<b>Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»</b>`;
-    if (totals.size === 0) {
-      return joinHtml([header, html`Трат нет. Отправьте, например, «450 кофе».`], '\n');
-    }
+    if (totals.size === 0) return joinHtml([header, noExpenses], '\n');
     const lines = [...totals].map(
       ([currency, amountMinor]) => html`${formatMoney({ amountMinor, currency })}`,
     );
     return joinHtml([header, ...lines], '\n');
   },
+
+  // /week and /month: per currency a bold total, then its categories by amount. A summary too
+  // long for one message shows the totals alone, with a note.
+  periodSummary: ({ ledger, period, currencies }: SummaryView): Html => {
+    const title =
+      period.kind === 'month'
+        ? `${MONTHS[dateParts(period.from).month] ?? ''} ${dateParts(period.from).year}`
+        : `Неделя, ${weekRange(period, GENITIVE_MONTHS)}`;
+    const header = html`<b>${title} — «${ledgerName(ledger)}»</b>`;
+    if (currencies.length === 0) return joinHtml([header, noExpenses], '\n');
+    const total = (c: SummaryView['currencies'][number]) =>
+      html`<b>${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;
+    const blocks = currencies.map((c) =>
+      joinHtml(
+        [
+          total(c),
+          ...c.lines.map(
+            (line) =>
+              html`${line.name ?? 'Без категории'}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
+          ),
+        ],
+        '\n',
+      ),
+    );
+    const full = joinHtml([header, ...blocks], '\n\n');
+    if (visibleLength(full) <= MAX_VISIBLE_CHARS) return full;
+    return joinHtml(
+      [
+        joinHtml([header, ...currencies.map(total)], '\n'),
+        html`Категорий слишком много для одного сообщения, поэтому показаны только итоги.`,
+      ],
+      '\n\n',
+    );
+  },
+  periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
+  periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
 } as const;

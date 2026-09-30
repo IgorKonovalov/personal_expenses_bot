@@ -195,6 +195,24 @@ export function listLedgerExpensesOn(
     .map(toExpense);
 }
 
+// Non-deleted expenses of one ledger with occurred_on in [from, to], both inclusive, visible only
+// to members. Local-date strings compare in calendar order, so no timezone math runs in SQL.
+export function listLedgerExpensesBetween(
+  db: Db,
+  query: { ledgerId: LedgerId; memberId: UserId; from: LocalDate; to: LocalDate },
+): Expense[] {
+  return db
+    .prepare<[string, string, string, string], ExpenseRow>(
+      `SELECT ${COLUMNS}
+         FROM ${FROM}
+         JOIN ledger_members m ON m.ledger_id = e.ledger_id AND m.user_id = ?
+        WHERE e.ledger_id = ? AND e.occurred_on BETWEEN ? AND ? AND e.deleted_at IS NULL
+        ORDER BY e.occurred_on, e.occurred_at, e.id`,
+    )
+    .all(query.memberId, query.ledgerId, query.from, query.to)
+    .map(toExpense);
+}
+
 function toExpense(row: ExpenseRow): Expense {
   const currency = toCurrencyCode(row.currency);
   if (currency === undefined) throw new Error(`expense ${row.id} has an unknown currency`);

@@ -1,6 +1,7 @@
 import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { periodKey, type Period } from '../domain/periods.js';
 
 // Telegram rejects callback_data over 64 bytes (UTF-8). Format: `<scope>:<action>[:<arg>…]`,
 // built only here (ADR-0011).
@@ -104,6 +105,14 @@ export function timezonePageData(page: number): string {
 
 export function setTimezoneData(slug: string): string {
   return assertCallbackData(`set:tz:${slug}`);
+}
+
+// The /week and /month period pager: `sum:m:<YYYY-MM>` (13 bytes), `sum:w:<Monday YYYY-MM-DD>`
+// (16 bytes). The pattern only shapes the key; parsePeriod decides whether it names a period.
+export const SUMMARY_PAGE = /^sum:([mw]):([0-9-]{1,10})$/;
+
+export function summaryPageData(period: Period): string {
+  return assertCallbackData(`sum:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }
 
 // [Отмена] on a text prompt (ADR-0009).

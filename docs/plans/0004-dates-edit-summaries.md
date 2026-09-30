@@ -251,8 +251,8 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Past dates in free text | dev | done | committed with this row |
-| 2: /week and /month with category breakdown and paging | dev | not started | |
+| 1: Past dates in free text | dev | done | 65ecc5e |
+| 2: /week and /month with category breakdown and paging | dev | done | committed with this row |
 | 3: Edit amount, description and date | dev | not started | |
 
 ### Notes
@@ -264,6 +264,15 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 - Phase 1: `parseExpenseText` takes `today` as an optional third argument; without it no word is
   read as a date. The expense-shaped checks in `src/domain/categories.ts` and
   `src/services/settings.ts` call it without one and are unchanged.
+- Phase 2: done-when "`sum:m:2026-09` (12 bytes)" not met as stated: the string is 13 bytes.
+  The test asserts 13; `sum:w:2026-09-28` is 16 as stated.
+- Phase 2: `src/bot/flows.ts` (outside Files touched) changed: `restoreScreen` returns early for
+  a `summary` anchor, so the widened `Screen` union typechecks. `src/index.ts` and
+  `src/bot/screens.ts` needed no change: `registerCommands` already sends `messages.commands`.
+- Phase 2: the uncategorized line's name is `null` in the domain (`CategoryLine.name`), and the
+  messages module renders it as `Без категории`. In a tie it sorts after named categories.
+- Phase 2: a pager tap for a period starting after today, or on a ledger the user no longer
+  belongs to, is answered silently with no edit, like a malformed key.
 
 ### Close triggers
 

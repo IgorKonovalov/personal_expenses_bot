@@ -22,6 +22,7 @@ when an amount could be read two ways.
 | `1 200 обед`      | Records 1 200.00. Group thousands with a space                                                                                                                                                                                                             |
 | `1.200 обед`      | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more                                                                                     |
 | `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                                                                                                                                     |
+| `/week`, `/month` | This week (Monday to Sunday) or calendar month: per currency a total, then its categories by amount. [◀ Август] [Октябрь ▶] page to the neighbouring period in the same message                                                                            |
 | [Удалить]         | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                                                                                                            |
 | [Вернуть]         | Restores the expense, and `/today` counts it again                                                                                                                                                                                                         |
 | `/categories`     | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back                                                                    |
@@ -30,7 +31,7 @@ when an amount could be read two ways.
 | `/help`           | How to record an expense, and what the menu buttons do                                                                                                                                                                                                     |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
-`/today`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
+`/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
 command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
 photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
 the record, and the bot says so.

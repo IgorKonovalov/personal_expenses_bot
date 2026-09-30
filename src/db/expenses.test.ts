@@ -5,6 +5,7 @@ import { openDatabase, type Db } from './connection.js';
 import {
   findHistoryCategory,
   insertExpenseOrGetExisting,
+  listLedgerExpensesBetween,
   listLedgerExpensesOn,
   restoreDeletedExpense,
   setExpenseCategory,
@@ -172,6 +173,38 @@ describe('expenses repository', () => {
       { id: 'exp-a', category_id: x, category_set_at: '2026-09-30T12:00:00.000Z' },
       { id: 'exp-b', category_id: null, category_set_at: null },
     ]);
+  });
+
+  it('lists live expenses of a date range, both ends inclusive, to members only', () => {
+    const add = (id: string, occurredOn: string) =>
+      insertExpenseOrGetExisting(db, {
+        id: id as ExpenseId,
+        ledgerId: LEDGER_A,
+        createdBy: USER_A,
+        amountMinor: 45000,
+        currency: 'RSD',
+        description: 'coffee',
+        occurredAt: NOW,
+        occurredOn: occurredOn as LocalDate,
+        sourceKey: `tg:${id}`,
+        createdAt: NOW,
+      });
+    add('before', '2026-08-31');
+    add('first', '2026-09-01');
+    add('last', '2026-09-30');
+    add('after', '2026-10-01');
+    add('deleted', '2026-09-15');
+    softDeleteExpense(db, 'deleted' as ExpenseId, NOW);
+    const range = { from: '2026-09-01' as LocalDate, to: '2026-09-30' as LocalDate };
+
+    expect(
+      listLedgerExpensesBetween(db, { ledgerId: LEDGER_A, memberId: USER_A, ...range }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['first', 'last']);
+    expect(
+      listLedgerExpensesBetween(db, { ledgerId: LEDGER_A, memberId: USER_B, ...range }),
+    ).toEqual([]);
   });
 
   it('rejects a non-positive amount at the schema level', () => {

@@ -3,6 +3,7 @@ import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
 import { sendHelp } from './help.js';
 import { sendSettings } from './settings.js';
+import { sendSummary } from './summary.js';
 import { sendToday } from './today.js';
 
 // A menu tap arrives as plain text. Only an exact label is a tap: `Сегодня` or `📊 Сегодня!`
@@ -10,6 +11,8 @@ import { sendToday } from './today.js';
 export function registerMenu(bot: Composer<Context>, deps: HandlerDeps): void {
   const routes = new Map<string, (ctx: Context) => Promise<void>>([
     [messages.menu.today, (ctx) => sendToday(ctx, deps)],
+    [messages.menu.week, (ctx) => sendSummary(ctx, deps, 'week')],
+    [messages.menu.month, (ctx) => sendSummary(ctx, deps, 'month')],
     [messages.menu.settings, (ctx) => sendSettings(ctx, deps)],
     [messages.menu.help, sendHelp],
   ]);

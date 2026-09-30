@@ -25,7 +25,13 @@ export interface CategoriesScreen {
   readonly fromSettings?: true;
 }
 
-export type Screen = CategoriesScreen | { readonly name: 'settings' };
+// A /week or /month summary. Paging reads this ledger, not the one active at tap time.
+export interface SummaryScreen {
+  readonly name: 'summary';
+  readonly ledgerId: LedgerId;
+}
+
+export type Screen = CategoriesScreen | SummaryScreen | { readonly name: 'settings' };
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -115,6 +121,9 @@ export function routeText(
 function parseScreen(name: string, ctx: string): Screen | undefined {
   const parsed = parseObject(ctx);
   if (name === 'settings' && parsed !== undefined) return { name };
+  if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
+    return { name, ledgerId: parsed.ledgerId as LedgerId };
+  }
   if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
