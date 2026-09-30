@@ -62,7 +62,7 @@ export const REPO = resolve(TOOL_DIR, "..", "..");
 // --append-system-prompt-file, --max-budget-usd, project hooks and skills loaded under -p) was
 // verified on before the fork; README.md names where. An unlisted version at a higher patch of a
 // listed major.minor runs with a warning; any other unlisted version is refused.
-export const VERIFIED_CLI = ["2.1.270", "2.1.272", "2.1.273", "2.1.278", "2.1.280", "2.1.282", "2.1.283"];
+export const VERIFIED_CLI = ["2.1.270", "2.1.272", "2.1.273", "2.1.278", "2.1.280", "2.1.282", "2.1.283", "2.1.284"];
 
 /**
  * What preflight makes of `claude --version`: {} for a listed version, { warning } for one sharing

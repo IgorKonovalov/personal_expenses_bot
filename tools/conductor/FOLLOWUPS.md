@@ -35,8 +35,8 @@ two plans parked. Spend was $28.36 in all ($12.74 + $15.62). Usage went from 0.0
 | F6 | conductor (dev) | **`run --until-idle` ended with a resume ask pending** (H4). Idle should check `resume-asks.jsonl` before exiting. | open |
 | F7 | conductor (docs) | README's "Acting on a park" table has no `check_red` row (the close's or merge's own gate is red, and it needs a dev fix in the lane). | open |
 | F8 | conductor (dev) | The settings denied a read-only `git grep -n "..."` whose pattern held backticks and Cyrillic (0004 implement, 20:39). The session worked around it. Check whether the allowlist should match `git grep` with any quoted pattern. | open |
-| F9 | owner | `claude` 2.1.284 is still unverified (warning only). Verify the headless contract and add it to `VERIFIED_CLI`. | open |
-| F10 | owner | Read the hand-written 0.4.0 announcement in `src/bot/messages.ts` (H2). | open |
+| F9 | owner | `claude` 2.1.284 is still unverified (warning only). Verify the headless contract and add it to `VERIFIED_CLI`. | done: Ritmolux's probe verified it on this machine (Ritmolux `6738f781`), ported to `VERIFIED_CLI` |
+| F10 | owner | Read the hand-written 0.4.0 announcement in `src/bot/messages.ts` (H2). | done: the owner approved the copy |
 | F11 | - | `prune` the merged 0008, 0005 and 0004 from `queue.json`. | done (this commit) |
 
 ### Open product findings from the closes
