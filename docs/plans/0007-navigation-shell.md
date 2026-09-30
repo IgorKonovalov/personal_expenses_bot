@@ -2,6 +2,7 @@
 
 > **Status:** approved (2026-09-29)
 > **Created:** 2026-09-29
+> **Amended:** 2026-09-30: Phase 4's `1.200 JPY` done-when asks, like `1.234` (conductor readiness park)
 > **Related ADRs:** [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md)
 
 ## TL;DR
@@ -189,8 +190,10 @@ default is RSD.
     happens when the original message is redelivered after the tap.
   - `1.234 обед` (one reading) replies `Ничего не записано. Вы имели в виду 1 234.00 RSD?` with
     the single button [1 234.00 RSD] `amb:t`. A tap records 123400 RSD.
-  - `1.200 JPY обед` isn't ambiguous (ADR-0004: `1.2` is invalid at exponent 0). It records
-    1200 JPY directly, with no question.
+  - `1.200 JPY обед` is the same one-reading case (ADR-0004: a separator followed by exactly three
+    digits is always ambiguous, and `1.2` is invalid at exponent 0, so only the thousands reading
+    remains). It replies `Ничего не записано. Вы имели в виду 1 200 JPY?` with the single button
+    [1 200 JPY] `amb:t`. A tap records `amount_minor = 1200` in JPY.
   - A tap whose message has no `reply_to_message` (the original was deleted) toasts
     `Исходное сообщение недоступно. Отправьте трату ещё раз.` and records nothing. So does a
     tap whose re-parse no longer offers the tapped reading.
