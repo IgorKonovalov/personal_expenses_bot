@@ -1,5 +1,5 @@
 import type { Composer, Context } from 'grammy';
-import { findExpenseBySourceKey } from '../../db/expenses.js';
+import { findExpenseForSource } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
@@ -29,7 +29,7 @@ export function registerNonText(bot: Composer<Context>): void {
 export function registerEdited(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.on('edited_message', async (ctx) => {
     const { chat, message_id } = ctx.editedMessage;
-    const expense = findExpenseBySourceKey(deps.db, `tg:${chat.id}:${message_id}`);
+    const expense = findExpenseForSource(deps, `tg:${chat.id}:${message_id}`);
     if (expense === undefined) return;
     await replyHtml(ctx, messages.editedMessageHint);
   });

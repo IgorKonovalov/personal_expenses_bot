@@ -158,6 +158,14 @@ export function restoreExpense(
   return { kind: 'restored', expense: { ...expense, deletedAt: null }, ledger };
 }
 
+// The expense a source message recorded, deleted or not. Read-only.
+export function findExpenseForSource(
+  { db }: Pick<ServiceDeps, 'db'>,
+  sourceKey: string,
+): Expense | undefined {
+  return findExpenseBySourceKey(db, sourceKey);
+}
+
 function newExpenseId({ newId }: ServiceDeps): ExpenseId {
   return newId() as ExpenseId;
 }
