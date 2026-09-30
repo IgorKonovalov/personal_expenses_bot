@@ -335,6 +335,10 @@ layout.
   answer. README is not in Phase 3's or Phase 4's list.
 - Followup: a reading tap doesn't check that the tapper wrote the original message. In a
   private chat they are the same person.
+- Fix round 1, major 0 (README usage table): rows for `450 кофе`, `1.200 обед` and [Удалить]
+  rewritten and a [Вернуть] row added, in b2d4484.
+- Fix round 1, minor 1 (bot reads db): `other.ts` calls `findExpenseForSource` in
+  `services/recordExpense.ts`, in 153b225.
 
 ### Close triggers
 
