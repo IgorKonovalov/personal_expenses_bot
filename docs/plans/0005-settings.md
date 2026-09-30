@@ -180,7 +180,7 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: /settings and the timezone picker | dev | done | 8cf41ba |
-| 2: The ledger's default currency | dev | done | committed with this row |
+| 2: The ledger's default currency | dev | done | 9ee7e57 |
 
 ### Notes
 
@@ -214,7 +214,25 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
 - Phase 2: copy not named in the plan: the picker text `Валюта по умолчанию для новых трат в
   «…». Сейчас: RSD. Записанные траты не меняются.`, the toasts `Валюта изменена`,
   `Эта валюта уже выбрана` and `Валюту «…» может изменить только владелец`.
+- Followup, not acted on: `messages.flowExpired` reads `Начните заново: /categories.` for an
+  expired `setTimezone` flow too. `src/bot/handlers/text.ts` sends it without knowing the flow.
 
 ### Close triggers
+
+- Gate on the tip after 9ee7e57: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0, 29 test files, 327 tests passed; `pnpm build` exit 0.
+- `node scripts/check-doc-links.mjs`: exit 0, 89 relative links resolve.
+- The Almaty tzdata guard (`src/domain/timezones.test.ts`) passed locally under the gate; CI was
+  not run from this session.
+- Files changed outside the phases' `Files touched`: `src/services/flowSessions.ts`,
+  `src/services/manageCategories.ts`, `src/services/manageCategories.test.ts`,
+  `src/services/recordExpense.test.ts`, `src/services/todaySummary.test.ts`,
+  `src/services/changeCategory.test.ts`, `src/bot/handlers/start.ts`, `src/bot/handlers/menu.ts`,
+  `src/bot/middleware/allowlist.test.ts` (Phase 1); `src/domain/currencies.ts` (Phase 2).
+- Listed but absent: `src/services/periodSummary.ts`. Listed and unchanged: `src/index.ts`.
+- New modules: `src/domain/timezones.ts`, `src/services/settings.ts`,
+  `src/bot/handlers/settings.ts`, with tests, and `src/db/users.test.ts`,
+  `src/db/ledgers.test.ts`.
+- No migration. No dependency added.
 
 ## Followups
