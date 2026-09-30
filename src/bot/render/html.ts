@@ -53,8 +53,28 @@ export function replyHtml(ctx: Context, body: Html, extra: ReplyOther = {}): Pro
 // Telegram answers an edit to identical text and markup with 400 "message is not modified".
 // The message already shows what was asked for, so that counts as success (ADR-0011).
 export async function editHtml(ctx: Context, body: Html, extra: EditOther = {}): Promise<void> {
+  await unlessNotModified(ctx.editMessageText(body, { ...extra, ...htmlParseMode }));
+}
+
+// Edits a message other than the one the update is about: a screen anchor re-rendered after a
+// typed answer or /cancel (ADR-0009).
+export async function editHtmlAt(
+  ctx: Context,
+  message: { readonly chatId: number; readonly messageId: number },
+  body: Html,
+  extra: EditOther = {},
+): Promise<void> {
+  await unlessNotModified(
+    ctx.api.editMessageText(message.chatId, message.messageId, body, {
+      ...extra,
+      ...htmlParseMode,
+    }),
+  );
+}
+
+async function unlessNotModified(edit: Promise<unknown>): Promise<void> {
   try {
-    await ctx.editMessageText(body, { ...extra, ...htmlParseMode });
+    await edit;
   } catch (error) {
     if (error instanceof GrammyError && error.description.includes('message is not modified')) {
       return;

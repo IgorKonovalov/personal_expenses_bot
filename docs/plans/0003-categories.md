@@ -261,8 +261,8 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Every new expense lands in a category | dev | done | ff7577d |
-| 2: Change the category, and learn from the change | dev | done | committed with this row |
-| 3: Flow sessions, `/categories`, command menu | dev | not started | |
+| 2: Change the category, and learn from the change | dev | done | 8d76574 |
+| 3: Flow sessions, `/categories`, command menu | dev | done | committed with this row |
 
 ### Notes
 
@@ -278,6 +278,24 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
   `Выберите категорию:` on a second line. A change answers with the toast
   `Категория изменена`. The plan named neither.
 - Phase 2: `src/bot/handlers/text.ts` needed no change.
+- Phase 3 edited three files outside its `Files touched`:
+  - `src/bot/render/html.ts` gained `editHtmlAt`. A typed answer and `/cancel` re-render the
+    anchor from a message update, and the ADR-0012 lint gate bans `editMessageText` calls
+    outside `render/`.
+  - `src/db/categories.ts` gained `findCategory`, `findCategoryByNameKey`, `insertCategory`,
+    `restoreCategory` and `renameCategory`. Add, rename and restore need SQL, and the plan
+    listed no repository for them.
+  - `src/db/connection.test.ts` again, for migration `0003`.
+- Phase 3: `requireScreen(ctx, deps)` takes no screen name. With `categories` as the only
+  screen, a name check is always true and the type-aware lint rejects it as an unnecessary
+  condition. The anchor's `screen` field is returned for a future handler to switch on.
+- Phase 3: a refused answer (empty, too long, expense-shaped, digit first, duplicate) re-asks
+  by editing the anchor into the refusal line above the prompt, with [Отмена]. No new message
+  is sent. The ADR-0009 rule "a prompt edits the anchor" was applied to re-asks too.
+- Phase 3: `/cancel` with nothing pending replies `Сейчас нечего отменять.` A category added at
+  the 30 limit is refused with a toast on [Добавить], and again at answer time.
+- Phase 3: an empty answer is tested as a single space. Telegram doesn't deliver empty text.
+- Phase 3: `CLAUDE.md` is unchanged, because the `src/` tree kept its shape.
 
 ### Close triggers
 

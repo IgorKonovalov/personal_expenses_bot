@@ -1,6 +1,8 @@
 import type { Composer, Context } from 'grammy';
+import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
+import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
@@ -8,18 +10,33 @@ import { cardFor } from './card.js';
 import { sendHelp } from './help.js';
 import { ensureUser } from './start.js';
 
-// Free text is an expense attempt. Register after command handlers. The taps on the ambiguous
-// amount question it asks are registered with it.
+// Text that isn't a command or a menu tap, routed by ADR-0009: a redelivered flow answer is
+// ignored, a pending flow takes the text as its answer, and anything else is an expense attempt.
+// Register after command handlers. The taps on the ambiguous amount question it asks are
+// registered with it.
 export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
   registerAmbiguous(bot, deps);
 
   bot.on('message:text', async (ctx) => {
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
+    const sourceKey = `tg:${ctx.chat.id}:${ctx.message.message_id}`;
+    const route = routeText(deps, { user, inputKey: sourceKey, now });
+    if (route.kind === 'redelivered') return;
+    if (route.kind === 'flow') {
+      await answerFlow(ctx, deps, {
+        user,
+        flow: route.flow,
+        text: ctx.message.text,
+        inputKey: sourceKey,
+      });
+      return;
+    }
+
     const result = recordExpense(deps, {
       user,
       text: ctx.message.text,
-      sourceKey: `tg:${ctx.chat.id}:${ctx.message.message_id}`,
+      sourceKey,
       // Telegram dates are Unix seconds.
       occurredAt: new Date(ctx.message.date * 1000),
       now,
@@ -51,6 +68,12 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
         await replyHtml(ctx, messages.invalidAmount);
         return;
       case 'notExpense':
+        // A late answer to an expired prompt: say so once, and drop the flow.
+        if (route.expiredFlow) {
+          cancelFlow(deps, user);
+          await replyHtml(ctx, messages.flowExpired);
+          return;
+        }
         await sendHelp(ctx);
         return;
       case 'readingUnavailable':

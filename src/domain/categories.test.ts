@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { categoryNameKey, descriptionKey, suggestCategory } from './categories.js';
+import {
+  categoryNameKey,
+  descriptionKey,
+  parseCategoryName,
+  suggestCategory,
+} from './categories.js';
 import { CATEGORY_PRESETS } from './categoryPresets.js';
 
 // A freshly seeded ledger: one active category per preset, ids in preset order.
@@ -23,6 +28,35 @@ describe('categoryNameKey', () => {
   it('uses the same folding', () => {
     expect(categoryNameKey('  Кафе   и РЕСТОРАНЫ ')).toBe('кафе и рестораны');
     expect(categoryNameKey('Жильё')).toBe('жилье');
+  });
+});
+
+describe('parseCategoryName', () => {
+  it('accepts a trimmed name and computes its key', () => {
+    expect(parseCategoryName('  Дача ', 'RSD')).toEqual({
+      kind: 'ok',
+      name: 'Дача',
+      nameKey: 'дача',
+    });
+    expect(parseCategoryName('Дача & <сад>', 'RSD')).toMatchObject({ kind: 'ok' });
+  });
+
+  it.each([
+    ['', 'empty'],
+    ['   ', 'empty'],
+    ['450 кофе', 'expenseShaped'],
+    ['1.200 обед', 'expenseShaped'],
+    ['450', 'startsWithDigit'],
+    ['7 чудес', 'expenseShaped'],
+    ['1-й этаж', 'startsWithDigit'],
+    ['я'.repeat(33), 'tooLong'],
+  ])('rejects %j as %s', (text, kind) => {
+    expect(parseCategoryName(text, 'RSD').kind).toBe(kind);
+  });
+
+  it('counts code points, not UTF-16 units, against the 32 limit', () => {
+    expect(parseCategoryName('🍎'.repeat(32), 'RSD').kind).toBe('ok');
+    expect(parseCategoryName('🍎'.repeat(33), 'RSD').kind).toBe('tooLong');
   });
 });
 

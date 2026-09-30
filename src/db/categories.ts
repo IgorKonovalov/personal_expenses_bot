@@ -64,6 +64,62 @@ export function listActiveCategories(db: Db, ledgerId: LedgerId): Category[] {
     .map(toCategory);
 }
 
+// A category of this ledger, archived or not.
+export function findCategory(db: Db, ledgerId: LedgerId, id: CategoryId): Category | undefined {
+  const row = db
+    .prepare<[string, number], CategoryRow>(
+      `SELECT ${COLUMNS} FROM categories WHERE ledger_id = ? AND id = ?`,
+    )
+    .get(ledgerId, id);
+  return row === undefined ? undefined : toCategory(row);
+}
+
+// The ledger's category with this name key, archived or not: name keys are unique per ledger.
+export function findCategoryByNameKey(
+  db: Db,
+  ledgerId: LedgerId,
+  nameKey: string,
+): Category | undefined {
+  const row = db
+    .prepare<[string, string], CategoryRow>(
+      `SELECT ${COLUMNS} FROM categories WHERE ledger_id = ? AND name_key = ?`,
+    )
+    .get(ledgerId, nameKey);
+  return row === undefined ? undefined : toCategory(row);
+}
+
+export function insertCategory(
+  db: Db,
+  ledgerId: LedgerId,
+  category: NewCategory,
+  createdAt: Date,
+): CategoryId {
+  const { lastInsertRowid } = db
+    .prepare<[string, string, string, string | null, string]>(
+      `INSERT INTO categories (ledger_id, name, name_key, preset_key, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(ledgerId, category.name, category.nameKey, category.presetKey, createdAt.toISOString());
+  return Number(lastInsertRowid) as CategoryId;
+}
+
+// Clears archived_at. Returns false when the category wasn't archived.
+export function restoreCategory(db: Db, id: CategoryId): boolean {
+  const { changes } = db
+    .prepare<[number]>(
+      'UPDATE categories SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL',
+    )
+    .run(id);
+  return changes === 1;
+}
+
+// Changes name and name_key; id and preset_key stay, so keyword rules still reach it.
+export function renameCategory(db: Db, id: CategoryId, name: string, nameKey: string): void {
+  db.prepare<[string, string, number]>(
+    'UPDATE categories SET name = ?, name_key = ? WHERE id = ?',
+  ).run(name, nameKey, id);
+}
+
 // Hides a category from the picker and suggestion; past expenses keep it (ADR-0007). Returns
 // false when it was already archived.
 export function archiveCategory(db: Db, id: CategoryId, archivedAt: Date): boolean {

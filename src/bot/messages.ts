@@ -26,6 +26,13 @@ interface AmbiguousView {
   readonly readings: readonly Money[];
 }
 
+interface CategoriesScreenView {
+  readonly ledger: LedgerRef;
+  readonly categories: readonly { readonly name: string }[];
+  // A line about what just changed, above the list.
+  readonly header?: Html | undefined;
+}
+
 interface TodayView {
   readonly ledger: LedgerRef;
   readonly date: LocalDate;
@@ -68,6 +75,7 @@ export const messages = {
   // Bot command menu registered with setMyCommands at boot.
   commands: [
     { command: 'today', description: 'Траты за сегодня' },
+    { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'help', description: 'Как записать трату' },
   ],
 
@@ -125,6 +133,45 @@ export const messages = {
   categoryForbidden: 'Изменить категорию может только тот, кто записал трату',
   categoryUnavailable: 'Эта категория недоступна',
   expenseDeletedToast: 'Трата удалена. Сначала верните её.',
+
+  // The /categories screen. Category names are user text: message text interpolates them only
+  // through `html`, and button labels carry them raw.
+  categoriesScreen: ({ ledger, categories, header }: CategoriesScreenView): Html => {
+    const body = joinHtml(
+      [html`<b>Категории «${ledgerName(ledger)}»</b>`, ...categories.map((c) => html`${c.name}`)],
+      '\n',
+    );
+    return header === undefined ? body : joinHtml([header, body], '\n\n');
+  },
+  addCategoryButton: 'Добавить',
+  renameCategoryButton: 'Переименовать',
+  archiveCategoryButton: 'Скрыть',
+  renamePicker: html`Какую категорию переименовать?`,
+  archivePicker: html`Какую категорию скрыть? Её можно вернуть, добавив снова.`,
+  addCategoryPrompt: html`Как назвать новую категорию? До 32 символов.`,
+  renameCategoryPrompt: (name: string): Html => html`Новое название для «${name}»? До 32 символов.`,
+  // Asked above the prompt again when an answer is refused; the flow stays pending.
+  categoryNameRefused: {
+    empty: html`Название не может быть пустым.`,
+    tooLong: html`Название длиннее 32 символов.`,
+    startsWithDigit: html`Название не может начинаться с цифры.`,
+    // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
+    expenseShaped: html`Похоже на трату. Сейчас я жду название категории. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+    duplicate: html`Такая категория уже есть.`,
+    limit: html`Категорий уже 30. Скройте ненужную, чтобы добавить новую.`,
+  },
+  categoryAdded: (name: string): Html => html`Категория «${name}» добавлена.`,
+  categoryRestored: (name: string): Html => html`Категория «${name}» снова в списке.`,
+  categoryRenamed: (name: string): Html => html`Категория переименована: «${name}».`,
+  categoryArchived: (name: string): Html =>
+    html`Категория «${name}» скрыта. Чтобы вернуть её, добавьте её снова.`,
+  categoryLimitToast: 'Категорий уже 30. Скройте ненужную, чтобы добавить новую.',
+  fallbackCategoryToast: '«Другое» нельзя скрыть',
+  categoryGoneToast: 'Категория не найдена',
+  flowExpired: html`Время ответа истекло. Начните заново: /categories.`,
+  nothingToCancel: html`Сейчас нечего отменять.`,
+  staleScreen: 'Этот экран устарел. Откройте его заново.',
+  cancelButton: 'Отмена',
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',

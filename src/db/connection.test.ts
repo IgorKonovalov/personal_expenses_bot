@@ -33,7 +33,7 @@ describe('runMigrations', () => {
     const path = tempDbPath();
 
     const first = openDatabase(path);
-    expect(runMigrations(first, BOOT)).toEqual(['0001', '0002']);
+    expect(runMigrations(first, BOOT)).toEqual(['0001', '0002', '0003']);
     first.close();
 
     const second = openDatabase(path);
@@ -41,6 +41,7 @@ describe('runMigrations', () => {
     expect(second.prepare('SELECT version, applied_at FROM schema_migrations').all()).toEqual([
       { version: '0001', applied_at: '2026-09-29T10:00:00.000Z' },
       { version: '0002', applied_at: '2026-09-29T10:00:00.000Z' },
+      { version: '0003', applied_at: '2026-09-29T10:00:00.000Z' },
     ]);
     second.close();
   });

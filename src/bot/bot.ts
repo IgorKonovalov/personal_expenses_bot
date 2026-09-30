@@ -4,7 +4,10 @@ import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
+import { clearFlowOnCommand } from './flows.js';
+import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
+import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
@@ -46,11 +49,15 @@ export function createBot(options: BotOptions): Bot {
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
   bot.use(callbackDispatcher());
+  // A command or menu tap clears a pending text flow (ADR-0009) before its handler runs.
+  bot.use(clearFlowOnCommand(options));
 
-  // Commands and exact menu labels first: the text handler treats any other text as an expense
-  // attempt, and whatever isn't text gets the help reply.
+  // Commands and exact menu labels first: the text handler treats any other text as a flow
+  // answer or an expense attempt, and whatever isn't text gets the help reply.
   registerStart(bot, options);
   registerToday(bot, options);
+  registerCategories(bot, options);
+  registerCancel(bot, options);
   registerHelp(bot);
   registerUnknownCommand(bot);
   registerMenu(bot, options);

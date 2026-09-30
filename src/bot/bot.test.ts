@@ -1,14 +1,18 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Bot } from 'grammy';
 import type { Message, Update } from 'grammy/types';
-import { describe, expect, it } from 'vitest';
-import type { Db } from '../db/connection.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { openDatabase, type Db } from '../db/connection.js';
+import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { createLogger } from '../logger.js';
-import { registerCommands } from './bot.js';
+import { createBot, registerCommands } from './bot.js';
 import {
   assertCallbackData,
   categoryPageData,
@@ -298,7 +302,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today and /help with descriptions from messages', async () => {
+  it('registers /today, /categories and /help with descriptions from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -309,7 +313,8 @@ describe('command registration at boot', () => {
         payload: {
           commands: [
             { command: 'today', description: messages.commands[0].description },
-            { command: 'help', description: messages.commands[1].description },
+            { command: 'categories', description: messages.commands[1].description },
+            { command: 'help', description: messages.commands[2].description },
           ],
         },
       },
@@ -1170,5 +1175,436 @@ describe('/today', () => {
         },
       },
     ]);
+  });
+});
+
+describe('/categories screen and text flows', () => {
+  const T = new Date('2026-09-30T10:00:00Z');
+  const MIN = 60 * 1000;
+  const botInfo = createTestBot().bot.botInfo;
+  let ids = 0;
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  function fileDb(): string {
+    dir = mkdtempSync(join(tmpdir(), 'expenses-bot-'));
+    return join(dir, 'bot.sqlite');
+  }
+
+  // A bot with a movable clock whose sendMessage answers with real message ids (the anchor needs
+  // them), optionally on a database a previous instance used.
+  function flowBot(opts: { db?: Db; firstMessageId?: number } = {}) {
+    const clock = { now: T };
+    const db =
+      opts.db ??
+      (() => {
+        const memory = openDatabase(':memory:');
+        runMigrations(memory, T);
+        return memory;
+      })();
+    let messageId = opts.firstMessageId ?? 100;
+    const bot = createBot({
+      token: '123456:test-token',
+      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      logger: silentLogger(),
+      db,
+      newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+      now: () => clock.now,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      botInfo,
+    });
+    const calls: ApiCall[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      calls.push({ method, payload });
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      const result =
+        method === 'sendMessage' ? { message_id: ++messageId, date: 0, chat, text: '' } : true;
+      return Promise.resolve({ ok: true, result: result as never });
+    });
+    let updateId = 0;
+    const say = (text: string, messageId: number) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text, date: clock.now }));
+    const tap = (data: string, messageId: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    return { bot, db, calls, clock, say, tap };
+  }
+
+  const PRESET_NAMES = CATEGORY_PRESETS.map((p) => p.name);
+  const screenText = (names: readonly string[], header?: string) =>
+    (header === undefined ? '' : `${header}\n\n`) +
+    ['<b>Категории «Личные расходы»</b>', ...names].join('\n');
+  const screenKeyboard = {
+    inline_keyboard: [
+      [{ text: 'Добавить', callback_data: 'cat:add' }],
+      [
+        { text: 'Переименовать', callback_data: 'cat:ren' },
+        { text: 'Скрыть', callback_data: 'cat:arc' },
+      ],
+    ],
+  };
+  const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
+  const ADD_PROMPT = 'Как назвать новую категорию? До 32 символов.';
+
+  function editOf(messageId: number, text: string, reply_markup: unknown) {
+    return {
+      method: 'editMessageText',
+      payload: { chat_id: ALLOWED_ID, message_id: messageId, text, reply_markup, ...htmlParseMode },
+    };
+  }
+
+  function categoryCount(db: Db): unknown {
+    return db.prepare('SELECT COUNT(*) FROM categories').pluck().get();
+  }
+
+  function expenseTotal(db: Db): unknown {
+    return db.prepare('SELECT COUNT(*) FROM expenses').pluck().get();
+  }
+
+  // /categories (anchor 101), then [Добавить] on it.
+  async function adding(opts: Parameters<typeof flowBot>[0] = {}) {
+    const harness = flowBot(opts);
+    await harness.say('/categories', 1);
+    await harness.tap('cat:add', 101);
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('sends the screen as a new message listing the active categories', async () => {
+    const { say, calls } = flowBot();
+
+    await say('/categories', 1);
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: screenText(PRESET_NAMES),
+          reply_markup: screenKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('opens the rename picker with a pager and back, and leaves «Другое» out of hide', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    const idOf = (name: string) =>
+      db.prepare('SELECT id FROM categories WHERE name = ?').pluck().get(name) as number;
+    calls.length = 0;
+
+    await tap('cat:ren', 101);
+    await tap('cat:arcp:2', 101);
+    await tap('cat:arc', 101);
+
+    const renameButtons = PRESET_NAMES.slice(0, 8).map((name) => ({
+      text: name,
+      callback_data: `cat:ren:${String(idOf(name))}`,
+    }));
+    expect(calls[1]).toEqual(
+      editOf(101, 'Какую категорию переименовать?', {
+        inline_keyboard: [
+          ...[0, 2, 4, 6].map((i) => renameButtons.slice(i, i + 2)),
+          [
+            { text: '1/2', callback_data: 'cat:renp:1' },
+            { text: '▶', callback_data: 'cat:renp:2' },
+          ],
+          [{ text: '« Назад', callback_data: 'cat:open' }],
+        ],
+      }),
+    );
+    // The hide picker's last page holds the ninth preset and no «Другое».
+    expect(calls[3]).toEqual(
+      editOf(101, 'Какую категорию скрыть? Её можно вернуть, добавив снова.', {
+        inline_keyboard: [
+          [{ text: 'Подарки', callback_data: `cat:arc:${String(idOf('Подарки'))}` }],
+          [
+            { text: '◀', callback_data: 'cat:arcp:1' },
+            { text: '2/2', callback_data: 'cat:arcp:2' },
+          ],
+          [{ text: '« Назад', callback_data: 'cat:open' }],
+        ],
+      }),
+    );
+    expect(JSON.stringify(calls)).not.toContain('Другое');
+  });
+
+  it('hides a category without asking and re-renders the screen', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    const gifts = db.prepare("SELECT id FROM categories WHERE name = 'Подарки'").pluck().get();
+    calls.length = 0;
+
+    await tap(`cat:arc:${String(gifts)}`, 101);
+
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        screenText(
+          PRESET_NAMES.filter((n) => n !== 'Подарки'),
+          'Категория «Подарки» скрыта. Чтобы вернуть её, добавьте её снова.',
+        ),
+        screenKeyboard,
+      ),
+    );
+    expect(db.prepare('SELECT archived_at FROM categories WHERE id = ?').pluck().get(gifts)).toBe(
+      '2026-09-30T10:00:00.000Z',
+    );
+  });
+
+  it('toasts staleScreen on the first of two /categories, and a card still works', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('450 кофе', 1);
+    const expenseId = db.prepare('SELECT id FROM expenses').pluck().get() as string;
+    await say('/categories', 2);
+    await say('/categories', 3);
+    calls.length = 0;
+
+    await tap('cat:add', 102);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: `cb-4`, text: messages.staleScreen },
+      },
+    ]);
+    // Nothing is pending: plain text is still an expense attempt.
+    calls.length = 0;
+    await say('450 чай', 4);
+    expect(expenseTotal(db)).toBe(2);
+
+    calls.length = 0;
+    await tap(`exp:cat:${expenseId}`, 101);
+    expect(calls[1]).toMatchObject({ method: 'editMessageText', payload: { message_id: 101 } });
+
+    calls.length = 0;
+    await tap('cat:add', 103);
+    expect(calls[1]).toEqual(editOf(103, ADD_PROMPT, cancelKeyboard));
+  });
+
+  it('keeps the anchor across a restart on the same database file', async () => {
+    const path = fileDb();
+    const firstDb = openDatabase(path);
+    runMigrations(firstDb, T);
+    const first = flowBot({ db: firstDb });
+    await first.say('/categories', 1);
+    firstDb.close();
+
+    const secondDb = openDatabase(path);
+    const second = flowBot({ db: secondDb, firstMessageId: 200 });
+    await second.tap('cat:add', 101);
+
+    expect(second.calls[1]).toEqual(editOf(101, ADD_PROMPT, cancelKeyboard));
+    secondDb.close();
+  });
+
+  it('accepts an answer after a restart', async () => {
+    const path = fileDb();
+    const firstDb = openDatabase(path);
+    runMigrations(firstDb, T);
+    await adding({ db: firstDb });
+    firstDb.close();
+
+    const secondDb = openDatabase(path);
+    const second = flowBot({ db: secondDb, firstMessageId: 200 });
+    await second.say('Дача', 5);
+
+    expect(
+      secondDb.prepare("SELECT COUNT(*) FROM categories WHERE name = 'Дача'").pluck().get(),
+    ).toBe(1);
+    expect(second.calls[0]).toMatchObject({
+      method: 'editMessageText',
+      payload: { message_id: 101 },
+    });
+    secondDb.close();
+  });
+
+  it('adds Дача: prompt, answer, screen headed by the result, and the next picker offers it', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    calls.length = 0;
+
+    await tap('cat:add', 101);
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      editOf(101, ADD_PROMPT, cancelKeyboard),
+    ]);
+
+    calls.length = 0;
+    await say('Дача', 2);
+    expect(calls).toEqual([
+      editOf(
+        101,
+        screenText([...PRESET_NAMES, 'Дача'], 'Категория «Дача» добавлена.'),
+        screenKeyboard,
+      ),
+    ]);
+
+    await say('450 кофе', 3);
+    const expenseId = db.prepare('SELECT id FROM expenses').pluck().get() as string;
+    calls.length = 0;
+    await tap(`exp:catp:${expenseId}:2`, 102);
+    const dacha = db.prepare("SELECT id FROM categories WHERE name = 'Дача'").pluck().get();
+    expect(JSON.stringify(calls[1])).toContain(
+      `"text":"Дача","callback_data":"exp:setcat:${expenseId}:${String(dacha)}"`,
+    );
+  });
+
+  it.each([
+    ['', 'Название не может быть пустым.'],
+    ['я'.repeat(33), 'Название длиннее 32 символов.'],
+    [
+      '450 кофе',
+      'Похоже на трату. Сейчас я жду название категории. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.',
+    ],
+    ['450', 'Название не может начинаться с цифры.'],
+    ['кафе и рестораны', 'Такая категория уже есть.'],
+  ])('re-asks %j with its refusal and keeps the flow pending', async (text, refusal) => {
+    const { say, calls, db } = await adding();
+    const categories = categoryCount(db);
+
+    await say(text === '' ? ' ' : text, 2);
+    expect(calls).toEqual([editOf(101, `${refusal}\n${ADD_PROMPT}`, cancelKeyboard)]);
+    expect(categoryCount(db)).toBe(categories);
+    expect(expenseTotal(db)).toBe(0);
+
+    await say('Дача', 3);
+    expect(categoryCount(db)).toBe((categories as number) + 1);
+  });
+
+  it('escapes a name in message text and keeps it raw on buttons', async () => {
+    const { say, tap, calls } = await adding();
+
+    await say('Дача & <сад>', 2);
+    expect(calls[0]).toEqual(
+      editOf(
+        101,
+        screenText(
+          [...PRESET_NAMES, 'Дача &amp; &lt;сад&gt;'],
+          'Категория «Дача &amp; &lt;сад&gt;» добавлена.',
+        ),
+        screenKeyboard,
+      ),
+    );
+
+    calls.length = 0;
+    await tap('cat:renp:2', 101);
+    expect(JSON.stringify(calls[1])).toContain('"text":"Дача & <сад>"');
+  });
+
+  it('renames with a prompt naming the current name, and 450 кофе still lands there', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+      .pluck()
+      .get() as number;
+    calls.length = 0;
+
+    await tap(`cat:ren:${String(cafe)}`, 101);
+    expect(calls[1]).toEqual(
+      editOf(101, 'Новое название для «Кафе и рестораны»? До 32 символов.', cancelKeyboard),
+    );
+    await say('Кофейни', 2);
+    calls.length = 0;
+    await say('450 кофе', 3);
+
+    expect(calls[0]).toMatchObject({
+      payload: { text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кофейни' },
+    });
+    expect(
+      db.prepare('SELECT id, preset_key FROM categories WHERE name = ?').get('Кофейни'),
+    ).toEqual({ id: cafe, preset_key: 'cafe' });
+  });
+
+  it('takes Дача at T+9m59s as the answer', async () => {
+    const { say, clock, db } = await adding();
+
+    clock.now = new Date(T.getTime() + 9 * MIN + 59_000);
+    await say('Дача', 2);
+
+    expect(db.prepare("SELECT COUNT(*) FROM categories WHERE name = 'Дача'").pluck().get()).toBe(1);
+  });
+
+  it('answers Дача at T+10m01s with flowExpired, once, and records 450 кофе', async () => {
+    const { say, clock, calls, db } = await adding();
+    const categories = categoryCount(db);
+
+    clock.now = new Date(T.getTime() + 10 * MIN + 1000);
+    await say('Дача', 2);
+    await say('Дача', 3);
+    await say('450 кофе', 4);
+
+    expect(sentTexts(calls).slice(0, 2)).toEqual([
+      'Время ответа истекло. Начните заново: /categories.',
+      messages.help,
+    ]);
+    expect(categoryCount(db)).toBe(categories);
+    expect(expenseTotal(db)).toBe(1);
+  });
+
+  it('records 450 кофе sent at T+10m01s without a flowExpired reply', async () => {
+    const { say, clock, calls, db } = await adding();
+
+    clock.now = new Date(T.getTime() + 10 * MIN + 1000);
+    await say('450 кофе', 2);
+
+    expect(expenseTotal(db)).toBe(1);
+    expect(sentTexts(calls)).toEqual([
+      'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
+    ]);
+  });
+
+  it('answers Дача at T+25h with the ordinary help reply', async () => {
+    const { say, clock, calls, db } = await adding();
+    const categories = categoryCount(db);
+
+    clock.now = new Date(T.getTime() + 25 * 60 * MIN);
+    await say('Дача', 2);
+
+    expect(sentTexts(calls)).toEqual([messages.help]);
+    expect(categoryCount(db)).toBe(categories);
+  });
+
+  it('creates one category for a redelivered answer, with no reply and no expense', async () => {
+    const { bot, calls, db } = await adding();
+    const answer = textUpdate({ updateId: 50, messageId: 2, text: 'Дача', date: T });
+
+    await bot.handleUpdate(answer);
+    calls.length = 0;
+    await bot.handleUpdate(answer);
+
+    expect(db.prepare("SELECT COUNT(*) FROM categories WHERE name = 'Дача'").pluck().get()).toBe(1);
+    expect(calls).toEqual([]);
+    expect(expenseTotal(db)).toBe(0);
+  });
+
+  it.each([
+    ['/cancel', true],
+    ['[Отмена]', true],
+    ['📊 Сегодня', false],
+    ['/today', false],
+  ])('clears the pending flow on %s, so 450 кофе records', async (action, restores) => {
+    const { say, tap, calls, db } = await adding();
+
+    if (action === '[Отмена]') await tap('flow:cancel', 101);
+    else await say(action, 2);
+    const restored = calls.some(
+      (call) =>
+        call.method === 'editMessageText' &&
+        (call.payload as { text: string }).text === screenText(PRESET_NAMES),
+    );
+    await say('450 кофе', 3);
+
+    expect(restored).toBe(restores);
+    if (restores) {
+      expect(calls).toContainEqual(editOf(101, screenText(PRESET_NAMES), screenKeyboard));
+    }
+    expect(expenseTotal(db)).toBe(1);
   });
 });

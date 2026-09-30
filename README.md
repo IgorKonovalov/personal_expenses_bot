@@ -13,20 +13,24 @@ when an amount could be read two ways.
 
 ## Using the bot
 
-| You send          | The bot does                                                                                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/start`          | Creates your account and a personal ledger («Личные расходы»)                                                                                                          |
-| `450 кофе`        | Records 450.00 in the ledger's default currency and replies `Записано в «Личные расходы»: 450.00 RSD — кофе` with an [Удалить] button                                  |
-| `12,50 EUR такси` | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                                                           |
-| `1 200 обед`      | Records 1 200.00. Group thousands with a space                                                                                                                         |
-| `1.200 обед`      | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more |
-| `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                                                 |
-| [Удалить]         | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                        |
-| [Вернуть]         | Restores the expense, and `/today` counts it again                                                                                                                     |
-| `/help`           | How to record an expense, and what the menu buttons do                                                                                                                 |
+| You send          | The bot does                                                                                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start`          | Creates your account and a personal ledger («Личные расходы»)                                                                                                                                                                                              |
+| `450 кофе`        | Records 450.00 in the ledger's default currency, in a category picked from how this ledger filed `кофе` before, else by keyword, else «Другое». Replies `Записано в «Личные расходы»: 450.00 RSD — кофе · Кафе и рестораны` with [Категория] and [Удалить] |
+| [Категория]       | Opens a paged list of the ledger's categories in the same message. A tap moves the expense there, and the next expense with the same description follows it                                                                                                |
+| `12,50 EUR такси` | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                                                                                                                                               |
+| `1 200 обед`      | Records 1 200.00. Group thousands with a space                                                                                                                                                                                                             |
+| `1.200 обед`      | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more                                                                                     |
+| `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                                                                                                                                     |
+| [Удалить]         | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                                                                                                            |
+| [Вернуть]         | Restores the expense, and `/today` counts it again                                                                                                                                                                                                         |
+| `/categories`     | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back                                                                    |
+| `/cancel`         | Drops a pending question (like the new category's name) and puts the list back                                                                                                                                                                             |
+| `/help`           | How to record an expense, and what the menu buttons do                                                                                                                                                                                                     |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
-`/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. Unknown commands,
+`/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
+command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
 photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
 the record, and the bot says so.
 

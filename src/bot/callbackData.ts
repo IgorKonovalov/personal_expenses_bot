@@ -55,3 +55,30 @@ export function setCategoryData(expenseId: ExpenseId, categoryId: CategoryId): s
 export function showExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:show:${expenseId}`);
 }
+
+// The /categories screen (ADR-0011). Only the current screen anchor accepts these.
+export const CATEGORIES_OPEN = 'cat:open';
+export const CATEGORY_ADD = 'cat:add';
+// `cat:ren` / `cat:arc` open page 1 of their picker; `cat:renp:<page>` / `cat:arcp:<page>` page
+// it; `cat:ren:<id>` / `cat:arc:<id>` pick.
+export const CATEGORY_RENAME_PAGE = /^cat:ren(?:p:(\d{1,4}))?$/;
+export const CATEGORY_RENAME = /^cat:ren:(\d{1,16})$/;
+export const CATEGORY_ARCHIVE_PAGE = /^cat:arc(?:p:(\d{1,4}))?$/;
+export const CATEGORY_ARCHIVE = /^cat:arc:(\d{1,16})$/;
+
+export type CategoryAction = 'ren' | 'arc';
+
+export function categoryActionData(action: CategoryAction): string {
+  return assertCallbackData(`cat:${action}`);
+}
+
+export function categoryActionPageData(action: CategoryAction, page: number): string {
+  return assertCallbackData(`cat:${action}p:${page}`);
+}
+
+export function categoryActionPickData(action: CategoryAction, categoryId: CategoryId): string {
+  return assertCallbackData(`cat:${action}:${categoryId}`);
+}
+
+// [Отмена] on a text prompt (ADR-0009).
+export const FLOW_CANCEL = 'flow:cancel';
