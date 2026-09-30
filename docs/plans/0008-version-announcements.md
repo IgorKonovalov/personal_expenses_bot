@@ -187,8 +187,8 @@ not add claims):
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: the admin gets a message for a new version | dev | done | committed with this row |
-| 2: /changelog | dev | not started | |
+| 1: the admin gets a message for a new version | dev | done | 03114c0 |
+| 2: /changelog | dev | done | committed with this row |
 
 ### Notes
 
@@ -207,6 +207,9 @@ not add claims):
 - Phase 1: I checked the gate by bumping `package.json` to `0.3.1`. `pnpm test src/bot/messages.test.ts`
   failed with "expected [ '0.3.0', '0.2.0', '0.1.0' ] to include '0.3.1'". I then reverted it with
   `git checkout -- package.json`.
+- Phase 2: the tests are in `src/bot/bot.test.ts`, and there is no `changelog.test.ts`. The budget
+  is `CHANGELOG_BUDGET = 3900` in `src/bot/messages.ts`. It is measured in UTF-16 units of the entries'
+  HTML plus their separators, and it drops older entries whole.
 
 ### Close triggers
 

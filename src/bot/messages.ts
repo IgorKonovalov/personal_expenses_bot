@@ -2,6 +2,7 @@ import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
+import { compareVersions } from '../domain/version.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
 // Every user-facing string, in Russian with polite "вы". Handlers pick a message here and never
@@ -70,6 +71,12 @@ function expenseLine(verb: string, { expense, ledger }: ExpenseView): Html {
   return html`${verb} «${ledgerName(ledger)}»: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// Telegram rejects messages over 4096 characters. The /changelog entries get at most this many
+// UTF-16 units of HTML, counted with their separators; the rest of the 4096 holds the header and
+// the truncation line. Markup counts too, so the visible text is shorter still.
+const CHANGELOG_BUDGET = 3900;
+const CHANGELOG_SEPARATOR = '\n\n';
+
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
@@ -85,6 +92,7 @@ export const messages = {
     { command: 'today', description: 'Траты за сегодня' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'help', description: 'Как записать трату' },
+    { command: 'changelog', description: 'Что нового в боте' },
   ],
 
   welcome: html`Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.`,
@@ -95,6 +103,7 @@ export const messages = {
       html``,
       html`${menu.today} — траты за сегодня`,
       html`${menu.help} — эта подсказка`,
+      html`/changelog — что нового в боте`,
     ],
     '\n',
   ),
@@ -204,4 +213,21 @@ export const messages = {
   // The message the admin gets at boot on a new version.
   versionAnnouncement: (version: string, body: Html): Html =>
     joinHtml([html`🆕 Версия ${version}`, body, html`Все изменения: /changelog`], '\n\n'),
+  // /changelog: newest version first, by number. Older entries past the budget are dropped
+  // whole and the reply says so.
+  changelog: (announcements: Readonly<Record<string, Html>>): Html => {
+    const entries = Object.entries(announcements)
+      .sort(([a], [b]) => compareVersions(b, a))
+      .map(([version, body]) => joinHtml([html`<b>${version}</b>`, body], '\n'));
+    const shown: Html[] = [];
+    let used = 0;
+    for (const entry of entries) {
+      used += entry.length + CHANGELOG_SEPARATOR.length;
+      if (used > CHANGELOG_BUDGET) break;
+      shown.push(entry);
+    }
+    const parts = [html`<b>Что нового</b>`, ...shown];
+    if (shown.length < entries.length) parts.push(html`Более ранние версии не поместились.`);
+    return joinHtml(parts, CHANGELOG_SEPARATOR);
+  },
 } as const;

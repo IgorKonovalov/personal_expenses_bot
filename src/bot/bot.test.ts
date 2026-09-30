@@ -27,6 +27,7 @@ import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
   ALLOWED_ID,
   SECOND_ALLOWED_ID,
+  STRANGER_ID,
   callbackUpdate,
   createTestBot,
   logContent,
@@ -302,7 +303,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /categories and /help with descriptions from messages', async () => {
+  it('registers /today, /categories, /help and /changelog with descriptions from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -315,6 +316,7 @@ describe('command registration at boot', () => {
             { command: 'today', description: messages.commands[0].description },
             { command: 'categories', description: messages.commands[1].description },
             { command: 'help', description: messages.commands[2].description },
+            { command: 'changelog', description: 'Что нового в боте' },
           ],
         },
       },
@@ -333,6 +335,76 @@ describe('command registration at boot', () => {
 
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ level: 40, msg: 'setMyCommands failed' });
+  });
+});
+
+describe('/changelog', () => {
+  const TRUNCATED = 'Более ранние версии не поместились.';
+
+  it('lists 0.3.0, 0.2.0 and 0.1.0, newest first', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/changelog' }));
+
+    const { versionAnnouncements: a } = messages;
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text:
+            `<b>Что нового</b>\n\n<b>0.3.0</b>\n${String(a['0.3.0'])}\n\n` +
+            `<b>0.2.0</b>\n${String(a['0.2.0'])}\n\n<b>0.1.0</b>\n${String(a['0.1.0'])}`,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('sorts by version number, not by insertion order', () => {
+    const text = messages.changelog({ '0.9.0': html`девять`, '0.10.0': html`десять` });
+
+    expect(text).toBe('<b>Что нового</b>\n\n<b>0.10.0</b>\nдесять\n\n<b>0.9.0</b>\nдевять');
+  });
+
+  it('keeps the newest entries under 4096 characters and ends with the truncation line', () => {
+    const body = html`${'я'.repeat(300)}`;
+    const announcements = Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [`0.${String(i)}.0`, body]),
+    );
+
+    const text = messages.changelog(announcements);
+
+    expect(text.length).toBeLessThan(4096);
+    expect(text.startsWith(`<b>Что нового</b>\n\n<b>0.39.0</b>\n${body}\n\n<b>0.38.0</b>`)).toBe(
+      true,
+    );
+    expect(text.endsWith(`\n\n${TRUNCATED}`)).toBe(true);
+    expect(text).not.toContain('<b>0.0.0</b>');
+    // Only whole entries are dropped: every shown body is complete.
+    expect(
+      text
+        .split('\n\n')
+        .slice(1, -1)
+        .every((entry) => entry.endsWith(body)),
+    ).toBe(true);
+  });
+
+  it('has no truncation line when everything fits', () => {
+    expect(messages.changelog(messages.versionAnnouncements)).not.toContain(TRUNCATED);
+  });
+
+  it('is in the command menu and the help text', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('changelog');
+    expect(messages.help).toContain('/changelog');
+  });
+
+  it('answers nothing to a user outside the allow-list', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, fromId: STRANGER_ID, text: '/changelog' }));
+
+    expect(calls).toEqual([]);
   });
 });
 
