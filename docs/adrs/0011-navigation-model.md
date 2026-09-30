@@ -111,3 +111,12 @@ it. The sibling reaches the same UX with plain handlers and a thin kit.
 ### Alternative C: The sibling's strict rule for every inline message
 Only the latest anchor accepts taps, including expense confirmations. It lost because Undo and
 category changes on an older confirmation are the common case, not an edge case.
+
+## Outcome
+
+**2026-09-30, Plan 0007 close.** Decision 3's fallback is not a terminal handler registered last
+in `bot.ts`. `callbackDispatcher()` in `src/bot/callbacks.ts` is middleware installed after the
+allowlist. It makes a repeat `answerCallbackQuery` on the same update a no-op, and after `next()`
+returns it answers silently any query that nothing answered. A terminal catch-all would swallow
+every scope registered after it, which is the defect this ADR set out to remove. A later plan
+registers its callback handlers anywhere in `createBot`, and they still fire.
