@@ -253,7 +253,7 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 |---|---|---|---|
 | 1: Past dates in free text | dev | done | 65ecc5e |
 | 2: /week and /month with category breakdown and paging | dev | done | 77fd3e5 |
-| 3: Edit amount, description and date | dev | done | committed with this row |
+| 3: Edit amount, description and date | dev | done | 637c140 |
 
 ### Notes
 
@@ -287,7 +287,26 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
   the expense's stored state. A quick-button tap clears the pending flow.
 - Phase 3: the expense-shaped refusal (ADR-0009) applies to all three prompts, the date prompt
   included. `Expense` carries no `updatedAt`; `updated_at` exists only in the row.
+- Followup noticed, not acted on: the README table has no row for the date words of Phase 1 or
+  the [Изменить] flow of Phase 3 (README is in Phase 2's Files touched only).
+- Followup noticed, not acted on: `messages.flowExpired` still says "Начните заново: /categories."
+  for every flow kind, the edit flows included.
 
 ### Close triggers
+
+- Gate on the tip after 637c140: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0, 33 test files, 477 tests passed; `pnpm build` exit 0.
+- `node scripts/check-doc-links.mjs`: exit 0, 89 relative links resolve.
+- Files changed outside the phases' `Files touched`: `src/bot/handlers/category.ts`,
+  `src/bot/handlers/ambiguous.ts` (Phase 1); `src/bot/flows.ts` (Phase 2);
+  `src/db/connection.test.ts` (Phase 3).
+- Listed and unchanged: `src/index.ts`, `src/bot/screens.ts` (Phase 2); `src/bot/handlers/text.ts`
+  (Phase 3).
+- New modules: `src/domain/dateText.ts`, `src/domain/periods.ts`, `src/services/periodSummary.ts`,
+  `src/services/editExpense.ts`, `src/bot/handlers/summary.ts`, `src/bot/handlers/edit.ts`, with
+  tests for the domain and service modules.
+- Migration: `0005_expense_updated_at.sql` (adds `expenses.updated_at`). No dependency added.
+- New callback data: `sum:m:<YYYY-MM>` (13 bytes), `sum:w:<Monday>` (16), `exp:edit:<uuid>` (45),
+  `exp:ef:<uuid>:<a|d|t>` (45), `exp:dt:<uuid>:<YYYY-MM-DD>` (54).
 
 ## Followups
