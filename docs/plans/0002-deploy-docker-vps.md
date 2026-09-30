@@ -307,8 +307,8 @@ sets it to the siblings' location). The heartbeat path is derived as
 | 1: The bot runs from a Docker image of compiled JS | dev | done | b71fab6 |
 | 2: Daily SQLite backups with rotation | dev | done | 865da53 |
 | 3: CI gate and deploy on push | dev | done | 68f91db |
-| 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy | dev | done | committed with this row |
-| 5: Provision on the VPS and first deploy | human | not started | |
+| 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy | dev | done | 530ef2e |
+| 5: Provision on the VPS and first deploy | human | done | none (VPS and GitHub only) |
 
 ### Notes
 
@@ -354,7 +354,70 @@ sets it to the siblings' location). The heartbeat path is derived as
 - Phase 4 deviation: the README's manual redeploy is now the installed script
   (`~/bin/deploy-personal-expenses-bot`) rather than the three commands.
 - Phase 4: `prettier --check CLAUDE.md` already warns at the parent commit; left as is.
+- Phase 5 deviation: production polls the **dev** BotFather bot's token, the user's call ("the
+  same bot for now"). No separate production bot exists, and `pnpm dev` against the same token
+  would conflict with the VPS.
+- Phase 5: VPS steps run as `botuser` over SSH on 2026-09-30:
+  - an HTTPS clone to `~/bots/personal-expenses-bot` (at `5f15dd0`, before the push);
+  - `install -d -m 700 ~/backups/personal-expenses-bot`;
+  - the deploy script installed from `530ef2e`, whose sha256 `c787104b...2908ca` matches
+    `git show HEAD:scripts/deploy-vps.sh`;
+  - `authorized_keys` backed up to `authorized_keys.bak-2026-09-30` before the
+    `restrict,command=` line was appended.
+
+  The user copied `.env` (mode 600, one `BOT_TOKEN=` line, `HOST_BACKUP_DIR` on its own line)
+  and set the secrets `SSH_HOST`, `SSH_USER` and `SSH_KEY`. The laptop's copy of the key was
+  deleted.
+- Phase 5: `ssh -i <deploy key> botuser@<host> whoami` printed `Already up to date.` and
+  `no configuration file provided: not found`, exit 1 (before `.env` existed and before the push).
+  It never printed `botuser`.
+- Phase 5: first deploy, Actions run 36750485524: `check` green (including the script test step),
+  `deploy` 2m14s, green. The VPS checkout is at `530ef2e`.
+
+  | | before (17:14 UTC) | after (17:22 UTC) |
+  |---|---|---|
+  | `free -m` used / available | 438 / 522 MB | 446 / 514 MB |
+  | swap used | 103 MB | 174 MB |
+  | each sibling's `RestartCount` / `OOMKilled` | 0 / false (x3) | 0 / false (x3) |
+
+  After the deploy, the bot was `healthy` at 101.8 MiB / 256 MiB. The siblings dropped from
+  43-73 MiB (earlier that day) to 10-21 MiB, and every container's `HostConfig.Memory` is
+  268435456. `docker system df`: build cache 2.851 GB (all from that day, kept by the
+  `until=168h` filter). Disk at 39%, up from 29%.
+- Phase 5: boot log `node: "v24.21.0"`, `applied: ["0001","0002","0003","0004"]`, then
+  `backup written` `expenses-2026-09-30.sqlite` 90112 bytes, and `bot started (long polling)`.
+  The `expense recorded` line carries only `expenseId`, `ledgerId`, `userId` and `duplicate`.
+- Phase 5: the user reports the Telegram smoke passed (`/start`, `450 кофе`, `/today`); it
+  wasn't observed from this session.
+- Phase 5 restore drill: `docker compose restart` logged `stopping`, `stopped`, then boot with
+  `applied: []` and a new `backup written` at 17:25:17. The copy taken off the VPS gave
+  `integrity_check` `ok`, and
+  `SELECT count(*) FROM expenses WHERE deleted_at IS NULL AND description = 'кофе'` = 1. The
+  copy was deleted afterwards. The README's in-place restore (`docker compose run ... cp`) is
+  still unexercised.
 
 ### Close triggers
 
+- **What shipped:** deploy and ops (Docker image, Compose service, CI gate and deploy, daily
+  backups); no change to bot behaviour in chat.
+- **User-visible surface changed:** no commands or messages. Env keys `BACKUP_DIR`,
+  `BACKUP_KEEP` and `HOST_BACKUP_DIR` (Compose only). Scripts `build` and `start`
+  (`node --enable-source-maps dist/index.js`). New files `Dockerfile`, `docker-compose.yml`,
+  `.github/workflows/deploy.yml` and `scripts/deploy-vps.sh`. Repository secrets `SSH_HOST`,
+  `SSH_USER` and `SSH_KEY`. No schema migrations.
+- **Gate at the tip (55c8950):**
+  - `pnpm typecheck` exit 0;
+  - `pnpm lint` exit 0;
+  - `pnpm test` exit 0, 25 files, 281 tests passed;
+  - `node --test "scripts/*.test.mjs"` 3 tests, 3 pass;
+  - `pnpm build` exit 0;
+  - `node scripts/check-doc-links.mjs` exit 0, 89 links resolve.
+- **Outstanding `human` phases:** none
+
 ## Followups
+
+- A separate production BotFather bot, so `pnpm dev` and the VPS stop sharing a token.
+- Build cache growth: 2.851 GB after one deploy, and pruning keeps a week of it. Watch
+  `docker system df` over the next deploys and switch to a size cap if it climbs.
+- The README's in-place restore steps have never been run end to end.
+- GitHub annotated the run: `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19.
