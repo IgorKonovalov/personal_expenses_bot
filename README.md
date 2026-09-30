@@ -22,6 +22,12 @@ when an amount could be read two ways.
 | `1.200 обед`      | Records **nothing** and asks whether you meant 1 200.00 or 1.20, then asks you to resend                                               |
 | `/today`          | `Сегодня, 30 сентября — «Личные расходы»`, then one total per currency                                                                 |
 | [Отменить]        | Soft-deletes that expense. A second tap says it's already cancelled                                                                    |
+| `/help`           | How to record an expense, and what the menu buttons do                                                                                 |
+
+`/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
+`/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. Unknown commands,
+photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
+the record, and the bot says so.
 
 Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply. Everyone else is
 ignored.

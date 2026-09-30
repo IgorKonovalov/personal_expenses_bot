@@ -1,6 +1,6 @@
 # 0007: Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes
 
-> **Status:** approved (2026-09-29)
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: Phase 4's `1.200 JPY` done-when asks, like `1.234` (conductor readiness park)
 > **Related ADRs:** [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md)
@@ -261,12 +261,27 @@ layout.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Menu bar, /help, and no silent input | dev | not started | |
+| 1: Menu bar, /help, and no silent input | dev | done | committed with this row |
 | 2: HTML seam (ADR-0012) | dev | not started | |
 | 3: Callback dispatcher and expense-card actions | dev | not started | |
 | 4: Ambiguous amounts answered with buttons | dev | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/middleware/allowlist.test.ts` (not in `Files touched`) changed. Its
+  pass-through case relied on a location message reaching no handler; it now asserts the help
+  reply, and the `/start` case matches with `toMatchObject` because the reply now carries the
+  menu.
+- Phase 1: the error-boundary test in `bot.test.ts` no longer throws from a `message:location`
+  handler added after `createBot` (the non-text responder now consumes it). It closes the
+  database and sends `450 synthetic-coffee`.
+- Phase 1: `src/bot/handlers/other.ts` imports `findExpenseBySourceKey` from `src/db/` directly
+  for the edited-message lookup; no service in `Files touched` exposes it.
+- Phase 1: the not-an-expense reply in `text.ts` (outside Phase 1's list) still sends
+  `messages.help` without the menu keyboard. `/help`, the ❓ label, unknown commands and
+  non-text messages send it with the keyboard.
+- Phase 1: the menu-label parse test probes every A-Z three-letter code through
+  `toCurrencyCode`, since `currencies.ts` exports no roster.
 
 ### Close triggers
 

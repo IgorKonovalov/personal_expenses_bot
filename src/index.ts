@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createBot } from './bot/bot.js';
+import { createBot, registerCommands } from './bot/bot.js';
 import { loadConfig } from './config.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
@@ -22,6 +22,8 @@ const bot = createBot({
   defaultTimezone: config.defaultTimezone,
   defaultCurrency: config.defaultCurrency,
 });
+
+await registerCommands(bot, logger);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {

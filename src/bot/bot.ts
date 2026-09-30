@@ -3,6 +3,9 @@ import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
+import { registerHelp } from './handlers/help.js';
+import { registerMenu } from './handlers/menu.js';
+import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerStart } from './handlers/start.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
@@ -38,11 +41,17 @@ export function createBot(options: BotOptions): Bot {
   bot.use(errorBoundary(logger));
   bot.use(allowlist(options.allowedTelegramIds, logger));
 
-  // Commands first: the text handler treats any other text as an expense attempt.
+  // Commands and exact menu labels first: the text handler treats any other text as an expense
+  // attempt, and whatever isn't text gets the help reply.
   registerStart(bot, options);
   registerToday(bot, options);
+  registerHelp(bot);
+  registerUnknownCommand(bot);
+  registerMenu(bot, options);
   registerUndo(bot, options);
   registerText(bot, options);
+  registerNonText(bot);
+  registerEdited(bot, options);
 
   bot.catch((err) => {
     logger.error(
@@ -52,6 +61,15 @@ export function createBot(options: BotOptions): Bot {
   });
 
   return bot;
+}
+
+// The slash-command list the client shows. A failure costs only that list, so boot continues.
+export async function registerCommands(bot: Bot, logger: Logger): Promise<void> {
+  try {
+    await bot.api.setMyCommands(messages.commands);
+  } catch (error) {
+    logger.warn({ err: safeError(error) }, 'setMyCommands failed');
+  }
 }
 
 function errorBoundary(logger: Logger): MiddlewareFn {

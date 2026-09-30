@@ -3,8 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { messages } from '../messages.js';
 import { ALLOWED_ID, STRANGER_ID, createTestBot, textUpdate } from '../testHarness.js';
 
-// A message no registered handler consumes, so a spy added after createBot sees it whenever
-// the allowlist lets it through.
+// A non-text message: past the allowlist it gets the help reply.
 function locationUpdate(updateId: number, fromId: number): Update {
   return {
     update_id: updateId,
@@ -34,13 +33,13 @@ describe('allowlist', () => {
   });
 
   it('lets an allowlisted sender through to handlers', async () => {
-    const { bot } = createTestBot();
-    const spy = vi.fn();
-    bot.use(spy);
+    const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(locationUpdate(1, ALLOWED_ID));
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(calls).toMatchObject([
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help } },
+    ]);
   });
 
   it('answers an allowlisted /start with the messages-module greeting', async () => {
@@ -48,7 +47,7 @@ describe('allowlist', () => {
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
 
-    expect(calls).toEqual([
+    expect(calls).toMatchObject([
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.welcome } },
     ]);
   });

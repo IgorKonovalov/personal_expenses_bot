@@ -58,14 +58,34 @@ function shownDescription(description: string): string {
     : `${codePoints.slice(0, MAX_SHOWN_DESCRIPTION).join('')}…`;
 }
 
+// Reply-keyboard labels. A text equal to a label is a menu tap, so no label may parse as an
+// expense (bot.test.ts pins this).
+const menu = {
+  today: '📊 Сегодня',
+  help: '❓ Помощь',
+} as const;
+
 export const messages = {
+  menu,
+  // Bot command menu registered with setMyCommands at boot.
+  commands: [
+    { command: 'today', description: 'Траты за сегодня' },
+    { command: 'help', description: 'Как записать трату' },
+  ],
+
   welcome:
     'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. ' +
     'Итоги за сегодня: /today.',
-  genericError: 'Что-то пошло не так. Попробуйте ещё раз.',
+  genericError:
+    'Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.',
   help:
     'Чтобы записать трату, отправьте сумму и описание, например «450 кофе». ' +
-    'Валюту можно указать после суммы: «12,50 EUR такси».',
+    'Валюту можно указать после суммы: «12,50 EUR такси».\n\n' +
+    `${menu.today} — траты за сегодня\n` +
+    `${menu.help} — эта подсказка`,
+  editedMessageHint:
+    'Изменение сообщения не меняет запись. ' +
+    'Удалите трату кнопкой под подтверждением и отправьте её заново.',
   invalidAmount:
     'Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». ' +
     'Тысячи отделяйте пробелом: «1 200 обед».',
