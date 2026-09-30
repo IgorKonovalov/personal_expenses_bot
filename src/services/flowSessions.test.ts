@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
+import type { ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
@@ -57,6 +58,13 @@ describe('screen anchor', () => {
     });
   });
 
+  it('round-trips an expense card screen with its expense id', () => {
+    const expenseId = '00000000-0000-4000-8000-000000000009' as ExpenseId;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 7, screen: { name: 'expense', expenseId } });
+
+    expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'expense', expenseId });
+  });
+
   it('reads a summary row without a ledger id as no screen', () => {
     db.prepare("UPDATE flow_sessions SET screen = 'summary', screen_ctx = '{}'").run();
 
@@ -91,6 +99,23 @@ describe('routeText (ADR-0009)', () => {
 
     expect(route('tg:1:9', at(MIN))).toEqual({ kind: 'redelivered' });
     expect(route('tg:1:10', at(MIN))).toEqual({ kind: 'free', expiredFlow: false });
+  });
+
+  it.each(['editAmount', 'editDescription', 'editDate'] as const)(
+    'reads back a pending %s flow with its expense id',
+    (kind) => {
+      const expenseId = '00000000-0000-4000-8000-000000000009' as ExpenseId;
+      startFlow({ db }, user, { kind, expenseId }, T);
+
+      expect(route('tg:1:1', at(MIN))).toEqual({ kind: 'flow', flow: { kind, expenseId } });
+    },
+  );
+
+  it('reads an edit flow without an expense id as no flow', () => {
+    startFlow({ db }, user, { kind: 'editAmount', expenseId: 'x' as ExpenseId }, T);
+    db.prepare("UPDATE flow_sessions SET payload = '{}'").run();
+
+    expect(route('tg:1:1', at(MIN))).toEqual({ kind: 'free', expiredFlow: true });
   });
 
   it('is free text after a cancel', () => {

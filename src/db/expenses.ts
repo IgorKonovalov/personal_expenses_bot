@@ -177,6 +177,64 @@ export function setExpenseCategory(
   return changes === 1;
 }
 
+// The card edits: compare-and-set on a live expense, stamping updated_at. Each returns false when
+// the expense is deleted or already holds the value, leaving the row unchanged.
+
+export function setExpenseAmount(
+  db: Db,
+  id: ExpenseId,
+  money: { readonly amountMinor: number; readonly currency: CurrencyCode },
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[number, string, string, string, number, string]>(
+      `UPDATE expenses SET amount_minor = ?, currency = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL AND (amount_minor IS NOT ? OR currency IS NOT ?)`,
+    )
+    .run(
+      money.amountMinor,
+      money.currency,
+      updatedAt.toISOString(),
+      id,
+      money.amountMinor,
+      money.currency,
+    );
+  return changes === 1;
+}
+
+// The description key moves with the description, so the ADR-0008 history step learns the new
+// wording; the category stays.
+export function setExpenseDescription(
+  db: Db,
+  id: ExpenseId,
+  text: { readonly description: string; readonly descriptionKey: string },
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, string, string, string]>(
+      `UPDATE expenses SET description = ?, description_key = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL AND description IS NOT ?`,
+    )
+    .run(text.description, text.descriptionKey, updatedAt.toISOString(), id, text.description);
+  return changes === 1;
+}
+
+// occurred_on only: occurred_at stays the instant the user told us.
+export function setExpenseDate(
+  db: Db,
+  id: ExpenseId,
+  occurredOn: LocalDate,
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, string, string]>(
+      `UPDATE expenses SET occurred_on = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL AND occurred_on IS NOT ?`,
+    )
+    .run(occurredOn, updatedAt.toISOString(), id, occurredOn);
+  return changes === 1;
+}
+
 // Non-deleted expenses of one ledger on one local date, visible only to members of that
 // ledger. Rows only: totals are computed in the domain (ADR-0002).
 export function listLedgerExpensesOn(

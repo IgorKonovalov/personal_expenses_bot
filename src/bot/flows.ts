@@ -1,16 +1,22 @@
 import type { Context, MiddlewareFn } from 'grammy';
 import type { User } from '../db/users.js';
+import { showExpense } from '../services/changeCategory.js';
+import { answerEditFlow } from '../services/editExpense.js';
 import {
   cancelFlow,
   currentAnchor,
+  isEditFlow,
   type CategoriesScreen,
+  type EditFlow,
   type Flow,
   type ScreenAnchor,
 } from '../services/flowSessions.js';
 import { answerCategoryFlow } from '../services/manageCategories.js';
 import { answerTimezoneFlow, userSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
+import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
+import { editPromptView } from './handlers/edit.js';
 import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
 import { messages } from './messages.js';
@@ -63,9 +69,50 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const { screen } = anchor;
   // A summary starts no flow, so a cancel never has one to restore.
   if (screen.name === 'summary') return;
+  if (screen.name === 'expense') {
+    // The card for the expense's stored state, as it was before the prompt.
+    const shown = showExpense(deps, { user, expenseId: screen.expenseId });
+    if (shown.kind === 'card')
+      await renderAnchor(ctx, anchor, cardFor(cardView(deps, user, shown)));
+    return;
+  }
   const view =
     screen.name === 'settings' ? settingsView(deps, user) : categoriesScreenFor(deps, user, screen);
   if (view !== undefined) await renderAnchor(ctx, anchor, view);
+}
+
+// A typed answer to an edit prompt in the card (the anchor). A valid one puts the card back with
+// the new value; an invalid one re-asks there. After the expense was deleted mid-flow, the flow
+// is cleared and the card shows its deleted form.
+async function answerEdit(
+  ctx: Context,
+  deps: HandlerDeps,
+  anchor: ScreenAnchor | undefined,
+  input: {
+    readonly user: User;
+    readonly flow: EditFlow;
+    readonly text: string;
+    readonly inputKey: string;
+  },
+): Promise<void> {
+  const { user, flow } = input;
+  const result = answerEditFlow(deps, { ...input, now: deps.now() });
+  switch (result.kind) {
+    case 'invalid':
+      await show(ctx, anchor, editPromptView(flow.kind, result.expense, result.today, result));
+      return;
+    case 'gone': {
+      await replyHtml(ctx, messages.editGone);
+      const { expense, ledger } = result;
+      if (anchor !== undefined && expense !== undefined && ledger !== undefined) {
+        await renderAnchor(ctx, anchor, cardFor(cardView(deps, user, { expense, ledger })));
+      }
+      return;
+    }
+    case 'editable':
+      await show(ctx, anchor, recordedCard(cardView(deps, user, result)));
+      return;
+  }
 }
 
 // A text taken as the answer to the pending flow. A valid answer completes the flow and puts
@@ -82,6 +129,11 @@ export async function answerFlow(
 ): Promise<void> {
   const { user, flow } = input;
   const anchor = currentAnchor(deps, user);
+
+  if (isEditFlow(flow)) {
+    await answerEdit(ctx, deps, anchor, { ...input, flow });
+    return;
+  }
 
   if (flow.kind === 'setTimezone') {
     const result = answerTimezoneFlow(deps, input);

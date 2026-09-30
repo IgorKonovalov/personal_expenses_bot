@@ -33,7 +33,7 @@ describe('runMigrations', () => {
     const path = tempDbPath();
 
     const first = openDatabase(path);
-    expect(runMigrations(first, BOOT)).toEqual(['0001', '0002', '0003', '0004']);
+    expect(runMigrations(first, BOOT)).toEqual(['0001', '0002', '0003', '0004', '0005']);
     first.close();
 
     const second = openDatabase(path);
@@ -43,6 +43,7 @@ describe('runMigrations', () => {
       { version: '0002', applied_at: '2026-09-29T10:00:00.000Z' },
       { version: '0003', applied_at: '2026-09-29T10:00:00.000Z' },
       { version: '0004', applied_at: '2026-09-29T10:00:00.000Z' },
+      { version: '0005', applied_at: '2026-09-29T10:00:00.000Z' },
     ]);
     second.close();
   });

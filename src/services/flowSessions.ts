@@ -1,5 +1,6 @@
 import type { CategoryId } from '../db/categories.js';
 import type { Db } from '../db/connection.js';
+import type { ExpenseId } from '../db/expenses.js';
 import {
   clearPendingFlow,
   completePendingFlow,
@@ -31,7 +32,14 @@ export interface SummaryScreen {
   readonly ledgerId: LedgerId;
 }
 
-export type Screen = CategoriesScreen | SummaryScreen | { readonly name: 'settings' };
+// An expense card holding an edit prompt: the card is the edit flow's anchor.
+export interface ExpenseScreen {
+  readonly name: 'expense';
+  readonly expenseId: ExpenseId;
+}
+
+export type Screen =
+  CategoriesScreen | SummaryScreen | ExpenseScreen | { readonly name: 'settings' };
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -47,7 +55,23 @@ export type CategoryFlow =
       readonly categoryId: CategoryId;
     };
 
-export type Flow = CategoryFlow | { readonly kind: 'setTimezone' };
+// Editing one field of an expense from its card.
+export interface EditFlow {
+  readonly kind: 'editAmount' | 'editDescription' | 'editDate';
+  readonly expenseId: ExpenseId;
+}
+
+const EDIT_FLOW_KINDS: ReadonlySet<string> = new Set<EditFlow['kind']>([
+  'editAmount',
+  'editDescription',
+  'editDate',
+]);
+
+export function isEditFlow(flow: Flow): flow is EditFlow {
+  return EDIT_FLOW_KINDS.has(flow.kind);
+}
+
+export type Flow = CategoryFlow | EditFlow | { readonly kind: 'setTimezone' };
 
 type Deps = { readonly db: Db };
 
@@ -124,6 +148,9 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
     return { name, ledgerId: parsed.ledgerId as LedgerId };
   }
+  if (name === 'expense' && typeof parsed?.expenseId === 'string') {
+    return { name, expenseId: parsed.expenseId as ExpenseId };
+  }
   if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
@@ -136,6 +163,12 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
 function parseFlow(kind: string, payload: string): Flow | undefined {
   const parsed = parseObject(payload);
   if (kind === 'setTimezone' && parsed !== undefined) return { kind };
+  if (
+    (kind === 'editAmount' || kind === 'editDescription' || kind === 'editDate') &&
+    typeof parsed?.expenseId === 'string'
+  ) {
+    return { kind, expenseId: parsed.expenseId as ExpenseId };
+  }
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
   if (kind === 'categoryAdd') return { kind, ledgerId };

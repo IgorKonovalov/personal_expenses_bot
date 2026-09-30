@@ -21,7 +21,10 @@ import {
   assertCallbackData,
   categoryPageData,
   categoryPickerData,
+  editExpenseData,
+  editFieldData,
   restoreExpenseData,
+  setExpenseDateData,
   setCategoryData,
   showExpenseData,
   summaryPageData,
@@ -44,10 +47,13 @@ function silentLogger() {
 }
 
 const EXPENSE_ID = '00000000-0000-4000-8000-000000000003';
-// The recorded card's keyboard: [Категория] above [Удалить].
+// The recorded card's keyboard: [Категория] [Изменить] above [Удалить].
 const undoKeyboard = {
   inline_keyboard: [
-    [{ text: 'Категория', callback_data: `exp:cat:${EXPENSE_ID}` }],
+    [
+      { text: 'Категория', callback_data: `exp:cat:${EXPENSE_ID}` },
+      { text: 'Изменить', callback_data: `exp:edit:${EXPENSE_ID}` },
+    ],
     [{ text: messages.undoButton, callback_data: `exp:undo:${EXPENSE_ID}` }],
   ],
 };
@@ -310,8 +316,7 @@ describe('input that is not an expense text', () => {
 
   it('pins the edited-message hint and the generic error copy', () => {
     expect(messages.editedMessageHint).toBe(
-      'Изменение сообщения не меняет запись. Удалите трату кнопкой под подтверждением и ' +
-        'отправьте её заново.',
+      'Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.',
     );
     expect(messages.genericError).toBe(
       'Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.',
@@ -1241,6 +1246,335 @@ describe('category picker on the card', () => {
         payload: { callback_query_id: 'cb-2', text: messages[toast] },
       },
     ]);
+  });
+});
+
+describe('editing an expense from its card', () => {
+  // Wednesday 30 September, 12:00 local.
+  const NOW = new Date('2026-09-30T10:00:00Z');
+  const ID = EXPENSE_ID as ExpenseId;
+  const CARD = 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны';
+  const AMOUNT_PROMPT =
+    'Сейчас: 450.00 RSD. Введите новую сумму, например «1 200» или «12,50 EUR».';
+  const cancelRow = [{ text: 'Отмена', callback_data: 'flow:cancel' }];
+
+  // 450 кофе recorded as message 10; its card is message 2, the callbacks' default.
+  async function recorded(now = NOW) {
+    const harness = createTestBot({ now, logLevel: 'info' });
+    let updateId = 0;
+    const say = (text: string, messageId: number) =>
+      harness.bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text, date: NOW }));
+    const tap = (data: string, fromId = ALLOWED_ID) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, fromId }));
+    await say('450 кофе', 10);
+    harness.calls.length = 0;
+    return { ...harness, say, tap };
+  }
+
+  // The card turned into the field's prompt.
+  async function prompting(field: 'a' | 'd' | 't', now = NOW) {
+    const harness = await recorded(now);
+    await harness.tap(`exp:edit:${ID}`);
+    await harness.tap(`exp:ef:${ID}:${field}`);
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  function row(db: Db): Record<string, unknown> {
+    return db
+      .prepare(
+        `SELECT amount_minor, currency, description, description_key, category_id, occurred_at,
+                occurred_on, updated_at FROM expenses WHERE id = ?`,
+      )
+      .get(ID) as Record<string, unknown>;
+  }
+
+  function cardEdit(text: string, reply_markup: unknown = undoKeyboard) {
+    return {
+      method: 'editMessageText',
+      payload: { chat_id: ALLOWED_ID, message_id: 2, text, reply_markup, ...htmlParseMode },
+    };
+  }
+
+  it('builds exp:edit and exp:ef at 45 bytes and exp:dt at 54', () => {
+    expect(Buffer.byteLength(editExpenseData(ID))).toBe(45);
+    expect(Buffer.byteLength(editFieldData(ID, 'a'))).toBe(45);
+    expect(Buffer.byteLength(setExpenseDateData(ID, '2026-09-29' as LocalDate))).toBe(54);
+  });
+
+  it('opens the field picker in the card with [« Назад] alone below', async () => {
+    const { tap, calls } = await recorded();
+
+    await tap(`exp:edit:${ID}`);
+
+    expect(calls[1]).toEqual(
+      cardEdit('Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе\nЧто изменить?', {
+        inline_keyboard: [
+          [
+            { text: 'Сумма', callback_data: `exp:ef:${ID}:a` },
+            { text: 'Описание', callback_data: `exp:ef:${ID}:d` },
+            { text: 'Дата', callback_data: `exp:ef:${ID}:t` },
+          ],
+          [{ text: '« Назад', callback_data: `exp:show:${ID}` }],
+        ],
+      }),
+    );
+  });
+
+  it('asks for the amount in the card, and [Отмена] restores the card unchanged', async () => {
+    const { tap, calls, db } = await recorded();
+    const before = row(db);
+    await tap(`exp:edit:${ID}`);
+    calls.length = 0;
+
+    await tap(`exp:ef:${ID}:a`);
+    await tap('flow:cancel');
+
+    expect(calls[1]).toEqual(cardEdit(AMOUNT_PROMPT, { inline_keyboard: [cancelRow] }));
+    expect(calls[3]).toEqual(cardEdit(CARD));
+    expect(row(db)).toEqual(before);
+  });
+
+  it('sets 1 200 as 120000 RSD, re-renders the card, and /today shows it', async () => {
+    const { say, calls, db } = await prompting('a');
+
+    await say('1 200', 11);
+
+    expect(row(db)).toMatchObject({
+      amount_minor: 120000,
+      currency: 'RSD',
+      updated_at: '2026-09-30T10:00:00.000Z',
+    });
+    expect(calls).toEqual([
+      cardEdit('Записано в «Личные расходы»: <b>1 200.00 RSD</b> — кофе · Кафе и рестораны'),
+    ]);
+    calls.length = 0;
+    await say('/today', 12);
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n1 200.00 RSD',
+    ]);
+  });
+
+  it('sets 12,5 EUR as 1250 EUR', async () => {
+    const { say, db } = await prompting('a');
+
+    await say('12,5 EUR', 11);
+
+    expect(row(db)).toMatchObject({ amount_minor: 1250, currency: 'EUR' });
+  });
+
+  it('re-asks 1.200 with both readings, changes nothing, and keeps the flow', async () => {
+    const { say, calls, db } = await prompting('a');
+    const before = row(db);
+
+    await say('1.200', 11);
+
+    expect(calls).toEqual([
+      cardEdit(
+        'Сумму можно понять по-разному: 1 200.00 RSD или 1.20 RSD. Ничего не изменено. ' +
+          'Тысячи отделяйте пробелом («1 200»), копейки — запятой («1,20»).\n' +
+          AMOUNT_PROMPT,
+        { inline_keyboard: [cancelRow] },
+      ),
+    ]);
+    expect(row(db)).toEqual(before);
+    await say('1 200', 12);
+    expect(row(db)).toMatchObject({ amount_minor: 120000 });
+  });
+
+  it('re-asks abc, and 450 кофе with the expense-shaped hint, recording nothing', async () => {
+    const { say, calls, db } = await prompting('a');
+    const before = row(db);
+
+    await say('abc', 11);
+    await say('450 кофе', 12);
+
+    expect(sentTexts(calls)).toEqual([
+      `Не удалось разобрать сумму.\n${AMOUNT_PROMPT}`,
+      'Похоже на трату. Сейчас я жду новое значение. Чтобы записать трату, нажмите «Отмена» ' +
+        `и отправьте её снова.\n${AMOUNT_PROMPT}`,
+    ]);
+    expect(row(db)).toEqual(before);
+    expect(expenseCount(db)).toEqual({ n: 1 });
+  });
+
+  it('sets the description and its key, keeping the category; 450 кофе re-asks', async () => {
+    const { say, calls, db } = await prompting('d');
+    const { category_id } = row(db);
+
+    await say('450 кофе', 11);
+    expect(row(db)).toMatchObject({ description: 'кофе' });
+    expect(sentTexts(calls)[0]).toContain('Похоже на трату.');
+    await say('капучино', 12);
+
+    expect(row(db)).toMatchObject({
+      description: 'капучино',
+      description_key: 'капучино',
+      category_id,
+    });
+    expect(calls[1]).toEqual(
+      cardEdit('Записано в «Личные расходы»: <b>450.00 RSD</b> — капучино · Кафе и рестораны'),
+    );
+  });
+
+  it('offers absolute quick dates; [Вчера] moves the expense out of /today into /week', async () => {
+    const { tap, say, calls, db } = await recorded();
+    await tap(`exp:edit:${ID}`);
+    calls.length = 0;
+
+    await tap(`exp:ef:${ID}:t`);
+    expect(calls[1]).toEqual(
+      cardEdit('Сейчас: 30 сентября. Выберите дату или введите её, например «25.09» или «вчера».', {
+        inline_keyboard: [
+          [
+            { text: 'Сегодня', callback_data: `exp:dt:${ID}:2026-09-30` },
+            { text: 'Вчера', callback_data: `exp:dt:${ID}:2026-09-29` },
+            { text: 'Позавчера', callback_data: `exp:dt:${ID}:2026-09-28` },
+          ],
+          cancelRow,
+        ],
+      }),
+    );
+    await tap(`exp:dt:${ID}:2026-09-29`);
+
+    expect(row(db)).toMatchObject({
+      occurred_on: '2026-09-29',
+      occurred_at: '2026-09-30T10:00:00.000Z',
+      updated_at: '2026-09-30T10:00:00.000Z',
+    });
+    expect(calls[3]).toEqual(
+      cardEdit(
+        'Записано в «Личные расходы» за 29 сентября: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
+      ),
+    );
+    calls.length = 0;
+    await say('/today', 11);
+    await say('/week', 12);
+    expect(sentTexts(calls)[0]).toContain('Трат нет.');
+    expect(sentTexts(calls)[1]).toContain('<b>450.00 RSD</b>\nКафе и рестораны: 450.00');
+  });
+
+  it('sets the button date after local midnight, and a second tap writes nothing', async () => {
+    // 01:30 on 1 October local.
+    const { tap, calls, db } = await prompting('t', new Date('2026-09-30T23:30:00Z'));
+
+    await tap(`exp:dt:${ID}:2026-09-29`);
+    const first = row(db);
+    await tap(`exp:dt:${ID}:2026-09-29`);
+
+    expect(first).toMatchObject({ occurred_on: '2026-09-29' });
+    expect(row(db)).toEqual(first);
+    expect(calls[2]).toMatchObject({
+      method: 'answerCallbackQuery',
+      payload: { text: messages.dateUnchanged },
+    });
+  });
+
+  it.each(['2026-10-05', '2026-02-30'])(
+    'toasts a forged date %s and writes nothing',
+    async (date) => {
+      const { tap, calls, db } = await prompting('t');
+      const before = row(db);
+
+      await tap(`exp:dt:${ID}:${date}`);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: 'cb-4', text: messages.dateUnavailable },
+        },
+      ]);
+      expect(row(db)).toEqual(before);
+    },
+  );
+
+  it('takes a typed 25.09 and re-asks 05.10.2026 as future', async () => {
+    const { say, calls, db } = await prompting('t');
+
+    await say('05.10.2026', 11);
+    expect(sentTexts(calls)[0]).toMatch(/^Эта дата ещё не наступила\.\nСейчас: 30 сентября\./);
+    expect(row(db)).toMatchObject({ occurred_on: '2026-09-30' });
+    await say('25.09', 12);
+
+    expect(row(db)).toMatchObject({
+      occurred_on: '2026-09-25',
+      occurred_at: '2026-09-30T10:00:00.000Z',
+    });
+  });
+
+  it('refuses every edit button on an undone expense with a toast', async () => {
+    const { tap, calls, db } = await recorded();
+    await tap(`exp:undo:${ID}`);
+    const before = row(db);
+    calls.length = 0;
+
+    await tap(`exp:edit:${ID}`);
+    await tap(`exp:ef:${ID}:a`);
+    await tap(`exp:dt:${ID}:2026-09-29`);
+
+    expect(row(db)).toEqual(before);
+    expect(calls.map((call) => (call.payload as { text?: string }).text)).toEqual([
+      messages.expenseDeletedToast,
+      messages.expenseDeletedToast,
+      messages.expenseDeletedToast,
+    ]);
+  });
+
+  it('toasts editForbidden to a non-author and writes nothing', async () => {
+    const { tap, calls, db } = await recorded();
+    const before = row(db);
+
+    await tap(`exp:edit:${ID}`, SECOND_ALLOWED_ID);
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: messages.editForbidden },
+      },
+    ]);
+    expect(row(db)).toEqual(before);
+    expect(messages.editForbidden).toBe('Изменить трату может только тот, кто её записал');
+  });
+
+  it('writes nothing and clears the flow for an answer after the expense was undone', async () => {
+    const { tap, say, calls, db } = await prompting('a');
+    await tap(`exp:undo:${ID}`);
+    calls.length = 0;
+
+    await say('1 200', 11);
+    await say('50 чай', 12);
+
+    expect(row(db)).toMatchObject({ amount_minor: 45000, updated_at: null });
+    expect(sentTexts(calls)[0]).toBe(messages.editGone);
+    expect(expenseCount(db)).toEqual({ n: 2 });
+  });
+
+  it('applies a redelivered answer once, with no second reply', async () => {
+    const { bot, calls, db } = await prompting('a');
+    const update = textUpdate({ updateId: 50, messageId: 11, text: '1 200', date: NOW });
+
+    await bot.handleUpdate(update);
+    const first = row(db);
+    await bot.handleUpdate(update);
+
+    expect(calls).toHaveLength(1);
+    expect(row(db)).toEqual(first);
+    expect(expenseCount(db)).toEqual({ n: 1 });
+  });
+
+  it('logs no old or new amount or description at info', async () => {
+    const { say, tap, logLines } = await prompting('a');
+    await say('1 200', 11);
+    await tap(`exp:edit:${ID}`);
+    await tap(`exp:ef:${ID}:d`);
+    await say('капучино', 12);
+
+    expect(logLines.filter((line) => line.includes('expense edited'))).toHaveLength(2);
+    for (const line of logLines) {
+      for (const secret of ['450', '1200', '1 200', '120000', 'кофе', 'капучино']) {
+        expect(logContent(line)).not.toContain(secret);
+      }
+    }
   });
 });
 

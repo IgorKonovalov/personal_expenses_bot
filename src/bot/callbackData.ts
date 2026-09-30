@@ -2,6 +2,7 @@ import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { periodKey, type Period } from '../domain/periods.js';
+import type { LocalDate } from '../domain/time.js';
 
 // Telegram rejects callback_data over 64 bytes (UTF-8). Format: `<scope>:<action>[:<arg>…]`,
 // built only here (ADR-0011).
@@ -56,6 +57,27 @@ export function setCategoryData(expenseId: ExpenseId, categoryId: CategoryId): s
 
 export function showExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:show:${expenseId}`);
+}
+
+// The edit flow on the card: [Изменить] `exp:edit:<uuid>` (45 bytes) opens the field picker,
+// `exp:ef:<uuid>:<a|d|t>` (45 bytes) picks amount, description or date, and a date quick button
+// `exp:dt:<uuid>:<YYYY-MM-DD>` (54 bytes) carries the absolute date it sets.
+export const EDIT_EXPENSE = /^exp:edit:([0-9a-f-]{36})$/;
+export const EDIT_FIELD = /^exp:ef:([0-9a-f-]{36}):([adt])$/;
+export const SET_EXPENSE_DATE = /^exp:dt:([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/;
+
+export type EditField = 'a' | 'd' | 't';
+
+export function editExpenseData(expenseId: ExpenseId): string {
+  return assertCallbackData(`exp:edit:${expenseId}`);
+}
+
+export function editFieldData(expenseId: ExpenseId, field: EditField): string {
+  return assertCallbackData(`exp:ef:${expenseId}:${field}`);
+}
+
+export function setExpenseDateData(expenseId: ExpenseId, date: LocalDate): string {
+  return assertCallbackData(`exp:dt:${expenseId}:${date}`);
 }
 
 // The /categories screen (ADR-0011). Only the current screen anchor accepts these.

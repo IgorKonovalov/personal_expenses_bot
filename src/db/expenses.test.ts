@@ -8,7 +8,10 @@ import {
   listLedgerExpensesBetween,
   listLedgerExpensesOn,
   restoreDeletedExpense,
+  setExpenseAmount,
   setExpenseCategory,
+  setExpenseDate,
+  setExpenseDescription,
   softDeleteExpense,
   type ExpenseId,
 } from './expenses.js';
@@ -205,6 +208,75 @@ describe('expenses repository', () => {
     expect(
       listLedgerExpensesBetween(db, { ledgerId: LEDGER_A, memberId: USER_B, ...range }),
     ).toEqual([]);
+  });
+
+  it('edits amount, description and date by compare-and-set, stamping updated_at', () => {
+    addExpense('exp-a', LEDGER_A, USER_A, 'tg:1:1');
+    addExpense('exp-b', LEDGER_A, USER_A, 'tg:1:2');
+    softDeleteExpense(db, 'exp-b' as ExpenseId, NOW);
+    const id = 'exp-a' as ExpenseId;
+    const at = (iso: string) => new Date(iso);
+    const row = () =>
+      db
+        .prepare(
+          `SELECT amount_minor, currency, description, description_key, occurred_at, occurred_on,
+                  updated_at FROM expenses WHERE id = 'exp-a'`,
+        )
+        .get();
+
+    expect(row()).toMatchObject({ updated_at: null });
+    expect(setExpenseAmount(db, id, { amountMinor: 45000, currency: 'RSD' }, NOW)).toBe(false);
+    expect(
+      setExpenseAmount(
+        db,
+        id,
+        { amountMinor: 120000, currency: 'RSD' },
+        at('2026-09-30T10:00:00Z'),
+      ),
+    ).toBe(true);
+    expect(
+      setExpenseAmount(
+        db,
+        id,
+        { amountMinor: 120000, currency: 'EUR' },
+        at('2026-09-30T10:01:00Z'),
+      ),
+    ).toBe(true);
+    expect(
+      setExpenseDescription(
+        db,
+        id,
+        { description: 'Капучино', descriptionKey: 'капучино' },
+        at('2026-09-30T10:02:00Z'),
+      ),
+    ).toBe(true);
+    expect(
+      setExpenseDescription(db, id, { description: 'Капучино', descriptionKey: 'капучино' }, NOW),
+    ).toBe(false);
+    expect(setExpenseDate(db, id, '2026-09-28' as LocalDate, at('2026-09-30T10:03:00Z'))).toBe(
+      true,
+    );
+    expect(setExpenseDate(db, id, '2026-09-28' as LocalDate, NOW)).toBe(false);
+
+    expect(row()).toEqual({
+      amount_minor: 120000,
+      currency: 'EUR',
+      description: 'Капучино',
+      description_key: 'капучино',
+      occurred_at: '2026-09-29T10:00:00.000Z',
+      occurred_on: '2026-09-28',
+      updated_at: '2026-09-30T10:03:00.000Z',
+    });
+
+    const deleted = 'exp-b' as ExpenseId;
+    expect(setExpenseAmount(db, deleted, { amountMinor: 1, currency: 'RSD' }, NOW)).toBe(false);
+    expect(setExpenseDescription(db, deleted, { description: 'x', descriptionKey: 'x' }, NOW)).toBe(
+      false,
+    );
+    expect(setExpenseDate(db, deleted, '2026-09-01' as LocalDate, NOW)).toBe(false);
+    expect(
+      db.prepare("SELECT amount_minor, updated_at FROM expenses WHERE id = 'exp-b'").get(),
+    ).toEqual({ amount_minor: 45000, updated_at: null });
   });
 
   it('rejects a non-positive amount at the schema level', () => {

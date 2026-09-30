@@ -247,7 +247,7 @@ export const messages = {
     ],
     '\n',
   ),
-  editedMessageHint: html`Изменение сообщения не меняет запись. Удалите трату кнопкой под подтверждением и отправьте её заново.`,
+  editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
   futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
 
@@ -296,6 +296,41 @@ export const messages = {
   categoryForbidden: 'Изменить категорию может только тот, кто записал трату',
   categoryUnavailable: 'Эта категория недоступна',
   expenseDeletedToast: 'Трата удалена. Сначала верните её.',
+
+  // The edit flow on the card (ADR-0009, ADR-0011): a field picker, then a prompt in the card.
+  editButton: 'Изменить',
+  editPicker: (view: ExpenseView): Html =>
+    joinHtml([expenseLine('Записано в', view), html`Что изменить?`], '\n'),
+  editAmountButton: 'Сумма',
+  editDescriptionButton: 'Описание',
+  editDateButton: 'Дата',
+  amountPrompt: (current: Money): Html =>
+    html`Сейчас: ${formatMoney(current)}. Введите новую сумму, например «1 200» или «12,50 EUR».`,
+  descriptionPrompt: (current: string): Html =>
+    html`Сейчас: ${shownDescription(current)}. Введите новое описание.`,
+  // `today` is the user's local date: a date in another year shows it.
+  datePrompt: ({ date, today }: { date: LocalDate; today: LocalDate }): Html =>
+    html`Сейчас: ${shownDate(date, today)}. Выберите дату или введите её, например «25.09» или «вчера».`,
+  todayButton: 'Сегодня',
+  yesterdayButton: 'Вчера',
+  dayBeforeButton: 'Позавчера',
+  // Asked above the prompt again when an answer is refused; the flow stays pending.
+  editRefused: {
+    invalidAmount: html`Не удалось разобрать сумму.`,
+    ambiguousAmount: (readings: readonly Money[]): Html =>
+      html`Сумму можно понять по-разному: ${readings.map(formatMoney).join(' или ')}. Ничего не изменено. Тысячи отделяйте пробелом («1 200»), копейки — запятой («1,20»).`,
+    // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
+    expenseShaped: html`Похоже на трату. Сейчас я жду новое значение. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+    empty: html`Описание не может быть пустым.`,
+    invalidDate: html`Не удалось разобрать дату.`,
+    futureDate: html`Эта дата ещё не наступила.`,
+  },
+  expenseEditedToast: 'Трата изменена',
+  dateUnchanged: 'Эта дата уже выбрана',
+  dateUnavailable: 'Эту дату нельзя выбрать',
+  editForbidden: 'Изменить трату может только тот, кто её записал',
+  // A typed answer that arrives after the expense was deleted mid-flow.
+  editGone: html`Трата удалена, изменение не сохранено.`,
 
   // The /categories screen. Category names are user text: message text interpolates them only
   // through `html`, and button labels carry them raw.

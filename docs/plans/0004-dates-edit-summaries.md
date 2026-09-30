@@ -252,8 +252,8 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Past dates in free text | dev | done | 65ecc5e |
-| 2: /week and /month with category breakdown and paging | dev | done | committed with this row |
-| 3: Edit amount, description and date | dev | not started | |
+| 2: /week and /month with category breakdown and paging | dev | done | 77fd3e5 |
+| 3: Edit amount, description and date | dev | done | committed with this row |
 
 ### Notes
 
@@ -273,6 +273,20 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
   messages module renders it as `Без категории`. In a tie it sorts after named categories.
 - Phase 2: a pager tap for a period starting after today, or on a ledger the user no longer
   belongs to, is answered silently with no edit, like a malformed key.
+- Phase 3: the migration is `0005_expense_updated_at.sql`. `src/db/connection.test.ts` (outside
+  Files touched) changed to expect the fifth migration.
+- Phase 3: `src/bot/bot.ts` is not in Files touched, so `registerCard` in `card.ts` registers the
+  edit taps (`registerEdit` in `src/bot/handlers/edit.ts`). `src/bot/handlers/text.ts` needed no
+  change: the typed answer reaches `answerFlow` in `flows.ts`.
+- Phase 3: done-when "an answer arriving after the expense was undone mid-flow" gets a toast:
+  not met as stated, since a typed answer has no callback to toast. It writes nothing, clears the
+  flow, replies `messages.editGone` and re-renders the anchor card in its deleted form.
+- Phase 3: the card is the anchor under a new `expense` screen (`ExpenseScreen`); [Отмена] and
+  `/cancel` re-render it through `showExpense` from `src/services/changeCategory.ts`. The field
+  picker, field picks and date quick buttons are card actions with no anchor check, guarded by
+  the expense's stored state. A quick-button tap clears the pending flow.
+- Phase 3: the expense-shaped refusal (ADR-0009) applies to all three prompts, the date prompt
+  included. `Expense` carries no `updatedAt`; `updated_at` exists only in the row.
 
 ### Close triggers
 
