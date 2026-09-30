@@ -21,6 +21,7 @@ src/
 ├── config.ts        # env -> typed config, validated at boot
 ├── logger.ts        # pino factory
 ├── heartbeat.ts     # liveness file + the Docker health-check entry
+├── version.ts       # the running version, read from package.json at boot
 └── index.ts         # boot: config, db, bot
 Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
 docker-compose.yml   # the one service: volume, backup bind mount, heartbeat health check
