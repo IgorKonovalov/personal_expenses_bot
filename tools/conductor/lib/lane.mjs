@@ -342,8 +342,11 @@ export async function runLanes(ctx) {
   for (const rec of Object.values(ctx.state.plans).sort((a, b) => a.plan.localeCompare(b.plan))) {
     if (rec.status === "parked") live(ctx, rec.plan, standingParkBody(rec, { open: laneOpen(rec), nowMs }));
   }
+  // Lanes still looping, and those of them with nothing to pick: see the idle end in laneLoop.
+  ctx.activeLanes = new Set(lanes);
+  ctx.idleLanes = new Set();
   try {
-    await Promise.all(lanes.map((lane) => laneLoop(ctx, lane)));
+    await Promise.all(lanes.map((lane) => laneLoop(ctx, lane).finally(() => ctx.activeLanes.delete(lane))));
   } finally {
     run.ended = now();
     for (const lane of lanes) if (ctx.state.lanes[lane]) ctx.state.lanes[lane] = { plan: null, step: null };
@@ -473,6 +476,7 @@ async function laneLoop(ctx, lane) {
     takeAsks(ctx);
     selfResume(ctx, lane);
     const pick = pickNext(ctx, lane);
+    if (pick.plan || pick.wait) ctx.idleLanes?.delete(lane);
     if (pick.plan) {
       const rec = ctx.state.plans[pick.plan];
       if (!laneOpen(rec) && openWorktreeCount(ctx.state) >= ctx.local.max_open_worktrees) {
@@ -513,6 +517,14 @@ async function laneLoop(ctx, lane) {
       ctx.onIdleLook?.(lane);
       await sleep(idlePoll);
       refreshQueue(ctx);
+      continue;
+    }
+    // Resume asks are not per lane: a lane still busy can take one for a plan of this lane's, and
+    // nothing would run it once this lane had ended. So a lane with nothing to pick ends only once
+    // every other lane still looping has nothing to pick either; `--once` ends it at once, as ever.
+    ctx.idleLanes?.add(lane);
+    if (!ctx.once && [...(ctx.activeLanes ?? [])].some((l) => l !== lane && !ctx.idleLanes.has(l))) {
+      await sleep(ctx.pollMs ?? 5000);
       continue;
     }
     return recordNotStarted(ctx, lane, "stopped");

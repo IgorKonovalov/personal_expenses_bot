@@ -212,8 +212,8 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: `ready NNNN` and the preflight gate | dev | done | `67021e2` |
-| 2: merge main before readiness | dev | done | committed with this row |
-| 3: resume wording, idle takes asks | dev | not started | |
+| 2: merge main before readiness | dev | done | `1c342f6` |
+| 3: resume wording, idle takes asks | dev | done | committed with this row |
 | 4: operator docs and prompts | dev | not started | |
 | 5: stop pinning tests to live data | dev | not started | |
 
@@ -228,6 +228,16 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 - Phase 2: the `pre-readiness` merge and the readiness decision run once per pick of the plan, before
   its first implement session in that `runPlan` call, not before every implement session. The loop
   then re-reads the merged plan's next step.
+- Phase 3, F6's cause. The evening run's `state/live.log` and run records show no ask pending at its
+  end. The run took 0008's ask at 20:14 local. 0008 then parked `check_red` again in its
+  `pre-review` merge session (merge-05), and the run ended with 0008 and 0004 both parked, so H4
+  was 0008's second park. The single-lane loop already takes asks before it goes idle. The
+  reproduced defect is across lanes: asks are global, and a non-resident lane with nothing to pick
+  exits at once. So an ask taken later by another lane leaves its plan `queued` with no lane to run
+  it (the new CLI test fails on the pre-fix code with `queued`). The fix keeps an idle lane looking
+  until every lane still looping is idle too.
+- Phase 3: `status` lists the pending asks only when there are some, so the existing exact-output
+  `status` test is unchanged. `test/lane.test.mjs` needed no change.
 
 ### Close triggers
 

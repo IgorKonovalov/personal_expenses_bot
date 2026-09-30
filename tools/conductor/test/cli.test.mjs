@@ -936,20 +936,39 @@ test("check refuses a local.json with no run_budget_usd", async () => {
   assert.ok(r.err.includes("conductor: local.json: run_budget_usd must be a positive number"), r.err.join("\n"));
 });
 
-test("resume while a run is live leaves an ask for it rather than writing the record under it", async () => {
-  const { p, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: ["0101"] });
+test("resume while a run is live leaves an ask for it, says it waits for the lane's running plan, and status lists it", async () => {
+  const { p, cli } = setup([{ number: "0101", phases: [dev("1")] }, { number: "0102", phases: [dev("1")] }], { a: ["0101", "0102"] });
   await cli("park", "0101");
-  // This test process stands in for the live conductor.
+  // This test process stands in for the live conductor, and the record for lane a mid-plan.
   writeFileSync(join(p.stateDir, "conductor.pid"), String(process.pid));
-  const r = await cli("resume", "0101");
-  rmSync(join(p.stateDir, "conductor.pid"));
-  assert.equal(r.code, 0, r.err.join("\n"));
-  assert.deepEqual(r.out, ["conductor: plan 0101: the live run takes the resume on its next look, within a minute"]);
-  assert.equal(loadState(p.stateDir).plans["0101"].status, "parked", "the record is the run's to change");
-  assert.deepEqual(
-    readFileSync(statePaths(p.stateDir).resumeAsks, "utf8").trim().split("\n").map((l) => JSON.parse(l).plan),
-    ["0101"],
-  );
+  const state = loadState(p.stateDir);
+  state.lanes = { a: { plan: "0102", step: "0102-01-implement", stepStarted: new Date().toISOString() } };
+  saveState(p.stateDir, state);
+  try {
+    const r = await cli("resume", "0101");
+    assert.equal(r.code, 0, r.err.join("\n"));
+    assert.deepEqual(r.out, ["conductor: plan 0101: resume asked; the live run takes it when lane a next picks a plan; lane a is running plan 0102, so that is after it ends"]);
+    assert.ok(!r.out.join("\n").includes("within a minute"));
+    assert.equal(loadState(p.stateDir).plans["0101"].status, "parked", "the record is the run's to change");
+    assert.deepEqual(
+      readFileSync(statePaths(p.stateDir).resumeAsks, "utf8").trim().split("\n").map((l) => JSON.parse(l).plan),
+      ["0101"],
+    );
+
+    const s = await cli("status");
+    const at = JSON.parse(readFileSync(statePaths(p.stateDir).resumeAsks, "utf8").trim()).at;
+    const i = s.out.indexOf("resume asked, not yet taken by the live run:");
+    assert.ok(i >= 0, s.out.join("\n"));
+    assert.equal(s.out[i + 1], `- 0101 (asked ${at})`);
+
+    // With the lane between plans, the answer names no running plan.
+    state.lanes = { a: { plan: null, step: null } };
+    saveState(p.stateDir, state);
+    const idle = await cli("resume", "0101");
+    assert.deepEqual(idle.out, ["conductor: plan 0101: resume asked; the live run takes it when lane a next picks a plan"]);
+  } finally {
+    rmSync(join(p.stateDir, "conductor.pid"));
+  }
 });
 
 // ADR-0016: readiness runs against main before a plan is queued, in a worktree that does not outlive it.
@@ -1009,4 +1028,33 @@ test("check refuses a queued, unstarted plan with no readiness record, passes af
   assert.equal(stale.code, 1);
   assert.equal(stale.err.length, 1);
   assert.match(stale.err[0], /^conductor: plan 0101: its phases changed since the readiness check of .+; run `node tools\/conductor\/conductor\.mjs ready 0101` again \(ADR-0016\)$/);
+});
+
+// F6: a lane with nothing to pick must not end the run while another lane is still running, since
+// that lane may take a resume ask for one of this lane's plans (asks are not per lane).
+test("under --until-idle, a resume ask written while another lane runs a plan leads to the parked plan running before the run exits", async () => {
+  const { p, cli } = setup(
+    [
+      { number: "0101", phases: [dev("1")] },
+      { number: "0102", phases: [dev("1")] },
+    ],
+    { a: ["0101"], b: ["0102"] },
+    {
+      // The gate runs inside 0102's lane while it is in flight, as `resume 0101` from another
+      // terminal would write the ask.
+      gate: (p) => [
+        {
+          name: "ask-resume",
+          cmd: [process.execPath, "-e", `require("fs").appendFileSync(${JSON.stringify(statePaths(p.stateDir).resumeAsks)}, JSON.stringify({ plan: "0101", at: "2026-09-30T20:14:00.000Z" }) + "\\n")`],
+        },
+      ],
+    },
+  );
+  assert.equal((await cli("park", "0101")).code, 0);
+  const r = await cli("run", "--until-idle");
+  assert.equal(r.code, 0, r.err.join("\n"));
+  const state = loadState(p.stateDir);
+  assert.equal(state.plans["0102"].status, "merged", JSON.stringify(state.plans["0102"].park));
+  assert.equal(state.plans["0101"].status, "merged", JSON.stringify(state.plans["0101"].park));
+  assert.match(r.out.join("\n"), /run ended - 2 merged, 0 parked/);
 });

@@ -433,9 +433,31 @@ function cmdStatus(args, o) {
       o.log(`- ${r.plan} (${r.park.reason}): ${r.park.detail}${settled ? ` - already settled: ${settled}; \`resume ${r.plan}\` clears the record` : ""}`);
     }
   }
+  const asks = pendingAsks(p);
+  if (asks.length) {
+    o.log("resume asked, not yet taken by the live run:");
+    for (const a of asks) o.log(`- ${a.plan} (asked ${a.at ?? "at an unreadable time"})`);
+  }
   regenerate(p, state);
   o.log(`digest: ${p.digest}`);
   return 0;
+}
+
+/** The resume asks a live run has not taken yet, oldest first, read without taking them. */
+function pendingAsks(p) {
+  const file = statePaths(p.stateDir).resumeAsks;
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter((a) => a && isPlan(String(a.plan)));
 }
 
 /**
@@ -475,11 +497,17 @@ function cmdResume(args, o) {
     o.err(`conductor: refusing to resume ${plan} - its park reason (${rec.park.reason}) still holds: ${still}`);
     return 1;
   }
-  // A live run owns the record and rewrites it whole, so the resume goes to it as an ask it takes on
-  // its next look, checking the condition again there (ADR-0250).
+  // A live run owns the record and rewrites it whole, so the resume goes to it as an ask. A lane
+  // takes asks only between plans, checking the condition again there (ADR-0250), so the answer
+  // names what the plan's lane is doing now.
   if (runningPid(p)) {
     askResume(p.stateDir, plan);
-    o.log(`conductor: plan ${plan}: the live run takes the resume on its next look, within a minute`);
+    const { lanes } = loadQueue(p.queue, p.repo, startedPlans(state));
+    const lane = rec.lane ?? Object.keys(lanes ?? {}).find((l) => lanes[l].includes(plan)) ?? null;
+    const running = lane ? state.lanes[lane]?.plan : null;
+    const when = lane ? `when lane ${lane} next picks a plan` : "when a lane next picks a plan";
+    const now = running ? `; lane ${lane} is running plan ${running}, so that is after it ends` : "";
+    o.log(`conductor: plan ${plan}: resume asked; the live run takes it ${when}${now}`);
     return 0;
   }
   clearPark(rec);
