@@ -97,7 +97,8 @@ export const messages = {
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
 
   expenseRecorded: (view: ExpenseView) => expenseLine('Записано в', view),
-  undoButton: 'Отменить',
+  // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
+  undoButton: 'Удалить',
 
   ambiguousAmount: ({ readings, description, currency, defaultCurrency }: AmbiguousView): Html => {
     const code = currency === defaultCurrency ? '' : ` ${currency}`;
@@ -113,10 +114,14 @@ export const messages = {
     return joinHtml([question, html`Ничего не записано. Отправьте ещё раз так: ${resend}.`], ' ');
   },
 
-  expenseUndone: (view: ExpenseView) => expenseLine('Отменено в', view),
-  undoneToast: 'Трата отменена',
-  alreadyUndone: 'Эта трата уже отменена',
-  undoForbidden: 'Отменить трату может только тот, кто её записал',
+  expenseUndone: (view: ExpenseView) => expenseLine('Удалено из', view),
+  undoneToast: 'Трата удалена',
+  alreadyUndone: 'Эта трата уже удалена',
+  undoForbidden: 'Удалить трату может только тот, кто её записал',
+  restoreButton: 'Вернуть',
+  restoredToast: 'Трата восстановлена',
+  alreadyRestored: 'Трата уже восстановлена',
+  restoreForbidden: 'Вернуть трату может только тот, кто её записал',
   expenseNotFound: 'Трата не найдена',
 
   today: ({ ledger, date, totals }: TodayView): Html => {

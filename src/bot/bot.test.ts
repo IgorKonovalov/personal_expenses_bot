@@ -1,3 +1,4 @@
+import type { Bot } from 'grammy';
 import type { Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../db/connection.js';
@@ -6,9 +7,9 @@ import { toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { createLogger } from '../logger.js';
 import { registerCommands } from './bot.js';
-import { assertCallbackData, undoExpenseData } from './callbackData.js';
+import { assertCallbackData, restoreExpenseData, undoExpenseData } from './callbackData.js';
 import { messages } from './messages.js';
-import { htmlParseMode } from './render/html.js';
+import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
   ALLOWED_ID,
   SECOND_ALLOWED_ID,
@@ -447,47 +448,276 @@ describe('recording an expense', () => {
   });
 });
 
-describe('undo', () => {
+const restoreKeyboard = {
+  inline_keyboard: [[{ text: messages.restoreButton, callback_data: `exp:restore:${EXPENSE_ID}` }]],
+};
+
+describe('expense card: delete and restore', () => {
+  // Local 12:00 on 30 September, so /today includes the expense.
+  const NOW = new Date('2026-09-30T10:00:00Z');
+  const UNDO = `exp:undo:${EXPENSE_ID}`;
+  const RESTORE = `exp:restore:${EXPENSE_ID}`;
+
   async function recorded() {
-    const harness = createTestBot();
-    await harness.bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 coffee' }));
+    const harness = createTestBot({ now: NOW });
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '450 кофе', date: NOW }),
+    );
     harness.calls.length = 0;
     return harness;
   }
 
-  it('soft-deletes, confirms, and answers a second tap with already undone', async () => {
+  async function todayText(bot: Bot, calls: ApiCall[], updateId: number): Promise<unknown> {
+    calls.length = 0;
+    await bot.handleUpdate(textUpdate({ updateId, messageId: 100 + updateId, text: '/today' }));
+    return sentTexts(calls)[0];
+  }
+
+  function deletedAt(db: Db): unknown {
+    return db.prepare('SELECT deleted_at FROM expenses').pluck().get();
+  }
+
+  it('pins the card copy', () => {
+    expect({
+      undoButton: messages.undoButton,
+      undoneToast: messages.undoneToast,
+      alreadyUndone: messages.alreadyUndone,
+      undoForbidden: messages.undoForbidden,
+      restoreButton: messages.restoreButton,
+      restoredToast: messages.restoredToast,
+      alreadyRestored: messages.alreadyRestored,
+    }).toEqual({
+      undoButton: 'Удалить',
+      undoneToast: 'Трата удалена',
+      alreadyUndone: 'Эта трата уже удалена',
+      undoForbidden: 'Удалить трату может только тот, кто её записал',
+      restoreButton: 'Вернуть',
+      restoredToast: 'Трата восстановлена',
+      alreadyRestored: 'Трата уже восстановлена',
+    });
+  });
+
+  it('confirms with one row holding [Удалить]', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 кофе' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          reply_markup: undoKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('deletes into the deleted card with [Вернуть]; a second tap says already deleted', async () => {
     const { bot, calls, db } = await recorded();
-    const data = `exp:undo:${EXPENSE_ID}`;
 
-    await bot.handleUpdate(callbackUpdate({ updateId: 2, data }));
-    const deletedAt = db.prepare('SELECT deleted_at FROM expenses').pluck().get();
-    await bot.handleUpdate(callbackUpdate({ updateId: 3, data }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: UNDO }));
+    const firstDeletedAt = deletedAt(db);
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: UNDO }));
 
-    expect(deletedAt).toBe('2026-09-29T22:10:00.000Z');
-    expect(db.prepare('SELECT deleted_at FROM expenses').pluck().get()).toBe(deletedAt);
+    expect(firstDeletedAt).toBe('2026-09-30T10:00:00.000Z');
+    expect(deletedAt(db)).toBe(firstDeletedAt);
     expect(calls).toEqual([
       {
         method: 'answerCallbackQuery',
-        payload: { callback_query_id: 'cb-2', text: messages.undoneToast },
+        payload: { callback_query_id: 'cb-2', text: 'Трата удалена' },
       },
       {
         method: 'editMessageText',
         payload: {
           chat_id: ALLOWED_ID,
           message_id: 2,
-          text: 'Отменено в «Личные расходы»: <b>450.00 RSD</b> — coffee',
+          text: 'Удалено из «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          reply_markup: restoreKeyboard,
           ...htmlParseMode,
         },
       },
       {
         method: 'answerCallbackQuery',
-        payload: { callback_query_id: 'cb-3', text: messages.alreadyUndone },
+        payload: { callback_query_id: 'cb-3', text: 'Эта трата уже удалена' },
       },
     ]);
   });
 
-  it("refuses a tap from a user who isn't the creator", async () => {
+  it('restores into the confirmation with [Удалить]; a second tap writes nothing', async () => {
     const { bot, calls, db } = await recorded();
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: UNDO }));
+    expect(await todayText(bot, calls, 3)).toBe(
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: RESTORE }));
+    expect(deletedAt(db)).toBeNull();
+    await bot.handleUpdate(callbackUpdate({ updateId: 5, data: RESTORE }));
+
+    expect(deletedAt(db)).toBeNull();
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-4', text: 'Трата восстановлена' },
+      },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: ALLOWED_ID,
+          message_id: 2,
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          reply_markup: undoKeyboard,
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-5', text: 'Трата уже восстановлена' },
+      },
+    ]);
+    expect(await todayText(bot, calls, 6)).toBe(
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n450.00 RSD',
+    );
+  });
+
+  it('leaves one deleted row after delete, restore, delete', async () => {
+    const { bot, calls, db } = await recorded();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: UNDO }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: RESTORE }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: UNDO }));
+
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE source_key = 'tg:1001:10'").get(),
+    ).toEqual({ n: 1 });
+    expect(deletedAt(db)).toBe('2026-09-30T10:00:00.000Z');
+    expect(await todayText(bot, calls, 5)).toBe(
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    );
+  });
+
+  it('answers a redelivered message whose expense is deleted with the deleted card', async () => {
+    const { bot, calls, db } = await recorded();
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: UNDO }));
+    const rows = db.prepare('SELECT * FROM expenses').all();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 кофе', date: NOW }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Удалено из «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          reply_markup: restoreKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    expect(db.prepare('SELECT * FROM expenses').all()).toEqual(rows);
+  });
+
+  it("refuses a restore from a user who isn't the creator", async () => {
+    const { bot, calls, db } = await recorded();
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: UNDO }));
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      callbackUpdate({ updateId: 3, fromId: SECOND_ALLOWED_ID, data: RESTORE }),
+    );
+
+    expect(deletedAt(db)).toBe('2026-09-30T10:00:00.000Z');
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: messages.restoreForbidden },
+      },
+    ]);
+  });
+});
+
+describe('callback dispatcher', () => {
+  it('lets a scope registered after createBot fire', async () => {
+    const { bot, calls } = createTestBot();
+    const seen: string[] = [];
+    bot.callbackQuery(/^zz:/, async (ctx) => {
+      seen.push(ctx.callbackQuery.data);
+      await ctx.answerCallbackQuery({ text: 'zz' });
+    });
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'zz:go' }));
+
+    expect(seen).toEqual(['zz:go']);
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1', text: 'zz' } },
+    ]);
+  });
+
+  it('answers a callback nothing handles exactly once, silently', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'qq:1' }));
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1' } },
+    ]);
+  });
+
+  it('answers once and apologises once when a handler answers and then throws', async () => {
+    const { bot, calls } = createTestBot();
+    bot.callbackQuery(/^zz:/, async (ctx) => {
+      await ctx.answerCallbackQuery();
+      throw new Error('handler exploded');
+    });
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'zz:boom' }));
+
+    expect(calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(1);
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1' } },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.genericError, ...htmlParseMode },
+      },
+    ]);
+  });
+
+  it('treats "message is not modified" from editHtml as success', async () => {
+    const { bot, calls } = createTestBot();
+    // Telegram's real answer to an edit with the current text and markup.
+    const notModified =
+      'Bad Request: message is not modified: specified new message content and reply markup ' +
+      'are exactly the same as a current content and reply markup of the message';
+    bot.api.config.use(async (prev, method, payload, signal) => {
+      const result = await prev(method, payload, signal);
+      return method === 'editMessageText'
+        ? { ok: false, error_code: 400, description: notModified }
+        : result;
+    });
+    let resolved = false;
+    bot.callbackQuery(/^zz:/, async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await editHtml(ctx, html`confirmation`);
+      resolved = true;
+    });
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'zz:same' }));
+
+    expect(resolved).toBe(true);
+    expect(calls.map((call) => call.method)).toEqual(['answerCallbackQuery', 'editMessageText']);
+  });
+});
+
+describe('undo', () => {
+  it("refuses a tap from a user who isn't the creator", async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 coffee' }));
+    calls.length = 0;
 
     await bot.handleUpdate(
       callbackUpdate({ updateId: 2, fromId: SECOND_ALLOWED_ID, data: `exp:undo:${EXPENSE_ID}` }),
@@ -501,16 +731,6 @@ describe('undo', () => {
       },
     ]);
   });
-
-  it('acknowledges an unknown button silently', async () => {
-    const { bot, calls } = createTestBot();
-
-    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'old:thing:1' }));
-
-    expect(calls).toEqual([
-      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1' } },
-    ]);
-  });
 });
 
 describe('callback data', () => {
@@ -518,6 +738,12 @@ describe('callback data', () => {
     const data = undoExpenseData(EXPENSE_ID as ExpenseId);
     expect(data).toBe(`exp:undo:${EXPENSE_ID}`);
     expect(Buffer.byteLength(data, 'utf8')).toBe(45);
+  });
+
+  it('is exp:restore:<uuid>, 48 bytes', () => {
+    const data = restoreExpenseData(EXPENSE_ID as ExpenseId);
+    expect(data).toBe(`exp:restore:${EXPENSE_ID}`);
+    expect(Buffer.byteLength(data, 'utf8')).toBe(48);
   });
 
   it('asserts the 64-byte limit', () => {

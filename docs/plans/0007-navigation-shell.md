@@ -262,8 +262,8 @@ layout.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Menu bar, /help, and no silent input | dev | done | 3dcda85 |
-| 2: HTML seam (ADR-0012) | dev | done | committed with this row |
-| 3: Callback dispatcher and expense-card actions | dev | not started | |
+| 2: HTML seam (ADR-0012) | dev | done | ba70d71 |
+| 3: Callback dispatcher and expense-card actions | dev | done | committed with this row |
 | 4: Ambiguous amounts answered with buttons | dev | not started | |
 
 ### Notes
@@ -300,6 +300,21 @@ layout.
 - Phase 2: `.prettierrc` (not in `Files touched`) gained `"embeddedLanguageFormatting": "off"`.
   Prettier formats `html`-tagged templates as embedded HTML, which rewrote the message copy
   (line breaks inside `<b>` and the texts).
+- Phase 3: the fallback is not a terminal handler registered last. `callbackDispatcher()` in
+  `callbacks.ts` is installed after the allowlist. It makes a repeat `answerCallbackQuery` a
+  no-op, and once the whole chain has run it answers silently any query nothing answered. A
+  terminal catch-all registered last in `createBot` would swallow the `zz:` handler that the
+  done-when registers after `createBot`.
+- Phase 3: the "not modified" test installs its own API transformer in `bot.test.ts`. It lets
+  the harness record the call, then returns Telegram's 400 description for `editMessageText`.
+  `testHarness.ts` is unchanged.
+- Phase 3: added copy not named in the plan: `restoreButton` `Вернуть` (the plan names the
+  label) and `restoreForbidden` `Вернуть трату может только тот, кто её записал`.
+- Phase 3: the repository function is `restoreDeletedExpense` in `src/db/expenses.ts`. The
+  service is `restoreExpense`.
+- Phase 3: `src/bot/render/html.test.ts` (not in Phase 3's list) changed: the toast type test
+  pinned the old `Трата отменена` / `Отменить` copy. It now asserts that the texts carry no
+  markup characters.
 
 ### Close triggers
 

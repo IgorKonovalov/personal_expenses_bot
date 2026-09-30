@@ -1,9 +1,9 @@
-import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { Composer, Context } from 'grammy';
 import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
-import { undoExpenseData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
+import { cardFor } from './card.js';
 import { sendHelp } from './help.js';
 import { ensureUser } from './start.js';
 
@@ -22,14 +22,12 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     });
 
     switch (result.kind) {
-      case 'recorded':
-        await replyHtml(ctx, messages.expenseRecorded(result), {
-          reply_markup: new InlineKeyboard().text(
-            messages.undoButton,
-            undoExpenseData(result.expense.id),
-          ),
-        });
+      case 'recorded': {
+        // A redelivery of a message whose expense was deleted since gets the deleted card.
+        const card = cardFor(result);
+        await replyHtml(ctx, card.text, { reply_markup: card.markup });
         return;
+      }
       case 'ambiguous':
         await replyHtml(
           ctx,

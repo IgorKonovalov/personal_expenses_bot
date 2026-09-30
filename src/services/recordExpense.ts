@@ -2,6 +2,7 @@ import {
   findExpenseById,
   findExpenseBySourceKey,
   insertExpenseOrGetExisting,
+  restoreDeletedExpense,
   softDeleteExpense,
   type Expense,
   type ExpenseId,
@@ -106,6 +107,29 @@ export function undoExpense(
   if (!softDeleteExpense(db, expense.id, input.now)) return { kind: 'alreadyUndone' };
   logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense undone');
   return { kind: 'undone', expense, ledger };
+}
+
+export type RestoreExpenseResult =
+  | { readonly kind: 'restored'; readonly expense: Expense; readonly ledger: Ledger }
+  | { readonly kind: 'alreadyRestored' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'notFound' };
+
+// Clears deleted_at. Only the creator may restore; compare-and-set on deleted_at IS NOT NULL,
+// so a repeat changes nothing.
+export function restoreExpense(
+  deps: RecordDeps,
+  input: { readonly user: User; readonly expenseId: ExpenseId },
+): RestoreExpenseResult {
+  const { db, logger } = deps;
+  const expense = findExpenseById(db, input.expenseId);
+  if (expense === undefined) return { kind: 'notFound' };
+  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
+  if (ledger === undefined) return { kind: 'forbidden' };
+  if (!restoreDeletedExpense(db, expense.id)) return { kind: 'alreadyRestored' };
+  logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense restored');
+  return { kind: 'restored', expense: { ...expense, deletedAt: null }, ledger };
 }
 
 function newExpenseId({ newId }: ServiceDeps): ExpenseId {

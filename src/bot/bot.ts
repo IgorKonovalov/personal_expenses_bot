@@ -3,13 +3,14 @@ import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
+import { callbackAnswered, callbackDispatcher } from './callbacks.js';
+import { registerCard } from './handlers/card.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerStart } from './handlers/start.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
-import { registerUndo } from './handlers/undo.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
 import { replyHtml } from './render/html.js';
@@ -41,6 +42,9 @@ export function createBot(options: BotOptions): Bot {
   // createBot returns. bot.catch only sees errors under bot.start(), not handleUpdate().
   bot.use(errorBoundary(logger));
   bot.use(allowlist(options.allowedTelegramIds, logger));
+  // Answer-once tracking for every callback query, and the silent fallback answer for one no
+  // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
+  bot.use(callbackDispatcher());
 
   // Commands and exact menu labels first: the text handler treats any other text as an expense
   // attempt, and whatever isn't text gets the help reply.
@@ -49,7 +53,7 @@ export function createBot(options: BotOptions): Bot {
   registerHelp(bot);
   registerUnknownCommand(bot);
   registerMenu(bot, options);
-  registerUndo(bot, options);
+  registerCard(bot, options);
   registerText(bot, options);
   registerNonText(bot);
   registerEdited(bot, options);
@@ -80,7 +84,9 @@ function errorBoundary(logger: Logger): MiddlewareFn {
     } catch (error) {
       logger.error({ updateId: ctx.update.update_id, err: safeError(error) }, 'handler failed');
       try {
-        if (ctx.callbackQuery !== undefined) await ctx.answerCallbackQuery();
+        if (ctx.callbackQuery !== undefined && !callbackAnswered(ctx)) {
+          await ctx.answerCallbackQuery();
+        }
         if (ctx.chat !== undefined) await replyHtml(ctx, messages.genericError);
       } catch (replyError) {
         logger.error(

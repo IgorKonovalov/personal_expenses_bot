@@ -36,12 +36,10 @@ describe('toasts and button labels', () => {
     const htmlToast: Html = messages.undoneToast;
     // @ts-expect-error a button label is plain text.
     const htmlLabel: Html = messages.undoButton;
-    expect([toast, label, htmlToast, htmlLabel]).toEqual([
-      'Трата отменена',
-      'Отменить',
-      'Трата отменена',
-      'Отменить',
-    ]);
+    // No markup to escape: the plain text is what the user sees.
+    for (const text of [toast, label, htmlToast, htmlLabel]) {
+      expect(text).not.toMatch(/[<>&]/);
+    }
   });
 });
 

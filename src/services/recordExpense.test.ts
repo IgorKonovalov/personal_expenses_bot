@@ -5,7 +5,7 @@ import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { provisionUser } from './provisionUser.js';
-import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js';
+import { recordExpense, restoreExpense, undoExpense, type RecordDeps } from './recordExpense.js';
 
 // Message sent 23:50 local (CEST) on the 29th, processed 00:10 local on the 30th.
 const SENT = new Date('2026-09-29T21:50:00Z');
@@ -151,8 +151,76 @@ describe('undoExpense', () => {
     });
     expect(deletedAt()).toBeNull();
   });
+});
+
+describe('restoreExpense', () => {
+  function deletedId(): ExpenseId {
+    const result = record(alice, '450 coffee');
+    if (result.kind !== 'recorded') throw new Error('setup failed');
+    undoExpense(deps, { user: alice, expenseId: result.expense.id, now: PROCESSED });
+    return result.expense.id;
+  }
+
+  function deletedAt(): unknown {
+    return db.prepare('SELECT deleted_at FROM expenses').pluck().get();
+  }
+
+  it('clears deleted_at once; a second restore reports already restored', () => {
+    const expenseId = deletedId();
+
+    const restored = restoreExpense(deps, { user: alice, expenseId });
+    expect(restored).toMatchObject({
+      kind: 'restored',
+      expense: { id: expenseId, amountMinor: 45000, currency: 'RSD', deletedAt: null },
+      ledger: { kind: 'personal' },
+    });
+    expect(deletedAt()).toBeNull();
+
+    expect(restoreExpense(deps, { user: alice, expenseId })).toEqual({ kind: 'alreadyRestored' });
+    expect(deletedAt()).toBeNull();
+  });
+
+  it('reports a never-deleted expense as already restored and writes nothing', () => {
+    const result = record(alice, '450 coffee');
+    if (result.kind !== 'recorded') throw new Error('setup failed');
+
+    expect(restoreExpense(deps, { user: alice, expenseId: result.expense.id })).toEqual({
+      kind: 'alreadyRestored',
+    });
+    expect(deletedAt()).toBeNull();
+  });
+
+  it("refuses a user who isn't the creator and leaves the expense deleted", () => {
+    const expenseId = deletedId();
+
+    expect(restoreExpense(deps, { user: bob, expenseId })).toEqual({ kind: 'forbidden' });
+    expect(deletedAt()).toBe('2026-09-29T22:10:00.000Z');
+  });
+
+  it('logs no amount or description at info', () => {
+    const expenseId = deletedId();
+    logLines.length = 0;
+
+    restoreExpense(deps, { user: alice, expenseId });
+
+    expect(logLines.filter((line) => line.includes('expense restored'))).toHaveLength(1);
+    for (const line of logLines) {
+      const fields = Object.entries(JSON.parse(line) as Record<string, unknown>).filter(
+        ([key]) => !['time', 'pid', 'hostname'].includes(key),
+      );
+      const content = JSON.stringify(Object.fromEntries(fields));
+      expect(content).not.toContain('coffee');
+      expect(content).not.toContain('450');
+    }
+  });
 
   it('reports an unknown expense as not found', () => {
+    expect(
+      restoreExpense(deps, {
+        user: alice,
+        expenseId: '00000000-0000-4000-8000-999999999999' as ExpenseId,
+      }),
+    ).toEqual({ kind: 'notFound' });
     expect(
       undoExpense(deps, {
         user: alice,

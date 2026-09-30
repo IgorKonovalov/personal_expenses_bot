@@ -4,6 +4,7 @@ import { openDatabase, type Db } from './connection.js';
 import {
   insertExpenseOrGetExisting,
   listLedgerExpensesOn,
+  restoreDeletedExpense,
   softDeleteExpense,
   type ExpenseId,
 } from './expenses.js';
@@ -88,6 +89,24 @@ describe('expenses repository', () => {
     expect(
       listLedgerExpensesOn(db, { ledgerId: LEDGER_A, memberId: USER_A, occurredOn: DAY }),
     ).toEqual([]);
+  });
+
+  it('restores only a deleted expense, and lists it again', () => {
+    addExpense('exp-a', LEDGER_A, USER_A, 'tg:1:1');
+    const deletedAt = () =>
+      db.prepare("SELECT deleted_at FROM expenses WHERE id = 'exp-a'").pluck().get();
+
+    expect(restoreDeletedExpense(db, 'exp-a' as ExpenseId)).toBe(false);
+    expect(softDeleteExpense(db, 'exp-a' as ExpenseId, NOW)).toBe(true);
+    expect(deletedAt()).toBe('2026-09-29T10:00:00.000Z');
+    expect(restoreDeletedExpense(db, 'exp-a' as ExpenseId)).toBe(true);
+    expect(deletedAt()).toBeNull();
+    expect(restoreDeletedExpense(db, 'exp-a' as ExpenseId)).toBe(false);
+    expect(
+      listLedgerExpensesOn(db, { ledgerId: LEDGER_A, memberId: USER_A, occurredOn: DAY }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['exp-a']);
   });
 
   it('rejects a non-positive amount at the schema level', () => {

@@ -91,6 +91,16 @@ export function softDeleteExpense(db: Db, id: ExpenseId, deletedAt: Date): boole
   return changes === 1;
 }
 
+// Returns false when the expense was not deleted, leaving the row unchanged.
+export function restoreDeletedExpense(db: Db, id: ExpenseId): boolean {
+  const { changes } = db
+    .prepare<[string]>(
+      'UPDATE expenses SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL',
+    )
+    .run(id);
+  return changes === 1;
+}
+
 // Non-deleted expenses of one ledger on one local date, visible only to members of that
 // ledger. Rows only: totals are computed in the domain (ADR-0002).
 export function listLedgerExpensesOn(
