@@ -1,9 +1,9 @@
 # 0006: Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended
 
-> **Status:** in-progress (2026-09-30)
+> **Status:** done (2026-09-30): built as planned, trial verdict go, no version bump (tooling only)
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30, mid-Phase 1: every `node --test` names a quoted glob, not a directory
-> **Related ADRs:** [ADR-0010](../adrs/0010-approved-plans-run-under-a-forked-conductor-on-trial.md)
+> **Related ADRs:** [ADR-0010](../../adrs/0010-approved-plans-run-under-a-forked-conductor-on-trial.md)
 
 ## TL;DR
 
@@ -339,3 +339,11 @@ committed.
 
 - CI job running `node --test "tools/conductor/test/*.test.mjs"` once Plan 0002's workflow exists.
 - After a `go` verdict: an ADR on the package's home and pinning, then a plan to extract it.
+- The next conductor plan, first phase: merge `main` into the lane before readiness, so a
+  `resume` after a plan amendment reads the amendment. The trial worked around this by
+  fast-forwarding both lanes by hand (close review minor).
+- `tools/conductor/README.md` says that ADR numbers from 0200 up in the engine, tests and park
+  details are Ritmolux's (close review minor).
+- Architect: after a plan closes, re-check the queued plans that depend on it before the next run.
+  Both trial parks were plans written before the code they build on.
+- `/help` lists `/categories`, `/cancel` and [Категория] (Plan 0003's open minor).

@@ -1,8 +1,8 @@
 # ADR-0010: Approved plans run under a conductor forked from Ritmolux, on trial before any package
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0006](../plans/0006-conductor-trial.md)
+> **Related plan(s):** [Plan 0006](../plans/done/0006-conductor-trial.md)
 
 ## Context
 
@@ -107,3 +107,19 @@ relearned here, one bad night at a time.
 No fork at all. Rejected because its engine resolves imports relative to Ritmolux's own tree
 (`../../../scripts/...`), and running it against another repository would make every Ritmolux
 conductor change a potential break here, with nothing to catch it.
+
+## Outcome (2026-09-30)
+
+The trial ran as decided. The owner's verdict is `go` (Plan 0006, `### Notes`). The conductor
+merged Plans 0007 and 0003 into the local `main` by fast-forward, each after one fix round, for
+$24.58 across three runs, with 0 conductor fix commits. `project.mjs` is 87 lines.
+
+One claim above did not hold. The Consequences said that a plan with no `human` phase reaches
+`main` with no owner action. Both trial plans needed one: each parked `plan_wrong` at readiness,
+and the architect amended it before a `resume`. Both plans had been written before the code they
+build on. One conductor defect also surfaced. A lane merges `main` only just before the review, so
+a resumed readiness check reads a lane that predates the amendment. Both lanes were fast-forwarded
+by hand. Its fix is a followup in Plan 0006.
+
+The installed CLI, 2.1.284, is not on the verified list the fork copied from Ritmolux. It runs with
+the patch-above warning.
