@@ -2,6 +2,7 @@
 
 > **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
+> **Amended:** 2026-09-30: `src/bot/handlers/card.ts` (Plan 0007's card builder) added to Phases 1 and 2, `src/bot/bot.ts` to Phase 2 (conductor readiness park)
 > **Depends on:** [Plan 0007](done/0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
 > **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
@@ -76,7 +77,7 @@ reviews once at the end, in a fresh session.
   `src/db/categories.test.ts`, `src/db/expenses.ts`, `src/domain/categoryPresets.ts`,
   `src/domain/categories.ts`, `src/domain/categories.test.ts`, `src/services/provisionUser.ts`,
   `src/services/seedCategories.ts`, `src/services/recordExpense.ts`, `src/services/*.test.ts`,
-  `src/bot/messages.ts`, `src/bot/bot.test.ts`, `src/index.ts`.
+  `src/bot/handlers/card.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`, `src/index.ts`.
 - **Done when:**
   - A new user's personal ledger has one category per `categoryPresets.ts` entry, each with its
     `preset_key`. Running the boot seeding twice over a Plan 0001 database (ledger with no
@@ -98,13 +99,14 @@ reviews once at the end, in a fresh session.
 - **What:** A [Категория] button on the confirmation, a paged picker that edits the card in
   place, the list pager (ADR-0011), and the ADR-0008 history lookup as the first suggestion step.
 - **Files touched:** `src/bot/handlers/category.ts`, `src/bot/nav.ts`, `src/bot/nav.test.ts`,
-  `src/bot/callbackData.ts`,
+  `src/bot/callbackData.ts`, `src/bot/handlers/card.ts`, `src/bot/bot.ts`,
   `src/bot/handlers/text.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`,
   `src/services/changeCategory.ts`, `src/services/changeCategory.test.ts`,
   `src/services/recordExpense.ts`, `src/db/expenses.ts`, `src/db/expenses.test.ts`.
 - **Done when:**
   - The confirmation keyboard is row 1 [Категория] `exp:cat:<uuid>` (44 bytes), row 2
-    [Удалить] (Plan 0007). The picker lists the ledger's **active** categories two per row,
+    [Удалить] (Plan 0007). `recordedCard` in `card.ts` builds it, so the card after `450 кофе`,
+    after a tap on an ambiguous reading, and after [Вернуть] all carry it. The picker lists the ledger's **active** categories two per row,
     8 per page, with each button `exp:setcat:<uuid>:<categoryId>`. The current category is
     marked `✓ `. Below it are the pager row `[◀] [n/N] [▶]` as `exp:catp:<uuid>:<page>`
     (47 bytes for a one-digit page), shown only when there's more than one page, and
