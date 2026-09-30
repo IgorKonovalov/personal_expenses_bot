@@ -12,6 +12,7 @@ import { registerToday } from './handlers/today.js';
 import { registerUndo } from './handlers/undo.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
+import { replyHtml } from './render/html.js';
 
 export interface HandlerDeps {
   readonly db: Db;
@@ -80,7 +81,7 @@ function errorBoundary(logger: Logger): MiddlewareFn {
       logger.error({ updateId: ctx.update.update_id, err: safeError(error) }, 'handler failed');
       try {
         if (ctx.callbackQuery !== undefined) await ctx.answerCallbackQuery();
-        if (ctx.chat !== undefined) await ctx.reply(messages.genericError);
+        if (ctx.chat !== undefined) await replyHtml(ctx, messages.genericError);
       } catch (replyError) {
         logger.error(
           { updateId: ctx.update.update_id, err: safeError(replyError) },

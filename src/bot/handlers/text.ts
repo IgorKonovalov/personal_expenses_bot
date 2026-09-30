@@ -3,6 +3,8 @@ import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import { undoExpenseData } from '../callbackData.js';
 import { messages } from '../messages.js';
+import { replyHtml } from '../render/html.js';
+import { sendHelp } from './help.js';
 import { ensureUser } from './start.js';
 
 // Free text is an expense attempt. Register after command handlers.
@@ -21,7 +23,7 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
 
     switch (result.kind) {
       case 'recorded':
-        await ctx.reply(messages.expenseRecorded(result), {
+        await replyHtml(ctx, messages.expenseRecorded(result), {
           reply_markup: new InlineKeyboard().text(
             messages.undoButton,
             undoExpenseData(result.expense.id),
@@ -29,7 +31,8 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
         });
         return;
       case 'ambiguous':
-        await ctx.reply(
+        await replyHtml(
+          ctx,
           messages.ambiguousAmount({
             readings: result.readings.map((r) => ({
               amountMinor: r.amountMinor,
@@ -42,10 +45,10 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
         );
         return;
       case 'invalid':
-        await ctx.reply(messages.invalidAmount);
+        await replyHtml(ctx, messages.invalidAmount);
         return;
       case 'notExpense':
-        await ctx.reply(messages.help);
+        await sendHelp(ctx);
         return;
     }
   });

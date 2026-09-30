@@ -4,6 +4,7 @@ import { undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import { UNDO_EXPENSE } from '../callbackData.js';
 import { messages } from '../messages.js';
+import { editHtml } from '../render/html.js';
 import { ensureUser } from './start.js';
 
 export function registerUndo(bot: Composer<Context>, deps: HandlerDeps): void {
@@ -21,7 +22,7 @@ export function registerUndo(bot: Composer<Context>, deps: HandlerDeps): void {
       case 'undone':
         await ctx.answerCallbackQuery({ text: messages.undoneToast });
         // Replacing the text without reply_markup also removes the Undo button.
-        await ctx.editMessageText(messages.expenseUndone(result));
+        await editHtml(ctx, messages.expenseUndone(result));
         return;
       case 'alreadyUndone':
         await ctx.answerCallbackQuery({ text: messages.alreadyUndone });

@@ -2,9 +2,12 @@ import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
+import { html, joinHtml, type Html } from './render/html.js';
 
 // Every user-facing string, in Russian with polite "вы". Handlers pick a message here and never
 // build copy themselves. Amounts are rendered only through formatMoney.
+// Message texts are `Html` (ADR-0012); toasts, button labels and command descriptions stay plain
+// strings because Telegram doesn't parse them.
 
 interface LedgerRef {
   readonly kind: LedgerKind;
@@ -48,7 +51,8 @@ function retypeable(money: Money): string {
 }
 
 // Telegram rejects messages over 4096 characters, and a description can be almost that long.
-// Replies show at most this many code points of it; the stored description is untouched.
+// Replies show at most this many code points of it; the stored description is untouched. The cut
+// runs on raw text, before escaping, so it can never split an entity.
 const MAX_SHOWN_DESCRIPTION = 200;
 
 function shownDescription(description: string): string {
@@ -65,6 +69,11 @@ const menu = {
   help: '❓ Помощь',
 } as const;
 
+// `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе`
+function expenseLine(verb: string, { expense, ledger }: ExpenseView): Html {
+  return html`${verb} «${ledgerName(ledger)}»: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
+}
+
 export const messages = {
   menu,
   // Bot command menu registered with setMyCommands at boot.
@@ -73,28 +82,24 @@ export const messages = {
     { command: 'help', description: 'Как записать трату' },
   ],
 
-  welcome:
-    'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. ' +
-    'Итоги за сегодня: /today.',
-  genericError:
-    'Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.',
-  help:
-    'Чтобы записать трату, отправьте сумму и описание, например «450 кофе». ' +
-    'Валюту можно указать после суммы: «12,50 EUR такси».\n\n' +
-    `${menu.today} — траты за сегодня\n` +
-    `${menu.help} — эта подсказка`,
-  editedMessageHint:
-    'Изменение сообщения не меняет запись. ' +
-    'Удалите трату кнопкой под подтверждением и отправьте её заново.',
-  invalidAmount:
-    'Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». ' +
-    'Тысячи отделяйте пробелом: «1 200 обед».',
+  welcome: html`Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.`,
+  genericError: html`Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.`,
+  help: joinHtml(
+    [
+      html`Чтобы записать трату, отправьте сумму и описание, например «450 кофе». Валюту можно указать после суммы: «12,50 EUR такси».`,
+      html``,
+      html`${menu.today} — траты за сегодня`,
+      html`${menu.help} — эта подсказка`,
+    ],
+    '\n',
+  ),
+  editedMessageHint: html`Изменение сообщения не меняет запись. Удалите трату кнопкой под подтверждением и отправьте её заново.`,
+  invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
 
-  expenseRecorded: ({ expense, ledger }: ExpenseView) =>
-    `Записано в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${shownDescription(expense.description)}`,
+  expenseRecorded: (view: ExpenseView) => expenseLine('Записано в', view),
   undoButton: 'Отменить',
 
-  ambiguousAmount: ({ readings, description, currency, defaultCurrency }: AmbiguousView) => {
+  ambiguousAmount: ({ readings, description, currency, defaultCurrency }: AmbiguousView): Html => {
     const code = currency === defaultCurrency ? '' : ` ${currency}`;
     const shown = readings.map(formatMoney).join(' или ');
     const resend = readings
@@ -103,24 +108,25 @@ export const messages = {
     // One reading when the other is invalid for the currency: `1.234` RSD, `1.200` JPY.
     const question =
       readings.length === 1
-        ? `Уточните сумму: вы имели в виду ${shown}?`
-        : `Сумму можно понять по-разному: ${shown}.`;
-    return `${question} Ничего не записано. Отправьте ещё раз так: ${resend}.`;
+        ? html`Уточните сумму: вы имели в виду ${shown}?`
+        : html`Сумму можно понять по-разному: ${shown}.`;
+    return joinHtml([question, html`Ничего не записано. Отправьте ещё раз так: ${resend}.`], ' ');
   },
 
-  expenseUndone: ({ expense, ledger }: ExpenseView) =>
-    `Отменено в «${ledgerName(ledger)}»: ${formatMoney(expense)} — ${shownDescription(expense.description)}`,
+  expenseUndone: (view: ExpenseView) => expenseLine('Отменено в', view),
   undoneToast: 'Трата отменена',
   alreadyUndone: 'Эта трата уже отменена',
   undoForbidden: 'Отменить трату может только тот, кто её записал',
   expenseNotFound: 'Трата не найдена',
 
-  today: ({ ledger, date, totals }: TodayView) => {
-    const header = `Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»`;
-    if (totals.size === 0) return `${header}\nТрат нет. Отправьте, например, «450 кофе».`;
-    const lines = [...totals].map(([currency, amountMinor]) =>
-      formatMoney({ amountMinor, currency }),
+  today: ({ ledger, date, totals }: TodayView): Html => {
+    const header = html`<b>Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»</b>`;
+    if (totals.size === 0) {
+      return joinHtml([header, html`Трат нет. Отправьте, например, «450 кофе».`], '\n');
+    }
+    const lines = [...totals].map(
+      ([currency, amountMinor]) => html`${formatMoney({ amountMinor, currency })}`,
     );
-    return [header, ...lines].join('\n');
+    return joinHtml([header, ...lines], '\n');
   },
 } as const;

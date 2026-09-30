@@ -261,8 +261,8 @@ layout.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Menu bar, /help, and no silent input | dev | done | committed with this row |
-| 2: HTML seam (ADR-0012) | dev | not started | |
+| 1: Menu bar, /help, and no silent input | dev | done | 3dcda85 |
+| 2: HTML seam (ADR-0012) | dev | done | committed with this row |
 | 3: Callback dispatcher and expense-card actions | dev | not started | |
 | 4: Ambiguous amounts answered with buttons | dev | not started | |
 
@@ -277,11 +277,29 @@ layout.
   database and sends `450 synthetic-coffee`.
 - Phase 1: `src/bot/handlers/other.ts` imports `findExpenseBySourceKey` from `src/db/` directly
   for the edited-message lookup; no service in `Files touched` exposes it.
-- Phase 1: the not-an-expense reply in `text.ts` (outside Phase 1's list) still sends
-  `messages.help` without the menu keyboard. `/help`, the ❓ label, unknown commands and
-  non-text messages send it with the keyboard.
+- Phase 1: the not-an-expense reply in `text.ts` (outside Phase 1's list) still sent
+  `messages.help` without the menu keyboard. Phase 2 moved it to `sendHelp`, which carries the
+  menu.
 - Phase 1: the menu-label parse test probes every A-Z three-letter code through
   `toCurrencyCode`, since `currencies.ts` exports no roster.
+- Phase 2: the ESLint config is `eslint.config.js`, not `eslint.config.mjs` as `Files touched`
+  names; the gate went there. It bans `.reply(`, `.editMessageText(` and `.sendMessage(` calls
+  and any `parse_mode` property in `src/bot/**` outside `src/bot/render/**`, test files
+  included.
+- Phase 2: expected payloads in `bot.test.ts` spread `htmlParseMode`, exported from
+  `render/html.ts`, so that `parse_mode` is spelled only under `src/bot/render/`.
+  `render/html.test.ts` pins it to `{ parse_mode: 'HTML' }`.
+- Phase 2: "Html-typed toasts don't compile" is tested as `@ts-expect-error` on assigning
+  `messages.undoneToast` / `messages.undoButton` to `Html`. Passing an `Html` value where a
+  toast `string` is expected still compiles, because `Html` is a subtype of `string`.
+- Phase 2: the `html` tag rejects an interpolated `Html` value at the type level (tested with
+  `@ts-expect-error`); `joinHtml` escapes its separator.
+- Phase 2: bold went on the confirmation amount, the deleted-card amount and the whole `/today`
+  header line. The `/today` per-currency totals are not bold.
+- Phase 2: `src/bot/testHarness.ts` needed no change.
+- Phase 2: `.prettierrc` (not in `Files touched`) gained `"embeddedLanguageFormatting": "off"`.
+  Prettier formats `html`-tagged templates as embedded HTML, which rewrote the message copy
+  (line breaks inside `<b>` and the texts).
 
 ### Close triggers
 

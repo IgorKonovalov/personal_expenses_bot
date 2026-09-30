@@ -11,6 +11,19 @@ const botFramework = {
   message: 'grammY is imported only in src/bot/ and src/index.ts.',
 };
 const botLayer = { group: ['**/bot/**'], message: 'Only src/index.ts wires the bot layer.' };
+const moneySyntax = [
+  {
+    selector: "MemberExpression[property.name='toFixed']",
+    message: 'Money is integer minor units; use formatMoney in src/domain/money.ts.',
+  },
+  {
+    selector: "MemberExpression[object.name='Number'][property.name='parseFloat']",
+    message: 'Money is integer minor units; use src/domain/money.ts.',
+  },
+];
+// ADR-0012: message text is sent only through src/bot/render/html.ts, which escapes it.
+const htmlSeam =
+  'Send and edit message text with replyHtml / editHtml from src/bot/render/html.ts.';
 
 export default tseslint.config(
   {
@@ -43,15 +56,21 @@ export default tseslint.config(
         'error',
         { name: 'parseFloat', message: 'Money is integer minor units; use src/domain/money.ts.' },
       ],
+      'no-restricted-syntax': ['error', ...moneySyntax],
+    },
+  },
+  {
+    files: ['src/bot/**/*.ts'],
+    ignores: ['src/bot/render/**'],
+    rules: {
       'no-restricted-syntax': [
         'error',
+        ...moneySyntax,
+        { selector: "Property[key.name='parse_mode']", message: htmlSeam },
+        { selector: "Property[key.value='parse_mode']", message: htmlSeam },
         {
-          selector: "MemberExpression[property.name='toFixed']",
-          message: 'Money is integer minor units; use formatMoney in src/domain/money.ts.',
-        },
-        {
-          selector: "MemberExpression[object.name='Number'][property.name='parseFloat']",
-          message: 'Money is integer minor units; use src/domain/money.ts.',
+          selector: 'CallExpression[callee.property.name=/^(reply|editMessageText|sendMessage)$/]',
+          message: htmlSeam,
         },
       ],
     },
@@ -94,14 +113,7 @@ export default tseslint.config(
           selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']",
           message: 'Domain code never reads the wall clock; take `now` as a parameter.',
         },
-        {
-          selector: "MemberExpression[property.name='toFixed']",
-          message: 'Money is integer minor units; use formatMoney in src/domain/money.ts.',
-        },
-        {
-          selector: "MemberExpression[object.name='Number'][property.name='parseFloat']",
-          message: 'Money is integer minor units; use src/domain/money.ts.',
-        },
+        ...moneySyntax,
       ],
     },
   },

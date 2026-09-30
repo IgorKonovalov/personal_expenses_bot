@@ -4,6 +4,7 @@ import { provisionUser } from '../../services/provisionUser.js';
 import type { HandlerDeps } from '../bot.js';
 import { menuKeyboard } from '../keyboards.js';
 import { messages } from '../messages.js';
+import { replyHtml } from '../render/html.js';
 
 // The internal user behind a Telegram account, provisioned on first contact. Every handler
 // resolves its user this way, so a message sent before /start still has a ledger.
@@ -21,6 +22,6 @@ export function registerStart(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('start', async (ctx) => {
     if (ctx.from === undefined) return;
     ensureUser(deps, ctx.from.id, deps.now());
-    await ctx.reply(messages.welcome, { reply_markup: menuKeyboard() });
+    await replyHtml(ctx, messages.welcome, { reply_markup: menuKeyboard() });
   });
 }

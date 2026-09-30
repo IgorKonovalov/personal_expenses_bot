@@ -2,6 +2,7 @@ import type { Composer, Context } from 'grammy';
 import { findExpenseBySourceKey } from '../../db/expenses.js';
 import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
+import { replyHtml } from '../render/html.js';
 import { sendHelp } from './help.js';
 
 // A slash command no handler claimed. Register after every command and before the text handler.
@@ -30,6 +31,6 @@ export function registerEdited(bot: Composer<Context>, deps: HandlerDeps): void 
     const { chat, message_id } = ctx.editedMessage;
     const expense = findExpenseBySourceKey(deps.db, `tg:${chat.id}:${message_id}`);
     if (expense === undefined) return;
-    await ctx.reply(messages.editedMessageHint);
+    await replyHtml(ctx, messages.editedMessageHint);
   });
 }

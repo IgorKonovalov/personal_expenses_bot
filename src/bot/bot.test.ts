@@ -8,6 +8,7 @@ import { createLogger } from '../logger.js';
 import { registerCommands } from './bot.js';
 import { assertCallbackData, undoExpenseData } from './callbackData.js';
 import { messages } from './messages.js';
+import { htmlParseMode } from './render/html.js';
 import {
   ALLOWED_ID,
   SECOND_ALLOWED_ID,
@@ -38,7 +39,10 @@ describe('error boundary', () => {
     );
 
     expect(calls).toEqual([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.genericError } },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.genericError, ...htmlParseMode },
+      },
     ]);
     const errorLines = logLines.filter((line) => line.includes('handler failed'));
     expect(errorLines).toHaveLength(1);
@@ -55,6 +59,7 @@ const menuKeyboard = {
   is_persistent: true,
   resize_keyboard: true,
 };
+const withMenu = { reply_markup: menuKeyboard, ...htmlParseMode };
 
 function expenseCount(db: Db): unknown {
   return db.prepare('SELECT COUNT(*) AS n FROM expenses').get();
@@ -80,12 +85,9 @@ describe('menu and help', () => {
     expect(calls).toEqual([
       {
         method: 'sendMessage',
-        payload: { chat_id: ALLOWED_ID, text: messages.welcome, reply_markup: menuKeyboard },
+        payload: { chat_id: ALLOWED_ID, text: messages.welcome, ...withMenu },
       },
-      {
-        method: 'sendMessage',
-        payload: { chat_id: ALLOWED_ID, text: messages.help, reply_markup: menuKeyboard },
-      },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
   });
 
@@ -106,7 +108,7 @@ describe('menu and help', () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual(calls[0]);
-    expect(sentTexts(calls)[0]).toBe('Сегодня, 30 сентября — «Личные расходы»\n450.00 RSD');
+    expect(sentTexts(calls)[0]).toBe('<b>Сегодня, 30 сентября — «Личные расходы»</b>\n450.00 RSD');
     expect(expenseCount(db)).toEqual({ n: 1 });
   });
 
@@ -207,10 +209,7 @@ describe('input that is not an expense text', () => {
     await bot.handleUpdate(messageUpdate(1, content));
 
     expect(calls).toEqual([
-      {
-        method: 'sendMessage',
-        payload: { chat_id: ALLOWED_ID, text: messages.help, reply_markup: menuKeyboard },
-      },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
     expect(tableCounts(db)).toEqual(before);
   });
@@ -242,10 +241,11 @@ describe('input that is not an expense text', () => {
     await bot.handleUpdate(editedUpdate(4, 10, '500 coffee'));
     await bot.handleUpdate(editedUpdate(5, 11, '60 tea'));
 
-    expect(calls).toEqual([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.editedMessageHint } },
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.editedMessageHint } },
-    ]);
+    const hint = {
+      method: 'sendMessage',
+      payload: { chat_id: ALLOWED_ID, text: messages.editedMessageHint, ...htmlParseMode },
+    };
+    expect(calls).toEqual([hint, hint]);
     expect(db.prepare('SELECT * FROM expenses ORDER BY id').all()).toEqual(rows);
   });
 
@@ -315,10 +315,40 @@ describe('recording an expense', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Записано в «Личные расходы»: 450.00 RSD — coffee',
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — coffee',
           reply_markup: undoKeyboard,
+          ...htmlParseMode,
         },
       },
+    ]);
+  });
+
+  it('stores markup-like text as typed and escapes it in the HTML confirmation', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '450 <b>кофе</b> & чай' }));
+
+    expect(db.prepare('SELECT description FROM expenses').pluck().get()).toBe('<b>кофе</b> & чай');
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — &lt;b&gt;кофе&lt;/b&gt; &amp; чай',
+          reply_markup: undoKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('cuts a long description before escaping, so no entity is split', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: `450 ${'<'.repeat(300)}` }));
+
+    expect(sentTexts(calls)).toEqual([
+      `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'&lt;'.repeat(200)}…`,
     ]);
   });
 
@@ -334,8 +364,9 @@ describe('recording an expense', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: `Записано в «Личные расходы»: 450.00 RSD — ${'я'.repeat(200)}…`,
+          text: `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'я'.repeat(200)}…`,
           reply_markup: undoKeyboard,
+          ...htmlParseMode,
         },
       },
     ]);
@@ -367,6 +398,7 @@ describe('recording an expense', () => {
           text:
             'Сумму можно понять по-разному: 1 200.00 RSD или 1.20 RSD. Ничего не записано. ' +
             'Отправьте ещё раз так: «1200 lunch» или «1.2 lunch».',
+          ...htmlParseMode,
         },
       },
     ]);
@@ -386,6 +418,7 @@ describe('recording an expense', () => {
           text:
             'Уточните сумму: вы имели в виду 1 234.00 RSD? Ничего не записано. ' +
             'Отправьте ещё раз так: «1234 lunch».',
+          ...htmlParseMode,
         },
       },
     ]);
@@ -397,7 +430,7 @@ describe('recording an expense', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, text: 'coffee 450' }));
 
     expect(calls).toEqual([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help } },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
   });
 
@@ -442,7 +475,8 @@ describe('undo', () => {
         payload: {
           chat_id: ALLOWED_ID,
           message_id: 2,
-          text: 'Отменено в «Личные расходы»: 450.00 RSD — coffee',
+          text: 'Отменено в «Личные расходы»: <b>450.00 RSD</b> — coffee',
+          ...htmlParseMode,
         },
       },
       {
@@ -524,7 +558,8 @@ describe('/today', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Сегодня, 30 сентября — «Личные расходы»\n462.50 RSD\n12.50 EUR',
+          text: '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n462.50 RSD\n12.50 EUR',
+          ...htmlParseMode,
         },
       },
     ]);
@@ -540,7 +575,8 @@ describe('/today', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Сегодня, 30 сентября — «Личные расходы»\nТрат нет. Отправьте, например, «450 кофе».',
+          text: '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+          ...htmlParseMode,
         },
       },
     ]);
