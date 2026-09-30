@@ -262,7 +262,7 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 |---|---|---|---|
 | 1: Every new expense lands in a category | dev | done | ff7577d |
 | 2: Change the category, and learn from the change | dev | done | 8d76574 |
-| 3: Flow sessions, `/categories`, command menu | dev | done | committed with this row |
+| 3: Flow sessions, `/categories`, command menu | dev | done | 2805ed9 |
 
 ### Notes
 
@@ -298,5 +298,16 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 - Phase 3: `CLAUDE.md` is unchanged, because the `src/` tree kept its shape.
 
 ### Close triggers
+
+- **What shipped:** feature
+- **User-visible surface changed:** commands `/categories` and `/cancel` (both registered
+  handlers; `setMyCommands` adds `/categories`); the confirmation ends `· <category>` and
+  carries [Категория] above [Удалить]; the category picker on the card; the `/categories`
+  screen with its add, rename and hide flows and their messages; `flowExpired` and
+  `staleScreen`. Schema migrations `0002_categories.sql` and `0003_flow_sessions.sql`. Boot
+  seeds categories into ledgers that have none. No config or env keys.
+- **Gate at the tip (2805ed9):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 23 files, 265 tests passed; `node scripts/check-doc-links.mjs` exit 0, 82 links resolve.
+- **Outstanding `human` phases:** none
 
 ## Followups
