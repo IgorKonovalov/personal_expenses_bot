@@ -3,16 +3,21 @@
 > **Status:** in-progress
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30, before implementation: migrations 0002 to 0004 exist, soft-deleted
-> expenses, a fixed `DATABASE_PATH` in Compose, and the pnpm workspace file in the image
+> expenses, a fixed `DATABASE_PATH` in Compose, and the pnpm workspace file in the image.
+> Amended again 2026-09-30, after Phase 3, for the VPS survey: a new dev Phase 4 (memory cap,
+> build-cache pruning, a forced-command deploy key), and provisioning moves to Phase 5 with no
+> sudo and the siblings' backup location
 > **Related ADRs:** [ADR-0001](../adrs/0001-tech-stack.md), [ADR-0006](../adrs/0006-production-runs-compiled-js.md)
 
 ## TL;DR
 
-The bot runs 24/7 on the VPS that already hosts `traditional-medicine-notifier-bot`, deployed the
-same way: a multi-stage Docker image of compiled JS (ADR-0006), a Compose service with a
+The bot runs 24/7 on the shared 1 GB VPS that already hosts three sibling bots, deployed the
+same way as `traditional-medicine-notifier-bot`: a multi-stage Docker image of compiled JS (ADR-0006), a Compose service with a
 heartbeat-file health check, and a GitHub Actions `check` job. A push to `main` then deploys over
-SSH (`git pull --ff-only && docker compose up -d --build --wait`). The live SQLite file is
-backed up at boot and every 24 hours into a host directory, keeping 14 days. The first visible
+SSH, where a restricted key can only run one fixed deploy script (`git pull --ff-only`,
+`docker compose up -d --build --wait`, then pruning). The container is capped at 256 MiB like its
+siblings. The live SQLite file is backed up at boot and every 24 hours into a host directory,
+keeping 14 days. The first visible
 result: the user pushes to `main`, and a few minutes later `/today` answers from the VPS while
 their laptop is closed.
 
@@ -36,7 +41,23 @@ Mirror the sibling's scaffold (`Dockerfile`, `docker-compose.yml`, `.github/work
   in tests.
 
 We rejected building the image in CI and pushing it to GHCR, because it adds a registry and
-credentials for no gain on a one-server setup the sibling already runs with on-host builds. We
+credentials for no gain on a one-server setup the sibling already runs with on-host builds. The
+2026-09-30 VPS survey re-tested that call: the droplet has 961 MB of RAM, and before the survey it
+had no swap and about 300 MB available. It now has 2 GB of swap, and every sibling is capped at
+`mem_limit: 256m`. All three siblings build on the host. We keep the on-host build and add the
+two guards it lacked: this bot's own `mem_limit: 256m`, and `docker builder prune` after each
+deploy, because the build cache had grown to 12.6 GB unnoticed. Shipping the image over SSH
+(`docker save | docker load`) was also rejected, as a bespoke pipeline no sibling uses.
+
+The deploy user is in the `docker` group, which is root-equivalent, so any shell as that user is
+root on the droplet. The GitHub Actions key is therefore a dedicated key restricted in
+`authorized_keys` to `restrict,command="..."`: it can only run a fixed deploy script installed
+outside the checkout, never an arbitrary command. We rejected reusing the siblings' unrestricted
+keys, where a leaked `SSH_KEY` secret is a root shell. The restriction doesn't stop a malicious
+commit on `main` from running code at build time. Write access to the GitHub repository remains
+the real boundary.
+
+We
 rejected `node-cron` for a single daily job, because `setInterval` plus a boot run is enough and
 avoids a dependency. The FX plan can revisit scheduling when it needs clock-aligned jobs.
 
@@ -46,14 +67,15 @@ avoids a dependency. The FX plan can revisit scheduling when it needs clock-alig
 flowchart LR
     Dev[git push main] --> GH
     subgraph GH["GitHub Actions"]
-        C[check: typecheck, lint, build, test] --> D[deploy: ssh]
+        C[check: typecheck, lint, build, test] --> D[deploy: ssh, restricted key]
     end
-    subgraph VPS["shared VPS (~/bots/)"]
-        D --> P[git pull --ff-only + compose up --build --wait]
-        P --> B[bot container, uid 1000]
+    subgraph VPS["shared 1 GB VPS, user botuser (uid 1000)"]
+        D --> F[forced command: ~/bin/deploy-personal-expenses-bot]
+        F --> P[git pull --ff-only + compose up --build --wait + prune]
+        P --> B[bot container, mem_limit 256m]
         B --> V[(volume bot-data: bot.sqlite, heartbeat)]
-        B --> H[/var/backups/personal-expenses-bot/]
-        S[sibling bot container]
+        B --> H[~/backups/personal-expenses-bot/]
+        S[3 sibling bot containers, 256m each]
     end
     B <-->|long polling| TG[Telegram]
 ```
@@ -147,21 +169,78 @@ architect reviews once at the end, in a fresh session.
   - `actionlint` (run via `npx`/`pnpm dlx`, not added as a dependency) reports no errors on the
     workflow. The log records the output.
 
-### Phase 4: Provision on the VPS and first deploy
+### Phase 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy
+- **Owner skill:** dev
+- **What:** Cap the container at 256 MiB. Move the deploy commands out of the workflow into a
+  committed script, which the human installs on the VPS as the deploy key's forced command. Prune
+  the build cache on every deploy. Point the docs at the siblings' backup location and a key with
+  no passphrase.
+- **Files touched:** `docker-compose.yml`, `scripts/deploy-vps.sh`, `scripts/deploy-vps.test.mjs`,
+  `.github/workflows/deploy.yml`, `README.md` (deploy section), `.env.example`
+  (`HOST_BACKUP_DIR`), `CLAUDE.md` ("Where things live": `scripts/`).
+- **Done when:**
+  - `docker-compose.yml` sets `mem_limit: 256m` on `bot`, and `docker compose config` (with a
+    stub `.env`) reports the limit as 268435456 bytes (256 x 1048576).
+  - `scripts/deploy-vps.sh` is POSIX `sh` with `set -eu`. It runs, in this order:
+    `cd "$HOME/bots/personal-expenses-bot"`, `git pull --ff-only`,
+    `docker compose up -d --build --wait --wait-timeout 180`, `docker image prune -f` and
+    `docker builder prune -f --filter until=168h`. It never reads or runs `$SSH_ORIGINAL_COMMAND`.
+  - `scripts/deploy-vps.test.mjs` (`node --test`, with stub `git` and `docker` on `PATH` that
+    append their argv to a log, and a temp `HOME` holding the checkout directory) asserts:
+    - With `SSH_ORIGINAL_COMMAND='touch pwned'`, the log holds exactly those four calls in that
+      order, and no `pwned` file exists.
+    - A `git` stub that exits 1 makes the script exit non-zero with zero `docker` calls logged.
+    - A `docker compose up` stub that exits 1 makes the script exit non-zero with no prune calls
+      logged.
+  - `shellcheck` reports nothing on the script. Run it from a digest-pinned
+    `koalaman/shellcheck` image, the way Phase 3 ran actionlint, and record the digest in the log.
+  - The workflow's deploy step drops `passphrase:`, and its `script:` no longer carries the deploy
+    commands. It sends a placeholder, with a comment saying that the forced command ignores it
+    and naming the script. `actionlint` is still clean.
+  - The README deploy section lists three secrets (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) and gives:
+    - the `ssh-keygen -t ed25519 -N ''` line for a dedicated key;
+    - the exact `authorized_keys` line
+      `restrict,command="/home/botuser/bin/deploy-personal-expenses-bot" ssh-ed25519 ...`;
+    - the install step
+      `install -m 755 scripts/deploy-vps.sh ~/bin/deploy-personal-expenses-bot`, with the rule
+      that editing the script means reinstalling it by hand;
+    - `HOST_BACKUP_DIR=/home/botuser/backups/personal-expenses-bot`;
+    - the repo cloned over HTTPS, with no deploy key.
+
+    The README's "cloned with a read-only deploy key" line is gone.
+  - The `check` job runs `node --test "scripts/*.test.mjs"` after `pnpm test`, so the deploy
+    script's test gates every push like the rest of the suite.
+
+### Phase 5: Provision on the VPS and first deploy
 - **Owner skill:** human
 - **What:** Create a **separate production bot** in BotFather. Two processes polling one token
-  get 409 Conflict, and `pnpm dev` would fight production. Push the repo to GitHub. On the VPS:
-  add a read-only deploy key, clone into `~/bots/personal-expenses-bot`, write `.env`
-  (mode `0600`) with the production token and ids, and run
-  `sudo install -d -o 1000 -g 1000 -m 700 /var/backups/personal-expenses-bot`. Add the four
-  `SSH_*` repository secrets, then push to `main`.
-- **Files touched:** `.env` on the VPS (not in git), GitHub repository secrets.
+  get 409 Conflict, and `pnpm dev` would fight production. On the VPS as `botuser` (no sudo
+  needed):
+  - `git clone https://github.com/IgorKonovalov/personal_expenses_bot.git ~/bots/personal-expenses-bot`
+    (the repo is public, so no deploy key);
+  - write `.env` (mode `0600`) with the production token and ids plus
+    `HOST_BACKUP_DIR=/home/botuser/backups/personal-expenses-bot`;
+  - `install -d -m 700 ~/backups/personal-expenses-bot`;
+  - `mkdir -p ~/bin` and install the deploy script as Phase 4's README says.
+
+  On the laptop, generate the dedicated key and append its public half to `~/.ssh/authorized_keys`
+  on the VPS with the `restrict,command=` prefix. Set the `SSH_HOST`, `SSH_USER` and `SSH_KEY`
+  repository secrets, delete the laptop's copy of the private key, then push to `main`.
+- **Files touched:** `.env`, `~/bin/deploy-personal-expenses-bot` and `~/.ssh/authorized_keys`
+  on the VPS (not in git), and the GitHub repository secrets.
 - **Done when:**
-  - The Actions run is green through `deploy`, and `docker compose ps` on the VPS shows the bot
-    `healthy` next to the sibling.
+  - The Actions run is green through `deploy`. `docker compose ps` on the VPS shows the bot
+    `healthy` next to its three siblings.
+  - The deploy key is restricted: running `ssh -i <deploy key> botuser@<host> whoami` runs the
+    deploy script (its output shows `git pull`) and never prints `botuser`.
+  - Across the first deploy, the build did not starve the siblings. Each sibling's
+    `docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}}'` is the same before and after, and
+    `OOMKilled` is `false`. The log records `free -m` before and after the deploy, and the bot's
+    steady-state `docker stats` memory, which is under 256 MiB.
   - In Telegram, the production bot answers `/start`, records `450 кофе` and shows it in
     `/today`, with the laptop closed.
-  - `/var/backups/personal-expenses-bot/` holds today's `expenses-YYYY-MM-DD.sqlite`.
+  - `~/backups/personal-expenses-bot/` is mode `700` and holds today's
+    `expenses-YYYY-MM-DD.sqlite`.
   - **Restore drill:** after recording `450 кофе`, restart the container (`docker compose
     restart`) so that its boot backup includes that expense. Copy today's file off the VPS and
     open it with any SQLite client. `SELECT description FROM expenses WHERE deleted_at IS NULL`
@@ -170,14 +249,17 @@ architect reviews once at the end, in a fresh session.
 ## Data shapes
 
 Env (additions): `BACKUP_DIR` (optional, unset = no backups), `BACKUP_KEEP` (default `14`), and
-`HOST_BACKUP_DIR` (Compose only, default `/var/backups/personal-expenses-bot`). The heartbeat
-path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
+`HOST_BACKUP_DIR` (Compose only, default `/var/backups/personal-expenses-bot`; the VPS `.env`
+sets it to the siblings' location). The heartbeat path is derived as
+`<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 
 ```text
-# illustrative VPS layout
-~/bots/traditional-medicine-notifier-bot/   # existing
-~/bots/personal-expenses-bot/               # this repo, .env beside docker-compose.yml
-/var/backups/personal-expenses-bot/         # expenses-YYYY-MM-DD.sqlite, 0700, uid 1000
+# illustrative VPS layout (home = /home/botuser, uid 1000, groups: docker, no sudo)
+~/bots/<sibling>/                           # the other bots, same pull-based deploy
+~/bots/personal-expenses-bot/               # this repo (HTTPS clone), .env beside docker-compose.yml
+~/backups/personal-expenses-bot/            # expenses-YYYY-MM-DD.sqlite, 0700
+~/bin/deploy-personal-expenses-bot          # installed copy of scripts/deploy-vps.sh
+~/.ssh/authorized_keys                      # restrict,command="/home/botuser/bin/deploy-..." key
 ```
 
 ## Risks & open questions
@@ -185,8 +267,14 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 - **Privacy:** backups are full plaintext copies of every expense. The directory is `0700` and
   owned by uid 1000. Nothing leaves the VPS. Offsite copies are out of scope (see below), so a
   VPS loss still loses everything since the user's last manual copy.
-- **Shared VPS:** the two bots share memory and disk. Neither sets resource limits (the sibling
-  doesn't either). If the VPS is small, a `mem_limit` is a followup.
+- **Shared 1 GB VPS:** four bots share 961 MB of RAM and 2 GB of swap. Four 256 MiB caps
+  (1024 MiB in total) exceed the RAM, so the caps bound each bot, not the sum. The on-host build
+  runs outside every cap. Phase 5 checks the first deploy against the siblings' restart and OOM
+  state. If a build ever OOM-kills a sibling, building in CI comes back as an ADR.
+- **Root-equivalent deploy user:** `botuser` is in the `docker` group. The forced command limits
+  what a leaked key can do. It doesn't limit what a commit on `main` can do at build time.
+- **Forced-command drift:** the installed `~/bin/deploy-personal-expenses-bot` is a copy. A
+  change to `scripts/deploy-vps.sh` does nothing on the VPS until the human reinstalls it.
 - **Pull-based deploy:** `git pull --ff-only` fails if someone edits files on the VPS. That's
   intended: the failure is loud, and the fix is to reset the VPS checkout, never to force.
 - **Prod install scripts:** `prepare: husky` must not run in the prod install. Copy the sibling's
@@ -194,8 +282,8 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 - **Heartbeat semantics:** the file proves the event loop is alive after polling started, not
   that polling is healthy. That's the same trade the sibling made. A stuck long-poll isn't
   detected.
-- **Unverified:** that the VPS deploy user is uid 1000 like the sibling's. If it isn't, the backup
-  dir ownership in Phase 4 changes.
+- **Root access** exists only through the DigitalOcean Recovery Console (`PermitRootLogin no`, so
+  the Droplet Console fails). Nothing in this plan needs root.
 
 ## What this plan does NOT do
 
@@ -219,7 +307,8 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 | 1: The bot runs from a Docker image of compiled JS | dev | done | b71fab6 |
 | 2: Daily SQLite backups with rotation | dev | done | 865da53 |
 | 3: CI gate and deploy on push | dev | done | committed with this row |
-| 4: Provision on the VPS and first deploy | human | not started | |
+| 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy | dev | not started | |
+| 5: Provision on the VPS and first deploy | human | not started | |
 
 ### Notes
 
@@ -253,7 +342,7 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
   `docker run rhysd/actionlint:1.7.7 .github/workflows/deploy.yml` printed nothing, exit 0
   (image digest `sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9`).
 - Phase 3: the README restore steps (`docker compose run` copying a backup over the live file) are
-  untested; Phase 4's drill opens a backup off the VPS but doesn't restore one.
+  untested; Phase 5's drill opens a backup off the VPS but doesn't restore one.
 
 ### Close triggers
 
