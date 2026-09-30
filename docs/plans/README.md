@@ -11,12 +11,12 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
-| [0008](0008-version-announcements.md) | Version announcements: tell the admin about each new version, and /changelog | approved (2026-09-30) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0008](done/0008-version-announcements.md) | Version announcements: tell the admin about each new version, and /changelog | done (2026-09-30): built as planned after one docs fix round, v0.5.0 |
 | [0005](done/0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | done (2026-09-30): built as planned, one minor open, v0.4.0 |
 | [0002](done/0002-deploy-docker-vps.md) | Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups | done (2026-09-30): built as planned, prod shares the dev bot token, no version bump |
 | [0006](done/0006-conductor-trial.md) | Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended | done (2026-09-30): built as planned, trial verdict go, no version bump |

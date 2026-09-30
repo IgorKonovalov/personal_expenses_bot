@@ -1,6 +1,6 @@
 # ADR-0013: Announce each new version to the admin at boot, recorded in SQLite
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-30
 > **Plan:** Plan 0008
 
