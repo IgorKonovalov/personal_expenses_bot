@@ -1,3 +1,4 @@
+import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 
 // Telegram rejects callback_data over 64 bytes (UTF-8). Format: `<scope>:<action>[:<arg>…]`,
@@ -30,4 +31,27 @@ export function ambiguousReadingData(interpretation: 'thousands' | 'decimal'): s
 
 export function restoreExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:restore:${expenseId}`);
+}
+
+// The category picker, edited into the card in place. Pages are 1-based. A category id is a
+// short integer (ADR-0007), so `exp:setcat:<uuid>:<id>` fits for ids of up to 16 digits.
+export const CATEGORY_PICKER = /^exp:cat:([0-9a-f-]{36})$/;
+export const CATEGORY_PAGE = /^exp:catp:([0-9a-f-]{36}):(\d{1,4})$/;
+export const SET_CATEGORY = /^exp:setcat:([0-9a-f-]{36}):(\d{1,16})$/;
+export const SHOW_EXPENSE = /^exp:show:([0-9a-f-]{36})$/;
+
+export function categoryPickerData(expenseId: ExpenseId): string {
+  return assertCallbackData(`exp:cat:${expenseId}`);
+}
+
+export function categoryPageData(expenseId: ExpenseId, page: number): string {
+  return assertCallbackData(`exp:catp:${expenseId}:${page}`);
+}
+
+export function setCategoryData(expenseId: ExpenseId, categoryId: CategoryId): string {
+  return assertCallbackData(`exp:setcat:${expenseId}:${categoryId}`);
+}
+
+export function showExpenseData(expenseId: ExpenseId): string {
+  return assertCallbackData(`exp:show:${expenseId}`);
 }

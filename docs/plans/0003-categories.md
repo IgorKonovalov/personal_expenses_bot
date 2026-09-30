@@ -260,8 +260,8 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Every new expense lands in a category | dev | done | committed with this row |
-| 2: Change the category, and learn from the change | dev | not started | |
+| 1: Every new expense lands in a category | dev | done | ff7577d |
+| 2: Change the category, and learn from the change | dev | done | committed with this row |
 | 3: Flow sessions, `/categories`, command menu | dev | not started | |
 
 ### Notes
@@ -269,6 +269,15 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 - Phase 1 edited `src/db/connection.test.ts`, which is outside its `Files touched`: the test
   pinned the applied migrations to `['0001']`, and migration `0002` makes that list
   `['0001', '0002']`.
+- Phase 2: the history step orders matches by `expenses.created_at` (then rowid). A category
+  change doesn't move the corrected expense to the front, so after `450 кофе`, `100 кофе`, then a
+  change of the first to Продукты, the next `кофе` still follows the second (Кафе и рестораны).
+  ADR-0008's "the corrected expense becomes the most recent match" holds only when the corrected
+  expense is the newest for its key. There is no column recording when a category was set.
+- Phase 2: the picker's message text is the confirmation line without the category, then
+  `Выберите категорию:` on a second line. A change answers with the toast
+  `Категория изменена`. The plan named neither.
+- Phase 2: `src/bot/handlers/text.ts` needed no change.
 
 ### Close triggers
 

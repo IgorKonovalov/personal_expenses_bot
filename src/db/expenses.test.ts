@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LocalDate } from '../domain/time.js';
+import { insertCategoriesOrIgnore, type CategoryId } from './categories.js';
 import { openDatabase, type Db } from './connection.js';
 import {
+  findHistoryCategory,
   insertExpenseOrGetExisting,
   listLedgerExpensesOn,
   restoreDeletedExpense,
+  setExpenseCategory,
   softDeleteExpense,
   type ExpenseId,
 } from './expenses.js';
@@ -107,6 +110,65 @@ describe('expenses repository', () => {
         (e) => e.id,
       ),
     ).toEqual(['exp-a']);
+  });
+
+  it('finds the history category per ledger, newest live expense first', () => {
+    const categoryOf = (ledgerId: LedgerId, nameKey: string) => {
+      insertCategoriesOrIgnore(db, ledgerId, [{ name: nameKey, nameKey, presetKey: null }], NOW);
+      return db
+        .prepare('SELECT id FROM categories WHERE ledger_id = ? AND name_key = ?')
+        .pluck()
+        .get(ledgerId, nameKey) as CategoryId;
+    };
+    const cafeA = categoryOf(LEDGER_A, 'кафе');
+    const groceriesA = categoryOf(LEDGER_A, 'продукты');
+    const cafeB = categoryOf(LEDGER_B, 'кафе');
+    const add = (id: string, ledgerId: LedgerId, createdBy: UserId, categoryId: CategoryId) =>
+      insertExpenseOrGetExisting(db, {
+        id: id as ExpenseId,
+        ledgerId,
+        createdBy,
+        amountMinor: 45000,
+        currency: 'RSD',
+        description: 'Кофе',
+        occurredAt: NOW,
+        occurredOn: DAY,
+        sourceKey: `tg:${id}`,
+        createdAt: NOW,
+        categoryId,
+        descriptionKey: 'кофе',
+      });
+
+    add('a1', LEDGER_A, USER_A, cafeA);
+    add('b1', LEDGER_B, USER_B, cafeB);
+    expect(findHistoryCategory(db, LEDGER_A, 'кофе')).toBe(cafeA);
+    expect(findHistoryCategory(db, LEDGER_B, 'кофе')).toBe(cafeB);
+    expect(findHistoryCategory(db, LEDGER_A, 'чай')).toBeUndefined();
+
+    add('a2', LEDGER_A, USER_A, groceriesA);
+    expect(findHistoryCategory(db, LEDGER_A, 'кофе')).toBe(groceriesA);
+    softDeleteExpense(db, 'a2' as ExpenseId, NOW);
+    expect(findHistoryCategory(db, LEDGER_A, 'кофе')).toBe(cafeA);
+    expect(findHistoryCategory(db, LEDGER_B, 'кофе')).toBe(cafeB);
+  });
+
+  it('sets a live expense category once and never on a deleted one', () => {
+    insertCategoriesOrIgnore(db, LEDGER_A, [{ name: 'x', nameKey: 'x', presetKey: null }], NOW);
+    const x = db
+      .prepare("SELECT id FROM categories WHERE name_key = 'x'")
+      .pluck()
+      .get() as CategoryId;
+    addExpense('exp-a', LEDGER_A, USER_A, 'tg:1:1');
+    addExpense('exp-b', LEDGER_A, USER_A, 'tg:1:2');
+    softDeleteExpense(db, 'exp-b' as ExpenseId, NOW);
+
+    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x)).toBe(true);
+    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x)).toBe(false);
+    expect(setExpenseCategory(db, 'exp-b' as ExpenseId, x)).toBe(false);
+    expect(db.prepare('SELECT id, category_id FROM expenses ORDER BY id').all()).toEqual([
+      { id: 'exp-a', category_id: x },
+      { id: 'exp-b', category_id: null },
+    ]);
   });
 
   it('rejects a non-positive amount at the schema level', () => {

@@ -5,6 +5,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { registerCard } from './handlers/card.js';
+import { registerCategory } from './handlers/category.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
@@ -54,6 +55,7 @@ export function createBot(options: BotOptions): Bot {
   registerUnknownCommand(bot);
   registerMenu(bot, options);
   registerCard(bot, options);
+  registerCategory(bot, options);
   registerText(bot, options);
   registerNonText(bot);
   registerEdited(bot, options);

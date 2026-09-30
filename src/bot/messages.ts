@@ -116,6 +116,24 @@ export const messages = {
   restoreForbidden: 'Вернуть трату может только тот, кто её записал',
   expenseNotFound: 'Трата не найдена',
 
+  // The category picker, edited into the card (ADR-0011).
+  categoryButton: 'Категория',
+  categoryPicker: (view: ExpenseView): Html =>
+    joinHtml([expenseLine('Записано в', view), html`Выберите категорию:`], '\n'),
+  categoryChangedToast: 'Категория изменена',
+  categoryUnchanged: 'Эта категория уже выбрана',
+  categoryForbidden: 'Изменить категорию может только тот, кто записал трату',
+  categoryUnavailable: 'Эта категория недоступна',
+  expenseDeletedToast: 'Трата удалена. Сначала верните её.',
+
+  // Navigation kit (ADR-0011). «Назад» is never a pager label.
+  backButton: '« Назад',
+  pagerPrev: '◀',
+  pagerNext: '▶',
+  pagerPosition: (page: number, pageCount: number): string => `${page}/${pageCount}`,
+  // The current value in a picker.
+  currentChoice: (label: string): string => `✓ ${label}`,
+
   today: ({ ledger, date, totals }: TodayView): Html => {
     const header = html`<b>Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»</b>`;
     if (totals.size === 0) {

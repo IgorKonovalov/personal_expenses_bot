@@ -2,6 +2,7 @@ import { listActiveCategories } from '../db/categories.js';
 import {
   findExpenseById,
   findExpenseBySourceKey,
+  findHistoryCategory,
   insertExpenseOrGetExisting,
   restoreDeletedExpense,
   softDeleteExpense,
@@ -79,9 +80,11 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
   if (parsed.kind !== 'expense') return parsed;
 
+  const key = descriptionKey(parsed.description);
   const category = suggestCategory({
     description: parsed.description,
     categories: listActiveCategories(db, ledger.id),
+    historyCategoryId: findHistoryCategory(db, ledger.id, key),
   });
   const { expense, created } = insertExpenseOrGetExisting(db, {
     id: newExpenseId(deps),
@@ -95,7 +98,7 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     sourceKey: input.sourceKey,
     createdAt: input.now,
     categoryId: category.id,
-    descriptionKey: descriptionKey(parsed.description),
+    descriptionKey: key,
   });
   logger.info(
     { expenseId: expense.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },

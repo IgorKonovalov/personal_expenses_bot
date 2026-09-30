@@ -2,13 +2,22 @@ import type { Bot } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../db/connection.js';
+import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { createLogger } from '../logger.js';
 import { registerCommands } from './bot.js';
-import { assertCallbackData, restoreExpenseData, undoExpenseData } from './callbackData.js';
+import {
+  assertCallbackData,
+  categoryPageData,
+  categoryPickerData,
+  restoreExpenseData,
+  setCategoryData,
+  showExpenseData,
+  undoExpenseData,
+} from './callbackData.js';
 import { messages } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
@@ -26,8 +35,12 @@ function silentLogger() {
 }
 
 const EXPENSE_ID = '00000000-0000-4000-8000-000000000003';
+// The recorded card's keyboard: [Категория] above [Удалить].
 const undoKeyboard = {
-  inline_keyboard: [[{ text: messages.undoButton, callback_data: `exp:undo:${EXPENSE_ID}` }]],
+  inline_keyboard: [
+    [{ text: 'Категория', callback_data: `exp:cat:${EXPENSE_ID}` }],
+    [{ text: messages.undoButton, callback_data: `exp:undo:${EXPENSE_ID}` }],
+  ],
 };
 
 describe('error boundary', () => {
@@ -936,10 +949,171 @@ describe('callback data', () => {
     expect(Buffer.byteLength(data, 'utf8')).toBe(48);
   });
 
+  it('is exp:cat:<uuid> at 44 bytes, exp:catp at 47 and exp:show at 45', () => {
+    const id = EXPENSE_ID as ExpenseId;
+    expect(categoryPickerData(id)).toBe(`exp:cat:${EXPENSE_ID}`);
+    expect(Buffer.byteLength(categoryPickerData(id), 'utf8')).toBe(44);
+    expect(categoryPageData(id, 3)).toBe(`exp:catp:${EXPENSE_ID}:3`);
+    expect(Buffer.byteLength(categoryPageData(id, 3), 'utf8')).toBe(47);
+    expect(showExpenseData(id)).toBe(`exp:show:${EXPENSE_ID}`);
+    expect(Buffer.byteLength(showExpenseData(id), 'utf8')).toBe(45);
+  });
+
+  it('fits exp:setcat with a 16-digit category id in 64 bytes', () => {
+    const data = setCategoryData(EXPENSE_ID as ExpenseId, 1_234_567_890_123_456 as CategoryId);
+    expect(data).toMatch(new RegExp(`^exp:setcat:${EXPENSE_ID}:\\d{16}$`));
+    expect(Buffer.byteLength(data, 'utf8')).toBeLessThanOrEqual(64);
+  });
+
   it('asserts the 64-byte limit', () => {
     expect(assertCallbackData('x'.repeat(64))).toBe('x'.repeat(64));
     expect(() => assertCallbackData('x'.repeat(65))).toThrow(/65 bytes/);
     expect(() => assertCallbackData('я'.repeat(33))).toThrow(/66 bytes/);
+  });
+});
+
+describe('category picker on the card', () => {
+  const NOW = new Date('2026-09-30T10:00:00Z');
+  // A new user's personal ledger is seeded in preset order: ids 1..10.
+  const categoryIds = Object.fromEntries(CATEGORY_PRESETS.map((p, i) => [p.key, i + 1]));
+  const setcat = (key: string) => `exp:setcat:${EXPENSE_ID}:${String(categoryIds[key])}`;
+  const button = (key: string, text?: string) => ({
+    text: text ?? CATEGORY_PRESETS.find((p) => p.key === key)?.name,
+    callback_data: setcat(key),
+  });
+  const back = [{ text: '« Назад', callback_data: `exp:show:${EXPENSE_ID}` }];
+  const pickerText = 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе\nВыберите категорию:';
+
+  async function recorded() {
+    const harness = createTestBot({ now: NOW });
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '450 кофе', date: NOW }),
+    );
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  function storedCategory(db: Db): unknown {
+    return db.prepare('SELECT category_id FROM expenses').pluck().get();
+  }
+
+  function edit(text: string, inline_keyboard: unknown[]) {
+    return {
+      method: 'editMessageText',
+      payload: {
+        chat_id: ALLOWED_ID,
+        message_id: 2,
+        text,
+        reply_markup: { inline_keyboard },
+        ...htmlParseMode,
+      },
+    };
+  }
+
+  it('opens page 1 of the active categories, two per row, the current one marked', async () => {
+    const { bot, calls } = await recorded();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: `exp:cat:${EXPENSE_ID}` }));
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      edit(pickerText, [
+        [button('groceries'), button('cafe', '✓ Кафе и рестораны')],
+        [button('transport'), button('housing')],
+        [button('health'), button('clothes')],
+        [button('fun'), button('telecom')],
+        [
+          { text: '1/2', callback_data: `exp:catp:${EXPENSE_ID}:1` },
+          { text: '▶', callback_data: `exp:catp:${EXPENSE_ID}:2` },
+        ],
+        back,
+      ]),
+    ]);
+  });
+
+  it('renders the last page for a page past the end', async () => {
+    const { bot, calls } = await recorded();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: `exp:catp:${EXPENSE_ID}:9` }));
+
+    expect(calls[1]).toEqual(
+      edit(pickerText, [
+        [button('gifts'), button('other')],
+        [
+          { text: '◀', callback_data: `exp:catp:${EXPENSE_ID}:1` },
+          { text: '2/2', callback_data: `exp:catp:${EXPENSE_ID}:2` },
+        ],
+        back,
+      ]),
+    );
+  });
+
+  it('sets Продукты and edits back to the card; a second tap only toasts', async () => {
+    const { bot, calls, db } = await recorded();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: setcat('groceries') }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: setcat('groceries') }));
+
+    expect(storedCategory(db)).toBe(categoryIds.groceries);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: messages.categoryChangedToast },
+      },
+      edit(
+        'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Продукты',
+        undoKeyboard.inline_keyboard,
+      ),
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: messages.categoryUnchanged },
+      },
+    ]);
+  });
+
+  it('goes back from the picker to the card', async () => {
+    const { bot, calls } = await recorded();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: `exp:show:${EXPENSE_ID}` }));
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      edit(
+        'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
+        undoKeyboard.inline_keyboard,
+      ),
+    ]);
+  });
+
+  it.each([
+    ['the tapper is not the creator', SECOND_ALLOWED_ID, setcat('groceries'), 'categoryForbidden'],
+    // The second user's ledger is seeded after the first one's: its categories are 11..20.
+    [
+      'the category belongs to another ledger',
+      ALLOWED_ID,
+      `exp:setcat:${EXPENSE_ID}:11`,
+      'categoryUnavailable',
+    ],
+    ['the category is archived', ALLOWED_ID, setcat('health'), 'categoryUnavailable'],
+    ['the expense is undone', ALLOWED_ID, setcat('groceries'), 'expenseDeletedToast'],
+  ] as const)('refuses the tap when %s, writing nothing', async (_case, fromId, data, toast) => {
+    const { bot, calls, db } = await recorded();
+    await bot.handleUpdate(textUpdate({ updateId: 5, fromId: SECOND_ALLOWED_ID, text: '/start' }));
+    db.prepare("UPDATE categories SET archived_at = 'x' WHERE id = ?").run(categoryIds.health);
+    if (toast === 'expenseDeletedToast') {
+      await bot.handleUpdate(callbackUpdate({ updateId: 6, data: `exp:undo:${EXPENSE_ID}` }));
+    }
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, fromId, data }));
+
+    expect(storedCategory(db)).toBe(categoryIds.cafe);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: messages[toast] },
+      },
+    ]);
   });
 });
 

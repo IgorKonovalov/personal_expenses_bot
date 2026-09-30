@@ -136,6 +136,39 @@ export function restoreDeletedExpense(db: Db, id: ExpenseId): boolean {
   return changes === 1;
 }
 
+// The category of the ledger's most recently recorded live expense with this description key,
+// skipping expenses whose category is archived (ADR-0008 history step).
+export function findHistoryCategory(
+  db: Db,
+  ledgerId: LedgerId,
+  descriptionKey: string,
+): CategoryId | undefined {
+  const id = db
+    .prepare<[string, string], number>(
+      `SELECT e.category_id
+         FROM expenses e JOIN categories c ON c.id = e.category_id
+        WHERE e.ledger_id = ? AND e.description_key = ?
+          AND e.deleted_at IS NULL AND c.archived_at IS NULL
+        ORDER BY e.created_at DESC, e.rowid DESC
+        LIMIT 1`,
+    )
+    .pluck()
+    .get(ledgerId, descriptionKey);
+  return id === undefined ? undefined : (id as CategoryId);
+}
+
+// Sets a live expense's category. Returns false when the expense is deleted or already in that
+// category, leaving the row unchanged.
+export function setExpenseCategory(db: Db, id: ExpenseId, categoryId: CategoryId): boolean {
+  const { changes } = db
+    .prepare<[number, string, number]>(
+      `UPDATE expenses SET category_id = ?
+        WHERE id = ? AND deleted_at IS NULL AND category_id IS NOT ?`,
+    )
+    .run(categoryId, id, categoryId);
+  return changes === 1;
+}
+
 // Non-deleted expenses of one ledger on one local date, visible only to members of that
 // ledger. Rows only: totals are computed in the domain (ADR-0002).
 export function listLedgerExpensesOn(
