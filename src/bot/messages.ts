@@ -15,7 +15,10 @@ interface LedgerRef {
 }
 
 interface ExpenseView {
-  readonly expense: Money & { readonly description: string };
+  readonly expense: Money & {
+    readonly description: string;
+    readonly category: { readonly name: string } | null;
+  };
   readonly ledger: LedgerRef;
 }
 
@@ -82,7 +85,12 @@ export const messages = {
   editedMessageHint: html`Изменение сообщения не меняет запись. Удалите трату кнопкой под подтверждением и отправьте её заново.`,
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
 
-  expenseRecorded: (view: ExpenseView) => expenseLine('Записано в', view),
+  // `… — кофе · Кафе и рестораны`. An expense from before categories existed has none to show.
+  expenseRecorded: (view: ExpenseView): Html => {
+    const line = expenseLine('Записано в', view);
+    const { category } = view.expense;
+    return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+  },
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
 

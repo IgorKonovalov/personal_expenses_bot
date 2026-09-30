@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { createLogger } from './logger.js';
+import { seedLedgersWithoutCategories } from './services/seedCategories.js';
 
 const config = loadConfig(process.env);
 const logger = createLogger(config.logLevel);
@@ -11,6 +12,8 @@ const logger = createLogger(config.logLevel);
 const db = openDatabase(config.databasePath);
 const applied = runMigrations(db, new Date());
 logger.info({ applied }, 'migrations checked');
+const seeded = seedLedgersWithoutCategories(db, new Date());
+logger.info({ ledgers: seeded.length }, 'categories seeded');
 
 const bot = createBot({
   token: config.botToken,

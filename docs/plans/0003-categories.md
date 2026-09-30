@@ -1,6 +1,6 @@
 # 0003: Categories: preset per ledger, suggestion from history, change and manage
 
-> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: `src/bot/handlers/card.ts` (Plan 0007's card builder) added to Phases 1 and 2, `src/bot/bot.ts` to Phase 2 (conductor readiness park)
 > **Depends on:** [Plan 0007](done/0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
@@ -260,11 +260,15 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Every new expense lands in a category | dev | not started | |
+| 1: Every new expense lands in a category | dev | done | committed with this row |
 | 2: Change the category, and learn from the change | dev | not started | |
 | 3: Flow sessions, `/categories`, command menu | dev | not started | |
 
 ### Notes
+
+- Phase 1 edited `src/db/connection.test.ts`, which is outside its `Files touched`: the test
+  pinned the applied migrations to `['0001']`, and migration `0002` makes that list
+  `['0001', '0002']`.
 
 ### Close triggers
 

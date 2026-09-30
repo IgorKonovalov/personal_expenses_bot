@@ -3,6 +3,7 @@ import type { Message, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../db/connection.js';
 import type { ExpenseId } from '../db/expenses.js';
+import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { createLogger } from '../logger.js';
@@ -90,6 +91,18 @@ describe('menu and help', () => {
       },
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
+  });
+
+  it('seeds the personal ledger categories once across two /start', async () => {
+    const { bot, db } = createTestBot();
+    const count = () => db.prepare('SELECT COUNT(*) FROM categories').pluck().get();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    const first = count();
+    await bot.handleUpdate(textUpdate({ updateId: 2, text: '/start' }));
+
+    expect(first).toBe(CATEGORY_PRESETS.length);
+    expect(count()).toBe(CATEGORY_PRESETS.length);
   });
 
   it('names the menu buttons in the help text', () => {
@@ -316,7 +329,7 @@ describe('recording an expense', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — coffee',
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — coffee · Кафе и рестораны',
           reply_markup: undoKeyboard,
           ...htmlParseMode,
         },
@@ -335,7 +348,7 @@ describe('recording an expense', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — &lt;b&gt;кофе&lt;/b&gt; &amp; чай',
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — &lt;b&gt;кофе&lt;/b&gt; &amp; чай · Другое',
           reply_markup: undoKeyboard,
           ...htmlParseMode,
         },
@@ -349,7 +362,7 @@ describe('recording an expense', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, text: `450 ${'<'.repeat(300)}` }));
 
     expect(sentTexts(calls)).toEqual([
-      `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'&lt;'.repeat(200)}…`,
+      `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'&lt;'.repeat(200)}… · Другое`,
     ]);
   });
 
@@ -365,7 +378,7 @@ describe('recording an expense', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'я'.repeat(200)}…`,
+          text: `Записано в «Личные расходы»: <b>450.00 RSD</b> — ${'я'.repeat(200)}… · Другое`,
           reply_markup: undoKeyboard,
           ...htmlParseMode,
         },
@@ -467,7 +480,7 @@ describe('expense card: delete and restore', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
           reply_markup: undoKeyboard,
           ...htmlParseMode,
         },
@@ -529,7 +542,7 @@ describe('expense card: delete and restore', () => {
         payload: {
           chat_id: ALLOWED_ID,
           message_id: 2,
-          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе',
+          text: 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
           reply_markup: undoKeyboard,
           ...htmlParseMode,
         },
@@ -709,7 +722,7 @@ describe('ambiguous amounts answered with buttons', () => {
     ]);
     expect(calls).toEqual([
       { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
-      editedIntoCard('Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед'),
+      editedIntoCard('Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед · Кафе и рестораны'),
     ]);
   });
 
@@ -728,7 +741,7 @@ describe('ambiguous amounts answered with buttons', () => {
       db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE source_key = 'tg:1001:10'").get(),
     ).toEqual({ n: 1 });
     expect(db.prepare('SELECT amount_minor FROM expenses').pluck().get()).toBe(120000);
-    const card = 'Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед';
+    const card = 'Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед · Кафе и рестораны';
     expect(calls).toEqual([
       { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
       editedIntoCard(card),

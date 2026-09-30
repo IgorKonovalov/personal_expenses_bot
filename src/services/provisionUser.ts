@@ -15,6 +15,7 @@ import {
   type UserId,
 } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { seedLedgerCategories } from './seedCategories.js';
 
 export interface ProvisionInput {
   readonly provider: 'telegram';
@@ -30,7 +31,8 @@ export interface ServiceDeps {
 }
 
 // Finds the user behind an external identity, creating the user, the identity, a personal
-// ledger, the owner membership and the active-ledger pointer on first contact. Idempotent.
+// ledger with its preset categories, the owner membership and the active-ledger pointer on
+// first contact. Idempotent.
 export function provisionUser(
   { db, newId }: ServiceDeps,
   input: ProvisionInput,
@@ -55,6 +57,7 @@ export function provisionUser(
     insertIdentity(db, { provider: input.provider, externalId: input.externalId, userId });
     insertLedger(db, { ...ledger, ownerUserId: userId, createdAt: input.now });
     insertMember(db, { ledgerId: ledger.id, userId, role: 'owner' });
+    seedLedgerCategories(db, ledger.id, input.now);
     setActiveLedger(db, userId, ledger.id);
     const user: User = { id: userId, timezone: input.defaultTimezone, activeLedgerId: ledger.id };
     return { user, ledger, created: true };

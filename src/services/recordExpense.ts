@@ -1,3 +1,4 @@
+import { listActiveCategories } from '../db/categories.js';
 import {
   findExpenseById,
   findExpenseBySourceKey,
@@ -9,6 +10,7 @@ import {
 } from '../db/expenses.js';
 import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
 import type { User } from '../db/users.js';
+import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
@@ -51,7 +53,8 @@ export type RecordExpenseResult =
   // A reading was chosen, but the text no longer offers it.
   | { readonly kind: 'readingUnavailable' };
 
-// Records free text into the user's active ledger. A source key seen before returns the
+// Records free text into the user's active ledger, in the category suggestCategory picks
+// (ADR-0008). A source key seen before returns the
 // stored expense unchanged, so a redelivered update, or a second tap on a reading, records
 // nothing new.
 export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): RecordExpenseResult {
@@ -76,6 +79,10 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
   if (parsed.kind !== 'expense') return parsed;
 
+  const category = suggestCategory({
+    description: parsed.description,
+    categories: listActiveCategories(db, ledger.id),
+  });
   const { expense, created } = insertExpenseOrGetExisting(db, {
     id: newExpenseId(deps),
     ledgerId: ledger.id,
@@ -87,6 +94,8 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     occurredOn: localDateOf(input.occurredAt, user.timezone),
     sourceKey: input.sourceKey,
     createdAt: input.now,
+    categoryId: category.id,
+    descriptionKey: descriptionKey(parsed.description),
   });
   logger.info(
     { expenseId: expense.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },

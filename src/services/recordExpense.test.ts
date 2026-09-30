@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { archiveCategory, type CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { ExpenseId } from '../db/expenses.js';
 import { runMigrations } from '../db/migrate.js';
@@ -169,6 +170,53 @@ describe('recordExpense', () => {
       expect(content).not.toContain('450');
       expect(content).not.toContain('coffee');
     }
+  });
+});
+
+describe('recordExpense picks a category', () => {
+  function presetOf(text: string, sourceKey: string): unknown {
+    const result = record(alice, text, sourceKey);
+    if (result.kind !== 'recorded') throw new Error(`not recorded: ${result.kind}`);
+    return db
+      .prepare('SELECT preset_key FROM categories WHERE id = ?')
+      .pluck()
+      .get(result.expense.category?.id);
+  }
+
+  it.each([
+    ['450 кофе', 'cafe'],
+    ['450 Кофейня', 'cafe'],
+    ['300 такси до дома', 'transport'],
+    ['999 что-то', 'other'],
+    ['450 EUR coffee', 'cafe'],
+  ])('%j -> %s on a freshly seeded ledger', (text, preset) => {
+    expect(presetOf(text, 'tg:1001:10')).toBe(preset);
+  });
+
+  it('stores the ledger cafe category and the description key for 450 кофе', () => {
+    const result = record(alice, '450 кофе');
+
+    const cafe = db
+      .prepare("SELECT id, name FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .get(alice.activeLedgerId);
+    expect(db.prepare('SELECT category_id, description_key FROM expenses').get()).toEqual({
+      category_id: (cafe as { id: number }).id,
+      description_key: 'кофе',
+    });
+    expect(result).toMatchObject({
+      kind: 'recorded',
+      expense: { category: cafe },
+    });
+  });
+
+  it('falls through to other once cafe is archived', () => {
+    const cafeId = db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .pluck()
+      .get(alice.activeLedgerId) as CategoryId;
+    archiveCategory(db, cafeId, PROCESSED);
+
+    expect(presetOf('450 кофе', 'tg:1001:10')).toBe('other');
   });
 });
 

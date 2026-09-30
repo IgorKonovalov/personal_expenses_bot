@@ -1,5 +1,6 @@
 import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import type { LocalDate } from '../domain/time.js';
+import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
 import type { LedgerId } from './ledgers.js';
 import type { UserId } from './users.js';
@@ -17,9 +18,21 @@ export interface Expense {
   readonly occurredOn: LocalDate;
   readonly sourceKey: string;
   readonly deletedAt: Date | null;
+  // NULL for expenses recorded before categories existed (ADR-0007).
+  readonly category: ExpenseCategory | null;
 }
 
-export type NewExpense = Omit<Expense, 'deletedAt'> & { readonly createdAt: Date };
+export interface ExpenseCategory {
+  readonly id: CategoryId;
+  readonly name: string;
+}
+
+export type NewExpense = Omit<Expense, 'deletedAt' | 'category'> & {
+  readonly createdAt: Date;
+  readonly categoryId?: CategoryId;
+  // descriptionKey(description), the key the category is learned under (ADR-0008).
+  readonly descriptionKey?: string;
+};
 
 interface ExpenseRow {
   id: string;
@@ -32,10 +45,14 @@ interface ExpenseRow {
   occurred_on: string;
   source_key: string;
   deleted_at: string | null;
+  category_id: number | null;
+  category_name: string | null;
 }
 
 const COLUMNS = `e.id, e.ledger_id, e.created_by, e.amount_minor, e.currency, e.description,
-  e.occurred_at, e.occurred_on, e.source_key, e.deleted_at`;
+  e.occurred_at, e.occurred_on, e.source_key, e.deleted_at,
+  e.category_id, c.name AS category_name`;
+const FROM = 'expenses e LEFT JOIN categories c ON c.id = e.category_id';
 
 // Inserts unless an expense with the same source_key exists; either way returns the stored row.
 // This is what makes a redelivered Telegram update record nothing new.
@@ -44,10 +61,26 @@ export function insertExpenseOrGetExisting(
   expense: NewExpense,
 ): { expense: Expense; created: boolean } {
   const { changes } = db
-    .prepare<[string, string, string, number, string, string, string, string, string, string]>(
+    .prepare<
+      [
+        string,
+        string,
+        string,
+        number,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        number | null,
+        string | null,
+      ]
+    >(
       `INSERT INTO expenses (id, ledger_id, created_by, amount_minor, currency, description,
-                             occurred_at, occurred_on, source_key, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             occurred_at, occurred_on, source_key, created_at, category_id,
+                             description_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (source_key) DO NOTHING`,
     )
     .run(
@@ -61,6 +94,8 @@ export function insertExpenseOrGetExisting(
       expense.occurredOn,
       expense.sourceKey,
       expense.createdAt.toISOString(),
+      expense.categoryId ?? null,
+      expense.descriptionKey ?? null,
     );
   const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
@@ -69,14 +104,14 @@ export function insertExpenseOrGetExisting(
 
 export function findExpenseBySourceKey(db: Db, sourceKey: string): Expense | undefined {
   const row = db
-    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM expenses e WHERE e.source_key = ?`)
+    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.source_key = ?`)
     .get(sourceKey);
   return row === undefined ? undefined : toExpense(row);
 }
 
 export function findExpenseById(db: Db, id: ExpenseId): Expense | undefined {
   const row = db
-    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM expenses e WHERE e.id = ?`)
+    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.id = ?`)
     .get(id);
   return row === undefined ? undefined : toExpense(row);
 }
@@ -110,7 +145,7 @@ export function listLedgerExpensesOn(
   return db
     .prepare<[string, string, string], ExpenseRow>(
       `SELECT ${COLUMNS}
-         FROM expenses e
+         FROM ${FROM}
          JOIN ledger_members m ON m.ledger_id = e.ledger_id AND m.user_id = ?
         WHERE e.ledger_id = ? AND e.occurred_on = ? AND e.deleted_at IS NULL
         ORDER BY e.occurred_at, e.id`,
@@ -133,5 +168,9 @@ function toExpense(row: ExpenseRow): Expense {
     occurredOn: row.occurred_on as LocalDate,
     sourceKey: row.source_key,
     deletedAt: row.deleted_at === null ? null : new Date(row.deleted_at),
+    category:
+      row.category_id === null || row.category_name === null
+        ? null
+        : { id: row.category_id as CategoryId, name: row.category_name },
   };
 }
