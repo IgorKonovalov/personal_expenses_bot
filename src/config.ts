@@ -4,6 +4,8 @@ import { toCurrencyCode, type CurrencyCode } from './domain/currencies.js';
 export interface Config {
   readonly botToken: string;
   readonly allowedTelegramIds: ReadonlySet<number>;
+  // The first id of ALLOWED_TELEGRAM_IDS: receives the version announcements (ADR-0013).
+  readonly adminTelegramId: number;
   readonly defaultTimezone: string;
   readonly defaultCurrency: CurrencyCode;
   readonly databasePath: string;
@@ -37,6 +39,11 @@ export function loadConfig(env: Env): Config {
     }
     allowedTelegramIds.add(Number(id));
   }
+  // A Set iterates in insertion order, so this is the first id listed.
+  const [adminTelegramId] = allowedTelegramIds;
+  if (adminTelegramId === undefined) {
+    throw new Error(`ALLOWED_TELEGRAM_IDS must list at least one Telegram user id`);
+  }
 
   const defaultTimezone = required(env, 'DEFAULT_TIMEZONE');
   if (!isIanaTimezone(defaultTimezone)) {
@@ -64,6 +71,7 @@ export function loadConfig(env: Env): Config {
   return {
     botToken,
     allowedTelegramIds,
+    adminTelegramId,
     defaultTimezone,
     defaultCurrency,
     databasePath: optional(env, 'DATABASE_PATH') ?? './data/bot.sqlite',

@@ -2,6 +2,15 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.5.0 (2026-09-30)
+
+From Plan 0008 (version announcements).
+
+- On a boot with a version it hasn't announced yet, the bot sends the admin (the first id in
+  `ALLOWED_TELEGRAM_IDS`) a short «🆕 Версия X.Y.Z» note. A restart on the same version sends
+  nothing.
+- `/changelog` shows every allowed user what changed, one entry per version, newest first.
+
 ## 0.4.0 (2026-09-30)
 
 From Plan 0005 (settings).

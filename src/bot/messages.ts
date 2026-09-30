@@ -3,6 +3,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
+import { compareVersions } from '../domain/version.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
 // Every user-facing string, in Russian with polite "вы". Handlers pick a message here and never
@@ -215,6 +216,22 @@ function expenseLine(verb: string, { expense, ledger }: ExpenseView, date?: stri
   return html`${verb} «${ledgerName(ledger)}»${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// Telegram rejects messages over 4096 characters. The /changelog entries get at most this many
+// UTF-16 units of HTML, counted with their separators; the rest of the 4096 holds the header and
+// the truncation line. Markup counts too, so the visible text is shorter still.
+const CHANGELOG_BUDGET = 3900;
+const CHANGELOG_SEPARATOR = '\n\n';
+
+// What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
+// messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
+const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.5.0': html`Бот сообщает о новых версиях, а /changelog показывает, что изменилось.`,
+  '0.4.0': html`Появились настройки: кнопка [⚙️ Настройки] в меню и команда /settings. Там можно выбрать часовой пояс из списка городов и валюту по умолчанию для новых трат. Уже записанные траты не меняются.`,
+  '0.3.0': html`У каждой траты теперь есть категория. Бот подбирает её по прошлым тратам с тем же описанием, а кнопка [Категория] под подтверждением меняет её. /categories — добавить, переименовать или скрыть категории.`,
+  '0.2.0': html`Появилось меню [📊 Сегодня] [❓ Помощь] и команда /help. Трату можно удалить кнопкой [Удалить] и вернуть кнопкой [Вернуть]. Если сумма неоднозначна, например «1.200 обед», бот предложит варианты кнопками.`,
+  '0.1.0': html`Первая версия. Отправьте трату текстом, например «450 кофе» или «12,50 EUR такси», а /today покажет траты за сегодня.`,
+};
+
 export const messages = {
   menu,
   // Bot command menu registered with setMyCommands at boot.
@@ -225,6 +242,7 @@ export const messages = {
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'settings', description: 'Часовой пояс и валюта' },
     { command: 'help', description: 'Как записать трату' },
+    { command: 'changelog', description: 'Что нового в боте' },
   ],
 
   welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
@@ -244,6 +262,7 @@ export const messages = {
       html`${menu.week} и ${menu.month} — траты по категориям`,
       html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
+      html`/changelog — что нового в боте`,
     ],
     '\n',
   ),
@@ -458,4 +477,26 @@ export const messages = {
   },
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
+
+  versionAnnouncements,
+  // The message the admin gets at boot on a new version.
+  versionAnnouncement: (version: string, body: Html): Html =>
+    joinHtml([html`🆕 Версия ${version}`, body, html`Все изменения: /changelog`], '\n\n'),
+  // /changelog: newest version first, by number. Older entries past the budget are dropped
+  // whole and the reply says so.
+  changelog: (announcements: Readonly<Record<string, Html>>): Html => {
+    const entries = Object.entries(announcements)
+      .sort(([a], [b]) => compareVersions(b, a))
+      .map(([version, body]) => joinHtml([html`<b>${version}</b>`, body], '\n'));
+    const shown: Html[] = [];
+    let used = 0;
+    for (const entry of entries) {
+      used += entry.length + CHANGELOG_SEPARATOR.length;
+      if (used > CHANGELOG_BUDGET) break;
+      shown.push(entry);
+    }
+    const parts = [html`<b>Что нового</b>`, ...shown];
+    if (shown.length < entries.length) parts.push(html`Более ранние версии не поместились.`);
+    return joinHtml(parts, CHANGELOG_SEPARATOR);
+  },
 } as const;

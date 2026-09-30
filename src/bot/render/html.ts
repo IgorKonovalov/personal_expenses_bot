@@ -1,4 +1,4 @@
-import { GrammyError, type Context } from 'grammy';
+import { GrammyError, type Api, type Context } from 'grammy';
 import type { Message } from 'grammy/types';
 
 // Every outgoing message text is Telegram HTML minted here (ADR-0012). An `Html` value is either
@@ -48,6 +48,11 @@ type EditOther = Omit<NonNullable<Parameters<Context['editMessageText']>[1]>, 'p
 
 export function replyHtml(ctx: Context, body: Html, extra: ReplyOther = {}): Promise<Message> {
   return ctx.reply(body, { ...extra, ...htmlParseMode });
+}
+
+// Sends outside any update, e.g. at boot. A private chat's id is the user's Telegram id.
+export function sendHtml(api: Api, chatId: number, body: Html): Promise<Message> {
+  return api.sendMessage(chatId, body, htmlParseMode);
 }
 
 // Telegram answers an edit to identical text and markup with 400 "message is not modified".

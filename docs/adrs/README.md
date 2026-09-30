@@ -19,4 +19,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0010](0010-approved-plans-run-under-a-forked-conductor-on-trial.md) | Approved plans run under a conductor forked from Ritmolux, on trial before any package | accepted (2026-09-30) |
 | [0011](0011-navigation-model.md) | Navigation: a persistent menu, expense cards, one screen anchor per user | accepted (2026-09-30) |
 | [0012](0012-html-rendering-seam.md) | Telegram HTML through one escaping seam | accepted (2026-09-30) |
-| [0013](0013-version-announcements-at-boot.md) | Announce each new version to the admin at boot, recorded in SQLite | proposed (2026-09-30) |
+| [0013](0013-version-announcements-at-boot.md) | Announce each new version to the admin at boot, recorded in SQLite | accepted (2026-09-30) |

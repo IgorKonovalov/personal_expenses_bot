@@ -21,6 +21,10 @@ describe('loadConfig', () => {
     expect(config.backupKeep).toBe(14);
   });
 
+  it('takes the first allowed id as the admin', () => {
+    expect(loadConfig({ ...valid, ALLOWED_TELEGRAM_IDS: '222,111' }).adminTelegramId).toBe(222);
+  });
+
   it('reads BACKUP_DIR and BACKUP_KEEP', () => {
     const config = loadConfig({ ...valid, BACKUP_DIR: '/var/backups/x', BACKUP_KEEP: '7' });
     expect(config.backupDir).toBe('/var/backups/x');

@@ -273,8 +273,9 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
   messages module renders it as `Без категории`. In a tie it sorts after named categories.
 - Phase 2: a pager tap for a period starting after today, or on a ledger the user no longer
   belongs to, is answered silently with no edit, like a malformed key.
-- Phase 3: the migration is `0005_expense_updated_at.sql`. `src/db/connection.test.ts` (outside
-  Files touched) changed to expect the fifth migration.
+- Phase 3: the migration is `0006_expense_updated_at.sql`, renumbered from `0005` at the merge of
+  main, which took `0005_app_state.sql`. `src/db/connection.test.ts` (outside Files touched)
+  changed to expect it.
 - Phase 3: `src/bot/bot.ts` is not in Files touched, so `registerCard` in `card.ts` registers the
   edit taps (`registerEdit` in `src/bot/handlers/edit.ts`). `src/bot/handlers/text.ts` needed no
   change: the typed answer reaches `answerFlow` in `flows.ts`.
@@ -305,7 +306,7 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 - New modules: `src/domain/dateText.ts`, `src/domain/periods.ts`, `src/services/periodSummary.ts`,
   `src/services/editExpense.ts`, `src/bot/handlers/summary.ts`, `src/bot/handlers/edit.ts`, with
   tests for the domain and service modules.
-- Migration: `0005_expense_updated_at.sql` (adds `expenses.updated_at`). No dependency added.
+- Migration: `0006_expense_updated_at.sql` (adds `expenses.updated_at`). No dependency added.
 - New callback data: `sum:m:<YYYY-MM>` (13 bytes), `sum:w:<Monday>` (16), `exp:edit:<uuid>` (45),
   `exp:ef:<uuid>:<a|d|t>` (45), `exp:dt:<uuid>:<YYYY-MM-DD>` (54).
 

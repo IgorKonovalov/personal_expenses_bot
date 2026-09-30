@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto';
+import { adminNotifier } from './bot/adminNotifier.js';
 import { createBot, registerCommands } from './bot/bot.js';
+import { messages } from './bot/messages.js';
 import { loadConfig } from './config.js';
 import { startBackups, type BackupSchedule } from './db/backup.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
 import { createLogger } from './logger.js';
+import { announceVersion } from './services/announceVersion.js';
 import { seedLedgersWithoutCategories } from './services/seedCategories.js';
+import { readAppVersion } from './version.js';
 
 const config = loadConfig(process.env);
 const logger = createLogger(config.logLevel);
+const appVersion = readAppVersion();
+logger.info({ version: appVersion }, 'booting');
 
 const db = openDatabase(config.databasePath);
 const applied = runMigrations(db, new Date());
@@ -41,6 +47,18 @@ const bot = createBot({
 });
 
 await registerCommands(bot, logger);
+
+// Not awaited: a slow or refused send must not delay polling. announceVersion never rejects.
+const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
+void announceVersion(
+  {
+    db,
+    logger,
+    announcements: messages.versionAnnouncements,
+    send: (version, body) => notifyAdmin(messages.versionAnnouncement(version, body)),
+  },
+  appVersion,
+);
 
 const heartbeat = createHeartbeat(heartbeatPath(config.databasePath), (error) => {
   logger.warn(

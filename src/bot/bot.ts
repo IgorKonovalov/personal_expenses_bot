@@ -9,6 +9,7 @@ import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
+import { registerChangelog } from './handlers/changelog.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
@@ -63,6 +64,7 @@ export function createBot(options: BotOptions): Bot {
   registerSettings(bot, options);
   registerCancel(bot, options);
   registerHelp(bot);
+  registerChangelog(bot);
   registerUnknownCommand(bot);
   registerMenu(bot, options);
   registerCard(bot, options);
