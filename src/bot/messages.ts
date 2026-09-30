@@ -385,7 +385,7 @@ export const messages = {
   categoryLimitToast: 'Категорий уже 30. Скройте ненужную, чтобы добавить новую.',
   fallbackCategoryToast: '«Другое» нельзя скрыть',
   categoryGoneToast: 'Категория не найдена',
-  flowExpired: html`Время ответа истекло. Начните заново: /categories.`,
+  flowExpired: html`Время ответа истекло. Начните заново.`,
   nothingToCancel: html`Сейчас нечего отменять.`,
   staleScreen: 'Этот экран устарел. Откройте его заново.',
   cancelButton: 'Отмена',

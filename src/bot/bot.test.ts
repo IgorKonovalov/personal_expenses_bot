@@ -1469,6 +1469,17 @@ describe('editing an expense from its card', () => {
     ]);
   });
 
+  it('answers a description typed after the flow expired with the kind-neutral flowExpired', async () => {
+    const { say, calls, db } = await prompting('d');
+    const before = row(db);
+    db.prepare('UPDATE flow_sessions SET expires_at = ?').run('2026-09-30T09:59:00.000Z');
+
+    await say('капучино', 11);
+
+    expect(sentTexts(calls)).toEqual(['Время ответа истекло. Начните заново.']);
+    expect(row(db)).toEqual(before);
+  });
+
   it('sets 12,5 EUR as 1250 EUR', async () => {
     const { say, db } = await prompting('a');
 
@@ -2466,7 +2477,7 @@ describe('/categories screen and text flows', () => {
     await say('450 кофе', 4);
 
     expect(sentTexts(calls).slice(0, 2)).toEqual([
-      'Время ответа истекло. Начните заново: /categories.',
+      'Время ответа истекло. Начните заново.',
       messages.help,
     ]);
     expect(categoryCount(db)).toBe(categories);
