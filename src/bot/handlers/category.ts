@@ -7,6 +7,7 @@ import {
   showExpense,
   type CategoryPickerResult,
 } from '../../services/changeCategory.js';
+import { cancelFlowIf, isEditOf } from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   CATEGORY_PAGE,
@@ -100,7 +101,8 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
     }
   });
 
-  // [« Назад] from the picker: the card for the expense's stored state.
+  // [« Назад] from a picker and [Отмена] under an edit prompt: the card for the expense's stored
+  // state. A pending edit of this expense is cancelled; any other pending flow is left alone.
   bot.callbackQuery(SHOW_EXPENSE, async (ctx) => {
     const expenseId = expenseIdOf(ctx.match);
     if (expenseId === undefined) return;
@@ -110,6 +112,7 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
       await ctx.answerCallbackQuery({ text: messages.expenseNotFound });
       return;
     }
+    cancelFlowIf(deps, user, isEditOf(expenseId));
     await ctx.answerCallbackQuery();
     const card = cardFor(cardView(deps, user, result));
     await editHtml(ctx, card.text, { reply_markup: card.markup });

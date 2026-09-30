@@ -22,7 +22,7 @@ import {
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml, joinHtml, type Html } from '../render/html.js';
-import { backRow, cancelRow, type ScreenView } from '../screens.js';
+import { backRow, type ScreenView } from '../screens.js';
 import { cardView, expenseIdOf, recordedCard } from './card.js';
 import { ensureUser } from './start.js';
 
@@ -82,9 +82,14 @@ export function editPromptView(
           ],
         ]
       : [];
+  // [Отмена] is a card action, not the screen's flow:cancel: it must still restore the card after
+  // the anchor has moved elsewhere (a menu tap, another screen, another card's edit).
   return {
     text: refusal === undefined ? prompt : joinHtml([refusalLine(refusal), prompt], '\n'),
-    markup: InlineKeyboard.from([...quick, cancelRow()]),
+    markup: InlineKeyboard.from([
+      ...quick,
+      [InlineKeyboard.text(messages.cancelButton, showExpenseData(expense.id))],
+    ]),
   };
 }
 
@@ -124,7 +129,7 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
       await ctx.answerCallbackQuery({ text: refusalToast[started.kind] });
       return;
     }
-    // The card becomes the anchor: the typed answer and [Отмена] re-render it.
+    // The card becomes the anchor: the typed answer and /cancel re-render it.
     setAnchor(deps, user, {
       chatId: card.chat.id,
       messageId: card.message_id,

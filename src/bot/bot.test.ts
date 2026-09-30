@@ -1332,7 +1332,7 @@ describe('editing an expense from its card', () => {
   const CARD = 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны';
   const AMOUNT_PROMPT =
     'Сейчас: 450.00 RSD. Введите новую сумму, например «1 200» или «12,50 EUR».';
-  const cancelRow = [{ text: 'Отмена', callback_data: 'flow:cancel' }];
+  const cancelRow = [{ text: 'Отмена', callback_data: `exp:show:${EXPENSE_ID}` }];
 
   // 450 кофе recorded as message 10; its card is message 2, the callbacks' default.
   async function recorded(now = NOW) {
@@ -1404,11 +1404,49 @@ describe('editing an expense from its card', () => {
     calls.length = 0;
 
     await tap(`exp:ef:${ID}:a`);
-    await tap('flow:cancel');
+    await tap(`exp:show:${ID}`);
 
     expect(calls[1]).toEqual(cardEdit(AMOUNT_PROMPT, { inline_keyboard: [cancelRow] }));
     expect(calls[3]).toEqual(cardEdit(CARD));
     expect(row(db)).toEqual(before);
+  });
+
+  it('[Отмена] restores the card after /week moved the anchor, and ends the edit', async () => {
+    const { say, tap, calls, db } = await prompting('a');
+    const before = row(db);
+    await say('/week', 11);
+    calls.length = 0;
+
+    await tap(`exp:show:${ID}`);
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-5' } },
+      cardEdit(CARD),
+    ]);
+    calls.length = 0;
+    await say('50 чай', 12);
+    expect(row(db)).toEqual(before);
+    expect(expenseCount(db)).toEqual({ n: 2 });
+  });
+
+  it("[Отмена] on one card's prompt leaves another card's pending edit alone", async () => {
+    const { say, tap, db } = await recorded();
+    await say('700 такси', 11);
+    const other = db.prepare('SELECT id FROM expenses WHERE description = ?').get('такси') as {
+      id: string;
+    };
+    await tap(`exp:edit:${ID}`);
+    await tap(`exp:ef:${ID}:a`);
+    await tap(`exp:edit:${other.id}`);
+    await tap(`exp:ef:${other.id}:a`);
+
+    await tap(`exp:show:${ID}`);
+    await say('900', 12);
+
+    expect(db.prepare('SELECT amount_minor FROM expenses WHERE id = ?').get(other.id)).toEqual({
+      amount_minor: 90000,
+    });
+    expect(expenseCount(db)).toEqual({ n: 2 });
   });
 
   it('sets 1 200 as 120000 RSD, re-renders the card, and /today shows it', async () => {

@@ -109,6 +109,22 @@ export function cancelFlow({ db }: Deps, user: User): boolean {
   return clearPendingFlow(db, user.id);
 }
 
+// Cancels the pending flow only when `matches` accepts it, so a card tap clears its own card's
+// flow and leaves an unrelated one pending. Returns false when nothing was cleared.
+export function cancelFlowIf(deps: Deps, user: User, matches: (flow: Flow) => boolean): boolean {
+  const pending = findFlowSession(deps.db, user.id)?.pending ?? null;
+  if (pending === null) return false;
+  const flow = parseFlow(pending.kind, pending.payload);
+  if (flow === undefined || !matches(flow)) return false;
+  return cancelFlow(deps, user);
+}
+
+// The pending flow is an edit of this expense's field (any field when `kind` is omitted).
+export function isEditOf(expenseId: ExpenseId, kind?: EditFlow['kind']): (flow: Flow) => boolean {
+  return (flow) =>
+    isEditFlow(flow) && flow.expenseId === expenseId && (kind === undefined || flow.kind === kind);
+}
+
 // Marks the pending flow answered by this input. Run it in the transaction that applies the
 // answer, so a redelivery either finds both or neither.
 export function completeFlow({ db }: Deps, user: User, inputKey: string): void {
