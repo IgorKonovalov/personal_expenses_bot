@@ -13,7 +13,7 @@ import { git, resolveCommit, tagObjectType } from "../lib/git.mjs";
 import { gateDetail, runLanes } from "../lib/lane.mjs";
 import { findPlan, readPlanFile } from "../lib/plan.mjs";
 import { validateQueue } from "../lib/queue.mjs";
-import { askResume, loadState, planRecord, statePaths } from "../lib/state.mjs";
+import { askResume, loadState, planContractHash, planRecord, statePaths } from "../lib/state.mjs";
 import { FAKE, TEST_DIR, TOOL_DIR, tmp, writePlan } from "./helpers.mjs";
 
 const SCENARIO = join(TEST_DIR, "lane-scenario.mjs");
@@ -1529,4 +1529,70 @@ test("resuming a plan that parked after readiness, its contract unchanged, runs 
     "review:architect",
     "close:architect",
   ]);
+});
+
+// ADR-0016: the lane merges main at `pre-readiness`, and readiness is keyed on the contract and the
+// main tip that merge brought in.
+
+test("a plan amended on main after a readiness park is read again in its amended form, with main in the lane and no hand fast-forward", async () => {
+  const { ctx, repo } = scratch({
+    plans: [{ number: "0101", phases: [dev("1")] }],
+    lanes: { a: ["0101"] },
+    spec: { "0101": { readinessUnless: "now with the stage named" } },
+  });
+  await runLanes(ctx);
+  const rec = ctx.state.plans["0101"];
+  assert.equal(rec.park.reason, "plan_wrong");
+
+  // The owner amends the plan on main, touching nothing else, and resumes.
+  const planPath = join(repo, "docs", "plans", "0101-fixture.md");
+  writeFileSync(planPath, readFileSync(planPath, "utf8").replace("- **What:** phase 1.", "- **What:** phase 1, now with the stage named."));
+  sh(["commit", "-q", "-am", "docs(plans): amend 0101 Phase 1"], repo);
+  const amendment = sh(["rev-parse", "HEAD"], repo);
+  askResume(ctx.stateDir, "0101");
+  await runLanes(ctx);
+
+  const done = loadState(ctx.stateDir).plans["0101"];
+  assert.equal(done.status, "merged", JSON.stringify(done.park));
+  assert.deepEqual(kinds(done), ["readiness:architect", "readiness:architect", "implement:dev", "review:architect", "close:architect"]);
+  assert.deepEqual(done.merges.map((m) => [m.where, m.session]), [["pre-readiness", false]]);
+  assert.equal(git(["merge-base", "--is-ancestor", amendment, done.merges[0].commit], repo).code, 0, "the lane's HEAD after the merge carries the amendment");
+});
+
+test("a ready record for main's tip skips readiness; after an unrelated commit on main, exactly one readiness session runs", async () => {
+  const { ctx, repo } = scratch({ plans: [{ number: "0101", phases: [dev("1"), human("2"), dev("3")] }], lanes: { a: ["0101"] } });
+  const text = readFileSync(join(repo, "docs", "plans", "0101-fixture.md"), "utf8");
+  planRecord(ctx.state, "0101").readiness = { hash: planContractHash(text), main: sh(["rev-parse", "main"], repo), at: "2026-09-30T00:00:00.000Z" };
+  await runLanes(ctx);
+  const rec = ctx.state.plans["0101"];
+  assert.equal(rec.park.reason, "human_phase");
+  assert.deepEqual(kinds(rec), ["implement:dev"], "zero readiness sessions");
+
+  writeFileSync(join(repo, "UNRELATED.md"), "another plan's work\n");
+  sh(["add", "UNRELATED.md"], repo);
+  sh(["commit", "-q", "-m", "docs: an unrelated commit on main"], repo);
+  const tip = sh(["rev-parse", "main"], repo);
+  markDone(rec.worktree, "0101", "2");
+  askResume(ctx.stateDir, "0101");
+  await runLanes(ctx);
+  const done = loadState(ctx.stateDir).plans["0101"];
+  assert.equal(done.status, "merged", JSON.stringify(done.park));
+  assert.deepEqual(kinds(done), ["implement:dev", "readiness:architect", "implement:dev", "review:architect", "close:architect"]);
+  assert.equal(done.readiness.main, tip, "the rewritten record names the main tip the lane merged");
+});
+
+test("a conflicting main at pre-readiness starts one merge session and records where it merged", async () => {
+  const { ctx, repo } = scratch({ plans: [{ number: "0101", phases: [dev("1"), human("2"), dev("3")] }], lanes: { a: ["0101"] } });
+  await runLanes(ctx);
+  const rec = ctx.state.plans["0101"];
+  assert.equal(rec.park.reason, "human_phase");
+
+  conflictOnMain(repo, "main's own phase 1\n");
+  markDone(rec.worktree, "0101", "2");
+  askResume(ctx.stateDir, "0101");
+  await runLanes(ctx);
+  const done = loadState(ctx.stateDir).plans["0101"];
+  assert.equal(done.status, "merged", JSON.stringify(done.park));
+  assert.deepEqual(kinds(done), ["readiness:architect", "implement:dev", "merge:dev", "readiness:architect", "implement:dev", "review:architect", "close:architect"]);
+  assert.deepEqual(done.merges.map((m) => [m.where, m.session]), [["pre-readiness", true]]);
 });

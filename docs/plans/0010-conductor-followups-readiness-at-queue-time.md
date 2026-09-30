@@ -211,8 +211,8 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: `ready NNNN` and the preflight gate | dev | done | committed with this row |
-| 2: merge main before readiness | dev | not started | |
+| 1: `ready NNNN` and the preflight gate | dev | done | `67021e2` |
+| 2: merge main before readiness | dev | done | committed with this row |
 | 3: resume wording, idle takes asks | dev | not started | |
 | 4: operator docs and prompts | dev | not started | |
 | 5: stop pinning tests to live data | dev | not started | |
@@ -225,6 +225,9 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
   labels read `implement-01` and one `cli.test.mjs` step list has no lane readiness step.
 - Phase 1: `ready` refuses while a run is live, as `park` and `finding` do, because the live run
   rewrites the record whole.
+- Phase 2: the `pre-readiness` merge and the readiness decision run once per pick of the plan, before
+  its first implement session in that `runPlan` call, not before every implement session. The loop
+  then re-reads the merged plan's next step.
 
 ### Close triggers
 

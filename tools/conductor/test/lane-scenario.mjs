@@ -51,7 +51,8 @@
 // red where it is. `repairParks` makes it park `plan_wrong` without a commit.
 //
 // A `readiness` session prints `ready`, or with `readiness: "plan_wrong"` parks naming Phase 1, or
-// with `readinessCommits` commits a file first, which it must never do.
+// with `readinessCommits` commits a file first, which it must never do. `readinessUnless: "<text>"`
+// parks it the same way unless the plan file it reads contains that text: a plan amended to fix it.
 //
 // Every session appends `<mode>-start` and `<mode>-end` to FAKE_EVENTS with a timestamp.
 
@@ -145,7 +146,8 @@ export default async ({ args, cwd, vars, env }) => {
     }
 
     if (mode === "readiness") {
-      if (ps.readiness === "plan_wrong") {
+      const amended = ps.readinessUnless !== undefined && readFileSync(planPath, "utf8").includes(ps.readinessUnless);
+      if (ps.readiness === "plan_wrong" || (ps.readinessUnless !== undefined && !amended)) {
         return { text: block({ kind: "parked", plan, phase: "1", reason: "plan_wrong", detail: "Phase 1's What and Done when name different stages" }), costUsd: 0.3 };
       }
       if (ps.readinessCommits) {

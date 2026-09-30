@@ -2,7 +2,9 @@
 //
 //   open the lane, and install its dependencies whenever `node_modules/` is absent, since no
 //   worktree is born with one and every gate step needs it
-//   -> before the first implement session: one read-only readiness session (ADR-0248)
+//   -> before the first implement session of each pick: merge main into the lane (`pre-readiness`,
+//      a conflict handed to one merge session), then one read-only readiness session unless the
+//      plan's readiness record matches both its contract and the main tip just merged (ADR-0016)
 //   -> for each same-owner run not done: one implement session, then verify its claim
 //   -> a `human` phase parks, unless it is marked `Blocks merge: no`, when its row is committed
 //      `owed` and the plan runs on without it (ADR-0249)
@@ -643,18 +645,20 @@ export async function readinessSession(ctx, rec, { cwd, file, branch }) {
 }
 
 /**
- * The lane's readiness check: it runs before the plan's first implement session, and again only
- * when the plan's contract (planContractHash) has changed since a `ready`. A park is never
- * remembered as passing, so a plan resumed after one is read again. A plan with implement steps and
- * no readiness record predates the check and is not stopped for it. Returns a park, or null.
+ * The lane's readiness check, run once `main` is merged into the lane at `mainTip`. It is skipped
+ * only when the plan's readiness record (from `ready NNNN` or an earlier pass here) carries both the
+ * plan's current contract hash and `mainTip` (ADR-0016): an edited phase, or a `main` that moved
+ * under the plan, reads it again and rewrites the record. A park is never remembered as passing, so
+ * a plan resumed after one is read again. A plan with implement steps and no readiness record
+ * predates the check and is not stopped for it. Returns a park, or null.
  */
-async function readiness(ctx, rec, file) {
+async function readiness(ctx, rec, file, mainTip) {
   const hash = planContractHash(readFileSync(file.path, "utf8"));
-  if (rec.readiness?.hash === hash) return null;
+  if (rec.readiness?.hash === hash && rec.readiness.main === mainTip) return null;
   if (!rec.readiness && rec.steps.some((s) => s.kind === "implement")) return null;
   const parked = await readinessSession(ctx, rec, { cwd: rec.worktree, file, branch: rec.branch });
   if (parked) return parked;
-  rec.readiness = { hash, at: now() };
+  rec.readiness = { hash, main: mainTip, at: now() };
   save(ctx);
   return null;
 }
@@ -992,6 +996,7 @@ export async function runPlan(ctx, lane, plan) {
   if (!rec.closed) {
     // Implementer runs, until the plan needs a human or a review. Nothing in this loop closes the
     // plan: a plan that arrives closed skipped the whole block.
+    let readied = false;
     for (;;) {
       const file = planFileIn(wt, plan);
       if (!file) return park(ctx, rec, { reason: "disagreement", detail: `plan ${plan} vanished from the worktree` });
@@ -1021,8 +1026,19 @@ export async function runPlan(ctx, lane, plan) {
         continue;
       }
 
-      const ready = await readiness(ctx, rec, file);
-      if (ready) return park(ctx, rec, ready);
+      // Once per pick, before its first implement session: the plan and the tree readiness reads are
+      // main's as it stands, so a plan amended on main needs no hand fast-forward of the lane. The
+      // loop then starts over, since the merge may have changed what the plan says comes next.
+      if (!readied) {
+        const early = await mergeMain(ctx, rec, "pre-readiness");
+        if (early) return park(ctx, rec, early);
+        const merged = planFileIn(wt, plan);
+        if (!merged) return park(ctx, rec, { reason: "disagreement", detail: `plan ${plan} vanished from the worktree` });
+        const ready = await readiness(ctx, rec, merged, resolveCommit("main", wt));
+        if (ready) return park(ctx, rec, ready);
+        readied = true;
+        continue;
+      }
 
       const range = rangeLabel(next.phases);
       const before = head(wt);
