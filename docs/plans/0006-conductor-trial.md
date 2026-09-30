@@ -2,6 +2,7 @@
 
 > **Status:** in-progress (2026-09-30)
 > **Created:** 2026-09-29
+> **Amended:** 2026-09-30, mid-Phase 1: every `node --test` names a quoted glob, not a directory
 > **Related ADRs:** [ADR-0010](../adrs/0010-approved-plans-run-under-a-forked-conductor-on-trial.md)
 
 ## TL;DR
@@ -75,10 +76,14 @@ a human-started `dev` session as usual. Only Phase 3 exercises the conductor.
   `tools/conductor/local.example.json`, `.gitignore`, `eslint.config.js`, `.prettierignore` (new)
 - **Specifically:**
   - `project.mjs` exports the gate steps (`pnpm typecheck`, `pnpm lint`, `pnpm test`,
-    `node scripts/check-doc-links.mjs`, `node --test .claude/hooks/`,
-    `node --test tools/conductor/test/`), the owners `dev` and `human` (implementer: `dev`), a
-    plan-title pattern that accepts `# NNNN: Title`, the lane directory prefix `peb-plan-` (a
-    sibling of the repo, as in Ritmolux), and the lane install `pnpm install --frozen-lockfile`.
+    `node scripts/check-doc-links.mjs`, `node --test ".claude/hooks/*.test.mjs"`,
+    `node --test "tools/conductor/test/*.test.mjs"`), the owners `dev` and `human` (implementer:
+    `dev`), a plan-title pattern that accepts `# NNNN: Title`, the lane directory prefix
+    `peb-plan-` (a sibling of the repo, as in Ritmolux), and the lane install
+    `pnpm install --frozen-lockfile`.
+  - Every `node --test` names a quoted `*.test.mjs` glob. Node 24 loads a directory argument as a
+    module and exits 1 without running a test. Node expands the glob itself, so the gate's
+    `cmd` arrays pass it as one literal argument with no shell.
   - The install runs for every lane, because no worktree is born with `node_modules/`. Ritmolux's
     `studio_install` park becomes a generic `deps_install` park with the same retry rule.
   - Deleted: `with-lock.mjs`, `suite-record.mjs`, `lib/ledger.mjs`, their tests, `spike/`,
@@ -92,8 +97,8 @@ a human-started `dev` session as usual. Only Phase 3 exercises the conductor.
     `.prettierignore` lists `tools/conductor/`, so the fork stays diffable against Ritmolux for
     the package decision.
 - **Done when:**
-  - `node --test tools/conductor/test/` exits 0, and it includes a lane-scenario test against the
-    fake CLI whose fixture plan's header is `# 0099: Fixture`. That test ends with the fixture plan
+  - `node --test "tools/conductor/test/*.test.mjs"` exits 0, and it includes a lane-scenario test
+    against the fake CLI whose fixture plan's header is `# 0099: Fixture`. That test ends with the fixture plan
     under `docs/plans/done/` on the scenario repo's `main`, a bumped `package.json` version, and no
     tag, reached by a fast-forward.
   - A plan-reader test asserts that `# 0007: Navigation shell: menu, ...` parses to number `0007`, and
@@ -130,11 +135,12 @@ a human-started `dev` session as usual. Only Phase 3 exercises the conductor.
     prompt carries `CONDUCTOR-MODE:`, and when it does, the prompt's instructions win over the
     interactive steps.
   - `CLAUDE.md`: `tools/conductor/` appears in "Where things live", and "How we work" says that for a
-    queued plan the approval is the "go" (ADR-0010).
+    queued plan the approval is the "go" (ADR-0010). Its bite-test command, and the run line at the
+    top of `.claude/hooks/hooks.test.mjs`, read `node --test ".claude/hooks/*.test.mjs"`.
   - The README is rewritten for this repository. Its first paragraph names the Ritmolux commit the
     fork came from.
 - **Done when:**
-  - `node --test .claude/hooks/` exits 0, including two new bite tests. A `Bash` call with
+  - `node --test ".claude/hooks/*.test.mjs"` exits 0, including two new bite tests. A `Bash` call with
     `run_in_background: true` in a conductor-started session is denied. The same call in an
     interactive session passes through.
   - `settings.test.mjs` asserts three things: every gate command in `project.mjs` and every command
@@ -192,8 +198,8 @@ export const project = {
     { name: "lint", cmd: ["pnpm", "lint"] },
     { name: "test", cmd: ["pnpm", "test"] },
     { name: "doc links", cmd: ["node", "scripts/check-doc-links.mjs"] },
-    { name: "hooks", cmd: ["node", "--test", ".claude/hooks/"] },
-    { name: "conductor", cmd: ["node", "--test", "tools/conductor/test/"] },
+    { name: "hooks", cmd: ["node", "--test", ".claude/hooks/*.test.mjs"] },
+    { name: "conductor", cmd: ["node", "--test", "tools/conductor/test/*.test.mjs"] },
   ],
 };
 ```
@@ -312,5 +318,5 @@ run a test yet, because of the command above.
 
 ## Followups
 
-- CI job running `node --test tools/conductor/test/` once Plan 0002's workflow exists.
+- CI job running `node --test "tools/conductor/test/*.test.mjs"` once Plan 0002's workflow exists.
 - After a `go` verdict: an ADR on the package's home and pinning, then a plan to extract it.

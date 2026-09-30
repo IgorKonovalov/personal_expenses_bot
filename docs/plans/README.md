@@ -14,7 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0003](0003-categories.md) | Categories: preset per ledger, suggestion from history, change and manage | approved (2026-09-29) |
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
 | [0005](0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | approved (2026-09-29) |
-| [0006](0006-conductor-trial.md) | Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended | approved (2026-09-30) |
+| [0006](0006-conductor-trial.md) | Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended | in-progress (2026-09-30) |
 | [0007](0007-navigation-shell.md) | Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes | approved (2026-09-29): lands before 0003 |
 
 ## Recently closed
