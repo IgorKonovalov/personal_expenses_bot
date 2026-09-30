@@ -296,6 +296,9 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
   the 30 limit is refused with a toast on [Добавить], and again at answer time.
 - Phase 3: an empty answer is tested as a single space. Telegram doesn't deliver empty text.
 - Phase 3: `CLAUDE.md` is unchanged, because the `src/` tree kept its shape.
+- Fix round 1, finding 0 (major, history ignores corrections on older expenses): migration
+  `0004_expense_category_set_at.sql`, and the history step orders by
+  `COALESCE(category_set_at, created_at)`. ce14240
 
 ### Close triggers
 
