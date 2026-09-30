@@ -10,7 +10,7 @@ import {
 import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
 import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
-import { parseExpenseText } from '../domain/expenseText.js';
+import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
 import type { Logger } from '../logger.js';
@@ -28,6 +28,8 @@ export interface RecordExpenseInput {
   // When the user sent it (the Telegram message date), not when it is processed.
   readonly occurredAt: Date;
   readonly now: Date;
+  // The user's answer to an ambiguous amount: records that reading of the same text.
+  readonly reading?: AmountReading['interpretation'];
 }
 
 export type RecordExpenseResult =
@@ -45,10 +47,13 @@ export type RecordExpenseResult =
       readonly ledger: Ledger;
     }
   | { readonly kind: 'invalid' }
-  | { readonly kind: 'notExpense' };
+  | { readonly kind: 'notExpense' }
+  // A reading was chosen, but the text no longer offers it.
+  | { readonly kind: 'readingUnavailable' };
 
 // Records free text into the user's active ledger. A source key seen before returns the
-// stored expense unchanged, so a redelivered update records nothing new.
+// stored expense unchanged, so a redelivered update, or a second tap on a reading, records
+// nothing new.
 export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): RecordExpenseResult {
   const { db, logger } = deps;
   const { user } = input;
@@ -64,7 +69,10 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
 
-  const parsed = parseExpenseText(input.text, ledger.defaultCurrency);
+  const parsed = resolveReading(
+    parseExpenseText(input.text, ledger.defaultCurrency),
+    input.reading,
+  );
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
   if (parsed.kind !== 'expense') return parsed;
 
@@ -85,6 +93,24 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     'expense recorded',
   );
   return { kind: 'recorded', expense, ledger, duplicate: !created };
+}
+
+// Without a chosen reading the parse stands, so an ambiguous amount stays a question. With one,
+// only an ambiguous parse that still offers that reading becomes an expense.
+function resolveReading(
+  parsed: ExpenseTextResult,
+  reading: AmountReading['interpretation'] | undefined,
+): ExpenseTextResult | { readonly kind: 'readingUnavailable' } {
+  if (reading === undefined) return parsed;
+  if (parsed.kind !== 'ambiguous') return { kind: 'readingUnavailable' };
+  const chosen = parsed.readings.find((r) => r.interpretation === reading);
+  if (chosen === undefined) return { kind: 'readingUnavailable' };
+  return {
+    kind: 'expense',
+    amountMinor: chosen.amountMinor,
+    currency: parsed.currency,
+    description: parsed.description,
+  };
 }
 
 export type UndoExpenseResult =

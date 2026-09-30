@@ -263,8 +263,8 @@ layout.
 |---|---|---|---|
 | 1: Menu bar, /help, and no silent input | dev | done | 3dcda85 |
 | 2: HTML seam (ADR-0012) | dev | done | ba70d71 |
-| 3: Callback dispatcher and expense-card actions | dev | done | committed with this row |
-| 4: Ambiguous amounts answered with buttons | dev | not started | |
+| 3: Callback dispatcher and expense-card actions | dev | done | 4a50c19 |
+| 4: Ambiguous amounts answered with buttons | dev | done | committed with this row |
 
 ### Notes
 
@@ -315,6 +315,26 @@ layout.
 - Phase 3: `src/bot/render/html.test.ts` (not in Phase 3's list) changed: the toast type test
   pinned the old `Трата отменена` / `Отменить` copy. It now asserts that the texts carry no
   markup characters.
+- Phase 4: `bot.ts` is not in Phase 4's list, so `registerText` calls `registerAmbiguous` for
+  the `amb:` taps.
+- Phase 4: `recordExpense` returns a new kind, `readingUnavailable`, when a chosen reading isn't
+  among the re-parse's readings (or the text is no longer ambiguous). The tap toasts
+  `Исходное сообщение недоступно. Отправьте трату ещё раз.` (`ambiguousSourceUnavailable`) for
+  it, for a missing `reply_to_message`, and for any other non-`recorded` result.
+- Phase 4: a successful tap answers the callback with no toast text.
+- Phase 4: the tap records `occurred_at` from the original message's `date`.
+- Phase 4: the re-render on repeat taps is an `editMessageText` with the same card. The harness
+  answers `true`; against Telegram it is the "not modified" path `editHtml` treats as success.
+- Phase 4: the `reply_to_message` fixture in `bot.test.ts` is cast
+  (`as unknown as NonNullable<Message['reply_to_message']>`). grammY types it as
+  `Message & { reply_to_message: undefined }`, which no literal satisfies under
+  `exactOptionalPropertyTypes`.
+- Phase 4: the ambiguous-question tests use `обед`. The `1.200 lunch` / `1.234 lunch` resend
+  tests in `bot.test.ts` were replaced.
+- Followup: the `README.md` usage table still names [Отменить] and the resend-style ambiguous
+  answer. README is not in Phase 3's or Phase 4's list.
+- Followup: a reading tap doesn't check that the tapper wrote the original message. In a
+  private chat they are the same person.
 
 ### Close triggers
 

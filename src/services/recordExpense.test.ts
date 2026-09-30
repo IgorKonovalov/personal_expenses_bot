@@ -96,6 +96,60 @@ describe('recordExpense', () => {
     expect(expenseRows()).toEqual([]);
   });
 
+  it('records the chosen reading of an ambiguous amount', () => {
+    const thousands = recordExpense(deps, {
+      user: alice,
+      text: '1.200 lunch',
+      sourceKey: 'tg:1001:10',
+      occurredAt: SENT,
+      now: PROCESSED,
+      reading: 'thousands',
+    });
+    const decimal = recordExpense(deps, {
+      user: alice,
+      text: '1.200 lunch',
+      sourceKey: 'tg:1001:11',
+      occurredAt: SENT,
+      now: PROCESSED,
+      reading: 'decimal',
+    });
+
+    expect(thousands).toMatchObject({ kind: 'recorded', duplicate: false });
+    expect(decimal).toMatchObject({ kind: 'recorded', duplicate: false });
+    expect(
+      db.prepare('SELECT amount_minor, currency, description, source_key FROM expenses').all(),
+    ).toEqual([
+      { amount_minor: 120000, currency: 'RSD', description: 'lunch', source_key: 'tg:1001:10' },
+      { amount_minor: 120, currency: 'RSD', description: 'lunch', source_key: 'tg:1001:11' },
+    ]);
+  });
+
+  it('returns the stored expense for a second reading under the same source key', () => {
+    const input = { user: alice, text: '1.200 lunch', sourceKey: 'tg:1001:10', occurredAt: SENT };
+    recordExpense(deps, { ...input, now: PROCESSED, reading: 'thousands' });
+
+    const again = recordExpense(deps, { ...input, now: PROCESSED, reading: 'decimal' });
+
+    expect(again).toMatchObject({
+      kind: 'recorded',
+      duplicate: true,
+      expense: { amountMinor: 120000 },
+    });
+    expect(expenseRows()).toHaveLength(1);
+  });
+
+  it('reports a reading the text no longer offers and records nothing', () => {
+    const input = { user: alice, sourceKey: 'tg:1001:10', occurredAt: SENT, now: PROCESSED };
+
+    expect(recordExpense(deps, { ...input, text: '1.234 lunch', reading: 'decimal' })).toEqual({
+      kind: 'readingUnavailable',
+    });
+    expect(recordExpense(deps, { ...input, text: '450 lunch', reading: 'thousands' })).toEqual({
+      kind: 'readingUnavailable',
+    });
+    expect(expenseRows()).toEqual([]);
+  });
+
   it('records nothing for non-expense text', () => {
     expect(record(alice, 'coffee 450')).toEqual({ kind: 'notExpense' });
     expect(expenseRows()).toEqual([]);

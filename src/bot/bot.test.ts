@@ -1,5 +1,5 @@
 import type { Bot } from 'grammy';
-import type { Update } from 'grammy/types';
+import type { Message, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../db/connection.js';
 import type { ExpenseId } from '../db/expenses.js';
@@ -385,46 +385,6 @@ describe('recording an expense', () => {
     expect(calls[1]).toEqual(calls[0]);
   });
 
-  it('records nothing for 1.200 lunch and offers both readings and how to resend', async () => {
-    const { bot, calls, db } = createTestBot();
-
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '1.200 lunch' }));
-
-    expect(db.prepare('SELECT COUNT(*) AS n FROM expenses').get()).toEqual({ n: 0 });
-    expect(calls).toEqual([
-      {
-        method: 'sendMessage',
-        payload: {
-          chat_id: ALLOWED_ID,
-          text:
-            'Сумму можно понять по-разному: 1 200.00 RSD или 1.20 RSD. Ничего не записано. ' +
-            'Отправьте ещё раз так: «1200 lunch» или «1.2 lunch».',
-          ...htmlParseMode,
-        },
-      },
-    ]);
-  });
-
-  it('asks about the one valid reading of 1.234 lunch and records nothing', async () => {
-    const { bot, calls, db } = createTestBot();
-
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '1.234 lunch' }));
-
-    expect(db.prepare('SELECT COUNT(*) AS n FROM expenses').get()).toEqual({ n: 0 });
-    expect(calls).toEqual([
-      {
-        method: 'sendMessage',
-        payload: {
-          chat_id: ALLOWED_ID,
-          text:
-            'Уточните сумму: вы имели в виду 1 234.00 RSD? Ничего не записано. ' +
-            'Отправьте ещё раз так: «1234 lunch».',
-          ...htmlParseMode,
-        },
-      },
-    ]);
-  });
-
   it('answers non-expense text with the help hint', async () => {
     const { bot, calls } = createTestBot();
 
@@ -638,6 +598,223 @@ describe('expense card: delete and restore', () => {
         payload: { callback_query_id: 'cb-3', text: messages.restoreForbidden },
       },
     ]);
+  });
+});
+
+describe('ambiguous amounts answered with buttons', () => {
+  const SENT = new Date('2026-09-29T21:50:00Z');
+
+  // A tap on the question (message 11), which replies to the user's message 10 unless the
+  // original is gone.
+  function readingTap(
+    updateId: number,
+    data: string,
+    original?: { readonly text: string },
+  ): Update {
+    const chat = { id: ALLOWED_ID, type: 'private' as const, first_name: 'Test' };
+    return {
+      update_id: updateId,
+      callback_query: {
+        id: `cb-${updateId}`,
+        from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+        chat_instance: 'test',
+        data,
+        message: {
+          message_id: 11,
+          date: 1_790_000_000,
+          chat,
+          text: 'question',
+          ...(original === undefined
+            ? {}
+            : {
+                // grammY types a reply as `Message & { reply_to_message: undefined }`, which no
+                // literal satisfies under exactOptionalPropertyTypes.
+                reply_to_message: {
+                  message_id: 10,
+                  date: Math.floor(SENT.getTime() / 1000),
+                  chat,
+                  from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+                  text: original.text,
+                } as unknown as NonNullable<Message['reply_to_message']>,
+              }),
+        },
+      },
+    };
+  }
+
+  function rows(db: Db): unknown[] {
+    return db
+      .prepare('SELECT amount_minor, currency, description, source_key, occurred_at FROM expenses')
+      .all();
+  }
+
+  async function asked(text: string) {
+    const harness = createTestBot();
+    await harness.bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text, date: SENT }));
+    return harness;
+  }
+
+  function question(text: string, buttons: { text: string; callback_data: string }[]) {
+    return {
+      method: 'sendMessage',
+      payload: {
+        chat_id: ALLOWED_ID,
+        text,
+        reply_parameters: { message_id: 10 },
+        reply_markup: { inline_keyboard: [buttons] },
+        ...htmlParseMode,
+      },
+    };
+  }
+
+  function editedIntoCard(text: string) {
+    return {
+      method: 'editMessageText',
+      payload: {
+        chat_id: ALLOWED_ID,
+        message_id: 11,
+        text,
+        reply_markup: undoKeyboard,
+        ...htmlParseMode,
+      },
+    };
+  }
+
+  it('asks about 1.200 обед with one button per reading, replying to the message', async () => {
+    const { calls, db } = await asked('1.200 обед');
+
+    expect(rows(db)).toEqual([]);
+    expect(calls).toEqual([
+      question('Сумму можно понять по-разному. Ничего не записано — выберите:', [
+        { text: '1 200.00 RSD', callback_data: 'amb:t' },
+        { text: '1.20 RSD', callback_data: 'amb:d' },
+      ]),
+    ]);
+  });
+
+  it('records the tapped reading under the original message key and edits in the card', async () => {
+    const { bot, calls, db } = await asked('1.200 обед');
+    calls.length = 0;
+
+    await bot.handleUpdate(readingTap(2, 'amb:t', { text: '1.200 обед' }));
+
+    expect(rows(db)).toEqual([
+      {
+        amount_minor: 120000,
+        currency: 'RSD',
+        description: 'обед',
+        source_key: 'tg:1001:10',
+        occurred_at: '2026-09-29T21:50:00.000Z',
+      },
+    ]);
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      editedIntoCard('Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед'),
+    ]);
+  });
+
+  it('records once for a second tap, the other reading, and a redelivered original', async () => {
+    const { bot, calls, db } = await asked('1.200 обед');
+    await bot.handleUpdate(readingTap(2, 'amb:t', { text: '1.200 обед' }));
+    calls.length = 0;
+
+    await bot.handleUpdate(readingTap(3, 'amb:t', { text: '1.200 обед' }));
+    await bot.handleUpdate(readingTap(4, 'amb:d', { text: '1.200 обед' }));
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '1.200 обед', date: SENT }),
+    );
+
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE source_key = 'tg:1001:10'").get(),
+    ).toEqual({ n: 1 });
+    expect(db.prepare('SELECT amount_minor FROM expenses').pluck().get()).toBe(120000);
+    const card = 'Записано в «Личные расходы»: <b>1 200.00 RSD</b> — обед';
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
+      editedIntoCard(card),
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-4' } },
+      editedIntoCard(card),
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: card, reply_markup: undoKeyboard, ...htmlParseMode },
+      },
+    ]);
+  });
+
+  it('asks about the one reading of 1.234 обед and records 123400 RSD on a tap', async () => {
+    const { bot, calls, db } = await asked('1.234 обед');
+
+    await bot.handleUpdate(readingTap(2, 'amb:t', { text: '1.234 обед' }));
+
+    expect(calls[0]).toEqual(
+      question('Ничего не записано. Вы имели в виду 1 234.00 RSD?', [
+        { text: '1 234.00 RSD', callback_data: 'amb:t' },
+      ]),
+    );
+    expect(rows(db)).toMatchObject([{ amount_minor: 123400, currency: 'RSD' }]);
+  });
+
+  it('asks about the one reading of 1.200 JPY обед and records 1200 JPY on a tap', async () => {
+    const { bot, calls, db } = await asked('1.200 JPY обед');
+
+    await bot.handleUpdate(readingTap(2, 'amb:t', { text: '1.200 JPY обед' }));
+
+    expect(calls[0]).toEqual(
+      question('Ничего не записано. Вы имели в виду 1 200 JPY?', [
+        { text: '1 200 JPY', callback_data: 'amb:t' },
+      ]),
+    );
+    expect(rows(db)).toMatchObject([{ amount_minor: 1200, currency: 'JPY', description: 'обед' }]);
+  });
+
+  it('toasts and records nothing when the original message is unavailable', async () => {
+    const { bot, calls, db } = await asked('1.200 обед');
+    calls.length = 0;
+
+    await bot.handleUpdate(readingTap(2, 'amb:t'));
+
+    expect(rows(db)).toEqual([]);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: {
+          callback_query_id: 'cb-2',
+          text: 'Исходное сообщение недоступно. Отправьте трату ещё раз.',
+        },
+      },
+    ]);
+  });
+
+  it('toasts and records nothing when the re-parse no longer offers the tapped reading', async () => {
+    const { bot, calls, db } = await asked('1.234 обед');
+    calls.length = 0;
+
+    await bot.handleUpdate(readingTap(2, 'amb:d', { text: '1.234 обед' }));
+
+    expect(rows(db)).toEqual([]);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: messages.ambiguousSourceUnavailable },
+      },
+    ]);
+  });
+
+  it('logs no amount or description at info', async () => {
+    const harness = createTestBot({ logLevel: 'info' });
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '1.200 обед', date: SENT }),
+    );
+    await harness.bot.handleUpdate(readingTap(2, 'amb:t', { text: '1.200 обед' }));
+    await harness.bot.handleUpdate(readingTap(3, 'amb:d', { text: '1.200 обед' }));
+
+    expect(harness.logLines.some((line) => line.includes('expense recorded'))).toBe(true);
+    for (const line of harness.logLines) {
+      const content = logContent(line);
+      for (const secret of ['1200', '1.200', '1 200', '120000', 'обед']) {
+        expect(content).not.toContain(secret);
+      }
+    }
   });
 });
 

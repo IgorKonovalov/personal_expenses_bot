@@ -3,12 +3,16 @@ import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
+import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
 import { cardFor } from './card.js';
 import { sendHelp } from './help.js';
 import { ensureUser } from './start.js';
 
-// Free text is an expense attempt. Register after command handlers.
+// Free text is an expense attempt. Register after command handlers. The taps on the ambiguous
+// amount question it asks are registered with it.
 export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
+  registerAmbiguous(bot, deps);
+
   bot.on('message:text', async (ctx) => {
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
@@ -36,10 +40,11 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
               amountMinor: r.amountMinor,
               currency: result.currency,
             })),
-            description: result.description,
-            currency: result.currency,
-            defaultCurrency: result.ledger.defaultCurrency,
           }),
+          {
+            reply_parameters: { message_id: ctx.message.message_id },
+            reply_markup: ambiguousKeyboard(result.readings, result.currency),
+          },
         );
         return;
       case 'invalid':
@@ -48,6 +53,8 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
       case 'notExpense':
         await sendHelp(ctx);
         return;
+      case 'readingUnavailable':
+        throw new Error('no reading was chosen for a text message');
     }
   });
 }

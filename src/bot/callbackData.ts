@@ -20,6 +20,14 @@ export function undoExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:undo:${expenseId}`);
 }
 
+// A reading of an ambiguous amount: `amb:t` thousands, `amb:d` decimal. The amount itself isn't
+// in the data; the tap re-parses the message the question replies to.
+export const AMBIGUOUS_READING = /^amb:([td])$/;
+
+export function ambiguousReadingData(interpretation: 'thousands' | 'decimal'): string {
+  return assertCallbackData(`amb:${interpretation === 'thousands' ? 't' : 'd'}`);
+}
+
 export function restoreExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:restore:${expenseId}`);
 }

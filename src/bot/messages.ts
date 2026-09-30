@@ -21,10 +21,6 @@ interface ExpenseView {
 
 interface AmbiguousView {
   readonly readings: readonly Money[];
-  readonly description: string;
-  // Named in the resend example only when it differs from the ledger default.
-  readonly currency: CurrencyCode;
-  readonly defaultCurrency: CurrencyCode;
 }
 
 interface TodayView {
@@ -38,16 +34,6 @@ const dayMonth = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', 
 
 function ledgerName(ledger: LedgerRef): string {
   return ledger.kind === 'personal' ? 'Личные расходы' : ledger.name;
-}
-
-// `1 200.00 RSD` -> `1200`, `1.20 RSD` -> `1.2`: the amount as the user should retype it so
-// that it parses unambiguously.
-function retypeable(money: Money): string {
-  return formatMoney(money)
-    .replace(/ [A-Z]{3}$/, '')
-    .replaceAll(' ', '')
-    .replace(/(\.\d*?)0+$/, '$1')
-    .replace(/\.$/, '');
 }
 
 // Telegram rejects messages over 4096 characters, and a description can be almost that long.
@@ -100,19 +86,17 @@ export const messages = {
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
 
-  ambiguousAmount: ({ readings, description, currency, defaultCurrency }: AmbiguousView): Html => {
-    const code = currency === defaultCurrency ? '' : ` ${currency}`;
-    const shown = readings.map(formatMoney).join(' или ');
-    const resend = readings
-      .map((r) => `«${retypeable(r)}${code} ${shownDescription(description)}»`)
-      .join(' или ');
-    // One reading when the other is invalid for the currency: `1.234` RSD, `1.200` JPY.
-    const question =
-      readings.length === 1
-        ? html`Уточните сумму: вы имели в виду ${shown}?`
-        : html`Сумму можно понять по-разному: ${shown}.`;
-    return joinHtml([question, html`Ничего не записано. Отправьте ещё раз так: ${resend}.`], ' ');
+  // Asked with one button per reading. One reading when the other is invalid for the currency:
+  // `1.234` RSD, `1.200` JPY.
+  ambiguousAmount: ({ readings }: AmbiguousView): Html => {
+    const [only] = readings;
+    return readings.length === 1 && only !== undefined
+      ? html`Ничего не записано. Вы имели в виду ${formatMoney(only)}?`
+      : html`Сумму можно понять по-разному. Ничего не записано — выберите:`;
   },
+  // The button label is the exact amount that a tap stores.
+  readingButton: (reading: Money): string => formatMoney(reading),
+  ambiguousSourceUnavailable: 'Исходное сообщение недоступно. Отправьте трату ещё раз.',
 
   expenseUndone: (view: ExpenseView) => expenseLine('Удалено из', view),
   undoneToast: 'Трата удалена',
