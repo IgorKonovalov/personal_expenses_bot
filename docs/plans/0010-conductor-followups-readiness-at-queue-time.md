@@ -215,7 +215,7 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 | 2: merge main before readiness | dev | done | `1c342f6` |
 | 3: resume wording, idle takes asks | dev | done | `0a34068` |
 | 4: operator docs and prompts | dev | done | `de6ba38` |
-| 5: stop pinning tests to live data | dev | done | committed with this row |
+| 5: stop pinning tests to live data | dev | done | `ba971c4` |
 
 ### Notes
 
@@ -246,7 +246,25 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
   `toHaveProperty('parse_mode', 'HTML')` separately. The registration test now reads every
   description from `messages.commands[n]`, not only `/settings` and `/changelog`. The dispositions
   of 0008's three nits (`finding 0008 0|1|2 --done`) are in gitignored conductor state.
+- Followup noticed, not acted on: a resident run re-reads `queue.json` through `loadQueue`, which
+  does not apply the readiness gate. A plan queued while a run is live therefore starts without a
+  `ready` record, and only the lane's readiness check covers it. Since `ready` is refused during a
+  live run, a plan approved mid-run cannot pass the gate until the run ends.
+- Followup noticed, not acted on: a lane readiness record written before this plan carries no
+  `main`, so each such plan in flight runs one extra readiness session on its next pick.
 
 ### Close triggers
+
+- Commits: `67021e2`, `1c342f6`, `0a34068`, `de6ba38`, `ba971c4`, and this close commit.
+- Gate on `ba971c4`: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 510 tests
+  in 38 files; `node scripts/check-doc-links.mjs` exit 0, 112 links; `node --test
+  ".claude/hooks/*.test.mjs"` exit 0, 31 tests; `node --test "tools/conductor/test/*.test.mjs"`
+  exit 0, 232 tests.
+- New command: `conductor.mjs ready NNNN`. New merge point: `pre-readiness`. New state field:
+  `readiness.main`.
+- Files outside the plan's Files touched: `tools/conductor/test/queue.test.mjs`,
+  `tools/conductor/test/live.test.mjs` (Phase 1, owner-approved).
+- Skill edited: `.claude/skills/dev/SKILL.md` (Phase 5).
+- No migration, no dependency change, no `package.json` version change.
 
 ## Followups
