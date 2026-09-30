@@ -90,3 +90,10 @@ test("a background watcher, the web and an rm leaving the lane are denied", () =
   assert.equal(decision("Bash", "rm -rf /home"), "deny");
   assert.equal(decision("Bash", "rm scratch.txt"), "allow");
 });
+
+// F8: a read-only `git grep` whose pattern holds backticks and Cyrillic was denied in a session.
+// The allowlist permits it, so the denial came from the CLI's own guard against shell substitution
+// in a command, and the prompts send such patterns to the Grep tool instead.
+test("the allowlist permits a git grep whose quoted pattern holds backticks and Cyrillic", () => {
+  assert.equal(decision("Bash", 'git grep -n "`Изменить`"'), "allow");
+});

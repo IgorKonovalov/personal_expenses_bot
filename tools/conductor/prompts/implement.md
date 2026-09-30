@@ -33,7 +33,8 @@ prompt and the rest of the skill disagree, this prompt wins.
   Grep tools or `git grep <pattern>`, never a pipe into grep, awk or sed. A done-when written as a pipe runs as
   its parts, or as the equivalent Grep call, and `### Notes` says which. `git clean -f -- <path>` and
   `git checkout -- <path>` take their path after `--`. A scratch file inside the lane is fine. A path that
-  leaves the lane is refused.
+  leaves the lane is refused. A pattern holding a backtick or `$` goes through the Grep tool, not a
+  shell call: the CLI refuses a command it reads as shell substitution, whatever the allowlist says.
 - **Never attempt an Edit or a Write under `.claude/`.** The CLI refuses one to a headless session
   whatever the allowlist says. The conductor parks a phase that declares such a path before it
   starts, so your range holds none. If you find you need one anyway, park `plan_wrong` naming the

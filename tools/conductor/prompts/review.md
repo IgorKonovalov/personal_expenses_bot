@@ -37,6 +37,8 @@ chaining, no pipe and no cd: run from the lane root and pass the path. Git runs 
 takes -C. No environment prefix. Read text with the Read and Grep tools or `git grep <pattern>`, never a pipe
 into grep, awk or sed. A done-when written as a pipe runs as its parts, or as the equivalent Grep
 call, and the review says which. `git restore <path>` puts back a file a run changed.
+A pattern holding a backtick or `$` goes through the Grep tool, not a shell call: the CLI refuses a
+command it reads as shell substitution, whatever the allowlist says.
 
 **A finding under `.claude/`** stays open whoever closes, because the CLI refuses a headless session
 an edit there. You have read the file and composed the fix, so write that finding's `what` so it

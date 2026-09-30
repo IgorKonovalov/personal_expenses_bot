@@ -213,8 +213,8 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 |---|---|---|---|
 | 1: `ready NNNN` and the preflight gate | dev | done | `67021e2` |
 | 2: merge main before readiness | dev | done | `1c342f6` |
-| 3: resume wording, idle takes asks | dev | done | committed with this row |
-| 4: operator docs and prompts | dev | not started | |
+| 3: resume wording, idle takes asks | dev | done | `0a34068` |
+| 4: operator docs and prompts | dev | done | committed with this row |
 | 5: stop pinning tests to live data | dev | not started | |
 
 ### Notes
@@ -238,6 +238,9 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
   until every lane still looping is idle too.
 - Phase 3: `status` lists the pending asks only when there are some, so the existing exact-output
   `status` test is unchanged. `test/lane.test.mjs` needed no change.
+- Phase 4, F8: the allowlist permits ``git grep -n "`Изменить`"`` (`settings.test.mjs` asserts
+  `allow`). The CLI's own shell-substitution guard denied it, so the three prompts gained the Grep-tool
+  line and `settings.conductor.json` is unchanged.
 
 ### Close triggers
 

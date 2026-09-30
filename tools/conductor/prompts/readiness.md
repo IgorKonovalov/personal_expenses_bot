@@ -32,7 +32,8 @@ names, and prove it with the done-when it names. Check phase by phase:
    owed after the merge, so nothing before the merge may read what it produces.
 
 Read with the Read and Grep tools, `git grep <pattern>`, `git log <args>` and `git show <rev>`, one command per call. Run
-nothing that builds or tests. Nothing here needs it.
+nothing that builds or tests. Nothing here needs it. A pattern holding a backtick or `$` goes through the Grep tool, not a shell call: the CLI refuses a
+command it reads as shell substitution, whatever the allowlist says.
 
 Park on a contradiction a phase cannot be implemented around, never on a matter of taste or on
 something an implementer resolves in a minute. Name the phase and quote both sides of the

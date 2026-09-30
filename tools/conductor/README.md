@@ -4,7 +4,9 @@ A fork of Ritmolux's `tools/conductor/` at Ritmolux commit `b0c0aa42` (the last 
 it; Ritmolux `main` was `22a665a4`, with the same tree), adapted to this repository and on trial
 (ADR-0010, Plan 0006). It takes approved plans off a committed queue and runs each to a merged local
 `main` with no owner action in between. Per plan, it opens a git worktree lane, installs its
-dependencies, and runs a read-only readiness check. Then it starts one fresh headless `claude -p`
+dependencies, merges `main` into the lane, and runs a read-only readiness check. The check is
+skipped when `ready` or an earlier pass already cleared this plan's text against this `main`. Then
+it starts one fresh headless `claude -p`
 session per contiguous run of `dev` phases and checks each session's claim against `git`. After
 merging `main` into the lane it runs its own gate, then starts a fresh `architect` session to review
 the plan and a second one to close it on the branch. Last, it fast-forwards `main` and removes the
@@ -33,11 +35,17 @@ nothing outside `tools/conductor/`. The fork is not reformatted (`.prettierignor
    lane, an optional `after` list of plans that must merge first, and optional `add_dirs` for a plan
    that reads outside the repository. A queued plan must read `Status: approved`. That approval is
    the "go": no session restates the plan or waits (ADR-0010).
-3. **Run the preflight:** `node tools/conductor/conductor.mjs check`. It refuses when `local.json` is
-   missing, when the queue names a plan that is not approved or waits on one it cannot reach, or when
+3. **Before queuing a plan, run `node tools/conductor/conductor.mjs ready NNNN`** (ADR-0016). It runs
+   the readiness check against `main` in a throwaway worktree. A park prints the gap while the
+   planning session can still fix the plan. A pass is recorded against the plan's text, ignoring its
+   `Status:` line. Any later edit to the plan above its `## Implementation log` needs `ready` again.
+4. **Run the preflight:** `node tools/conductor/conductor.mjs check`. It refuses when `local.json` is
+   missing, when the queue names a plan that is not approved or waits on one it cannot reach, when a
+   queued plan that has not started has no `ready` record matching its text, or when
    `claude --version` is neither a verified version nor a patch above one. A patch above one passes
-   with a warning.
-4. **Leave the main checkout alone while a run is live.** The fast-forward refuses a dirty main
+   with a warning. The readiness records are gitignored state, so on a fresh clone the error names
+   every queued plan to `ready`.
+5. **Leave the main checkout alone while a run is live.** The fast-forward refuses a dirty main
    checkout, so work in progress there parks every close.
 
 ## Commands
@@ -46,10 +54,11 @@ All of them run from the main checkout as `node tools/conductor/conductor.mjs <c
 
 | Command | What it does |
 |---|---|
+| `ready NNNN` | Runs the readiness check on plan NNNN as it stands on `main`, in a detached worktree removed afterwards. On a pass it records the plan's contract hash and `main`'s tip. On a park it prints the phase, the detail and the transcript, and exits 1. Refused while a run is live. |
 | `run [--lane a\|b] [--once \| --until-idle]` | Runs the queue until `pause`, `abort` or Ctrl+C. `--until-idle` ends once no lane can move; `--once` stops a lane after one plan. |
-| `status` | Per lane: the plan, the step, the time in it and the spend so far, then every parked plan with its reason. Regenerates the digest. |
+| `status` | Per lane: the plan, the step, the time in it and the spend so far, then every parked plan with its reason, and any resume ask a live run has not taken yet. Regenerates the digest. |
 | `digest [--history]` | Rewrites `digest.md`. `--history` writes the per-run account to `digest-history.md`. |
-| `resume NNNN` | Queues a parked plan again. Refused while the park's reason still holds, such as a `human` phase whose log row does not read `done`. |
+| `resume NNNN` | Queues a parked plan again. Refused while the park's reason still holds, such as a `human` phase whose log row does not read `done`. Against a live run it leaves an ask, which the run takes when the plan's lane next picks a plan. That is after the plan the lane is running, which the answer names. |
 | `park NNNN` | Parks a plan that has not merged, with an inbox entry. |
 | `finding NNNN [<ref> --done\|--wontfix\|--filed <reason>]` | Lists a merged plan's closing findings, or records your disposition of one. |
 | `adopt-close NNNN` | Records a close a lane already carries when its session lost its outcome. Verifies it first. |
@@ -91,6 +100,7 @@ dirty worktree. Every other reason is yours: `resume` once you have acted.
 | `deps_install` | `pnpm install --frozen-lockfile` failed in the lane, so no gate step could run. Nothing was run. The detail carries the install's tail. Fix the cause (network, the native build of `better-sqlite3`) and resume, which installs again. |
 | `stop_condition`, `plan_wrong`, `question` | Read the transcript the inbox names and settle it in a human-started `/architect` session. A readiness `plan_wrong` implemented nothing: edit the plan, or resume to overrule it. |
 | `gate_red` | The gate was red, one repair session ran, and it is still red. Fix the defect in the lane. |
+| `check_red` | A session (implement, fix, repair, merge or close) found its own run of the checks red and could not make it green within its scope. Fix it by hand in the lane (`../peb-plan-NNNN`) and commit there, often a test pinned to data the merge moved. Leave the worktree clean. |
 | `review_failed` | Read the last review under `state/reviews/`. Resuming grants two fresh fix rounds. |
 | `disagreement` | A session's claim and `git` differ. Read the detail and the transcript before trusting the lane. |
 | `cli_contract` | The CLI ran a session without the project hooks or without loading the skill. Verify the CLI (below) before resuming. |
@@ -119,6 +129,11 @@ dirty worktree. Every other reason is yours: `resume` once you have acted.
   the lane and nothing else.
 - **Its own gate.** The conductor runs `project.mjs`'s gate itself at `pre-review`, after every fix
   round, on the close tip, and after a re-merge. It never takes a session's word that a check passed.
+- **Merging `main`.** The lane merges `main` at `pre-readiness`, before the first implement session
+  each time the plan is picked, so a plan amended on `main` reaches the lane with no hand
+  fast-forward. It merges again at `pre-review`, and on the close's and the fast-forward's
+  conflicts. A conflict at any of these points goes to one merge session. Each merge is recorded in
+  the plan's `merges[]` with its point.
 - **The close.** The close session runs the architect's close ceremony, bumps `package.json` and
   `CHANGELOG.md` when the plan warrants it, commits a `## Close review` section into the plan, and
   makes no tag. The conductor checks that the plan is under `docs/plans/done/` with `Status: done`
