@@ -33,6 +33,7 @@ jobs:
       # Emits dist/ so an emit-only failure breaks CI rather than the image build on the VPS.
       - run: pnpm build
       - run: pnpm test
+      - run: node --test "scripts/*.test.mjs"
 
   deploy:
     needs: check
@@ -45,11 +46,6 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          # --wait fails the job when the container never turns healthy.
-          script: |
-            set -e
-            cd ~/bots/personal-expenses-bot
-            git pull --ff-only
-            docker compose up -d --build --wait --wait-timeout 180
-            docker image prune -f
+          # The key is bound to a forced command on the VPS (scripts/deploy-vps.sh, installed as
+          # ~/bin/deploy-personal-expenses-bot), which runs the deploy and ignores this script.
+          script: deploy

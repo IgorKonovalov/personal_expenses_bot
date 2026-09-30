@@ -39,7 +39,8 @@ docs/
 └── skills/          # architect (designs docs/) + dev (writes code)
                      #   + ux-telegram (reviews/designs chat UX, writes nothing; ADR-0005)
 scripts/
-└── check-doc-links.mjs   # every relative markdown link resolves (run at every plan close)
+├── check-doc-links.mjs   # every relative markdown link resolves (run at every plan close)
+└── deploy-vps.sh         # the VPS deploy, run by the deploy key's forced command (+ its test)
 tools/
 └── conductor/       # runs queued, approved plans headless in worktree lanes (ADR-0010).
                      #   project.mjs holds its project specifics; README.md says how to run it.

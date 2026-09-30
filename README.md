@@ -118,39 +118,59 @@ backup is logged as an `error` without stopping the bot.
 
 ## Deploy
 
-`.github/workflows/deploy.yml` runs `check` (install, typecheck, lint, build, test) on every pull
-request and push to `main`. A push to `main` that passes `check` deploys over SSH:
-`git pull --ff-only`, then `docker compose up -d --build --wait`, so a container that never turns
-healthy fails the run. Deploys queue, never overlap.
+`.github/workflows/deploy.yml` runs `check` (install, typecheck, lint, build, test, and the deploy
+script's own test) on every pull request and push to `main`. A push to `main` that passes `check`
+connects over SSH with a key that can run only one thing: the deploy script
+[scripts/deploy-vps.sh](scripts/deploy-vps.sh). It runs `git pull --ff-only`, then
+`docker compose up -d --build --wait`, so a container that never turns healthy fails the run, and
+then prunes dangling images and build cache older than a week. Deploys queue, never overlap.
 
-Repository secrets, the same names the sibling bot on this VPS uses:
+Repository secrets:
 
-| Secret           | Value                   |
-| ---------------- | ----------------------- |
-| `SSH_HOST`       | VPS hostname or IP      |
-| `SSH_USER`       | the deploy user         |
-| `SSH_KEY`        | that user's private key |
-| `SSH_PASSPHRASE` | the key's passphrase    |
+| Secret     | Value                                   |
+| ---------- | --------------------------------------- |
+| `SSH_HOST` | VPS hostname or IP                      |
+| `SSH_USER` | the deploy user (`botuser`)             |
+| `SSH_KEY`  | the dedicated deploy key's private half |
 
-VPS layout:
+VPS layout (the deploy user is uid 1000, in the `docker` group, with no sudo):
 
 ```text
-~/bots/personal-expenses-bot/           # this repo, cloned with a read-only deploy key
+~/bots/personal-expenses-bot/           # this repo, cloned over HTTPS (public repo, no deploy key)
 ~/bots/personal-expenses-bot/.env       # production token and ids, mode 0600, not in git
-/var/backups/personal-expenses-bot/     # expenses-YYYY-MM-DD.sqlite, mode 0700, owned by uid 1000
+~/backups/personal-expenses-bot/        # expenses-YYYY-MM-DD.sqlite, mode 0700
+~/bin/deploy-personal-expenses-bot      # installed copy of scripts/deploy-vps.sh
 ```
 
 Production uses its **own** BotFather bot. Two processes polling one token get 409 Conflict.
-Create the backup directory once with
-`sudo install -d -o 1000 -g 1000 -m 700 /var/backups/personal-expenses-bot`.
 
-Manual redeploy, on the VPS:
+One-time setup on the VPS, as the deploy user:
 
 ```sh
-cd ~/bots/personal-expenses-bot
-git pull --ff-only
-docker compose up -d --build --wait --wait-timeout 180
+git clone https://github.com/IgorKonovalov/personal_expenses_bot.git ~/bots/personal-expenses-bot
+install -d -m 700 ~/backups/personal-expenses-bot
+mkdir -p ~/bin
+install -m 755 ~/bots/personal-expenses-bot/scripts/deploy-vps.sh ~/bin/deploy-personal-expenses-bot
 ```
+
+The VPS `.env` sets `HOST_BACKUP_DIR=/home/botuser/backups/personal-expenses-bot`, next to the
+sibling bots' backups.
+
+The deploy key belongs to this repo alone. Generate it on a laptop with
+`ssh-keygen -t ed25519 -N '' -C gha-deploy-personal-expenses-bot -f ./deploy-key`, put
+`deploy-key` into the `SSH_KEY` secret, and append the public half to the VPS
+`~/.ssh/authorized_keys` as one line:
+
+```text
+restrict,command="/home/botuser/bin/deploy-personal-expenses-bot" ssh-ed25519 AAAA... gha-deploy-personal-expenses-bot
+```
+
+Then delete both local copies. The deploy user's `docker` group makes any shell on it
+root-equivalent, which is why this key gets no shell: sshd runs the forced command whatever the
+client asks for. The installed script is a copy. **After changing `scripts/deploy-vps.sh`, rerun
+the `install -m 755` line above**, or the VPS keeps running the old one.
+
+Manual redeploy, on the VPS: `~/bin/deploy-personal-expenses-bot`.
 
 If `git pull --ff-only` fails, someone edited the checkout on the VPS. Reset it to `origin/main`
 rather than forcing a merge.

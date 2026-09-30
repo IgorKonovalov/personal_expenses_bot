@@ -306,8 +306,8 @@ sets it to the siblings' location). The heartbeat path is derived as
 |---|---|---|---|
 | 1: The bot runs from a Docker image of compiled JS | dev | done | b71fab6 |
 | 2: Daily SQLite backups with rotation | dev | done | 865da53 |
-| 3: CI gate and deploy on push | dev | done | committed with this row |
-| 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy | dev | not started | |
+| 3: CI gate and deploy on push | dev | done | 68f91db |
+| 4: Fit the shared droplet: memory cap, cache pruning, forced-command deploy | dev | done | committed with this row |
 | 5: Provision on the VPS and first deploy | human | not started | |
 
 ### Notes
@@ -343,6 +343,17 @@ sets it to the siblings' location). The heartbeat path is derived as
   (image digest `sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9`).
 - Phase 3: the README restore steps (`docker compose run` copying a backup over the live file) are
   untested; Phase 5's drill opens a backup off the VPS but doesn't restore one.
+- Phase 4: `docker compose config` with an empty `.env` prints `mem_limit: "268435456"`.
+  shellcheck `koalaman/shellcheck:v0.11.0`
+  (`sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d`) printed nothing,
+  exit 0. actionlint (the Phase 3 image) printed nothing, exit 0.
+- Phase 4: `node --test "scripts/*.test.mjs"`: 3 tests, 3 pass. Appending
+  `eval "${SSH_ORIGINAL_COMMAND:-true}"` to the script fails 1 of 3, and `set -u` instead of
+  `set -eu` fails 2 of 3. `pnpm test` (vitest, `src/**` only) does not pick the file up; CI runs
+  it as its own `check` step.
+- Phase 4 deviation: the README's manual redeploy is now the installed script
+  (`~/bin/deploy-personal-expenses-bot`) rather than the three commands.
+- Phase 4: `prettier --check CLAUDE.md` already warns at the parent commit; left as is.
 
 ### Close triggers
 

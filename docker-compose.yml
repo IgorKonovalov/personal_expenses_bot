@@ -3,6 +3,9 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # The droplet's RAM is shared with sibling bots, each capped the same way, so a spike here
+    # can't push the kernel into OOM-killing one of them. Standalone compose honours mem_limit.
+    mem_limit: 256m
     # Overrides .env: the database and the heartbeat always land on the bot-data volume, and the
     # backups in the bind-mounted host directory.
     environment:
