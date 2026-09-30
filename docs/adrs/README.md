@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0014`
+- **Next free number:** `0017`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -20,3 +20,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0011](0011-navigation-model.md) | Navigation: a persistent menu, expense cards, one screen anchor per user | accepted (2026-09-30) |
 | [0012](0012-html-rendering-seam.md) | Telegram HTML through one escaping seam | accepted (2026-09-30) |
 | [0013](0013-version-announcements-at-boot.md) | Announce each new version to the admin at boot, recorded in SQLite | accepted (2026-09-30) |
+| [0016](0016-readiness-runs-before-a-plan-is-queued.md) | The readiness check runs before a plan is queued, and `run` refuses a plan without one | proposed (2026-09-30) |

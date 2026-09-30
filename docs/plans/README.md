@@ -4,12 +4,13 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0009`
+- **Next free number:** `0011`
 
 ## Active
 
 | Plan | Title | Status |
 |---|---|---|
+| [0010](0010-conductor-followups-readiness-at-queue-time.md) | Conductor followups: readiness at queue time, main before readiness, resume and idle fixes | approved (2026-09-30) |
 
 ## Recently closed
 
