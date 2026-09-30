@@ -9,7 +9,7 @@ import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
-import { toCurrencyCode } from '../domain/currencies.js';
+import { CURRENCY_CODES, toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { createLogger } from '../logger.js';
 import { createBot, registerCommands } from './bot.js';
@@ -1955,5 +1955,130 @@ describe('/settings hub and the timezone picker', () => {
         },
       },
     ]);
+  });
+
+  describe('the ledger default currency', () => {
+    const picker = (currency: string) =>
+      `Валюта по умолчанию для новых трат в «Личные расходы». Сейчас: ${currency}. Записанные траты не меняются.`;
+
+    it('lists every currencies.ts code four per row, the current one marked, then back', async () => {
+      const { say, tap, calls } = settingsBot();
+      await say('/settings', 1);
+      calls.length = 0;
+
+      await tap('set:cur', 101);
+
+      const buttons = CURRENCY_CODES.map((code) => ({
+        text: code === 'RSD' ? '✓ RSD' : code,
+        callback_data: `set:cur:${code}`,
+      }));
+      const rows = [];
+      for (let i = 0; i < buttons.length; i += 4) rows.push(buttons.slice(i, i + 4));
+      expect(calls[1]).toEqual(
+        editOf(101, picker('RSD'), {
+          inline_keyboard: [...rows, [{ text: '« Назад', callback_data: 'set:open' }]],
+        }),
+      );
+      expect(CURRENCY_CODES).toEqual(expect.arrayContaining(['RSD', 'EUR', 'JPY', 'RUB', 'KZT']));
+      for (const { callback_data } of buttons) expect(Buffer.byteLength(callback_data)).toBe(11);
+    });
+
+    it('answers a code not in the table silently and writes nothing', async () => {
+      const { say, tap, calls, totalChanges } = settingsBot();
+      await say('/settings', 1);
+      const before = totalChanges();
+      calls.length = 0;
+
+      await tap('set:cur:XYZ', 101);
+
+      expect(totalChanges()).toBe(before);
+      expect(calls).toEqual([
+        { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      ]);
+    });
+
+    it('records the next expense in EUR and leaves the RSD rows as they were', async () => {
+      const { say, tap, calls, db } = settingsBot();
+      await say('100 чай', 1);
+      const rsdRows = db.prepare('SELECT * FROM expenses').all();
+      await say('/settings', 2);
+      calls.length = 0;
+
+      await tap('set:cur:EUR', 102);
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: 'cb-3', text: 'Валюта изменена' },
+        },
+        editOf(102, hubText('Белград (Europe/Belgrade)', 'EUR'), hubKeyboard),
+      ]);
+
+      await say('450 кофе', 3);
+      calls.length = 0;
+      await say('/today', 4);
+
+      expect(
+        db.prepare("SELECT amount_minor, currency FROM expenses WHERE description = 'кофе'").get(),
+      ).toEqual({ amount_minor: 45000, currency: 'EUR' });
+      expect(db.prepare("SELECT * FROM expenses WHERE description = 'чай'").all()).toEqual(rsdRows);
+      expect(sentTexts(calls)).toEqual([
+        '<b>Сегодня, 29 сентября — «Личные расходы»</b>\n100.00 RSD\n450.00 EUR',
+      ]);
+    });
+
+    it('records 450 кофе as 450 JPY, and refuses 12,5 кофе in JPY', async () => {
+      const { say, tap, calls, db } = settingsBot();
+      await say('/settings', 1);
+      await tap('set:cur:JPY', 101);
+      calls.length = 0;
+
+      await say('450 кофе', 2);
+      await say('12,5 кофе', 3);
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 450, currency: 'JPY' },
+      ]);
+      expect(sentTexts(calls)).toEqual([
+        'Записано в «Личные расходы»: <b>450 JPY</b> — кофе · Кафе и рестораны',
+        messages.invalidAmount,
+      ]);
+    });
+
+    it("refuses a tap from a member who isn't the ledger's owner", async () => {
+      const { say, tap, calls, db, totalChanges } = settingsBot();
+      await say('/start', 1);
+      // Shared ledgers have no flow yet: the membership is written directly.
+      const userId = db.prepare('SELECT id FROM users').pluck().get();
+      db.prepare(
+        "INSERT INTO users (id, timezone, created_at) VALUES ('owner-x', 'Europe/Belgrade', ?)",
+      ).run(LATE.toISOString());
+      db.prepare(
+        `INSERT INTO ledgers (id, kind, name, default_currency, owner_user_id, created_at)
+         VALUES ('shared-x', 'shared', 'Семья', 'RSD', 'owner-x', ?)`,
+      ).run(LATE.toISOString());
+      db.prepare(
+        "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES ('shared-x', ?, 'member')",
+      ).run(userId);
+      db.prepare("UPDATE users SET active_ledger_id = 'shared-x' WHERE id = ?").run(userId);
+      await say('/settings', 2);
+      const before = totalChanges();
+      calls.length = 0;
+
+      await tap('set:cur:EUR', 102);
+
+      expect(totalChanges()).toBe(before);
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: {
+            callback_query_id: 'cb-3',
+            text: 'Валюту «Семья» может изменить только владелец',
+          },
+        },
+      ]);
+      expect(
+        db.prepare("SELECT default_currency FROM ledgers WHERE id = 'shared-x'").pluck().get(),
+      ).toBe('RSD');
+    });
   });
 });

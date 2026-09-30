@@ -179,8 +179,8 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: /settings and the timezone picker | dev | done | committed with this row |
-| 2: The ledger's default currency | dev | not started | |
+| 1: /settings and the timezone picker | dev | done | 8cf41ba |
+| 2: The ledger's default currency | dev | done | committed with this row |
 
 ### Notes
 
@@ -207,6 +207,13 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
 - Phase 1: "writes nothing" for the already-selected city is asserted with SQLite's
   `total_changes()`. An unknown slug (`set:tz:mars`) is answered silently.
 - Phase 1: [Валюта] `set:cur` has no handler until Phase 2; the dispatcher answers it silently.
+- Phase 2: `src/domain/currencies.ts` (not in `Files touched`) exports `CURRENCY_CODES`, the
+  table's codes in table order; the picker is built from it.
+- Phase 2: the owner check reads `ledger_members.role` (`findMemberRole`), not
+  `ledgers.owner_user_id`.
+- Phase 2: copy not named in the plan: the picker text `Валюта по умолчанию для новых трат в
+  «…». Сейчас: RSD. Записанные траты не меняются.`, the toasts `Валюта изменена`,
+  `Эта валюта уже выбрана` and `Валюту «…» может изменить только владелец`.
 
 ### Close triggers
 

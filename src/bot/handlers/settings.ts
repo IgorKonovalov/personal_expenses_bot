@@ -1,19 +1,28 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
+import type { Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
+import { CURRENCY_CODES, toCurrencyCode } from '../../domain/currencies.js';
 import { TIMEZONES, timezoneBySlug } from '../../domain/timezones.js';
 import { setAnchor, type CategoriesScreen } from '../../services/flowSessions.js';
 import { activeLedgerCategories } from '../../services/manageCategories.js';
-import { startTimezoneFlow, updateTimezone, userSettings } from '../../services/settings.js';
+import {
+  setLedgerCurrency,
+  startTimezoneFlow,
+  updateTimezone,
+  userSettings,
+} from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   CURRENCY_PICKER,
+  SET_CURRENCY,
   SET_TIMEZONE,
   SETTINGS_CATEGORIES,
   SETTINGS_OPEN,
   TIMEZONE_OTHER,
   TIMEZONE_PAGE,
   TIMEZONE_PICKER,
+  setCurrencyData,
   setTimezoneData,
   timezonePageData,
 } from '../callbackData.js';
@@ -66,6 +75,20 @@ function timezonePickerView(timezone: string, page: number): ScreenView {
   rows.push([InlineKeyboard.text(messages.otherTimezoneButton, TIMEZONE_OTHER)]);
   rows.push(backRow(SETTINGS_OPEN));
   return { text: messages.timezonePicker(timezone), markup: InlineKeyboard.from(rows) };
+}
+
+// Every code of the currency table four per row, the current one marked, then [« Назад].
+function currencyPickerView(ledger: Ledger): ScreenView {
+  const choices = CURRENCY_CODES.map((code) =>
+    InlineKeyboard.text(
+      code === ledger.defaultCurrency ? messages.currentChoice(code) : code,
+      setCurrencyData(code),
+    ),
+  );
+  const rows: InlineKeyboardButton[][] = [];
+  for (let i = 0; i < choices.length; i += 4) rows.push(choices.slice(i, i + 4));
+  rows.push(backRow(SETTINGS_OPEN));
+  return { text: messages.currencyPicker({ ledger }), markup: InlineKeyboard.from(rows) };
 }
 
 // The [Другой…] prompt, with a refusal line above it when an answer failed.
@@ -143,6 +166,34 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     }
     await ctx.answerCallbackQuery({ text: messages.timezoneChangedToast });
     await renderAnchor(ctx, tap.anchor, settingsView(deps, { ...tap.user, timezone: entry.iana }));
+  });
+
+  bot.callbackQuery(CURRENCY_PICKER, async (ctx) => {
+    const tap = await settingsTap(ctx, deps);
+    if (tap === undefined) return;
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, currencyPickerView(userSettings(deps, tap.user).ledger));
+  });
+
+  bot.callbackQuery(SET_CURRENCY, async (ctx) => {
+    const tap = await settingsTap(ctx, deps);
+    if (tap === undefined) return;
+    // A code not in the table: answered silently by the dispatcher, nothing written.
+    const currency = toCurrencyCode(ctx.match[1] ?? '');
+    if (currency === undefined) return;
+    const result = setLedgerCurrency(deps, { user: tap.user, currency });
+    switch (result.kind) {
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.currencyForbidden(result.ledger) });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.currencyUnchanged });
+        return;
+      case 'updated':
+        await ctx.answerCallbackQuery({ text: messages.currencyChangedToast });
+        await renderAnchor(ctx, tap.anchor, settingsView(deps, tap.user));
+        return;
+    }
   });
 
   bot.callbackQuery(TIMEZONE_OTHER, async (ctx) => {

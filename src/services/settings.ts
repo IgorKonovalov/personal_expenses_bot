@@ -1,5 +1,11 @@
-import { findActiveLedger, type Ledger } from '../db/ledgers.js';
+import {
+  findActiveLedger,
+  findMemberRole,
+  updateLedgerCurrency,
+  type Ledger,
+} from '../db/ledgers.js';
 import { updateUserTimezone, type User } from '../db/users.js';
+import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { canonicalTimezone, resolveTimezone } from '../domain/timezones.js';
 import type { Logger } from '../logger.js';
@@ -82,5 +88,28 @@ export function answerTimezoneFlow(
     completeFlow(deps, user, input.inputKey);
     updateTimezone(deps, { user, timezone });
     return { kind: 'updated', timezone };
+  })();
+}
+
+export type CurrencyResult =
+  | { readonly kind: 'updated' | 'unchanged'; readonly ledger: Ledger }
+  // Only the ledger's owner changes its currency.
+  | { readonly kind: 'forbidden'; readonly ledger: Ledger };
+
+// Sets the active ledger's default currency. It applies to expenses recorded afterwards; stored
+// rows keep theirs (ADR-0003).
+export function setLedgerCurrency(
+  deps: SettingsDeps,
+  input: { readonly user: User; readonly currency: CurrencyCode },
+): CurrencyResult {
+  const { db, logger } = deps;
+  const { user, currency } = input;
+  return db.transaction((): CurrencyResult => {
+    const ledger = findActiveLedger(db, user.id);
+    if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+    if (findMemberRole(db, ledger.id, user.id) !== 'owner') return { kind: 'forbidden', ledger };
+    if (!updateLedgerCurrency(db, ledger.id, currency)) return { kind: 'unchanged', ledger };
+    logger.info({ ledgerId: ledger.id, userId: user.id }, 'ledger currency changed');
+    return { kind: 'updated', ledger: { ...ledger, defaultCurrency: currency } };
   })();
 }

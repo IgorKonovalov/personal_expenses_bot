@@ -238,6 +238,13 @@ export const messages = {
   },
   timezoneChangedToast: 'Часовой пояс изменён',
   timezoneUnchanged: 'Этот часовой пояс уже выбран',
+  // A new default never converts or re-labels expenses already recorded (ADR-0003).
+  currencyPicker: ({ ledger }: Pick<SettingsScreenView, 'ledger'>): Html =>
+    html`Валюта по умолчанию для новых трат в «${ledgerName(ledger)}». Сейчас: ${ledger.defaultCurrency}. Записанные траты не меняются.`,
+  currencyChangedToast: 'Валюта изменена',
+  currencyUnchanged: 'Эта валюта уже выбрана',
+  currencyForbidden: (ledger: LedgerRef): string =>
+    `Валюту «${ledgerName(ledger)}» может изменить только владелец`,
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',

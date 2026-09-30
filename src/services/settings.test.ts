@@ -9,6 +9,7 @@ import type { RecordDeps } from './recordExpense.js';
 import {
   answerTimezoneFlow,
   resolveUserTimezone,
+  setLedgerCurrency,
   startTimezoneFlow,
   updateTimezone,
   userSettings,
@@ -112,5 +113,31 @@ describe('answerTimezoneFlow', () => {
       kind: 'flow',
       flow: { kind: 'setTimezone' },
     });
+  });
+});
+
+describe('setLedgerCurrency', () => {
+  function storedCurrency(): unknown {
+    return db.prepare('SELECT default_currency FROM ledgers').pluck().get();
+  }
+
+  it("sets the owner's active ledger currency, and reports unchanged for the stored one", () => {
+    expect(setLedgerCurrency(deps, { user, currency: 'EUR' })).toMatchObject({
+      kind: 'updated',
+      ledger: { defaultCurrency: 'EUR' },
+    });
+    expect(storedCurrency()).toBe('EUR');
+    expect(setLedgerCurrency(deps, { user, currency: 'EUR' })).toMatchObject({
+      kind: 'unchanged',
+    });
+  });
+
+  it('refuses a member who is not the owner and writes nothing', () => {
+    db.prepare("UPDATE ledger_members SET role = 'member'").run();
+
+    expect(setLedgerCurrency(deps, { user, currency: 'EUR' })).toMatchObject({
+      kind: 'forbidden',
+    });
+    expect(storedCurrency()).toBe('RSD');
   });
 });

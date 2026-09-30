@@ -1,5 +1,6 @@
 import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
+import type { CurrencyCode } from '../domain/currencies.js';
 
 // Telegram rejects callback_data over 64 bytes (UTF-8). Format: `<scope>:<action>[:<arg>…]`,
 // built only here (ADR-0011).
@@ -84,7 +85,13 @@ export function categoryActionPickData(action: CategoryAction, categoryId: Categ
 // and from the categories screen it opened.
 export const SETTINGS_OPEN = 'set:open';
 export const SETTINGS_CATEGORIES = 'set:cat';
+// `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
 export const CURRENCY_PICKER = 'set:cur';
+export const SET_CURRENCY = /^set:cur:([A-Z]{3})$/;
+
+export function setCurrencyData(currency: CurrencyCode): string {
+  return assertCallbackData(`set:cur:${currency}`);
+}
 // `set:tz` opens page 1 of the city list, `set:tzp:<page>` pages it, `set:tz:<slug>` picks.
 export const TIMEZONE_PICKER = 'set:tz';
 export const TIMEZONE_PAGE = /^set:tz(?:p:(\d{1,4}))?$/;
