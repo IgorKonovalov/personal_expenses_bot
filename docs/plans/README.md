@@ -10,6 +10,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0009](0009-group-ledgers.md) | Group ledgers: the bot as a group's accountant, with personal books kept private | approved (2026-09-30) |
 | [0010](0010-conductor-followups-readiness-at-queue-time.md) | Conductor followups: readiness at queue time, main before readiness, resume and idle fixes | approved (2026-09-30) |
 
 ## Recently closed
