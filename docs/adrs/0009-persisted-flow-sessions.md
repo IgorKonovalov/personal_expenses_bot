@@ -2,7 +2,10 @@
 
 > **Status:** proposed
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0003](../plans/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md)
+> **Related plan(s):** [Plan 0003](../plans/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md), [Plan 0005](../plans/0005-settings.md)
+> **Revised:** 2026-09-29, before acceptance: prompts edit the anchor instead of using
+> `force_reply`, expiry is answered, expense-shaped answers are rejected, and the row also holds
+> ADR-0011's screen anchor.
 
 ## Context
 
@@ -17,36 +20,50 @@ and be recorded as an expense.
 
 ## Decision
 
-A `flow_sessions` table holds **at most one pending flow per user** (`user_id` is the primary
-key). It stores `kind`, a JSON `payload` (for example the expense id and field), the anchor
-message's chat and message id, `expires_at` (10 minutes after start) and `last_input_key`.
+A `flow_sessions` table holds **one row per user** (`user_id` is the primary key). It carries
+two things. The first is the user's **screen anchor** (ADR-0011): the anchor message's chat and
+message id, the `screen` it shows, and a JSON `screen_ctx` (for example the ledger id a summary
+shows). The second is **at most one pending text flow**: `kind`, a JSON `payload` (for example
+the expense id and field), `expires_at` (10 minutes after the prompt), and `last_input_key`.
 
-The text handler routes in this order:
+The text handler routes in this order, after commands and menu taps (ADR-0011):
 
 1. If the message's source key (`tg:<chat_id>:<message_id>`) equals `last_input_key`, this is a
    redelivered answer. Ignore it: the flow was already applied. Record nothing, reply nothing.
 2. If a flow is pending and not expired, the text is that flow's input. A valid input completes
-   the flow, sets `last_input_key` and clears the pending state. An invalid input re-asks and
-   keeps the flow pending.
-3. Otherwise, parse the text as an expense (Plan 0001).
+   the flow, sets `last_input_key`, clears the pending state, and re-renders the anchor. An
+   invalid input re-asks and keeps the flow pending. **Every flow rejects text that parses as a
+   full expense (amount and description)**, re-asking with a hint and [Отмена], unless the flow
+   asks for exactly that.
+3. Otherwise, parse the text as an expense (Plan 0001). If the parse is not an expense and a
+   flow **expired** within the last 24 hours, reply `flowExpired` instead of the help text, and
+   clear the expired flow. An expense is always recorded, expired flow or not.
 
-Starting a flow replaces any pending one. `/cancel`, the prompt's [Отмена] button, and **any
-other command** clear the pending flow. Prompts use Telegram's `force_reply` so the client opens
-a reply box, but a reply isn't required. Routing is by pending state, not by `reply_to_message`.
+A prompt **edits the anchor** into the question, showing the current value, with an inline
+[Отмена] (`flow:cancel`). No `force_reply`, because a message carries only one `reply_markup`,
+so an inline [Отмена] and `force_reply` can't coexist, and `editMessageText` can't set
+`force_reply`. Starting a flow replaces any pending one. `/cancel`, [Отмена], a menu tap and
+**any other command** clear the pending flow. Cancel and completion restore the anchor to the
+screen or card the flow started from.
 
 ## Consequences
 
 ### Positive
-- Survives restarts and deploys. A prompt sent before a deploy still works after it.
+- Survives restarts and deploys. A prompt sent before a deploy still works after it, and so
+  does a screen's anchor.
 - A redelivered answer is idempotent by the same source-key rule as expenses.
 - One routing rule for every future flow (categories, edit, settings).
 
 ### Negative
-- While a flow is pending, a real expense typed by mistake is consumed as the flow's answer (for
-  example "450 кофе" becomes a category name). Mitigations: the prompt says what it expects and
-  offers [Отмена], flows expire after 10 minutes, and each flow validates its input and re-asks
-  on nonsense (a category name that parses as an expense is rejected with a hint).
+- While a flow is pending, a real expense typed by mistake is neither recorded nor consumed. It
+  is re-asked with a hint, and the user must tap [Отмена] and send it again. A short answer that
+  isn't expense-shaped is still consumed: `Дача` becomes a category name even if the user meant
+  something else. Mitigations: the prompt says what it expects and offers [Отмена], and flows
+  expire after 10 minutes.
 - One pending flow per user. Starting a second flow silently drops the first.
+- A user who ignores the prompt and types plain text (not an expense) within a day gets
+  "time's up" rather than help. That is correct for a late answer and slightly odd for anything
+  else.
 
 ## Alternatives considered
 

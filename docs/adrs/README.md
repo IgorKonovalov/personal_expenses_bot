@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0010`
+- **Next free number:** `0013`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -16,3 +16,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0007](0007-categories-belong-to-ledgers.md) | Categories belong to ledgers, seeded from a preset and editable | proposed (2026-09-29) |
 | [0008](0008-category-suggestion-from-history.md) | Suggest a category from the ledger's history, then keyword rules, then «Другое» | proposed (2026-09-29) |
 | [0009](0009-persisted-flow-sessions.md) | Multi-step flows keep their state in SQLite, one pending flow per user | proposed (2026-09-29) |
+| [0011](0011-navigation-model.md) | Navigation: a persistent menu, expense cards, one screen anchor per user | proposed (2026-09-29) |
+| [0012](0012-html-rendering-seam.md) | Telegram HTML through one escaping seam | proposed (2026-09-29) |

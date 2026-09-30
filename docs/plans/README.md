@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0006`
+- **Next free number:** `0008`
 
 ## Active
 
@@ -14,6 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0003](0003-categories.md) | Categories: preset per ledger, suggestion from history, change and manage | approved (2026-09-29) |
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
 | [0005](0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | approved (2026-09-29) |
+| [0007](0007-navigation-shell.md) | Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes | approved (2026-09-29): lands before 0003 |
 
 ## Recently closed
 

@@ -1,13 +1,15 @@
 # 0005: /settings: timezone from a city list, and the ledger's default currency
 
-> **Status:** approved
+> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md), [Plan 0003](0003-categories.md) (screen kit, flow sessions, list pager, `/categories` screen)
+> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
-`/settings` shows the user's timezone and the active ledger's default currency, with buttons to
-change each in place. The timezone comes from a curated Russian-labelled city list (Белград,
+`/settings` and the `⚙️ Настройки` menu button open the settings hub, an ADR-0011 screen. It
+shows the user's timezone and the active ledger's default currency, with buttons to change each
+in place, and links to Plan 0003's categories screen. The timezone comes from a curated Russian-labelled city list (Белград,
 Подгорица, Москва, Алматы, …) or a typed IANA name via [Другой…]. The currency comes from the
 codes in `src/domain/currencies.ts`. `DEFAULT_TIMEZONE` and `DEFAULT_CURRENCY` stay only as
 defaults for new users. The first visible change: a family member in Moscow taps Москва, and
@@ -67,29 +69,40 @@ reviews once at the end, in a fresh session.
 
 ### Phase 1: /settings and the timezone picker
 - **Owner skill:** dev
-- **What:** `/settings`, the city list, the [Другой…] flow, `resolveTimezone` on every read of
-  `users.timezone`, a welcome that mentions settings, and `/settings` in the command menu.
+- **What:** `/settings` as a screen and the `⚙️ Настройки` menu button, the city list, the
+  [Другой…] flow, `resolveTimezone` on every read of `users.timezone`, a welcome that mentions
+  settings, and `/settings` in the command menu.
 - **Files touched:** `src/domain/timezones.ts`, `src/domain/timezones.test.ts`,
   `src/db/users.ts`, `src/db/users.test.ts`, `src/services/settings.ts`,
   `src/services/settings.test.ts`, `src/services/recordExpense.ts`,
   `src/services/todaySummary.ts`, `src/services/periodSummary.ts`,
-  `src/bot/handlers/settings.ts`, `src/bot/flows.ts`, `src/bot/callbackData.ts`,
+  `src/bot/handlers/settings.ts`, `src/bot/handlers/categories.ts`, `src/bot/keyboards.ts`,
+  `src/bot/flows.ts`, `src/bot/callbackData.ts`,
   `src/bot/messages.ts`, `src/bot/bot.ts`, `src/bot/bot.test.ts`, `src/index.ts`,
   `README.md` (commands; env keys described as new-user defaults), `.env.example` (comments).
 - **Done when:**
-  - `/settings` for a default user shows `Белград (Europe/Belgrade)` and the active ledger's
-    `RSD`, with [Часовой пояс] and [Валюта].
-  - [Часовой пояс] edits the message to the city list plus [Другой…] `set:tzother` and [Назад].
-    Each city button is `set:tz:<slug>` with a slug of at most 20 ASCII bytes, and a test asserts
-    every list entry's slug fits and its `iana` is valid in `Intl`. The list includes at least
-    `belgrade`, `podgorica`, `moscow` and `almaty`.
+  - `/settings` and the `⚙️ Настройки` label each open the hub as a new screen anchor. For a
+    default user it shows `Часовой пояс: Белград (Europe/Belgrade)` and `Валюта по умолчанию
+    для новых трат в «Личные расходы»: RSD`. The keyboard is row 1 [Часовой пояс] `set:tz`
+    [Валюта] `set:cur`, row 2 [Категории] `set:cat`. The menu's second row becomes
+    `⚙️ Настройки` / `❓ Помощь`.
+  - [Категории] edits the anchor into Plan 0003's categories screen with [« Назад] `set:open`
+    added. `/categories` sent directly still opens it with no back row.
+  - [Часовой пояс] edits the message to the city list, 2 per row with the current zone marked
+    `✓ `, paged by Plan 0003's `pagerRow` if it has more than 8 entries. Below it are
+    [Другой…] `set:tzother` and [« Назад] `set:open`, each alone on its row. Each city button is
+    `set:tz:<slug>` with a slug of at most 20 ASCII bytes, and a test asserts every list entry's
+    slug fits and its `iana` is valid in `Intl`. The list includes at least `belgrade`,
+    `podgorica`, `moscow` and `almaty`.
   - Tapping Москва stores `Europe/Moscow` and re-renders the settings. Then `450 кофе` in a
     message dated `2026-09-29T21:30:00Z` (00:30 on the 30th in Moscow, 23:30 on the 29th in
     Belgrade) stores `occurred_on = 2026-09-30`, and `/today` at that instant is headed
     `30 сентября`. An expense recorded **before** the switch keeps its `occurred_on`.
   - tzdata guard: `localDateOf(2026-09-29T18:30:00Z, 'Asia/Almaty')` = `2026-09-29` (UTC+5 →
     23:30). Pre-2024 tzdata (UTC+6) would give the 30th. This runs in CI on Node 24.
-  - [Другой…] → prompt. `asia/tbilisi` stores `Asia/Tbilisi` (canonical). `Mars/Base` and
+  - [Другой…] edits the anchor into `Сейчас: Белград (Europe/Belgrade). Отправьте название
+    часового пояса, например Europe/Istanbul.` with [Отмена], which restores the hub.
+    `asia/tbilisi` stores `Asia/Tbilisi` (canonical). `Mars/Base` and
     `+03:00` re-ask and keep the flow pending. A redelivered answer applies once (ADR-0009).
   - A corrupt stored value (`users.timezone = 'Mars/Base'`, written directly) makes `/today` use
     `DEFAULT_TIMEZONE` and log one `warn` with the user id and no other user data. `/settings`
@@ -106,8 +119,8 @@ reviews once at the end, in a fresh session.
   `src/services/settings.test.ts`, `src/bot/handlers/settings.ts`, `src/bot/callbackData.ts`,
   `src/bot/messages.ts`, `src/bot/bot.test.ts`.
 - **Done when:**
-  - The keyboard has one button per `currencies.ts` code, four per row, each `set:cur:<CODE>`
-    (11 bytes), plus [Назад]. A code not in the table (`set:cur:XYZ`) is answered silently
+  - The keyboard has one button per `currencies.ts` code, four per row, the current one marked
+    `✓ `, each `set:cur:<CODE>` (11 bytes), plus [« Назад] `set:open` alone below. A code not in the table (`set:cur:XYZ`) is answered silently
     and writes nothing.
   - With RSD rows already recorded, tapping EUR sets the default. Then `450 кофе` → 45000 EUR,
     the earlier RSD rows are unchanged, and `/today` lists both currencies.
@@ -132,8 +145,8 @@ export const TIMEZONES = [
 export function resolveTimezone(stored: string, fallback: string): { tz: string; fellBack: boolean };
 ```
 
-Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzother`, `set:cur`,
-`set:cur:<CODE>`. The ADR-0009 flow kind is `setTimezone`.
+Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzother`,
+`set:cur`, `set:cur:<CODE>`, `set:cat`. The ADR-0009 flow kind is `setTimezone`.
 
 ## Risks & open questions
 

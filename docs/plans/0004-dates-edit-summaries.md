@@ -1,15 +1,17 @@
 # 0004: Past dates, /week and /month by category, and the edit flow
 
-> **Status:** approved
+> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md), [Plan 0003](0003-categories.md) (screen kit, flow sessions, list pager)
+> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
 Three things the user asked for once categories exist. First, `450 такси вчера` or
 `450 такси 25.09` records on that local date. Second, `/week` (Monday to Sunday) and `/month`
-(calendar month) show, per currency, a total and then categories by amount, with [◀ Пред.] and
-[След. ▶] buttons that page in place. Third, [Изменить] on a confirmation lets the author fix the
+(calendar month) show, per currency, a total and then categories by amount, as ADR-0011 screens
+with a period pager that names the periods ([◀ Август] [Октябрь ▶]) and pages in place. They
+also get menu buttons. Third, [Изменить] on a confirmation lets the author fix the
 amount, description or date through the ADR-0009 flow. The first visible change:
 `450 такси вчера` confirms `Записано в «Личные расходы» за 28 сентября: 450.00 RSD — такси ·
 Транспорт`.
@@ -42,8 +44,8 @@ arithmetic in SQL) and aggregate in the domain (ADR-0002).
 
 We rejected weekday words ("в понедельник") as extra ambiguity for little gain. We rejected
 editing by editing the original Telegram message, because it's invisible and hard to confirm.
-We rejected "reply with a corrected full line", because it means retyping everything.
-`edited_message` updates stay ignored.
+We rejected "reply with a corrected full line", because it means retyping everything. An edited
+Telegram message still doesn't change the expense. Plan 0007's hint now points at [Изменить].
 
 ## Architecture diagram
 
@@ -51,7 +53,7 @@ We rejected "reply with a corrected full line", because it means retyping everyt
 stateDiagram-v2
     [*] --> Confirmation: expense recorded
     Confirmation --> FieldPicker: [Изменить]
-    FieldPicker --> Confirmation: [Назад]
+    FieldPicker --> Confirmation: [« Назад]
     FieldPicker --> AwaitAmount: [Сумма]
     FieldPicker --> AwaitDescription: [Описание]
     FieldPicker --> AwaitDate: [Дата]
@@ -90,8 +92,8 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
     `вчера такси`, today (last word only).
   - "Today" is the user's local date: a message dated `2026-09-29T22:30:00Z` (00:30 on the 30th
     in Belgrade) saying `450 такси вчера` stores `occurred_on = 2026-09-29`.
-  - The confirmation reads `Записано в «Личные расходы» за 28 сентября: 450.00 RSD — такси ·
-    Транспорт`. A date in another year includes it (`за 5 октября 2025`). A today-dated
+  - The confirmation reads `Записано в «Личные расходы» за 28 сентября: <b>450.00 RSD</b> —
+    такси · Транспорт`. A date in another year includes it (`за 5 октября 2025`). A today-dated
     expense keeps the Plan 0003 wording.
   - A past-dated expense doesn't appear in `/today`.
   - Category suggestion uses the description without the date word: `450 такси вчера` →
@@ -100,12 +102,13 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
 ### Phase 2: /week and /month with category breakdown and paging
 - **Owner skill:** dev
 - **What:** Domain period math (`weekOf`, `monthOf`, `previous`/`next`) and
-  `summarizeByCurrencyAndCategory`, a repository range query, `/week` and `/month`, and nav
-  callbacks that edit the summary in place.
+  `summarizeByCurrencyAndCategory`, a repository range query, `/week` and `/month` as ADR-0011
+  screens with the period pager, and the `📅 Неделя` and `🗓 Месяц` menu buttons.
 - **Files touched:** `src/domain/periods.ts`, `src/domain/periods.test.ts`,
   `src/domain/aggregate.ts`, `src/domain/aggregate.test.ts`, `src/db/expenses.ts`,
   `src/db/expenses.test.ts`, `src/services/periodSummary.ts`,
-  `src/services/periodSummary.test.ts`, `src/bot/handlers/summary.ts`,
+  `src/services/periodSummary.test.ts`, `src/bot/handlers/summary.ts`, `src/bot/nav.ts`,
+  `src/bot/keyboards.ts`,
   `src/bot/callbackData.ts`, `src/bot/messages.ts`, `src/bot/bot.ts`, `src/bot/bot.test.ts`,
   `src/index.ts` (command menu), `README.md` (commands).
 - **Done when:** (clock `2026-09-30T10:00:00Z`, Wednesday 30 September local)
@@ -123,43 +126,62 @@ Unless stated, the user is in `Europe/Belgrade` and the ledger default is RSD.
     The RSD block (the ledger default) comes first, and other currencies follow alphabetically.
   - `/week`: RSD `370.00 RSD` (D + H = 37000), with Кафе и рестораны `300.00` and Без категории
     `70.00`. EUR `12.50 EUR`, Транспорт. G (Sunday the 27th) and F (undone) are absent.
-  - [◀ Пред.] on the September month edits the message to August: RSD `100.00 RSD`, Продукты
-    `100.00`. August shows [След. ▶], and September doesn't (the current period has no
-    next). [◀ Пред.] on the week shows 21–27 September: `200.00 RSD`, Транспорт.
+  - The September month shows only [◀ Август] `sum:m:2026-08`, because the current period has
+    no next. Tapping it edits the message to August (RSD `100.00 RSD`, Продукты `100.00`), which
+    shows [◀ Июль] [Сентябрь ▶]. The current week shows only [◀ 21–27 сен]. Tapping it shows
+    21–27 September (`200.00 RSD`, Транспорт) with [◀ 14–20 сен] [28 сен – 4 окт ▶]. A week
+    that spans two months names both (`28 сен – 4 окт`).
+  - The summary is a screen (ADR-0011). Its `screen_ctx` holds the ledger id, and paging reads
+    that ledger, not the active one. After `/categories` opens a newer screen, a pager tap on the
+    summary toasts `staleScreen` and edits nothing.
+  - The header and the currency totals are bold. Category names are interpolated through `html`
+    (ADR-0012).
   - A category tie sorts by name with `localeCompare(…, 'ru')`: 1000 RSD Одежда and 1000 RSD
     Здоровье list Здоровье first.
   - An empty period shows the header plus the messages-module "no expenses" line.
   - Callback data is `sum:m:2026-09` (12 bytes) and `sum:w:2026-09-28` (16 bytes). A malformed
     argument (`sum:m:2026-13`) is answered silently with no edit.
   - Length: a synthetic ledger with every currency in `currencies.ts` and 30 categories each
-    renders at most 4096 characters. Beyond that, the summary falls back to totals per currency
+    renders at most 4096 characters of **visible** text (entities stripped, ADR-0012). Beyond that, the summary falls back to totals per currency
     plus a messages-module note. A test asserts both the fallback and the limit.
   - Boundary through the real recording path: a message dated `2026-08-31T22:30:00Z`
     (`450 кофе`, 00:30 on 1 September local) counts in September and not August.
-  - `setMyCommands` adds `/week` and `/month`.
+  - `setMyCommands` adds `/week` and `/month`. The menu's first row becomes `📊 Сегодня` /
+    `📅 Неделя` / `🗓 Месяц`, and each label routes exactly like its command.
 
 ### Phase 3: Edit amount, description and date
 - **Owner skill:** dev
 - **What:** [Изменить] on the confirmation, a field picker, and three ADR-0009 flows plus date
-  quick buttons. The anchor confirmation is re-rendered after each edit, with `updated_at`.
+  quick buttons. The card is the flow's anchor (ADR-0011). Each prompt edits the card, and it is
+  re-rendered after each edit, with `updated_at`.
 - **Files touched:** `src/db/migrations/0004_expense_updated_at.sql`, `src/db/expenses.ts`,
   `src/db/expenses.test.ts`, `src/services/editExpense.ts`, `src/services/editExpense.test.ts`,
   `src/bot/handlers/edit.ts`, `src/bot/flows.ts`, `src/bot/callbackData.ts`,
   `src/bot/messages.ts`, `src/bot/handlers/text.ts`, `src/bot/bot.test.ts`.
 - **Done when:**
-  - The confirmation keyboard is [Категория] [Изменить] `exp:edit:<uuid>` (45 bytes)
-    [Отменить]. The field picker is [Сумма] / [Описание] / [Дата] as `exp:ef:<uuid>:a|d|t`
-    (45 bytes), plus [Назад].
+  - The confirmation keyboard is row 1 [Категория] [Изменить] `exp:edit:<uuid>` (45 bytes),
+    row 2 [Удалить]. The field picker is [Сумма] [Описание] [Дата] as `exp:ef:<uuid>:a|d|t`
+    (45 bytes), with [« Назад] `exp:show:<uuid>` alone below.
+  - Each prompt edits the card into the question, naming the current value (`Сейчас: 450.00
+    RSD. Введите новую сумму, например «1 200» или «12,50 EUR».`), with [Отмена]
+    `flow:cancel`. [Отмена] restores the card unchanged.
   - Amount: `450 кофе` → Изменить → Сумма → `1 200` sets `amount_minor = 120000` RSD, and
     `/today` shows `1 200.00 RSD`. `12,5 EUR` sets 1250 EUR. `1.200` re-asks with both readings
-    (ADR-0004), changes nothing and keeps the flow pending. `abc` re-asks.
+    (ADR-0004), changes nothing and keeps the flow pending. `abc` re-asks. `450 кофе` re-asks with
+    the expense-shaped hint (ADR-0009) and changes nothing.
   - Description: `капучино` sets `description` and `description_key = 'капучино'` and leaves
-    `category_id` unchanged. An empty answer re-asks.
-  - Date at clock `2026-09-30T10:00:00Z`: [Вчера] `exp:dt:<uuid>:1` sets `occurred_on =
-    2026-09-29`, so the expense leaves `/today` and stays in `/week`. A typed `25.09` → `2026-09-25`
+    `category_id` unchanged. An empty answer re-asks. `450 кофе` re-asks with the
+    expense-shaped hint and doesn't become the description.
+  - Date at clock `2026-09-30T10:00:00Z`: the quick buttons carry absolute dates, so [Вчера] is
+    `exp:dt:<uuid>:2026-09-29` (54 bytes). It sets `occurred_on = 2026-09-29`, so the expense
+    leaves `/today` and stays in `/week`. The same button tapped at `2026-09-30T23:30:00Z`
+    (01:30 on 1 October local) still sets `2026-09-29`. A forged `exp:dt:<uuid>:2026-10-05`
+    (future) or `…:2026-02-30` is answered with a toast and writes nothing. A typed `25.09` → `2026-09-25`
     (Phase 1 rule). `05.10.2026` re-asks as future. `occurred_at` never changes.
   - After each successful edit, the anchor confirmation is edited to the new values and `updated_at`
     is set. A second tap on a quick date button with the same value writes nothing.
+  - Plan 0007's `editedMessageHint` now reads `Изменение сообщения не меняет запись. Нажмите
+    «Изменить» под подтверждением.`
   - Refusals, each a toast with nothing written: a non-author taps [Изменить]; any edit button on
     an undone expense; an answer arriving after the expense was undone mid-flow (which also
     clears the flow).
@@ -187,7 +209,7 @@ interface CurrencySummary {
 }
 ```
 
-Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<0|1|2>`,
+Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-mm-dd>`,
 `sum:m:<yyyy-mm>`, `sum:w:<monday yyyy-mm-dd>`. The ADR-0009 flow kinds are `editAmount`,
 `editDescription` and `editDate`.
 
@@ -201,11 +223,10 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<0|1|2
   with members in different timezones can disagree at day edges. That's accepted there.
 - **Idempotency:** nav taps are pure reads. Edits are compare-and-set, so the same value means no
   write.
-- **Telegram:** `editMessageText` with an unchanged text throws "message is not modified". Treat
-  it as success.
-- **Open:** summaries use the **active** ledger at tap time. A summary message paged after
-  switching ledgers (shared-ledger plan) shows the new ledger. Revisit there, possibly by putting a
-  short ledger ref in the callback.
+- **Telegram:** re-rendering an unchanged screen is safe, because Plan 0007's `editHtml` treats
+  "message is not modified" as success.
+- **Resolved (ADR-0011):** a summary pages the ledger stored in its screen context, not the
+  ledger that is active at tap time.
 
 ## What this plan does NOT do
 

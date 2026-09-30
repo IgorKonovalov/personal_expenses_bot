@@ -1,17 +1,19 @@
 # 0003: Categories: preset per ledger, suggestion from history, change and manage
 
-> **Status:** approved
+> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
-> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md)
+> **Depends on:** [Plan 0007](0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
+> **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR
 
 Every new expense gets a category with no extra tap. `450 кофе` confirms as
-`Записано в «Личные расходы»: 450.00 RSD — кофе · Кафе и рестораны` with [Категория]
-[Отменить]. The category comes from this ledger's history for the same description, then from
-keyword rules, then «Другое» (ADR-0008). [Категория] opens a picker in the same message, and the
-choice is remembered for next time. `/categories` lets the user add, rename and hide categories
-through a persisted text-input flow (ADR-0009). Summaries by category are Plan 0004.
+`Записано в «Личные расходы»: 450.00 RSD — кофе · Кафе и рестораны` with [Категория] above
+[Удалить]. The category comes from this ledger's history for the same description, then from
+keyword rules, then «Другое» (ADR-0008). [Категория] opens a paged picker in the same card, and
+the choice is remembered for next time. `/categories` is the first ADR-0011 **screen**: it lets
+the user add, rename and hide categories through a persisted text-input flow (ADR-0009). This
+plan builds the screen half of the ADR-0011 kit. Summaries by category are Plan 0004.
 
 ## Context & problem
 
@@ -85,26 +87,33 @@ reviews once at the end, in a fresh session.
     (prefix match). `300 такси до дома` → `transport`. `999 что-то` → `other`. `450 EUR coffee`
     → `cafe` (the English keyword is also listed).
   - `450 кофе` stores `category_id` = the ledger's `cafe` category and
-    `description_key = 'кофе'`. The confirmation is exactly
-    `Записано в «Личные расходы»: 450.00 RSD — кофе · Кафе и рестораны`.
+    `description_key = 'кофе'`. The confirmation text (HTML, ADR-0012) is exactly
+    `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны`.
   - Plan 0001 rows keep `category_id IS NULL`. The migration doesn't touch existing
     `expenses` rows (a test counts NULLs before and after).
   - Archiving `cafe` (repository call) makes `450 кофе` fall through to `other`.
 
 ### Phase 2: Change the category, and learn from the change
 - **Owner skill:** dev
-- **What:** A [Категория] button on the confirmation, a picker that edits the message in place,
-  and the ADR-0008 history lookup as the first suggestion step.
-- **Files touched:** `src/bot/handlers/category.ts`, `src/bot/callbackData.ts`,
+- **What:** A [Категория] button on the confirmation, a paged picker that edits the card in
+  place, the list pager (ADR-0011), and the ADR-0008 history lookup as the first suggestion step.
+- **Files touched:** `src/bot/handlers/category.ts`, `src/bot/nav.ts`, `src/bot/nav.test.ts`,
+  `src/bot/callbackData.ts`,
   `src/bot/handlers/text.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`,
   `src/services/changeCategory.ts`, `src/services/changeCategory.test.ts`,
   `src/services/recordExpense.ts`, `src/db/expenses.ts`, `src/db/expenses.test.ts`.
 - **Done when:**
-  - The confirmation keyboard is [Категория] `exp:cat:<uuid>` (44 bytes) and [Отменить]. The
-    picker lists the ledger's **active** categories two per row, with each button
-    `exp:setcat:<uuid>:<categoryId>`, plus [Назад] `exp:show:<uuid>` (45 bytes). Every
-    builder goes through `assertCallbackData`, and a test builds `exp:setcat` with a
-    16-digit category id and asserts it's at most 64 bytes.
+  - The confirmation keyboard is row 1 [Категория] `exp:cat:<uuid>` (44 bytes), row 2
+    [Удалить] (Plan 0007). The picker lists the ledger's **active** categories two per row,
+    8 per page, with each button `exp:setcat:<uuid>:<categoryId>`. The current category is
+    marked `✓ `. Below it are the pager row `[◀] [n/N] [▶]` as `exp:catp:<uuid>:<page>`
+    (47 bytes for a one-digit page), shown only when there's more than one page, and
+    [« Назад] `exp:show:<uuid>` (45 bytes) alone on the last row. Every builder goes through
+    `assertCallbackData`, and a test builds `exp:setcat` with a 16-digit category id and
+    asserts it's at most 64 bytes.
+  - `pagerRow` in `src/bot/nav.ts` is generic: with 30 categories the pages hold 8, 8, 8 and 6.
+    Page 1 has no [◀], page 4 has no [▶], and [n/N] re-renders the same page. A page argument
+    out of range (`exp:catp:<uuid>:9`) renders the last page.
   - Tapping Продукты sets `category_id` and edits the message back to the confirmation, now
     ending `· Продукты`. Tapping it again is a no-op answered with a toast, with no second write.
   - The tap is refused (toast, nothing written) when the tapper isn't the creator, the category
@@ -117,40 +126,55 @@ reviews once at the end, in a fresh session.
 
 ### Phase 3: Flow sessions, `/categories`, command menu
 - **Owner skill:** dev
-- **What:** ADR-0009's `flow_sessions` and text routing, `/categories` with add, rename and hide
-  (archive), `/cancel`, `/help`, and `setMyCommands` at boot from the messages module.
+- **What:** ADR-0009's `flow_sessions` (screen anchor plus pending flow) and text routing, the
+  ADR-0011 screen kit (`requireScreen`, `showScreen`, `backRow`, `cancelRow`, the `flow:cancel`
+  handler), `/categories` as a screen with add, rename and hide (archive), and `/cancel`.
 - **Files touched:** `src/db/migrations/0003_flow_sessions.sql`, `src/db/flowSessions.ts`,
   `src/db/flowSessions.test.ts`, `src/services/flowSessions.ts`,
   `src/services/manageCategories.ts`, `src/services/*.test.ts`, `src/domain/categories.ts`,
   `src/domain/categories.test.ts`, `src/bot/handlers/categories.ts`,
-  `src/bot/handlers/cancel.ts`, `src/bot/handlers/help.ts`, `src/bot/handlers/text.ts`,
-  `src/bot/flows.ts`, `src/bot/callbackData.ts`, `src/bot/messages.ts`, `src/bot/bot.ts`,
+  `src/bot/handlers/cancel.ts`, `src/bot/handlers/text.ts`, `src/bot/screens.ts`,
+  `src/bot/screens.test.ts`, `src/bot/flows.ts`, `src/bot/callbackData.ts`, `src/bot/messages.ts`, `src/bot/bot.ts`,
   `src/bot/bot.test.ts`, `src/index.ts`, `README.md` (commands), `CLAUDE.md` (only if the
   `src/` tree changes shape).
 - **Done when:**
-  - `/categories` lists active categories and shows [Добавить] `cat:add`, [Переименовать] and
-    [Скрыть]. Rename and hide open a category picker (`cat:ren:<id>` / `cat:arc:<id>`). «Другое»
-    is absent from the hide picker.
-  - Add: [Добавить] → prompt with `force_reply`. `Дача` creates the category, and it appears in
+  - `/categories` sends a new message and makes it the screen anchor. It lists the active
+    categories, with [Добавить] `cat:add` on row 1 and [Переименовать] `cat:ren` [Скрыть]
+    `cat:arc` on row 2. Rename and hide open a paged picker (the Phase 2 pager) with buttons
+    `cat:ren:<id>` / `cat:arc:<id>` and [« Назад] `cat:open`. «Другое» is absent from the hide
+    picker. Hiding asks no confirmation: it is reversible by adding the name again.
+  - Stale screens: after `/categories` is sent twice, [Добавить] on the **first** message toasts
+    `staleScreen` and changes nothing. After a restart on the same DB file, [Добавить] on the
+    current anchor still works. A card button (`exp:cat:<uuid>`) on an old confirmation still
+    works, because cards are not screens (ADR-0011).
+  - Add: [Добавить] edits the anchor into `Как назвать новую категорию? До 32 символов.` with
+    [Отмена] `flow:cancel`, and no `force_reply`. `Дача` creates the category, and the anchor
+    re-renders as the `/categories` screen, headed `Категория «Дача» добавлена.`. It appears in
     the next expense picker. Validation, each with a messages-module re-ask and the flow kept
-    pending: an empty name, a name over 32 code points, a name starting with a digit (`450 кофе`
-    → hint that it looks like an expense and [Отмена]), and a name whose `categoryNameKey` equals
-    an active category (`кафе и рестораны`).
+    pending: an empty name, a name over 32 code points, an expense-shaped answer (`450 кофе` →
+    `Похоже на трату. …` hint with [Отмена], ADR-0009), a name starting with a digit, and a name
+    whose `categoryNameKey` equals an active category (`кафе и рестораны`).
+  - `Дача & <сад>` is a valid name. It renders as `Дача &amp; &lt;сад&gt;` in message text
+    (ADR-0012) and as the raw name on buttons.
   - Adding a name equal to an **archived** category's key restores it (`archived_at` → NULL) and
     creates no new row.
-  - Rename changes `name` and `name_key` and keeps `id` and `preset_key`. After renaming Кафе и
-    рестораны → Кофейни, `450 кофе` still suggests it (by `preset_key`).
-  - Routing (ADR-0009), with an injected clock: with a pending add flow started at `T`, the text
-    `Дача` at `T+9m59s` is the answer. At `T+10m01s` the flow has expired, so `Дача` gets the
-    not-an-expense help and creates no category, and `450 кофе` records an expense.
+  - Rename changes `name` and `name_key` and keeps `id` and `preset_key`. Its prompt names the
+    current name. After renaming Кафе и рестораны → Кофейни, `450 кофе` still suggests it (by
+    `preset_key`).
+  - Routing (ADR-0009), with an injected clock and a pending add flow started at `T`:
+    - `Дача` at `T+9m59s` is the answer.
+    - At `T+10m01s` the flow has expired: `Дача` gets `flowExpired` (`Время ответа истекло.
+      Начните заново: /categories.`), creates no category and clears the flow. `450 кофе` at
+      `T+10m01s` records an expense.
+    - `Дача` at `T+25h` gets the ordinary help reply.
   - Redelivery: delivering the answering `Дача` message twice creates one category, and the second
     delivery sends no reply and records no expense.
-  - `/cancel`, [Отмена], and `/today` sent while a flow is pending all clear it, so a following
-    `450 кофе` records an expense.
+  - `/cancel`, [Отмена], a menu tap (`📊 Сегодня`) and `/today` sent while a flow is pending all
+    clear it, so a following `450 кофе` records an expense. [Отмена] and `/cancel` also edit the
+    anchor back to the `/categories` screen.
   - Restart: a flow started, then a new bot instance on the same DB file, then the answer is
     accepted.
-  - At boot, `setMyCommands` registers `/today`, `/categories` and `/help`, with descriptions from
-    `messages.ts`. If the call fails, one `warn` is logged and boot continues.
+  - `setMyCommands` (Plan 0007) adds `/categories`.
 
 ## Data shapes
 
@@ -181,10 +205,12 @@ CREATE INDEX expenses_ledger_description ON expenses(ledger_id, description_key)
 
 CREATE TABLE flow_sessions (
   user_id TEXT PRIMARY KEY REFERENCES users(id),
-  kind TEXT,                            -- NULL when nothing is pending
-  payload TEXT,                         -- JSON, flow-specific
   anchor_chat_id INTEGER, anchor_message_id INTEGER,
-  expires_at TEXT,
+  screen TEXT,                          -- 'categories', ... (ADR-0011); NULL when no anchor
+  screen_ctx TEXT,                      -- JSON, e.g. {"ledgerId": "..."}
+  kind TEXT,                            -- pending flow; NULL when nothing is pending
+  payload TEXT,                         -- JSON, flow-specific
+  expires_at TEXT,                      -- kept after expiry for the flowExpired reply
   last_input_key TEXT                   -- 'tg:<chat>:<msg>' of the last consumed answer
 );
 ```
@@ -195,8 +221,9 @@ initial content is the implementer's call within these keys: `groceries`, `cafe`
 the Phase 1 done-whens use. Russian display names belong in the preset file, not
 `messages.ts`, because they're seed data that becomes user-editable rows, not copy.
 
-Callback data: `exp:cat:<uuid>`, `exp:setcat:<uuid>:<categoryId>`, `exp:show:<uuid>`,
-`cat:add`, `cat:ren:<id>`, `cat:arc:<id>`, `flow:cancel`.
+Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<categoryId>`,
+`exp:show:<uuid>`, `cat:open`, `cat:add`, `cat:ren`, `cat:ren:<id>`, `cat:arc`, `cat:arc:<id>`,
+`cat:renp:<page>`, `cat:arcp:<page>`, `flow:cancel`.
 
 ## Risks & open questions
 
@@ -204,12 +231,12 @@ Callback data: `exp:cat:<uuid>`, `exp:setcat:<uuid>:<categoryId>`, `exp:show:<uu
   The encryption plan owns it. It never appears in logs.
 - **Idempotency:** a double-tapped `exp:setcat` is a no-op. The flow answer is deduped by
   `last_input_key`. Seeding is `INSERT OR IGNORE` on `(ledger_id, name_key)`.
-- **Swallowed expense:** an expense typed while a flow is pending becomes the answer. The
-  digit-first name rule catches the common case (ADR-0009).
+- **Swallowed expense:** an expense typed while a flow is pending is re-asked, not consumed
+  (ADR-0009's expense-shaped guard). The digit-first name rule catches `450` alone.
 - **Telegram limits:** the picker has at most 30 active categories (a messages-module refusal
-  on add beyond that), which keeps the keyboard well under Telegram's button limits. Category
-  names appear in plain text only (no `parse_mode` exists), so no escaping is needed. If
-  formatted messages ever arrive, that's the rich-text ADR the sibling needed.
+  on add beyond that), which pages to at most 4 pickers of 8. Category names are user text, so
+  message text interpolates them only through `html` (ADR-0012). Button labels are not parsed
+  and need no escaping.
 - **Open:** in a shared ledger, may any member change an expense's category, or only the
   author? This plan says **author only**, consistent with Undo. The shared-ledger plan decides.
 
