@@ -256,8 +256,8 @@ committed.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: engine runs a fixture plan | dev | done | 1373b82 |
-| 2: harness speaks this workflow | dev | done | committed with this row |
-| 3: trial run and verdict | human | not started | |
+| 2: harness speaks this workflow | dev | done | b1da160 |
+| 3: trial run and verdict | human | done | committed with this row |
 
 ### Notes
 
@@ -293,8 +293,47 @@ committed.
 - Phase 1's commit `1373b82` left this plan with a duplicated block (from Phase 3's done-when to a
   second copy of the log). The Phase 2 commit rebuilds the file from `561417a` with both phases'
   log edits.
+- Phase 3 deviation: at the owner's request, the `dev` session ran the owner's steps. It wrote
+  `local.json` with the owner's chosen caps (per step $3 to $15, run $120) and ran `check`, `run`
+  and `resume`. The plan amendments were made in the same session under `/architect`.
+- Phase 3, Plan 0007: merged (v0.2.0, `d58845d`). 1 park (`plan_wrong` at readiness, Phase 4's
+  `1.200 JPY` done-when contradicted ADR-0004, amended in `8ff3923`). 1 fix round (round 1: 1
+  major, README). Spend $10.94. Wall time 27 min from resume to fast-forward, with the park run
+  1 min before it.
+- Phase 3, Plan 0003: merged (v0.3.0, `5f15dd0`). 1 park (`plan_wrong` at readiness, Phase 2's
+  keyboard lives in Plan 0007's `src/bot/handlers/card.ts`, which no phase listed, amended in
+  `d733a08`). 1 fix round (round 1: 1 major, the history lookup ordered by `created_at`, against
+  ADR-0008). Spend $13.64. Wall time 36 min from resume to fast-forward, with the park run 1 min
+  before it. One minor stays open: `/help` doesn't mention `/categories`, `/cancel` or
+  [Категория].
+- Phase 3 figures: 0 conductor fix commits. `project.mjs` is 87 lines. Total spend $24.58 over
+  three runs.
+- Phase 3 conductor defect, worked around and not fixed: a lane merges `main` only at
+  `pre-review`, after readiness, so a plan amended on `main` after a readiness park is re-checked
+  against the lane's stale copy. Both lanes were fast-forwarded to `main` by hand before `resume`.
+  The owner ran no command between `run` and the fast-forward on either merged run.
+- Phase 3 observation: the Plan 0003 close also edited Plan 0004 (`486e5b5`), renumbering its
+  migration to `0005` because 0003 took `0004`.
+- Phase 3 observation: the reviews ran 1 to 4 min and 17 to 52 turns each.
+- Followup (conductor, `dev` fix pass): merge `main` into the lane before readiness, so a resume
+  after a plan amendment reads the amendment.
+- Followup (architect): after a plan closes, re-check the queued plans that depend on it. Both
+  parks were plans written before the code they build on.
+- Followup: `prune` drops 0007 and 0003 from `queue.json`.
+- Followup: the open 0003 minor, `/help` for categories.
+- Owner's direction with the verdict: every conductor iteration must improve on the last. Each
+  run's parks, hand interventions and defects feed the next plan.
+- Verdict: go
 
 ### Close triggers
+
+- Gate on the tip `5f15dd0`: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm test` exit 0
+  (23 files, 266 tests), `node scripts/check-doc-links.mjs` exit 0 (82 links),
+  `node --test ".claude/hooks/*.test.mjs"` exit 0 (31 tests),
+  `node --test "tools/conductor/test/*.test.mjs"` exit 0 (223 tests).
+- Shipped: `tools/conductor/` (engine, adapter, prompts, settings, tests), the
+  `conductor-no-background.cjs` hook, a `## Conductor mode` section in each skill, `CLAUDE.md`
+  entries. No `src/` change from this plan.
 
 ## Followups
 
