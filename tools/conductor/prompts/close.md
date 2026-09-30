@@ -31,7 +31,9 @@ computed against. Close on the branch in this worktree, in this order:
    move broke and run `node scripts/check-doc-links.mjs` until it exits 0; accept the paired ADRs and refresh
    `docs/adrs/README.md`; refresh `docs/plans/README.md`; decide the version bump (minor for a
    feature plan, patch for a fix-only plan, none for docs or chore only) and, when there is one,
-   bump `package.json` and add the `CHANGELOG.md` entry.
+   bump `package.json`, add the `CHANGELOG.md` entry, and add that version's Russian body to
+   `messages.versionAnnouncements` in `src/bot/messages.ts` (that map only; the gate fails a bump
+   without it).
 4. In the same commit, add a `## Close review` section to the plan, right after its
    `## Implementation log` section: the review at the path above in full, then one line for every
    finding an earlier round raised and a fix round resolved, naming the fix commit. A log row

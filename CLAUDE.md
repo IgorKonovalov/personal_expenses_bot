@@ -64,8 +64,8 @@ Two skills run a plan-driven loop, and `ux-telegram` advises on chat UX:
 interview -> ADR (if a real tradeoff) -> phased plan -> "go" -> dev implements all phases -> fresh-session close review
 ```
 
-- **The architect designs and `dev` builds. Never invert.** The architect writes no production code.
-  `dev` writes no plans or ADRs. Inside a plan, `dev` edits only the `Status:` line and the
+- **The architect designs and `dev` builds. Never invert.** The architect writes no production code,
+  except the version announcement at a plan close (ADR-0013). `dev` writes no plans or ADRs. Inside a plan, `dev` edits only the `Status:` line and the
   `## Implementation log`.
 - **Every handoff is manual.** The user's "go" is the approval. The close review runs in a
   **fresh session**, because a review from inside the session that wrote the code is worthless.
