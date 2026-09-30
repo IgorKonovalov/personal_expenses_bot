@@ -27,6 +27,7 @@ when an amount could be read two ways.
 | `/categories`     | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back                                                                    |
 | `/cancel`         | Drops a pending question (like the new category's name) and puts the list back                                                                                                                                                                             |
 | `/help`           | How to record an expense, and what the menu buttons do                                                                                                                                                                                                     |
+| `/changelog`      | What's new: one entry per version, newest first                                                                                                                                                                                                            |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
@@ -35,7 +36,8 @@ photos, stickers and voice messages get the help reply. Editing a sent expense d
 the record, and the bot says so.
 
 Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply. Everyone else is
-ignored.
+ignored. The first id listed is the admin: on a boot with a new version, the bot sends them a
+short «🆕 Версия X.Y.Z» note (ADR-0013).
 
 ### Amount rules
 
@@ -215,6 +217,7 @@ src/
 ├── services/   use-cases orchestrating domain + db
 ├── bot/        the Telegram adapter (grammY): handlers, middleware, the Russian messages module
 ├── config.ts   env -> typed config, validated at boot
+├── version.ts  the running version, read from package.json at boot
 └── index.ts    boot
 ```
 
