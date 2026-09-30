@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.2.0 (2026-09-30)
+
+From Plan 0007 (navigation shell).
+
+- A persistent menu bar, `[📊 Сегодня] [❓ Помощь]`, and a `/help` command. Edited messages,
+  photos, stickers and unknown commands get an answer instead of silence.
+- Messages are sent as escaped HTML, with amounts in bold.
+- The confirmation's button is now [Удалить], and a deleted expense comes back with [Вернуть].
+- An ambiguous amount such as `1.200 обед` is answered with one button per reading, so there is
+  no need to type it again.
+
 ## 0.1.0 (2026-09-29)
 
 First release, from Plan 0001 (scaffold and walking skeleton).

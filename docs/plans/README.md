@@ -15,10 +15,10 @@ status and date. What a plan did lives in the plan.
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
 | [0005](0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | approved (2026-09-29) |
 | [0006](0006-conductor-trial.md) | Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended | in-progress (2026-09-30) |
-| [0007](0007-navigation-shell.md) | Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes | approved (2026-09-29): lands before 0003 |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0007](done/0007-navigation-shell.md) | Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes | done (2026-09-30): built as planned, v0.2.0 |
 | [0001](done/0001-scaffold-walking-skeleton.md) | Scaffold and walking skeleton: record "450 coffee", see it in /today | done (2026-09-29): built as planned, v0.1.0 |

@@ -1,9 +1,9 @@
 # 0007: Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-09-30). Verdict: built as planned; round 1's README and layering fixes (b2d4484, 153b225) are verified, and the dispatcher's as-built fallback is recorded in ADR-0011's Outcome. Shipped as v0.2.0.
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: Phase 4's `1.200 JPY` done-when asks, like `1.234` (conductor readiness park)
-> **Related ADRs:** [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md), [ADR-0004](../adrs/0004-amount-parsing-rule.md)
+> **Related ADRs:** [ADR-0011](../../adrs/0011-navigation-model.md), [ADR-0012](../../adrs/0012-html-rendering-seam.md), [ADR-0004](../../adrs/0004-amount-parsing-rule.md)
 
 ## TL;DR
 
@@ -355,4 +355,137 @@ layout.
   `card.ts`.
 - No migration. No dependency added.
 
+## Close review
+
+The round-2 review follows in full. The conductor ran it at `df06345`.
+
+> # Plan 0007 close review, round 2
+>
+> Reviewed at `df06345a5cc195235c489f41e216145ee27f667e` on `plan-0007-navigation-shell`
+> (`/home/igor/Work/peb-plan-0007`), fresh session, Mode 4.
+>
+> **Verdict:** Clean. Both round-1 fixes landed as described, the gate is green, and the plan is
+> ready to close. The two open items are close-ceremony work for the architect, not `dev` work.
+>
+> ## Gate (run in this session)
+>
+> - `pnpm typecheck`: exit 0.
+> - `pnpm lint`: exit 0.
+> - `pnpm test`: exit 0. 14 files, 155 tests passed.
+> - `node scripts/check-doc-links.mjs`: exit 0, 82 relative links resolve.
+> - Phase 2's `grep -rn "parse_mode" src/bot` ran as `git grep -n parse_mode -- src/bot`, with no
+>   pipe. Every match is in `src/bot/render/html.ts` or `src/bot/render/html.test.ts`.
+> - `git merge-base --is-ancestor main HEAD`: exit 0, so the lane carries main.
+>
+> ## Lens 1: alignment
+>
+> Round 1 read every named test's assertion against its done-when at `8639269`. Since then the
+> lane has three commits (`b2d4484`, `153b225`, `df06345`), and they touch only `README.md`,
+> `src/bot/handlers/other.ts`, `src/services/recordExpense.ts` and the plan's implementation log.
+> None of them touches a test file or a code path that a Phase 2 to Phase 4 done-when exercises, so
+> round 1's assertion reading still holds at this tip. The edited-message tests in
+> `src/bot/bot.test.ts` (recorded hint, deleted hint, silent unrelated edit, rows unchanged) now
+> run through the new service function, and they pass.
+>
+> The implementation log records both fixes with their commits. It is still shorter than the
+> phases section. The owner tags are unchanged: one `dev` tag per phase.
+>
+> - **Round 1 major 1 (README):** resolved in `b2d4484`. `README.md:19` names [Удалить], `:22`
+>   describes the per-reading buttons and the one-row repeat rule, `:24` describes [Удалить] and
+>   the deleted card with [Вернуть], and `:25` adds [Вернуть]. `git grep` for `Отмен`, `resend`
+>   and `cancel` in `README.md`, `.env.example` and `messages.ts` finds only the ADR-0011 comment at
+>   `src/bot/messages.ts:86`.
+> - **Round 1 minor 1 (bot reads db):** resolved in `153b225`. `other.ts` imports
+>   `findExpenseForSource` from `src/services/recordExpense.ts` (`:158-167`), which is a read-only
+>   pass-through. A `git grep` for `db/` under `src/bot` now finds only `import type` lines and
+>   `testHarness.ts`. No runtime bot→db value import remains.
+>
+> ## Lens 2: layering
+>
+> grammY stays inside `src/bot/`. All copy is in `messages.ts`. After `153b225`, handlers reach
+> storage only through `src/services/`.
+>
+> ## Lens 3: correctness
+>
+> The fix commits add no money arithmetic, no clock reads, no logging and no callback data. Round
+> 1's findings on idempotency, money, time, Telegram limits and privacy still apply unchanged.
+>
+> ## Lens 4: docs freshness
+>
+> The README usage table and menu paragraph now match the shipped behavior. No config key or env
+> var changed. The `CLAUDE.md` tree still matches: `render/` and the new handlers sit under
+> `src/bot/`, as the map says.
+>
+> ## Findings
+>
+> ### blocker
+>
+> None.
+>
+> ### major
+>
+> None.
+>
+> ### minor
+>
+> 1. **ADR-0011 §3 doesn't describe the dispatcher as built** (carried from round 1, architect-owned).
+>    - **Where:** `docs/adrs/0011-navigation-model.md:60` (and Plan 0007 Phase 3 **What**).
+>    - **What:** Both say the unknown-callback fallback is "registered last in `bot.ts`". In the
+>      code, `callbackDispatcher()` (`src/bot/callbacks.ts:15`) is installed after the allowlist
+>      and answers silently after `next()` returns with the query unanswered.
+>    - **Why it matters:** Plans 0003 to 0005 read ADR-0011 to learn where to register callback
+>      handlers.
+>    - **Suggested fix (architect, at close):** When accepting ADR-0011, add a dated `## Outcome`
+>      section. It should say that the fallback is the post-`next()` answer in
+>      `callbackDispatcher()`, not a terminal handler, so a scope registered anywhere still fires.
+>      This doesn't block closing, because the close session applies it.
+>
+> ### nit
+>
+> 1. **The `/today` totals aren't bold** (carried from round 1).
+>    - **Where:** `src/bot/messages.ts:116`.
+>    - **What:** ADR-0012 says to bold headers and totals in a summary. The plan asked only for the
+>      `/today` header, and the header is bold.
+>    - **Suggested fix:** Note it in ADR-0012's `## Outcome` at close, or let Plan 0004's summary
+>      engine bold the totals.
+>
+> ## Bookkeeping owed at close
+>
+> - Plan `Status:` → `done` with the date and verdict, then `git mv` it to `docs/plans/done/`,
+>   repair links in both directions, and run `node scripts/check-doc-links.mjs`.
+> - `docs/plans/README.md`: move the 0007 row to recently closed and bump the next free number.
+> - Accept ADR-0011 with the `## Outcome` from minor 1. Accept ADR-0012, optionally with the nit.
+>   Refresh `docs/adrs/README.md`.
+> - Version: a **minor** bump, because this is a feature plan (menu, restore, reading buttons).
+>   Add a `CHANGELOG.md` entry.
+> - Carry these to the plan's `## Followups`:
+>   - A reading tap doesn't check that the tapper wrote the original message. That is harmless in a
+>     private chat but matters for shared ledgers.
+>   - `ambiguousSourceUnavailable` also covers the case where an edit to the original removed the
+>     reading. The copy is slightly off for that case.
+>   - Optionally, add a `no-restricted-imports` lint rule that bans `db/` value imports under
+>     `src/bot/`, so that the layering fix from round 1 stays enforced.
+
+**Findings resolved across rounds:**
+
+- Round 1 major (README usage table named [Отменить] and the resend-style ambiguous answer):
+  fixed in `b2d4484`.
+- Round 1 minor (`other.ts` imported `findExpenseBySourceKey` from `src/db/`): fixed in
+  `153b225`.
+- Round 1 and round 2 minor (ADR-0011 §3 fallback as built): recorded in ADR-0011's
+  `## Outcome`, in `4d2ef73`.
+- Round 1 and round 2 nit (`/today` totals not bold): recorded in ADR-0012's `## Outcome`, in
+  `279e478`. The totals themselves stay plain until Plan 0004.
+
+No implementation-log row reads `owed`.
+
 ## Followups
+
+- A reading tap doesn't check that the tapper wrote the original message. Harmless in a private
+  chat; a shared-ledger plan must add the check.
+- `ambiguousSourceUnavailable` also answers a tap whose original was edited so that the reading
+  is gone. The copy («Исходное сообщение недоступно») is slightly off for that case.
+- A `no-restricted-imports` lint rule banning `db/` value imports under `src/bot/`, so that the
+  round-1 layering fix stays enforced.
+- The `/today` per-currency totals are not bold (ADR-0012 Outcome). Plan 0004's summary engine
+  bolds them.

@@ -2,7 +2,7 @@
 
 > **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
 > **Created:** 2026-09-29
-> **Depends on:** [Plan 0007](0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
+> **Depends on:** [Plan 0007](done/0007-navigation-shell.md) (menu, HTML seam, callback dispatcher)
 > **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0007](../adrs/0007-categories-belong-to-ledgers.md), [ADR-0008](../adrs/0008-category-suggestion-from-history.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
 ## TL;DR

@@ -1,8 +1,8 @@
 # ADR-0011: Navigation: a persistent menu, expense cards, one screen anchor per user
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0007](../plans/0007-navigation-shell.md), [Plan 0003](../plans/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md), [Plan 0005](../plans/0005-settings.md)
+> **Related plan(s):** [Plan 0007](../plans/done/0007-navigation-shell.md), [Plan 0003](../plans/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md), [Plan 0005](../plans/0005-settings.md)
 
 ## Context
 

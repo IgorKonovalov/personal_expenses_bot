@@ -1,8 +1,8 @@
 # ADR-0012: Telegram HTML through one escaping seam
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0007](../plans/0007-navigation-shell.md)
+> **Related plan(s):** [Plan 0007](../plans/done/0007-navigation-shell.md)
 
 ## Context
 
