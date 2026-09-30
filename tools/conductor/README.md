@@ -74,7 +74,8 @@ line is not evidence that something did not happen.
   `state/`.
 - **`state/inbox.md`**, one entry per park, and `state/transcripts/` for any session's full stream.
 
-Then push, or fix what you disagree with in a new commit first.
+Then add the run's parks, hand interventions and defects to **`FOLLOWUPS.md`**, and check that the
+last run's open items were acted on. Then push, or fix what you disagree with in a new commit first.
 
 ## Acting on a park
 
