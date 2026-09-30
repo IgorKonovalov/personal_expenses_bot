@@ -269,11 +269,6 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
 - Phase 1 edited `src/db/connection.test.ts`, which is outside its `Files touched`: the test
   pinned the applied migrations to `['0001']`, and migration `0002` makes that list
   `['0001', '0002']`.
-- Phase 2: the history step orders matches by `expenses.created_at` (then rowid). A category
-  change doesn't move the corrected expense to the front, so after `450 кофе`, `100 кофе`, then a
-  change of the first to Продукты, the next `кофе` still follows the second (Кафе и рестораны).
-  ADR-0008's "the corrected expense becomes the most recent match" holds only when the corrected
-  expense is the newest for its key. There is no column recording when a category was set.
 - Phase 2: the picker's message text is the confirmation line without the category, then
   `Выберите категорию:` on a second line. A change answers with the toast
   `Категория изменена`. The plan named neither.
@@ -307,10 +302,11 @@ Callback data: `exp:cat:<uuid>`, `exp:catp:<uuid>:<page>`, `exp:setcat:<uuid>:<c
   handlers; `setMyCommands` adds `/categories`); the confirmation ends `· <category>` and
   carries [Категория] above [Удалить]; the category picker on the card; the `/categories`
   screen with its add, rename and hide flows and their messages; `flowExpired` and
-  `staleScreen`. Schema migrations `0002_categories.sql` and `0003_flow_sessions.sql`. Boot
-  seeds categories into ledgers that have none. No config or env keys.
-- **Gate at the tip (2805ed9):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
-  0, 23 files, 265 tests passed; `node scripts/check-doc-links.mjs` exit 0, 82 links resolve.
+  `staleScreen`. Schema migrations `0002_categories.sql`, `0003_flow_sessions.sql` and
+  `0004_expense_category_set_at.sql`. Boot seeds categories into ledgers that have none. No
+  config or env keys.
+- **Gate at the tip (7aa39e9):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 23 files, 266 tests passed; `node scripts/check-doc-links.mjs` exit 0, 82 links resolve.
 - **Outstanding `human` phases:** none
 
 ## Followups
