@@ -14,7 +14,14 @@ import { parseDateSuffix } from '../domain/dateText.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
 import { localDateOf, parseLocalDate, type LocalDate } from '../domain/time.js';
-import { cancelFlow, completeFlow, startFlow, type EditFlow } from './flowSessions.js';
+import {
+  cancelFlow,
+  cancelFlowIf,
+  completeFlow,
+  isEditOf,
+  startFlow,
+  type EditFlow,
+} from './flowSessions.js';
 import type { RecordDeps } from './recordExpense.js';
 import { resolveUserTimezone } from './settings.js';
 
@@ -173,7 +180,7 @@ export type SetDateResult =
   | EditRefusal;
 
 // A date quick button. It carries an absolute date, so a tap after midnight still sets the day
-// the button showed. Clears the pending flow of the date prompt it sits under.
+// the button showed. Clears the pending flow only when it is this expense's date edit.
 export function setDateFromButton(
   deps: RecordDeps,
   input: ExpenseInput & { readonly date: string; readonly now: Date },
@@ -186,7 +193,7 @@ export function setDateFromButton(
     const date = parseLocalDate(input.date);
     const today = localDateOf(now, resolveUserTimezone(deps, user));
     if (date === undefined || date > today) return { kind: 'unavailable' };
-    cancelFlow(deps, user);
+    cancelFlowIf(deps, user, isEditOf(found.expense.id, 'editDate'));
     const changed = setExpenseDate(db, found.expense.id, date, now);
     if (changed) {
       logger.info(

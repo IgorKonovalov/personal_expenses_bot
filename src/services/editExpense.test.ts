@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
+import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
+import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { answerEditFlow, openEdit, setDateFromButton, startEdit } from './editExpense.js';
-import { routeText, type EditFlow } from './flowSessions.js';
+import { routeText, startFlow, type EditFlow, type Flow } from './flowSessions.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js';
 
@@ -249,6 +251,24 @@ describe('openEdit and setDateFromButton', () => {
     const afterMidnight = new Date('2026-09-30T23:30:00Z');
     setDateFromButton(deps, { user: alice, expenseId, date: '2026-09-29', now: afterMidnight });
     expect(row()).toMatchObject({ occurred_on: '2026-09-29' });
+  });
+
+  it("clears this expense's date flow and leaves an unrelated pending flow", () => {
+    startEdit(deps, { user: alice, expenseId, kind: 'editDate', now: NOW });
+    setDateFromButton(deps, { user: alice, expenseId, date: '2026-09-29', now: NOW });
+    expect(pending()).toBe('free');
+
+    const rename: Flow = {
+      kind: 'categoryRename',
+      ledgerId: 'ledger' as LedgerId,
+      categoryId: 1 as CategoryId,
+    };
+    startFlow(deps, alice, rename, NOW);
+    setDateFromButton(deps, { user: alice, expenseId, date: '2026-09-28', now: NOW });
+    expect(routeText(deps, { user: alice, inputKey: 'tg:1001:999', now: NOW })).toEqual({
+      kind: 'flow',
+      flow: rename,
+    });
   });
 
   it.each(['2026-10-05', '2026-02-30'])('refuses %s and writes nothing', (date) => {
