@@ -20,7 +20,10 @@ src/
 ├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module
 ├── config.ts        # env -> typed config, validated at boot
 ├── logger.ts        # pino factory
+├── heartbeat.ts     # liveness file + the Docker health-check entry
 └── index.ts         # boot: config, db, bot
+Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
+docker-compose.yml   # the one service: volume, backup bind mount, heartbeat health check
 docs/
 ├── adrs/            # NNNN-<slug>.md: decisions + rejected alternatives. Append-only once accepted.
 │   └── README.md    #   ADR index + next free number

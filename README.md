@@ -85,11 +85,33 @@ Configuration is environment-only and validated at boot. Every variable is docum
 [.env.example](.env.example): token, allowlist, the timezone and currency new users get, the
 SQLite path and the log level. Runtime data lives in `./data/` (gitignored).
 
+## Running in Docker
+
+Production runs compiled JavaScript from `dist/` in a multi-stage image
+([ADR-0006](docs/adrs/0006-production-runs-compiled-js.md)). The same Compose file runs locally
+and on the VPS:
+
+```sh
+cp .env.example .env         # a bot token that nothing else is polling
+docker compose up -d --build --wait
+docker compose logs -f bot
+docker compose stop          # SIGTERM: heartbeat, polling, then the DB close cleanly
+```
+
+- The database lives on the named volume `bot-data` at `/app/data/bot.sqlite`. Compose sets
+  `DATABASE_PATH` itself, so the value in `.env` is ignored in the container.
+- Health is a heartbeat file next to the database, rewritten every 30 s once polling starts.
+  `docker compose ps` shows the bot `unhealthy` when it is older than 120 s or missing.
+- The container runs as uid 1000 (`node`). Backups go to the host directory `HOST_BACKUP_DIR`
+  (default `/var/backups/personal-expenses-bot`), which must be owned by uid 1000.
+
 ## Development
 
 | Command          | What it does                                             |
 | ---------------- | -------------------------------------------------------- |
 | `pnpm dev`       | Runs the bot with `tsx watch`, loading `.env` if present |
+| `pnpm build`     | Compiles `src/` to `dist/` and copies the SQL migrations |
+| `pnpm start`     | Runs the compiled bot, `node dist/index.js`              |
 | `pnpm typecheck` | `tsc --noEmit`, strict                                   |
 | `pnpm lint`      | ESLint (type-aware), including the layer-boundary rules  |
 | `pnpm test`      | Vitest, against real in-memory SQLite (no DB mocks)      |

@@ -1,0 +1,25 @@
+# Reinstalled and rebuilt inside the builder stage
+node_modules
+dist
+
+# Runtime state and secrets never enter the build context
+data
+.env
+.env.*
+
+# Tooling, docs and tests: not part of the image
+.git
+.github
+.husky
+.claude
+.vscode
+.idea
+coverage
+docs
+scripts
+tools
+**/*.test.ts
+*.md
+LICENSE
+*.log
+.DS_Store

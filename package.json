@@ -10,7 +10,8 @@
   },
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "start": "tsx src/index.ts",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"fs.cpSync('src/db/migrations','dist/db/migrations',{recursive:true,filter:(p)=>!p.includes('.')||p.endsWith('.sql')})\"",
+    "start": "node --enable-source-maps dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

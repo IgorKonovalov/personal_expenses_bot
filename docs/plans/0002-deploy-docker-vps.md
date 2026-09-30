@@ -1,6 +1,6 @@
 # 0002: Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30, before implementation: migrations 0002 to 0004 exist, soft-deleted
 > expenses, a fixed `DATABASE_PATH` in Compose, and the pnpm workspace file in the image
@@ -216,12 +216,28 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The bot runs from a Docker image of compiled JS | dev | not started | |
+| 1: The bot runs from a Docker image of compiled JS | dev | done | committed with this row |
 | 2: Daily SQLite backups with rotation | dev | not started | |
 | 3: CI gate and deploy on push | dev | not started | |
 | 4: Provision on the VPS and first deploy | human | not started | |
 
 ### Notes
+
+- Phase 1: base image `node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
+  (multi-arch index, resolved from Docker Hub 2026-09-30). In the container: `node: "v24.21.0"`,
+  `applied: ["0001","0002","0003","0004"]`, then exit 1 on the `getMe` 401. `id -u` = 1000;
+  `node_modules` holds `@date-fns better-sqlite3 date-fns grammy pino`.
+- Phase 1: `docker compose stop` took 276 ms and the container exited (0), run against the dev
+  bot token from the local `.env` on a throwaway volume. The same on the host (`node dist/`) took
+  3102 ms, exit 0.
+- Phase 1: a Dockerfile copy without `pnpm-workspace.yaml` fails at `pnpm install` with
+  `ERR_PNPM_IGNORED_BUILDS` (better-sqlite3, esbuild). The Dockerfile also loads better-sqlite3
+  after the prod install, so a missing binding fails the build too.
+- Phase 1 deviation: the health check is `node dist/heartbeat.js /app/data/heartbeat`
+  (a main guard in `src/heartbeat.ts`), not the sibling's inline `node -e`. It is declared only in
+  `docker-compose.yml`, with no Dockerfile `HEALTHCHECK`.
+- Phase 1 deviation: `tsconfig.build.json` also excludes `src/bot/testHarness.ts`; `start` runs
+  `node --enable-source-maps` (ADR-0006).
 
 ### Close triggers
 
