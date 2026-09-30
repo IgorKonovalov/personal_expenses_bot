@@ -6,7 +6,7 @@ import type { HandlerDeps } from '../bot.js';
 import { AMBIGUOUS_READING, ambiguousReadingData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml } from '../render/html.js';
-import { cardFor } from './card.js';
+import { cardFor, cardView } from './card.js';
 import { ensureUser } from './start.js';
 
 // An ambiguous amount is asked as a reply to the user's message, with one button per reading.
@@ -58,7 +58,7 @@ export function registerAmbiguous(bot: Composer<Context>, deps: HandlerDeps): vo
       return;
     }
     await ctx.answerCallbackQuery();
-    const card = cardFor(result);
+    const card = cardFor(cardView(deps, user, result));
     await editHtml(ctx, card.text, { reply_markup: card.markup });
   });
 }

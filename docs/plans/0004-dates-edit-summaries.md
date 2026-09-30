@@ -1,6 +1,6 @@
 # 0004: Past dates, /week and /month by category, and the edit flow
 
-> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30: the `updated_at` migration renumbered `0004` → `0005`, because Plan 0003's fix round took `0004_expense_category_set_at.sql` (Plan 0003 close review, round 2, m3)
 > **Amended:** 2026-09-30: the `updated_at` migration takes the next free number when implemented, because Plan 0008 is queued ahead and adds one too
@@ -251,11 +251,19 @@ Callback data: `exp:edit:<uuid>`, `exp:ef:<uuid>:<a|d|t>`, `exp:dt:<uuid>:<yyyy-
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Past dates in free text | dev | not started | |
+| 1: Past dates in free text | dev | done | committed with this row |
 | 2: /week and /month with category breakdown and paging | dev | not started | |
 | 3: Edit amount, description and date | dev | not started | |
 
 ### Notes
+
+- Phase 1: the card's "today" is the author's local date of `occurred_at` (the day the message
+  was sent), not the render-time date. `CardView` carries it as `sentOn`, built by `cardView()`
+  in `card.ts`, so `src/bot/handlers/category.ts` and `src/bot/handlers/ambiguous.ts` (outside
+  Files touched) changed at their card call sites.
+- Phase 1: `parseExpenseText` takes `today` as an optional third argument; without it no word is
+  read as a date. The expense-shaped checks in `src/domain/categories.ts` and
+  `src/services/settings.ts` call it without one and are unchanged.
 
 ### Close triggers
 

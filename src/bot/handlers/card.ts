@@ -1,7 +1,10 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { Expense, ExpenseId } from '../../db/expenses.js';
 import type { Ledger } from '../../db/ledgers.js';
+import type { User } from '../../db/users.js';
+import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { restoreExpense, undoExpense } from '../../services/recordExpense.js';
+import { resolveUserTimezone } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   RESTORE_EXPENSE,
@@ -21,11 +24,26 @@ import { ensureUser } from './start.js';
 export interface CardView {
   readonly expense: Expense;
   readonly ledger: Ledger;
+  // The viewer's local date of occurred_at, the day they sent it. A card for an expense dated
+  // otherwise names its date.
+  readonly sentOn: LocalDate;
 }
 
 export interface Card {
   readonly text: Html;
   readonly markup: InlineKeyboard;
+}
+
+export function cardView(
+  deps: HandlerDeps,
+  user: User,
+  { expense, ledger }: { readonly expense: Expense; readonly ledger: Ledger },
+): CardView {
+  return {
+    expense,
+    ledger,
+    sentOn: localDateOf(expense.occurredAt, resolveUserTimezone(deps, user)),
+  };
 }
 
 // [Категория] above [Удалить]: the destructive button gets its own row (ADR-0011).
@@ -66,7 +84,7 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
     switch (result.kind) {
       case 'undone': {
         await ctx.answerCallbackQuery({ text: messages.undoneToast });
-        const card = deletedCard(result);
+        const card = deletedCard(cardView(deps, user, result));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
@@ -91,7 +109,7 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
     switch (result.kind) {
       case 'restored': {
         await ctx.answerCallbackQuery({ text: messages.restoredToast });
-        const card = recordedCard(result);
+        const card = recordedCard(cardView(deps, user, result));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }

@@ -11,6 +11,7 @@ import type { ExpenseId } from '../db/expenses.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
+import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { createBot, registerCommands } from './bot.js';
 import {
@@ -183,7 +184,7 @@ describe('menu and help', () => {
     for (const label of Object.values(messages.menu)) {
       for (const currency of codes) {
         expect(['recorded', 'expense', 'ambiguous']).not.toContain(
-          parseExpenseText(label, currency).kind,
+          parseExpenseText(label, currency, '2026-09-30' as LocalDate).kind,
         );
       }
     }
@@ -445,6 +446,107 @@ describe('recording an expense', () => {
       expect(logContent(line)).not.toContain('450');
       expect(logContent(line)).not.toContain('coffee');
     }
+  });
+});
+
+describe('recording an expense on a past date', () => {
+  // The default message is sent 23:50 on 29 September local.
+  it('names the date in the confirmation of 450 такси вчера', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 такси вчера' }));
+
+    expect(db.prepare('SELECT occurred_on FROM expenses').pluck().get()).toBe('2026-09-28');
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Записано в «Личные расходы» за 28 сентября: <b>450.00 RSD</b> — такси · Транспорт',
+          reply_markup: undoKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('names the year of a date in another year', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 такси 05.10' }));
+
+    expect(sentTexts(calls)).toEqual([
+      'Записано в «Личные расходы» за 5 октября 2025: <b>450.00 RSD</b> — такси · Транспорт',
+    ]);
+  });
+
+  it('keeps the plain wording for a date word naming today', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 такси 29.09' }));
+
+    expect(sentTexts(calls)).toEqual([
+      'Записано в «Личные расходы»: <b>450.00 RSD</b> — такси · Транспорт',
+    ]);
+  });
+
+  it('keeps the date on the card re-rendered after a category change', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 такси вчера' }));
+    const groceries = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'groceries'")
+      .pluck()
+      .get() as CategoryId;
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      callbackUpdate({ updateId: 2, data: setCategoryData(EXPENSE_ID as ExpenseId, groceries) }),
+    );
+
+    expect(calls[1]).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        text: 'Записано в «Личные расходы» за 28 сентября: <b>450.00 RSD</b> — такси · Продукты',
+      },
+    });
+  });
+
+  it('refuses a future date with the future-date reply and records nothing', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '450 такси 05.10.2026' }),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.futureDate, ...htmlParseMode },
+      },
+    ]);
+    expect(expenseCount(db)).toEqual({ n: 0 });
+  });
+
+  it('pins the future-date copy', () => {
+    expect(messages.futureDate).toBe(
+      'Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например ' +
+        '«450 такси вчера» или «450 такси 25.09».',
+    );
+  });
+
+  it('leaves a past-dated expense out of /today', async () => {
+    const NOW = new Date('2026-09-30T10:00:00Z');
+    const { bot, calls } = createTestBot({ now: NOW });
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '450 такси вчера', date: NOW }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 2, messageId: 11, text: '/today' }));
+
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    ]);
   });
 });
 

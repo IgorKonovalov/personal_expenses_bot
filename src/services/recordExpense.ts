@@ -53,6 +53,8 @@ export type RecordExpenseResult =
       readonly ledger: Ledger;
     }
   | { readonly kind: 'invalid' }
+  // The text names a date after today; nothing is recorded.
+  | { readonly kind: 'futureDate' }
   | { readonly kind: 'notExpense' }
   // A reading was chosen, but the text no longer offers it.
   | { readonly kind: 'readingUnavailable' };
@@ -76,11 +78,14 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
 
+  // "Today" is the user's local date when they sent the message; a date word counts back from it.
+  const sentOn = localDateOf(input.occurredAt, resolveUserTimezone(deps, user));
   const parsed = resolveReading(
-    parseExpenseText(input.text, ledger.defaultCurrency),
+    parseExpenseText(input.text, ledger.defaultCurrency, sentOn),
     input.reading,
   );
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
+  if (parsed.kind === 'futureDate') return { kind: 'futureDate' };
   if (parsed.kind !== 'expense') return parsed;
 
   const key = descriptionKey(parsed.description);
@@ -97,7 +102,7 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     currency: parsed.currency,
     description: parsed.description,
     occurredAt: input.occurredAt,
-    occurredOn: localDateOf(input.occurredAt, resolveUserTimezone(deps, user)),
+    occurredOn: parsed.date ?? sentOn,
     sourceKey: input.sourceKey,
     createdAt: input.now,
     categoryId: category.id,
@@ -125,6 +130,7 @@ function resolveReading(
     amountMinor: chosen.amountMinor,
     currency: parsed.currency,
     description: parsed.description,
+    ...(parsed.date === undefined ? {} : { date: parsed.date }),
   };
 }
 

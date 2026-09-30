@@ -20,7 +20,7 @@ import {
 import { messages } from '../messages.js';
 import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { editHtml } from '../render/html.js';
-import { cardFor, expenseIdOf, recordedCard } from './card.js';
+import { cardFor, cardView, expenseIdOf, recordedCard } from './card.js';
 import { ensureUser } from './start.js';
 
 // The category picker on an expense card. It edits the card in place and, like every card
@@ -84,7 +84,7 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
     switch (result.kind) {
       case 'changed': {
         await ctx.answerCallbackQuery({ text: messages.categoryChangedToast });
-        const card = recordedCard(result);
+        const card = recordedCard(cardView(deps, user, result));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
@@ -111,7 +111,7 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
       return;
     }
     await ctx.answerCallbackQuery();
-    const card = cardFor(result);
+    const card = cardFor(cardView(deps, user, result));
     await editHtml(ctx, card.text, { reply_markup: card.markup });
   });
 }

@@ -6,7 +6,7 @@ import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
-import { cardFor } from './card.js';
+import { cardFor, cardView } from './card.js';
 import { sendHelp } from './help.js';
 import { ensureUser } from './start.js';
 
@@ -45,10 +45,13 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     switch (result.kind) {
       case 'recorded': {
         // A redelivery of a message whose expense was deleted since gets the deleted card.
-        const card = cardFor(result);
+        const card = cardFor(cardView(deps, user, result));
         await replyHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
+      case 'futureDate':
+        await replyHtml(ctx, messages.futureDate);
+        return;
       case 'ambiguous':
         await replyHtml(
           ctx,

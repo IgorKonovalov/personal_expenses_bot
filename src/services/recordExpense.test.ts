@@ -174,6 +174,104 @@ describe('recordExpense', () => {
   });
 });
 
+describe('recordExpense with a date word (sent 2026-09-29 local)', () => {
+  function stored(): unknown {
+    return db
+      .prepare('SELECT amount_minor, currency, description, occurred_at, occurred_on FROM expenses')
+      .get();
+  }
+
+  it.each([
+    ['450 такси вчера', '2026-09-28'],
+    ['450 такси Позавчера', '2026-09-27'],
+    ['450 такси 25.09', '2026-09-25'],
+    ['450 такси 5.09', '2026-09-05'],
+    ['450 такси 05.10', '2025-10-05'],
+    ['450 такси 29.09', '2026-09-29'],
+    ['450 такси 25.09.2025', '2025-09-25'],
+  ])('%j stores 45000 RSD такси on %s and keeps occurred_at', (text, occurredOn) => {
+    expect(record(alice, text).kind).toBe('recorded');
+    expect(stored()).toEqual({
+      amount_minor: 45000,
+      currency: 'RSD',
+      description: 'такси',
+      occurred_at: '2026-09-29T21:50:00.000Z',
+      occurred_on: occurredOn,
+    });
+  });
+
+  it('stores 450 EUR такси вчера as 45000 EUR on 2026-09-28', () => {
+    record(alice, '450 EUR такси вчера');
+    expect(stored()).toMatchObject({
+      amount_minor: 45000,
+      currency: 'EUR',
+      description: 'такси',
+      occurred_on: '2026-09-28',
+    });
+  });
+
+  it.each([
+    ['450 такси 31.02', 'такси 31.02'],
+    ['450 молоко 1.5', 'молоко 1.5'],
+    ['450 вчера такси', 'вчера такси'],
+  ])('%j stores description %j on today', (text, description) => {
+    record(alice, text);
+    expect(stored()).toMatchObject({ description, occurred_on: '2026-09-29' });
+  });
+
+  it('refuses a future literal date and records nothing', () => {
+    expect(record(alice, '450 такси 05.10.2026')).toEqual({ kind: 'futureDate' });
+    expect(expenseRows()).toEqual([]);
+  });
+
+  it.each(['450 вчера', '450 EUR вчера'])('%j is invalid and records nothing', (text) => {
+    expect(record(alice, text)).toEqual({ kind: 'invalid' });
+    expect(expenseRows()).toEqual([]);
+  });
+
+  it("counts back from the user's local date, not UTC", () => {
+    // 22:30Z on the 29th is 00:30 on the 30th in Belgrade.
+    recordExpense(deps, {
+      user: alice,
+      text: '450 такси вчера',
+      sourceKey: 'tg:1001:10',
+      occurredAt: new Date('2026-09-29T22:30:00Z'),
+      now: new Date('2026-09-29T22:31:00Z'),
+    });
+    expect(stored()).toMatchObject({ occurred_on: '2026-09-29' });
+  });
+
+  it('suggests the category from the description without the date word', () => {
+    const result = record(alice, '450 такси вчера');
+
+    const transport = db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'transport'")
+      .pluck()
+      .get(alice.activeLedgerId);
+    expect(db.prepare('SELECT category_id, description_key FROM expenses').get()).toEqual({
+      category_id: transport,
+      description_key: 'такси',
+    });
+    expect(result).toMatchObject({ kind: 'recorded', expense: { occurredOn: '2026-09-28' } });
+  });
+
+  it('records the chosen reading of an ambiguous amount on its date', () => {
+    recordExpense(deps, {
+      user: alice,
+      text: '1.200 обед вчера',
+      sourceKey: 'tg:1001:10',
+      occurredAt: SENT,
+      now: PROCESSED,
+      reading: 'thousands',
+    });
+    expect(stored()).toMatchObject({
+      amount_minor: 120000,
+      description: 'обед',
+      occurred_on: '2026-09-28',
+    });
+  });
+});
+
 describe('recordExpense picks a category', () => {
   function presetOf(text: string, sourceKey: string): unknown {
     const result = record(alice, text, sourceKey);

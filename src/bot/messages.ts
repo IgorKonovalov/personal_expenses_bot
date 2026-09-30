@@ -23,6 +23,12 @@ interface ExpenseView {
   readonly ledger: LedgerRef;
 }
 
+interface RecordedView extends ExpenseView {
+  readonly expense: ExpenseView['expense'] & { readonly occurredOn: LocalDate };
+  // The author's local date when they sent it. An expense dated otherwise names its date.
+  readonly sentOn: LocalDate;
+}
+
 interface AmbiguousView {
   readonly readings: readonly Money[];
 }
@@ -94,9 +100,17 @@ function timezoneName(iana: string): string {
   return entry === undefined ? iana : `${timezoneLabels[entry.slug]} (${iana})`;
 }
 
-// `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе`
-function expenseLine(verb: string, { expense, ledger }: ExpenseView): Html {
-  return html`${verb} «${ledgerName(ledger)}»: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
+// `2026-09-28` -> `28 сентября`, or `5 октября 2025` when the year differs from `sentOn`'s.
+function shownDate(date: LocalDate, sentOn: LocalDate): string {
+  const day = dayMonth.format(new Date(`${date}T00:00:00Z`));
+  return date.slice(0, 4) === sentOn.slice(0, 4) ? day : `${day} ${date.slice(0, 4)}`;
+}
+
+// `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе`, or `… «Личные расходы» за 28
+// сентября: …` with a date.
+function expenseLine(verb: string, { expense, ledger }: ExpenseView, date?: string): Html {
+  const when = date === undefined ? '' : ` за ${date}`;
+  return html`${verb} «${ledgerName(ledger)}»${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
 export const messages = {
@@ -130,10 +144,16 @@ export const messages = {
   ),
   editedMessageHint: html`Изменение сообщения не меняет запись. Удалите трату кнопкой под подтверждением и отправьте её заново.`,
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
+  futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
 
   // `… — кофе · Кафе и рестораны`. An expense from before categories existed has none to show.
-  expenseRecorded: (view: ExpenseView): Html => {
-    const line = expenseLine('Записано в', view);
+  expenseRecorded: (view: RecordedView): Html => {
+    const { occurredOn } = view.expense;
+    const line = expenseLine(
+      'Записано в',
+      view,
+      occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
+    );
     const { category } = view.expense;
     return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
   },
