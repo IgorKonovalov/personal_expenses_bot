@@ -70,6 +70,14 @@ function expenseLine(verb: string, { expense, ledger }: ExpenseView): Html {
   return html`${verb} «${ledgerName(ledger)}»: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
+// messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
+const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.3.0': html`У каждой траты теперь есть категория. Бот подбирает её по прошлым тратам с тем же описанием, а кнопка [Категория] под подтверждением меняет её. /categories — добавить, переименовать или скрыть категории.`,
+  '0.2.0': html`Появилось меню [📊 Сегодня] [❓ Помощь] и команда /help. Трату можно удалить кнопкой [Удалить] и вернуть кнопкой [Вернуть]. Если сумма неоднозначна, например «1.200 обед», бот предложит варианты кнопками.`,
+  '0.1.0': html`Первая версия. Отправьте трату текстом, например «450 кофе» или «12,50 EUR такси», а /today покажет траты за сегодня.`,
+};
+
 export const messages = {
   menu,
   // Bot command menu registered with setMyCommands at boot.
@@ -191,4 +199,9 @@ export const messages = {
     );
     return joinHtml([header, ...lines], '\n');
   },
+
+  versionAnnouncements,
+  // The message the admin gets at boot on a new version.
+  versionAnnouncement: (version: string, body: Html): Html =>
+    joinHtml([html`🆕 Версия ${version}`, body, html`Все изменения: /changelog`], '\n\n'),
 } as const;

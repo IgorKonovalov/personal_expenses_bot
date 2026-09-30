@@ -1,6 +1,6 @@
 # 0008: Version announcements: tell the admin about each new version, and /changelog
 
-> **Status:** approved (2026-09-30)
+> **Status:** in-progress
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0013](../adrs/0013-version-announcements-at-boot.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
@@ -187,10 +187,26 @@ not add claims):
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: the admin gets a message for a new version | dev | not started | |
+| 1: the admin gets a message for a new version | dev | done | committed with this row |
 | 2: /changelog | dev | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/render/html.ts` (outside `Files touched`) gained `sendHtml(api, chatId, body)`,
+  and `adminNotifier` sends through it. The bot-layer lint rule rejects a `sendMessage` call or a
+  `parse_mode` property anywhere in `src/bot/` except `src/bot/render/`.
+- Phase 1: `src/db/connection.test.ts` (outside `Files touched`) now lists migration `0005` in
+  its pinned applied-migrations list.
+- Phase 1: the migration is `0005_app_state.sql`, the next free number in the tree.
+- Phase 1: the service's `send` is `(version, body) => Promise<void>` and is generic over the body
+  type, not `send(body: Html)`. The services layer may not import `src/bot/`, where `Html` lives.
+  `src/index.ts` wraps the body in `messages.versionAnnouncement` before `adminNotifier` sends it.
+  The done-when tests assert `send` receives the version and the map's body.
+- Phase 1: no test covers "boot calls the announcer before `bot.start`, not awaited". I checked it by
+  reading `src/index.ts`: `void announceVersion(...)` sits before `await bot.start(...)`.
+- Phase 1: I checked the gate by bumping `package.json` to `0.3.1`. `pnpm test src/bot/messages.test.ts`
+  failed with "expected [ '0.3.0', '0.2.0', '0.1.0' ] to include '0.3.1'". I then reverted it with
+  `git checkout -- package.json`.
 
 ### Close triggers
 
