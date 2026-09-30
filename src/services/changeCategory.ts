@@ -67,7 +67,7 @@ export type ChangeCategoryResult =
 // Sets the category. A repeat of the same choice writes nothing.
 export function changeCategory(
   deps: RecordDeps,
-  input: ExpenseInput & { readonly categoryId: CategoryId },
+  input: ExpenseInput & { readonly categoryId: CategoryId; readonly now: Date },
 ): ChangeCategoryResult {
   const { db, logger } = deps;
   const found = editableExpense(db, input);
@@ -75,7 +75,7 @@ export function changeCategory(
   const { expense, ledger } = found;
   const category = listActiveCategories(db, ledger.id).find((c) => c.id === input.categoryId);
   if (category === undefined) return { kind: 'unavailable' };
-  if (!setExpenseCategory(db, expense.id, category.id)) return { kind: 'unchanged' };
+  if (!setExpenseCategory(db, expense.id, category.id, input.now)) return { kind: 'unchanged' };
   logger.info(
     { expenseId: expense.id, categoryId: category.id, userId: input.user.id },
     'expense category changed',

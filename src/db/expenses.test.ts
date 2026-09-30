@@ -162,12 +162,15 @@ describe('expenses repository', () => {
     addExpense('exp-b', LEDGER_A, USER_A, 'tg:1:2');
     softDeleteExpense(db, 'exp-b' as ExpenseId, NOW);
 
-    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x)).toBe(true);
-    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x)).toBe(false);
-    expect(setExpenseCategory(db, 'exp-b' as ExpenseId, x)).toBe(false);
-    expect(db.prepare('SELECT id, category_id FROM expenses ORDER BY id').all()).toEqual([
-      { id: 'exp-a', category_id: x },
-      { id: 'exp-b', category_id: null },
+    const later = new Date('2026-09-30T12:00:00.000Z');
+    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x, later)).toBe(true);
+    expect(setExpenseCategory(db, 'exp-a' as ExpenseId, x, NOW)).toBe(false);
+    expect(setExpenseCategory(db, 'exp-b' as ExpenseId, x, NOW)).toBe(false);
+    expect(
+      db.prepare('SELECT id, category_id, category_set_at FROM expenses ORDER BY id').all(),
+    ).toEqual([
+      { id: 'exp-a', category_id: x, category_set_at: '2026-09-30T12:00:00.000Z' },
+      { id: 'exp-b', category_id: null, category_set_at: null },
     ]);
   });
 

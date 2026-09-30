@@ -40,13 +40,17 @@ beforeEach(() => {
   bob = provision('1002');
 });
 
-function record(user: User, text: string): { id: ExpenseId; category: string | undefined } {
+function record(
+  user: User,
+  text: string,
+  at: Date = NOW,
+): { id: ExpenseId; category: string | undefined } {
   const result = recordExpense(deps, {
     user,
     text,
     sourceKey: `tg:1:${++message}`,
-    occurredAt: NOW,
-    now: NOW,
+    occurredAt: at,
+    now: at,
   });
   if (result.kind !== 'recorded') throw new Error(`not recorded: ${result.kind}`);
   return { id: result.expense.id, category: result.expense.category?.name };
@@ -69,13 +73,15 @@ describe('changeCategory', () => {
     const groceries = categoryId(alice, 'Продукты');
 
     expect(
-      changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries }),
+      changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries, now: NOW }),
     ).toMatchObject({
       kind: 'changed',
       expense: { category: { id: groceries, name: 'Продукты' } },
     });
     expect(storedCategory(id)).toBe(groceries);
-    expect(changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries })).toEqual({
+    expect(
+      changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries, now: NOW }),
+    ).toEqual({
       kind: 'unchanged',
     });
   });
@@ -85,7 +91,12 @@ describe('changeCategory', () => {
     const cafe = categoryId(alice, 'Кафе и рестораны');
 
     expect(
-      changeCategory(deps, { user: bob, expenseId: id, categoryId: categoryId(alice, 'Продукты') }),
+      changeCategory(deps, {
+        user: bob,
+        expenseId: id,
+        categoryId: categoryId(alice, 'Продукты'),
+        now: NOW,
+      }),
     ).toEqual({ kind: 'forbidden' });
     expect(openCategoryPicker(deps, { user: bob, expenseId: id })).toEqual({ kind: 'forbidden' });
     expect(storedCategory(id)).toBe(cafe);
@@ -98,9 +109,16 @@ describe('changeCategory', () => {
     archiveCategory(db, groceries, NOW);
 
     expect(
-      changeCategory(deps, { user: alice, expenseId: id, categoryId: categoryId(bob, 'Продукты') }),
+      changeCategory(deps, {
+        user: alice,
+        expenseId: id,
+        categoryId: categoryId(bob, 'Продукты'),
+        now: NOW,
+      }),
     ).toEqual({ kind: 'unavailable' });
-    expect(changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries })).toEqual({
+    expect(
+      changeCategory(deps, { user: alice, expenseId: id, categoryId: groceries, now: NOW }),
+    ).toEqual({
       kind: 'unavailable',
     });
     expect(storedCategory(id)).toBe(cafe);
@@ -116,6 +134,7 @@ describe('changeCategory', () => {
         user: alice,
         expenseId: id,
         categoryId: categoryId(alice, 'Продукты'),
+        now: NOW,
       }),
     ).toEqual({ kind: 'deleted' });
     expect(openCategoryPicker(deps, { user: alice, expenseId: id })).toEqual({ kind: 'deleted' });
@@ -145,6 +164,7 @@ describe('learning from a change (ADR-0008)', () => {
       user: alice,
       expenseId: first.id,
       categoryId: categoryId(alice, 'Продукты'),
+      now: NOW,
     });
 
     const second = record(alice, '300 Кофе');
@@ -153,6 +173,20 @@ describe('learning from a change (ADR-0008)', () => {
 
     expect(record(alice, '200 кофе').category).toBe('Продукты');
     expect(record(bob, '100 кофе').category).toBe('Кафе и рестораны');
+  });
+
+  it('learns from a change to an older expense, not only the newest one for the key', () => {
+    const minute = (m: number) => new Date(NOW.getTime() + m * 60_000);
+    const older = record(alice, '450 кофе', minute(0));
+    expect(record(alice, '100 кофе', minute(1)).category).toBe('Кафе и рестораны');
+    changeCategory(deps, {
+      user: alice,
+      expenseId: older.id,
+      categoryId: categoryId(alice, 'Продукты'),
+      now: minute(2),
+    });
+
+    expect(record(alice, '200 кофе', minute(3)).category).toBe('Продукты');
   });
 
   it('skips history whose category is archived and falls back to keyword rules', () => {
@@ -168,6 +202,7 @@ describe('learning from a change (ADR-0008)', () => {
       user: alice,
       expenseId: first.id,
       categoryId: categoryId(alice, custom),
+      now: NOW,
     });
     expect(record(alice, '300 кофе').category).toBe(custom);
 

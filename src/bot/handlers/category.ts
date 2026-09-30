@@ -76,9 +76,10 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
   bot.callbackQuery(SET_CATEGORY, async (ctx) => {
     const expenseId = expenseIdOf(ctx.match);
     if (expenseId === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
     const categoryId = Number(ctx.match[2]) as CategoryId;
-    const result = changeCategory(deps, { user, expenseId, categoryId });
+    const result = changeCategory(deps, { user, expenseId, categoryId, now });
 
     switch (result.kind) {
       case 'changed': {

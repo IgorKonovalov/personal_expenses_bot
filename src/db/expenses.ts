@@ -75,12 +75,13 @@ export function insertExpenseOrGetExisting(
         string,
         number | null,
         string | null,
+        string | null,
       ]
     >(
       `INSERT INTO expenses (id, ledger_id, created_by, amount_minor, currency, description,
                              occurred_at, occurred_on, source_key, created_at, category_id,
-                             description_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             description_key, category_set_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (source_key) DO NOTHING`,
     )
     .run(
@@ -96,6 +97,7 @@ export function insertExpenseOrGetExisting(
       expense.createdAt.toISOString(),
       expense.categoryId ?? null,
       expense.descriptionKey ?? null,
+      expense.categoryId === undefined ? null : expense.createdAt.toISOString(),
     );
   const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
@@ -136,8 +138,9 @@ export function restoreDeletedExpense(db: Db, id: ExpenseId): boolean {
   return changes === 1;
 }
 
-// The category of the ledger's most recently recorded live expense with this description key,
-// skipping expenses whose category is archived (ADR-0008 history step).
+// The category of the ledger's live expense with this description key whose category was set
+// most recently, skipping expenses whose category is archived (ADR-0008 history step). A change
+// from the card stamps category_set_at, so the corrected expense becomes the match.
 export function findHistoryCategory(
   db: Db,
   ledgerId: LedgerId,
@@ -149,7 +152,7 @@ export function findHistoryCategory(
          FROM expenses e JOIN categories c ON c.id = e.category_id
         WHERE e.ledger_id = ? AND e.description_key = ?
           AND e.deleted_at IS NULL AND c.archived_at IS NULL
-        ORDER BY e.created_at DESC, e.rowid DESC
+        ORDER BY COALESCE(e.category_set_at, e.created_at) DESC, e.rowid DESC
         LIMIT 1`,
     )
     .pluck()
@@ -159,13 +162,18 @@ export function findHistoryCategory(
 
 // Sets a live expense's category. Returns false when the expense is deleted or already in that
 // category, leaving the row unchanged.
-export function setExpenseCategory(db: Db, id: ExpenseId, categoryId: CategoryId): boolean {
+export function setExpenseCategory(
+  db: Db,
+  id: ExpenseId,
+  categoryId: CategoryId,
+  setAt: Date,
+): boolean {
   const { changes } = db
-    .prepare<[number, string, number]>(
-      `UPDATE expenses SET category_id = ?
+    .prepare<[number, string, string, number]>(
+      `UPDATE expenses SET category_id = ?, category_set_at = ?
         WHERE id = ? AND deleted_at IS NULL AND category_id IS NOT ?`,
     )
-    .run(categoryId, id, categoryId);
+    .run(categoryId, setAt.toISOString(), id, categoryId);
   return changes === 1;
 }
 
