@@ -13,7 +13,18 @@ const botFramework = {
 const botLayer = { group: ['**/bot/**'], message: 'Only src/index.ts wires the bot layer.' };
 
 export default tseslint.config(
-  { ignores: ['node_modules/', 'coverage/', 'dist/', 'data/', '.claude/', 'scripts/', 'docs/'] },
+  {
+    ignores: [
+      'node_modules/',
+      'coverage/',
+      'dist/',
+      'data/',
+      '.claude/',
+      'scripts/',
+      'tools/',
+      'docs/',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

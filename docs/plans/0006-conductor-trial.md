@@ -255,7 +255,93 @@ committed.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: engine runs a fixture plan | dev | in progress (uncommitted, see resume notes) | |
+| 1: engine runs a fixture plan | dev | done | committed with this row |
+| 2: harness speaks this workflow | dev | not started | |
+| 3: trial run and verdict | human | not started | |
+
+### Notes` holds the figures: per plan,
+    the outcome and every park reason, fix rounds, spend, and wall time. Also the number of
+    conductor fix commits the trial forced, and `project.mjs`'s line count. It ends with the
+    verdict word, `go` or `no-go`.
+
+## Data shapes
+
+```jsonc
+// illustrative: tools/conductor/queue.json (committed; the architect owns its order)
+{ "lanes": { "a": ["0007", "0003"], "b": [] }, "plans": { "0003": { "after": ["0007"] } } }
+```
+
+```js
+// illustrative: tools/conductor/project.mjs, the whole adapter surface
+export const project = {
+  owners: ["dev", "human"],
+  implementers: ["dev"],
+  planTitle: /^# (\d{4}): (.+)$/m,
+  lanePrefix: "peb-plan-",
+  laneInstall: ["pnpm", "install", "--frozen-lockfile"],
+  gate: [
+    { name: "typecheck", cmd: ["pnpm", "typecheck"] },
+    { name: "lint", cmd: ["pnpm", "lint"] },
+    { name: "test", cmd: ["pnpm", "test"] },
+    { name: "doc links", cmd: ["node", "scripts/check-doc-links.mjs"] },
+    { name: "hooks", cmd: ["node", "--test", ".claude/hooks/*.test.mjs"] },
+    { name: "conductor", cmd: ["node", "--test", "tools/conductor/test/*.test.mjs"] },
+  ],
+};
+```
+
+`local.json` keeps Ritmolux's shape (`budget_usd` per step, `run_budget_usd`,
+`max_open_worktrees`, optional `model` per step). Its figures are the owner's and are never
+committed.
+
+## Risks & open questions
+
+- **Plan 0007 must not be started by hand first.** Phases 1 and 2 of this plan land before 0007
+  starts. If 0007 is implemented manually in the meantime, the trial pair becomes 0003 then 0004.
+
+- **Readiness may park both plans.** The readiness session checks that every done-when can run under
+  the allowlist, one command per call. Plans 0007 and 0003 were written for interactive sessions,
+  and a done-when written as a pipe would park them `plan_wrong`. That is a real trial outcome: the
+  architect repairs the plan, the owner resumes, and the park counts in the figures.
+- **Lane install.** `better-sqlite3` is a native module. `pnpm install --frozen-lockfile` in a fresh
+  worktree reuses the pnpm store, but a failed build parks `deps_install`, not the whole run.
+- **Pre-commit hooks run in lanes.** Husky runs `lint-staged`, `pnpm typecheck`, `pnpm lint` and
+  `pnpm test` on every commit a session makes. That makes sessions slower, not wrong.
+- **Privacy.** `tools/conductor/state/` records commit subjects, test names and spend, never expense
+  data. It is gitignored. Conductor sessions keep the deny-read on `.env*` and `data/**` (the Phase 2
+  test asserts it).
+- **Version bumps happen unread.** A conductor close bumps the version the way the manual close would
+  (minor for a feature plan). 0007 and 0003 will each move `package.json` and `CHANGELOG.md` before
+  the owner reads them.
+- **Idempotency of the trial itself.** An `abort` mid-step reruns that step from scratch on the next
+  `run`, and its spend is lost. `pause` is the stop that loses nothing.
+- **Open:** whether the conductor's CLI-version check (verified list copied from Ritmolux, which
+  includes the installed 2.1.283) should be shared with Ritmolux. That is deferred to the package
+  decision.
+
+## What this plan does NOT do
+
+- **No package.** Where a shared conductor lives, how it's pinned and what harness ships with it is
+  its own ADR and plan, after a `go` verdict.
+- **No Ritmolux changes.** Moving Ritmolux onto a package is a Ritmolux plan.
+- **No second lane.** The backlog is one chain (0007, then 0003, then 0004 and 0005), so the trial
+  runs lane `a` only.
+- **Plans 0002, 0004 and 0005 are not queued.** Plan 0002's `human` VPS phase would exercise the
+  park path, a candidate for a second trial run. 0004 and 0005 wait on 0003 and follow a `go`.
+- **No CI job for the conductor's tests.** Plan 0002 introduces CI, and the job is a followup.
+- **No porting of later Ritmolux conductor fixes.** The fork is frozen at its recorded commit for the
+  trial.
+
+## Implementation log
+
+> Written by `dev`: one row per phase as its commit lands, then the close block. **The phases
+> above are the contract. This section records what happened.** Observations, never conclusions:
+> no pass list, no self-assessment. Deviations and unmet done-whens are **always** disclosed.
+> Keep it shorter than `## Implementation phases`.
+
+| phase | owner | state | commit |
+|---|---|---|---|
+| 1: engine runs a fixture plan | dev | done | committed with this row |
 | 2: harness speaks this workflow | dev | not started | |
 | 3: trial run and verdict | human | not started | |
 
@@ -313,6 +399,24 @@ run a test yet, because of the command above.
   for the log.
 
 ### Notes
+
+- Phase 1 source: Ritmolux `b0c0aa42`, the last commit touching `tools/conductor/` (Ritmolux
+  `main` was `22a665a4` with the same conductor tree).
+- Phase 1 deviation: `prompts/*.md`, `settings.conductor.json` and `README.md` were committed as
+  copied from Ritmolux, with only the `CONDUCTOR-` markers and `conductor-outcome` fence changed in
+  the prompts, because the engine and the lane tests read them. Phase 2 rewrites them.
+- Phase 1 deviation: `test/hooks.test.mjs` (Ritmolux's hooks) and `test/settings.test.mjs` were
+  deleted, not adapted. Phase 2 writes `settings.test.mjs` fresh.
+- Phase 1 deviation: the tests for the dropped machinery were deleted (suite ledger, served tier,
+  upstream CI read, studio install and guarded steps). Four `deps_install` lane tests replace the
+  studio-install ones.
+- Phase 1 done-when conflict: the grep for `studio` over `tools/conductor/**/*.mjs` and the
+  `studio-builder` owner-error test cannot both hold as written. The test builds the owner string
+  from two parts (`test/plan.test.mjs`), so the grep finds nothing.
+- Phase 1 observation: Ritmolux ADR numbers (ADR-0205 to ADR-0251) stay in engine and test comments
+  and in the `claude_dir` park detail. They name Ritmolux decisions, not this repository's.
+- Phase 1 figures: `pnpm test` took 2.9 s wall (Vitest duration 1.97 s, 102 tests). The conductor
+  suite ran 217 tests in 34 s.
 
 ### Close triggers
 

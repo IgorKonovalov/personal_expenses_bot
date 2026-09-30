@@ -30,3 +30,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Conductor run state, the owner's caps and its generated pages (ADR-0010)
+tools/conductor/state/
+tools/conductor/local.json
+tools/conductor/digest*.md

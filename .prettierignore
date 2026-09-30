@@ -1,0 +1,2 @@
+# The conductor is a fork kept diffable against its source (ADR-0010)
+tools/conductor/
