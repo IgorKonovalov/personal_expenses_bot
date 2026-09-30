@@ -1,6 +1,6 @@
 # 0008: Version announcements: tell the admin about each new version, and /changelog
 
-> **Status:** draft
+> **Status:** approved (2026-09-30)
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0013](../adrs/0013-version-announcements-at-boot.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
 
