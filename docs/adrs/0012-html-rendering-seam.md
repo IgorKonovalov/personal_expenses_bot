@@ -67,3 +67,9 @@ which appear in every amount and date. One escaping miss is a 400. HTML reserves
 It can't break on user text, because nothing is parsed. It lost on ergonomics: offsets are
 UTF-16 code units, and computing them across Cyrillic, emoji and interpolated descriptions in
 every message builder is fiddlier than escaping.
+
+## Outcome
+
+**2026-09-30, Plan 0007 close.** The seam landed as decided. Plan 0007 bolds the confirmation
+and deleted-card amounts and the whole `/today` header line. The `/today` per-currency totals
+are not bold yet: Plan 0004's summary engine, which replaces the `/today` body, bolds them.
