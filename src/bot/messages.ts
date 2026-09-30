@@ -2,6 +2,7 @@ import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
+import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
 // Every user-facing string, in Russian with polite "вы". Handlers pick a message here and never
@@ -33,6 +34,12 @@ interface CategoriesScreenView {
   readonly header?: Html | undefined;
 }
 
+interface SettingsScreenView {
+  // The IANA zone in effect.
+  readonly timezone: string;
+  readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
+}
+
 interface TodayView {
   readonly ledger: LedgerRef;
   readonly date: LocalDate;
@@ -62,8 +69,30 @@ function shownDescription(description: string): string {
 // expense (bot.test.ts pins this).
 const menu = {
   today: '📊 Сегодня',
+  settings: '⚙️ Настройки',
   help: '❓ Помощь',
 } as const;
+
+// The timezone picker's city labels, one per entry of TIMEZONES.
+const timezoneLabels: Record<TimezoneSlug, string> = {
+  belgrade: 'Белград',
+  podgorica: 'Подгорица',
+  moscow: 'Москва',
+  almaty: 'Алматы',
+  kaliningrad: 'Калининград',
+  samara: 'Самара',
+  yekaterinburg: 'Екатеринбург',
+  novosibirsk: 'Новосибирск',
+  vladivostok: 'Владивосток',
+  tbilisi: 'Тбилиси',
+  yerevan: 'Ереван',
+};
+
+// `Белград (Europe/Belgrade)`; a zone typed through [Другой…] shows as its IANA name alone.
+function timezoneName(iana: string): string {
+  const entry = timezoneByIana(iana);
+  return entry === undefined ? iana : `${timezoneLabels[entry.slug]} (${iana})`;
+}
 
 // `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе`
 function expenseLine(verb: string, { expense, ledger }: ExpenseView): Html {
@@ -76,16 +105,25 @@ export const messages = {
   commands: [
     { command: 'today', description: 'Траты за сегодня' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
+    { command: 'settings', description: 'Часовой пояс и валюта' },
     { command: 'help', description: 'Как записать трату' },
   ],
 
-  welcome: html`Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.`,
+  welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
+    joinHtml(
+      [
+        html`Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.`,
+        html`Часовой пояс: ${timezoneName(timezone)}. Валюта: ${currency}. Изменить: /settings.`,
+      ],
+      '\n\n',
+    ),
   genericError: html`Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.`,
   help: joinHtml(
     [
       html`Чтобы записать трату, отправьте сумму и описание, например «450 кофе». Валюту можно указать после суммы: «12,50 EUR такси».`,
       html``,
       html`${menu.today} — траты за сегодня`,
+      html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
     ],
     '\n',
@@ -172,6 +210,34 @@ export const messages = {
   nothingToCancel: html`Сейчас нечего отменять.`,
   staleScreen: 'Этот экран устарел. Откройте его заново.',
   cancelButton: 'Отмена',
+
+  // The /settings hub.
+  settingsScreen: ({ timezone, ledger }: SettingsScreenView): Html =>
+    joinHtml(
+      [
+        html`<b>Настройки</b>`,
+        html`Часовой пояс: ${timezoneName(timezone)}`,
+        html`Валюта по умолчанию для новых трат в «${ledgerName(ledger)}»: ${ledger.defaultCurrency}`,
+      ],
+      '\n',
+    ),
+  timezoneButton: 'Часовой пояс',
+  currencyButton: 'Валюта',
+  settingsCategoriesButton: 'Категории',
+  timezonePicker: (timezone: string): Html =>
+    html`Выберите часовой пояс. Сейчас: ${timezoneName(timezone)}.`,
+  cityButton: (slug: TimezoneSlug): string => timezoneLabels[slug],
+  otherTimezoneButton: 'Другой…',
+  timezonePrompt: (timezone: string): Html =>
+    html`Сейчас: ${timezoneName(timezone)}. Отправьте название часового пояса, например Europe/Istanbul.`,
+  // Asked above the prompt again when an answer is refused; the flow stays pending.
+  timezoneRefused: {
+    unknown: html`Такого часового пояса нет.`,
+    // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
+    expenseShaped: html`Похоже на трату. Сейчас я жду часовой пояс. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+  },
+  timezoneChangedToast: 'Часовой пояс изменён',
+  timezoneUnchanged: 'Этот часовой пояс уже выбран',
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',

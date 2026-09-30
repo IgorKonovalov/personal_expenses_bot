@@ -48,6 +48,17 @@ export function setActiveLedger(db: Db, userId: UserId, ledgerId: LedgerId): voi
   );
 }
 
+// Returns false when the user already has this timezone: nothing is written.
+export function updateUserTimezone(db: Db, userId: UserId, timezone: string): boolean {
+  return (
+    db
+      .prepare<[string, string, string]>(
+        'UPDATE users SET timezone = ? WHERE id = ? AND timezone <> ?',
+      )
+      .run(timezone, userId, timezone).changes > 0
+  );
+}
+
 function toUser(row: UserRow): User {
   return {
     id: row.id as UserId,

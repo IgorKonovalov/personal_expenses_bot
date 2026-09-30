@@ -18,7 +18,7 @@ import {
 import type { User } from '../db/users.js';
 import { parseCategoryName, type CategoryNameResult } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
-import { cancelFlow, completeFlow, startFlow, type Flow } from './flowSessions.js';
+import { cancelFlow, completeFlow, startFlow, type CategoryFlow } from './flowSessions.js';
 import type { RecordDeps } from './recordExpense.js';
 
 // The /categories use-cases (ADR-0007): add, rename and archive a ledger's categories. Every
@@ -130,7 +130,7 @@ export function answerCategoryFlow(
   deps: RecordDeps,
   input: {
     readonly user: User;
-    readonly flow: Flow;
+    readonly flow: CategoryFlow;
     readonly text: string;
     readonly inputKey: string;
     readonly now: Date;

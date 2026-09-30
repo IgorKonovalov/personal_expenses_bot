@@ -1,6 +1,6 @@
 # 0005: /settings: timezone from a city list, and the ledger's default currency
 
-> **Status:** approved (2026-09-29, re-approved after the Plan 0007 amendment)
+> **Status:** in-progress
 > **Created:** 2026-09-29
 > **Depends on:** [Plan 0007](done/0007-navigation-shell.md), [Plan 0003](done/0003-categories.md) (screen kit, flow sessions, list pager, `/categories` screen)
 > **Related ADRs:** [ADR-0002](../adrs/0002-ledgers-and-identity.md), [ADR-0009](../adrs/0009-persisted-flow-sessions.md), [ADR-0011](../adrs/0011-navigation-model.md), [ADR-0012](../adrs/0012-html-rendering-seam.md)
@@ -179,10 +179,34 @@ Callback data: `set:open`, `set:tz`, `set:tz:<slug>`, `set:tzp:<page>`, `set:tzo
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: /settings and the timezone picker | dev | not started | |
+| 1: /settings and the timezone picker | dev | done | committed with this row |
 | 2: The ledger's default currency | dev | not started | |
 
 ### Notes
+
+- Phase 1: outside `Files touched`: `src/services/flowSessions.ts` (a `settings` screen, a
+  `fromSettings` flag on the categories screen, the `setTimezone` flow kind and a `CategoryFlow`
+  type), `src/services/manageCategories.ts` and its test (`answerCategoryFlow` takes
+  `CategoryFlow`), `src/bot/handlers/start.ts` (the welcome), `src/bot/handlers/menu.ts` (the
+  `⚙️ Настройки` route) and `src/bot/middleware/allowlist.test.ts` (`messages.welcome` is now a
+  function).
+- Phase 1: `RecordDeps` gained `defaultTimezone`, the fallback `resolveUserTimezone` needs.
+  `recordExpense.test.ts`, `todaySummary.test.ts` and `changeCategory.test.ts` (not in
+  `Files touched`) each add it to their deps.
+- Phase 1: `src/services/periodSummary.ts` does not exist on this branch and was not created.
+  `src/index.ts` needed no change.
+- Phase 1: `resolveUserTimezone` also runs for `/start`, `/settings` and the picker, so each of
+  those logs the fallback `warn` too.
+- Phase 1: copy not named in the plan: the hub's first line `<b>Настройки</b>`, the picker text
+  `Выберите часовой пояс. Сейчас: …`, the toasts `Часовой пояс изменён` and
+  `Этот часовой пояс уже выбран`, the refusals `Такого часового пояса нет.` and an expense-shaped
+  hint, the welcome's second paragraph
+  `Часовой пояс: Белград (Europe/Belgrade). Валюта: RSD. Изменить: /settings.`, and the `/settings`
+  command description `Часовой пояс и валюта`. A zone off the city list shows as its bare IANA
+  name.
+- Phase 1: "writes nothing" for the already-selected city is asserted with SQLite's
+  `total_changes()`. An unknown slug (`set:tz:mars`) is answered silently.
+- Phase 1: [Валюта] `set:cur` has no handler until Phase 2; the dispatcher answers it silently.
 
 ### Close triggers
 

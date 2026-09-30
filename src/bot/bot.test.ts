@@ -74,11 +74,15 @@ describe('error boundary', () => {
 });
 
 const menuKeyboard = {
-  keyboard: [[{ text: '📊 Сегодня' }, { text: '❓ Помощь' }]],
+  keyboard: [[{ text: '📊 Сегодня' }], [{ text: '⚙️ Настройки' }, { text: '❓ Помощь' }]],
   is_persistent: true,
   resize_keyboard: true,
 };
 const withMenu = { reply_markup: menuKeyboard, ...htmlParseMode };
+// The welcome for a user on the defaults.
+const WELCOME =
+  'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.' +
+  '\n\nЧасовой пояс: Белград (Europe/Belgrade). Валюта: RSD. Изменить: /settings.';
 
 function expenseCount(db: Db): unknown {
   return db.prepare('SELECT COUNT(*) AS n FROM expenses').get();
@@ -92,7 +96,11 @@ describe('menu and help', () => {
   const NOW = new Date('2026-09-30T10:00:00Z');
 
   it('takes its labels from messages.menu', () => {
-    expect(messages.menu).toEqual({ today: '📊 Сегодня', help: '❓ Помощь' });
+    expect(messages.menu).toEqual({
+      today: '📊 Сегодня',
+      settings: '⚙️ Настройки',
+      help: '❓ Помощь',
+    });
   });
 
   it('carries the persistent menu on the /start and /help replies', async () => {
@@ -104,7 +112,7 @@ describe('menu and help', () => {
     expect(calls).toEqual([
       {
         method: 'sendMessage',
-        payload: { chat_id: ALLOWED_ID, text: messages.welcome, ...withMenu },
+        payload: { chat_id: ALLOWED_ID, text: WELCOME, ...withMenu },
       },
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
@@ -302,7 +310,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /categories and /help with descriptions from messages', async () => {
+  it('registers /today, /categories, /settings and /help with descriptions from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -314,7 +322,8 @@ describe('command registration at boot', () => {
           commands: [
             { command: 'today', description: messages.commands[0].description },
             { command: 'categories', description: messages.commands[1].description },
-            { command: 'help', description: messages.commands[2].description },
+            { command: 'settings', description: 'Часовой пояс и валюта' },
+            { command: 'help', description: messages.commands[3].description },
           ],
         },
       },
@@ -1606,5 +1615,345 @@ describe('/categories screen and text flows', () => {
       expect(calls).toContainEqual(editOf(101, screenText(PRESET_NAMES), screenKeyboard));
     }
     expect(expenseTotal(db)).toBe(1);
+  });
+});
+
+describe('/settings hub and the timezone picker', () => {
+  // 00:30 on the 30th in Moscow, 23:30 on the 29th in Belgrade.
+  const LATE = new Date('2026-09-29T21:30:00Z');
+  const botInfo = createTestBot().bot.botInfo;
+
+  // Like flowBot above: a movable clock, real message ids from sendMessage, and info logs kept.
+  function settingsBot() {
+    const clock = { now: LATE };
+    const db = openDatabase(':memory:');
+    runMigrations(db, LATE);
+    const logLines: string[] = [];
+    let ids = 0;
+    let messageId = 100;
+    const bot = createBot({
+      token: '123456:test-token',
+      allowedTelegramIds: new Set([ALLOWED_ID]),
+      logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
+      db,
+      newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+      now: () => clock.now,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      botInfo,
+    });
+    const calls: ApiCall[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      calls.push({ method, payload });
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      const result =
+        method === 'sendMessage' ? { message_id: ++messageId, date: 0, chat, text: '' } : true;
+      return Promise.resolve({ ok: true, result: result as never });
+    });
+    let updateId = 0;
+    const say = (text: string, id: number) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: id, text, date: clock.now }));
+    const tap = (data: string, id: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: id }));
+    const storedTimezone = () => db.prepare('SELECT timezone FROM users').pluck().get();
+    const totalChanges = () => db.prepare('SELECT total_changes()').pluck().get();
+    return { bot, db, calls, clock, logLines, say, tap, storedTimezone, totalChanges };
+  }
+
+  const hubText = (zone = 'Белград (Europe/Belgrade)', currency = 'RSD') =>
+    [
+      '<b>Настройки</b>',
+      `Часовой пояс: ${zone}`,
+      `Валюта по умолчанию для новых трат в «Личные расходы»: ${currency}`,
+    ].join('\n');
+  const hubKeyboard = {
+    inline_keyboard: [
+      [
+        { text: 'Часовой пояс', callback_data: 'set:tz' },
+        { text: 'Валюта', callback_data: 'set:cur' },
+      ],
+      [{ text: 'Категории', callback_data: 'set:cat' }],
+    ],
+  };
+  const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
+  const PROMPT =
+    'Сейчас: Белград (Europe/Belgrade). Отправьте название часового пояса, например Europe/Istanbul.';
+
+  function editOf(messageId: number, text: string, reply_markup: unknown) {
+    return {
+      method: 'editMessageText',
+      payload: { chat_id: ALLOWED_ID, message_id: messageId, text, reply_markup, ...htmlParseMode },
+    };
+  }
+
+  it.each(['/settings', '⚙️ Настройки'])('opens the hub as a new screen on %j', async (text) => {
+    const { say, tap, calls } = settingsBot();
+
+    await say(text, 1);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: hubText(),
+          reply_markup: hubKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+
+    // The new message is the anchor: a tap on it works, and the older one is stale.
+    await say(text, 2);
+    calls.length = 0;
+    await tap('set:tz', 101);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: messages.staleScreen },
+      },
+    ]);
+  });
+
+  it('pages the city list with the current zone marked, [Другой…] and [« Назад] below', async () => {
+    const { say, tap, calls } = settingsBot();
+    await say('/settings', 1);
+    calls.length = 0;
+
+    await tap('set:tz', 101);
+    await tap('set:tzp:2', 101);
+
+    const picker = 'Выберите часовой пояс. Сейчас: Белград (Europe/Belgrade).';
+    const city = (text: string, slug: string) => ({ text, callback_data: `set:tz:${slug}` });
+    const tail = [
+      [{ text: 'Другой…', callback_data: 'set:tzother' }],
+      [{ text: '« Назад', callback_data: 'set:open' }],
+    ];
+    expect(calls[1]).toEqual(
+      editOf(101, picker, {
+        inline_keyboard: [
+          [city('✓ Белград', 'belgrade'), city('Подгорица', 'podgorica')],
+          [city('Москва', 'moscow'), city('Алматы', 'almaty')],
+          [city('Калининград', 'kaliningrad'), city('Самара', 'samara')],
+          [city('Екатеринбург', 'yekaterinburg'), city('Новосибирск', 'novosibirsk')],
+          [
+            { text: '1/2', callback_data: 'set:tzp:1' },
+            { text: '▶', callback_data: 'set:tzp:2' },
+          ],
+          ...tail,
+        ],
+      }),
+    );
+    expect(calls[3]).toEqual(
+      editOf(101, picker, {
+        inline_keyboard: [
+          [city('Владивосток', 'vladivostok'), city('Тбилиси', 'tbilisi')],
+          [city('Ереван', 'yerevan')],
+          [
+            { text: '◀', callback_data: 'set:tzp:1' },
+            { text: '2/2', callback_data: 'set:tzp:2' },
+          ],
+          ...tail,
+        ],
+      }),
+    );
+
+    calls.length = 0;
+    await tap('set:open', 101);
+    expect(calls[1]).toEqual(editOf(101, hubText(), hubKeyboard));
+  });
+
+  it('moves the local day with the zone: 450 кофе at 00:30 Moscow lands on the 30th', async () => {
+    const { say, tap, calls, db, storedTimezone } = settingsBot();
+    await say('100 чай', 1);
+    await say('/settings', 2);
+    calls.length = 0;
+
+    await tap('set:tz:moscow', 102);
+    expect(storedTimezone()).toBe('Europe/Moscow');
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: 'Часовой пояс изменён' },
+      },
+      editOf(102, hubText('Москва (Europe/Moscow)'), hubKeyboard),
+    ]);
+
+    await say('450 кофе', 3);
+    calls.length = 0;
+    await say('/today', 4);
+
+    expect(
+      db.prepare('SELECT description, occurred_on FROM expenses ORDER BY description').all(),
+    ).toEqual([
+      { description: 'кофе', occurred_on: '2026-09-30' },
+      { description: 'чай', occurred_on: '2026-09-29' },
+    ]);
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n450.00 RSD',
+    ]);
+  });
+
+  it('writes nothing for the already-selected city or a slug not in the list', async () => {
+    const { say, tap, calls, totalChanges, storedTimezone } = settingsBot();
+    await say('/settings', 1);
+    const before = totalChanges();
+    calls.length = 0;
+
+    await tap('set:tz:belgrade', 101);
+    await tap('set:tz:mars', 101);
+
+    expect(totalChanges()).toBe(before);
+    expect(storedTimezone()).toBe('Europe/Belgrade');
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: 'Этот часовой пояс уже выбран' },
+      },
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
+    ]);
+  });
+
+  it('asks for any zone on [Другой…], and [Отмена] restores the hub', async () => {
+    const { say, tap, calls } = settingsBot();
+    await say('/settings', 1);
+    calls.length = 0;
+
+    await tap('set:tzother', 101);
+    expect(calls[1]).toEqual(editOf(101, PROMPT, cancelKeyboard));
+
+    calls.length = 0;
+    await tap('flow:cancel', 101);
+    expect(calls[1]).toEqual(editOf(101, hubText(), hubKeyboard));
+  });
+
+  it.each([
+    ['Mars/Base', 'Такого часового пояса нет.'],
+    ['+03:00', 'Такого часового пояса нет.'],
+    [
+      '450 кофе',
+      'Похоже на трату. Сейчас я жду часовой пояс. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.',
+    ],
+  ])('re-asks %j and keeps the flow pending', async (text, refusal) => {
+    const { say, tap, calls, db, storedTimezone } = settingsBot();
+    await say('/settings', 1);
+    await tap('set:tzother', 101);
+    calls.length = 0;
+
+    await say(text, 2);
+    expect(calls).toEqual([editOf(101, `${refusal}\n${PROMPT}`, cancelKeyboard)]);
+    expect(storedTimezone()).toBe('Europe/Belgrade');
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+
+    // A zone off the city list shows as its IANA name.
+    calls.length = 0;
+    await say('europe/istanbul', 3);
+    expect(storedTimezone()).toBe('Europe/Istanbul');
+    expect(calls).toEqual([editOf(101, hubText('Europe/Istanbul'), hubKeyboard)]);
+  });
+
+  it('stores asia/tbilisi as Asia/Tbilisi and applies a redelivered answer once', async () => {
+    const { bot, say, tap, calls, clock, storedTimezone } = settingsBot();
+    await say('/settings', 1);
+    await tap('set:tzother', 101);
+    const answer = textUpdate({
+      updateId: 50,
+      messageId: 2,
+      text: 'asia/tbilisi',
+      date: clock.now,
+    });
+    calls.length = 0;
+
+    await bot.handleUpdate(answer);
+    expect(storedTimezone()).toBe('Asia/Tbilisi');
+    expect(calls).toEqual([editOf(101, hubText('Тбилиси (Asia/Tbilisi)'), hubKeyboard)]);
+
+    await tap('set:tz:moscow', 101);
+    calls.length = 0;
+    await bot.handleUpdate(answer);
+
+    expect(storedTimezone()).toBe('Europe/Moscow');
+    expect(calls).toEqual([]);
+  });
+
+  it('falls back to DEFAULT_TIMEZONE for a corrupt stored zone, with one warn', async () => {
+    const { say, calls, db, logLines, clock } = settingsBot();
+    await say('/start', 1);
+    db.prepare("UPDATE users SET timezone = 'Mars/Base'").run();
+    // 00:30 on the 30th in Belgrade; the 29th in UTC.
+    clock.now = new Date('2026-09-29T22:30:00Z');
+    logLines.length = 0;
+    calls.length = 0;
+
+    await say('/today', 2);
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    ]);
+    const warns = logLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(warns.filter((line) => line.level === 40)).toHaveLength(1);
+    const userId = db.prepare('SELECT id FROM users').pluck().get();
+    const warn = warns.find((line) => line.level === 40);
+    expect(Object.keys(warn ?? {}).sort()).toEqual(
+      ['hostname', 'level', 'msg', 'pid', 'time', 'userId'].sort(),
+    );
+    expect(warn).toMatchObject({ userId });
+
+    calls.length = 0;
+    await say('/settings', 3);
+    expect(sentTexts(calls)).toEqual([hubText()]);
+  });
+
+  it('opens the categories screen in the anchor with a way back; /categories has none', async () => {
+    const { say, tap, calls } = settingsBot();
+    await say('/settings', 1);
+    calls.length = 0;
+
+    await tap('set:cat', 101);
+    const categoriesText = [
+      '<b>Категории «Личные расходы»</b>',
+      ...CATEGORY_PRESETS.map((p) => p.name),
+    ].join('\n');
+    const categoriesButtons = [
+      [{ text: 'Добавить', callback_data: 'cat:add' }],
+      [
+        { text: 'Переименовать', callback_data: 'cat:ren' },
+        { text: 'Скрыть', callback_data: 'cat:arc' },
+      ],
+    ];
+    const withBack = {
+      inline_keyboard: [...categoriesButtons, [{ text: '« Назад', callback_data: 'set:open' }]],
+    };
+    expect(calls[1]).toEqual(editOf(101, categoriesText, withBack));
+
+    // The back row survives a round trip through a picker, and a settings tap is stale here.
+    calls.length = 0;
+    await tap('cat:ren', 101);
+    await tap('cat:open', 101);
+    expect(calls[3]).toEqual(editOf(101, categoriesText, withBack));
+    calls.length = 0;
+    await tap('set:tz', 101);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-5', text: messages.staleScreen },
+      },
+    ]);
+
+    calls.length = 0;
+    await tap('set:open', 101);
+    expect(calls[1]).toEqual(editOf(101, hubText(), hubKeyboard));
+
+    calls.length = 0;
+    await say('/categories', 2);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: categoriesText,
+          reply_markup: { inline_keyboard: categoriesButtons },
+          ...htmlParseMode,
+        },
+      },
+    ]);
   });
 });

@@ -80,5 +80,24 @@ export function categoryActionPickData(action: CategoryAction, categoryId: Categ
   return assertCallbackData(`cat:${action}:${categoryId}`);
 }
 
+// The /settings hub (ADR-0011). `set:open` shows the hub in the anchor, from any of its pickers
+// and from the categories screen it opened.
+export const SETTINGS_OPEN = 'set:open';
+export const SETTINGS_CATEGORIES = 'set:cat';
+export const CURRENCY_PICKER = 'set:cur';
+// `set:tz` opens page 1 of the city list, `set:tzp:<page>` pages it, `set:tz:<slug>` picks.
+export const TIMEZONE_PICKER = 'set:tz';
+export const TIMEZONE_PAGE = /^set:tz(?:p:(\d{1,4}))?$/;
+export const SET_TIMEZONE = /^set:tz:([a-z0-9_-]{1,20})$/;
+export const TIMEZONE_OTHER = 'set:tzother';
+
+export function timezonePageData(page: number): string {
+  return assertCallbackData(`set:tzp:${page}`);
+}
+
+export function setTimezoneData(slug: string): string {
+  return assertCallbackData(`set:tz:${slug}`);
+}
+
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';
