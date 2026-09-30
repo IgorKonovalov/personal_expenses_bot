@@ -116,6 +116,62 @@ Backup settings (the full list is in [.env.example](.env.example)):
 Compose sets `BACKUP_DIR` itself. A same-day backup replaces that day's file, and a failed
 backup is logged as an `error` without stopping the bot.
 
+## Deploy
+
+`.github/workflows/deploy.yml` runs `check` (install, typecheck, lint, build, test) on every pull
+request and push to `main`. A push to `main` that passes `check` deploys over SSH:
+`git pull --ff-only`, then `docker compose up -d --build --wait`, so a container that never turns
+healthy fails the run. Deploys queue, never overlap.
+
+Repository secrets, the same names the sibling bot on this VPS uses:
+
+| Secret           | Value                   |
+| ---------------- | ----------------------- |
+| `SSH_HOST`       | VPS hostname or IP      |
+| `SSH_USER`       | the deploy user         |
+| `SSH_KEY`        | that user's private key |
+| `SSH_PASSPHRASE` | the key's passphrase    |
+
+VPS layout:
+
+```text
+~/bots/personal-expenses-bot/           # this repo, cloned with a read-only deploy key
+~/bots/personal-expenses-bot/.env       # production token and ids, mode 0600, not in git
+/var/backups/personal-expenses-bot/     # expenses-YYYY-MM-DD.sqlite, mode 0700, owned by uid 1000
+```
+
+Production uses its **own** BotFather bot. Two processes polling one token get 409 Conflict.
+Create the backup directory once with
+`sudo install -d -o 1000 -g 1000 -m 700 /var/backups/personal-expenses-bot`.
+
+Manual redeploy, on the VPS:
+
+```sh
+cd ~/bots/personal-expenses-bot
+git pull --ff-only
+docker compose up -d --build --wait --wait-timeout 180
+```
+
+If `git pull --ff-only` fails, someone edited the checkout on the VPS. Reset it to `origin/main`
+rather than forcing a merge.
+
+### Restoring a backup
+
+1. Stop the bot: `docker compose stop bot`.
+2. Copy the backup into the volume, replacing the live file and dropping its WAL:
+
+   ```sh
+   docker compose run --rm --no-deps --entrypoint sh bot -c \
+     'rm -f /app/data/bot.sqlite-wal /app/data/bot.sqlite-shm &&
+      cp /var/backups/personal-expenses-bot/expenses-YYYY-MM-DD.sqlite /app/data/bot.sqlite'
+   ```
+
+3. Start it: `docker compose up -d --wait`. Boot applies any newer migrations to the restored
+   file.
+
+To inspect a backup without restoring it, copy the file off the VPS and open it read-only with
+any SQLite client.
+
 ## Development
 
 | Command          | What it does                                             |

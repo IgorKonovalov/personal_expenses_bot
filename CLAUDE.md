@@ -24,6 +24,7 @@ src/
 └── index.ts         # boot: config, db, bot
 Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
 docker-compose.yml   # the one service: volume, backup bind mount, heartbeat health check
+.github/workflows/   # deploy.yml: `check` on PRs and pushes, SSH deploy on push to main
 docs/
 ├── adrs/            # NNNN-<slug>.md: decisions + rejected alternatives. Append-only once accepted.
 │   └── README.md    #   ADR index + next free number

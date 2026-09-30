@@ -217,8 +217,8 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: The bot runs from a Docker image of compiled JS | dev | done | b71fab6 |
-| 2: Daily SQLite backups with rotation | dev | done | committed with this row |
-| 3: CI gate and deploy on push | dev | not started | |
+| 2: Daily SQLite backups with rotation | dev | done | 865da53 |
+| 3: CI gate and deploy on push | dev | done | committed with this row |
 | 4: Provision on the VPS and first deploy | human | not started | |
 
 ### Notes
@@ -245,6 +245,15 @@ path is derived as `<dirname(DATABASE_PATH)>/heartbeat`, with no new key.
 - Phase 2 deviation: shutdown also clears the backup timer and waits for a backup in flight before
   `db.close()`. Boot logs `backups off: BACKUP_DIR unset` when disabled. A rotated-out file logs
   one `backup rotated out` line with its path.
+- Phase 3: pinned `actions/checkout` v7.0.1, `pnpm/action-setup` v6.1.0, `actions/setup-node`
+  v7.0.0, `appleboy/ssh-action` v1.2.5, each released more than 7 days before 2026-09-30.
+  The workflow also sets `permissions: contents: read`.
+- Phase 3 deviation: `pnpm dlx actionlint` fails with `ERR_PNPM_DLX_NO_BIN` (that npm package has
+  no binary), and the other npm wrappers are third-party. Ran the author's image instead:
+  `docker run rhysd/actionlint:1.7.7 .github/workflows/deploy.yml` printed nothing, exit 0
+  (image digest `sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9`).
+- Phase 3: the README restore steps (`docker compose run` copying a backup over the live file) are
+  untested; Phase 4's drill opens a backup off the VPS but doesn't restore one.
 
 ### Close triggers
 
