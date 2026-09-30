@@ -264,7 +264,7 @@ layout.
 | 1: Menu bar, /help, and no silent input | dev | done | 3dcda85 |
 | 2: HTML seam (ADR-0012) | dev | done | ba70d71 |
 | 3: Callback dispatcher and expense-card actions | dev | done | 4a50c19 |
-| 4: Ambiguous amounts answered with buttons | dev | done | committed with this row |
+| 4: Ambiguous amounts answered with buttons | dev | done | 4fc1f4e |
 
 ### Notes
 
@@ -337,5 +337,18 @@ layout.
   private chat they are the same person.
 
 ### Close triggers
+
+- Gate on the tip after 4fc1f4e: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0, 14 test files, 155 tests passed. No build script exists.
+- `node scripts/check-doc-links.mjs`: exit 0, 82 relative links resolve.
+- Phase 2's grep ran as `git grep -n --untracked parse_mode -- src/bot` (no pipe). Every
+  match is in `src/bot/render/html.ts` or `src/bot/render/html.test.ts`.
+- Files changed outside the phases' `Files touched`: `src/bot/middleware/allowlist.test.ts`
+  (Phase 1), `.prettierrc` (Phase 2), `src/bot/render/html.test.ts` in Phase 3 (listed only in
+  Phase 2). `eslint.config.js` stands in for the listed `eslint.config.mjs`.
+- New modules: `src/bot/keyboards.ts`, `src/bot/callbacks.ts`, `src/bot/render/html.ts`,
+  `src/bot/handlers/{help,menu,other,card,ambiguous}.ts`. `src/bot/handlers/undo.ts` became
+  `card.ts`.
+- No migration. No dependency added.
 
 ## Followups
