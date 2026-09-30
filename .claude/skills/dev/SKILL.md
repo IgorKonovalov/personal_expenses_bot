@@ -173,6 +173,9 @@ The plan and ADRs win on specifics. When they're silent:
   the code as it is.
 - **Tests live where the plan says** and test the behavior its done-when names. Unrelated tests
   in a phase are scope creep.
+- **A test never pins live, growing data** (the version-announcement map, the command list). It
+  derives the expectation from the source, or tests the function against a fixture. Otherwise the
+  next entry turns it red.
 - **No secrets and no real user data** in code, fixtures, logs or commit messages.
 
 ## References

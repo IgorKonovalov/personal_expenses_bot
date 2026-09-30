@@ -15,6 +15,7 @@ import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/cur
 import { parseExpenseText } from '../domain/expenseText.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
+import { compareVersions } from '../domain/version.js';
 import { createLogger } from '../logger.js';
 import { createBot, registerCommands } from './bot.js';
 import {
@@ -337,12 +338,12 @@ describe('command registration at boot', () => {
         payload: {
           commands: [
             { command: 'today', description: messages.commands[0].description },
-            { command: 'week', description: 'Траты за неделю по категориям' },
-            { command: 'month', description: 'Траты за месяц по категориям' },
+            { command: 'week', description: messages.commands[1].description },
+            { command: 'month', description: messages.commands[2].description },
             { command: 'categories', description: messages.commands[3].description },
-            { command: 'settings', description: 'Часовой пояс и валюта' },
+            { command: 'settings', description: messages.commands[4].description },
             { command: 'help', description: messages.commands[5].description },
-            { command: 'changelog', description: 'Что нового в боте' },
+            { command: 'changelog', description: messages.commands[6].description },
           ],
         },
       },
@@ -374,7 +375,7 @@ describe('/changelog', () => {
 
     // Derived from the live map, so a close that adds the next version's entry keeps this green.
     const newestFirst = Object.keys(messages.versionAnnouncements).sort((x, y) =>
-      y.localeCompare(x, 'en', { numeric: true }),
+      compareVersions(y, x),
     );
     const sections = newestFirst.map(
       (v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`,

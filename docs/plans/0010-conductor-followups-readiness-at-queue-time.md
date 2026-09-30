@@ -214,8 +214,8 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 | 1: `ready NNNN` and the preflight gate | dev | done | `67021e2` |
 | 2: merge main before readiness | dev | done | `1c342f6` |
 | 3: resume wording, idle takes asks | dev | done | `0a34068` |
-| 4: operator docs and prompts | dev | done | committed with this row |
-| 5: stop pinning tests to live data | dev | not started | |
+| 4: operator docs and prompts | dev | done | `de6ba38` |
+| 5: stop pinning tests to live data | dev | done | committed with this row |
 
 ### Notes
 
@@ -241,6 +241,11 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 - Phase 4, F8: the allowlist permits ``git grep -n "`Изменить`"`` (`settings.test.mjs` asserts
   `allow`). The CLI's own shell-substitution guard denied it, so the three prompts gained the Grep-tool
   line and `settings.conductor.json` is unchanged.
+- Phase 5: the repository's lint rule bans a `parse_mode` property key (ADR-0012), so
+  `adminNotifier.test.ts` spreads `htmlParseMode` into the expected payload and asserts
+  `toHaveProperty('parse_mode', 'HTML')` separately. The registration test now reads every
+  description from `messages.commands[n]`, not only `/settings` and `/changelog`. The dispositions
+  of 0008's three nits (`finding 0008 0|1|2 --done`) are in gitignored conductor state.
 
 ### Close triggers
 
