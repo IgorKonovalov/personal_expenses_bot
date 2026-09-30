@@ -2,6 +2,8 @@
 
 > **Status:** approved
 > **Created:** 2026-09-29
+> **Amended:** 2026-09-30, before implementation: migrations 0002 to 0004 exist, soft-deleted
+> expenses, a fixed `DATABASE_PATH` in Compose, and the pnpm workspace file in the image
 > **Related ADRs:** [ADR-0001](../adrs/0001-tech-stack.md), [ADR-0006](../adrs/0006-production-runs-compiled-js.md)
 
 ## TL;DR
@@ -71,11 +73,12 @@ architect reviews once at the end, in a fresh session.
   `src/heartbeat.test.ts`, `.env.example`, `README.md` (run-in-Docker section), `CLAUDE.md`
   ("Where things live": `Dockerfile`, `docker-compose.yml`).
 - **Done when:**
-  - `pnpm build` exits 0 and produces `dist/index.js` and `dist/db/migrations/0001_init.sql`.
-    `dist/` contains no `*.test.js`.
+  - `pnpm build` exits 0 and produces `dist/index.js`, and `dist/db/migrations/` holds the same
+    `*.sql` file names as `src/db/migrations/`. `dist/` contains no `*.test.js`.
   - The boot log line `migrations checked` also carries `node: process.version`. Built from the
     Dockerfile and run with a fake `BOT_TOKEN` on an empty volume, the container logs
-    `node: "v24.…"` and `applied: ["0001"]`, then exits on the 401. This settles the ADR-0001
+    `node: "v24.…"` and an `applied` list naming every migration in `src/db/migrations/`, in
+    filename order, then exits on the 401. This settles the ADR-0001
     better-sqlite3-on-Node-24 claim that Plan 0001 left unmet. The log records the exact
     version.
   - Both `FROM` lines use `node:24-alpine@sha256:<digest>`. The log records the digest.
@@ -92,7 +95,11 @@ architect reviews once at the end, in a fresh session.
     `/app/data`, the backup bind mount
     `${HOST_BACKUP_DIR:-/var/backups/personal-expenses-bot}:/var/backups/personal-expenses-bot`,
     a heartbeat `healthcheck` (interval 30s, start_period 40s, retries 3), and json-file logging
-    with `max-size: 10m`, `max-file: 3`.
+    with `max-size: 10m`, `max-file: 3`. Its `environment:` sets
+    `DATABASE_PATH=/app/data/bot.sqlite`, which overrides `.env`, so the database and the
+    heartbeat always land on the volume whatever the VPS `.env` says.
+  - The image's install reads `pnpm-workspace.yaml` (the release-age cooldown and `allowBuilds`),
+    so a Dockerfile that omits it fails the build rather than skipping the native build.
 
 ### Phase 2: Daily SQLite backups with rotation
 - **Owner skill:** dev
@@ -155,8 +162,10 @@ architect reviews once at the end, in a fresh session.
   - In Telegram, the production bot answers `/start`, records `450 кофе` and shows it in
     `/today`, with the laptop closed.
   - `/var/backups/personal-expenses-bot/` holds today's `expenses-YYYY-MM-DD.sqlite`.
-  - **Restore drill:** copy that file off the VPS, open it with any SQLite client, and the
-    `expenses` count matches what the bot holds. A backup never restored isn't a backup.
+  - **Restore drill:** after recording `450 кофе`, restart the container (`docker compose
+    restart`) so that its boot backup includes that expense. Copy today's file off the VPS and
+    open it with any SQLite client. `SELECT description FROM expenses WHERE deleted_at IS NULL`
+    includes `кофе`. A backup never restored isn't a backup.
 
 ## Data shapes
 
