@@ -27,6 +27,7 @@ beforeEach(() => {
     db,
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
+    defaultTimezone: 'Europe/Belgrade',
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {

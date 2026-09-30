@@ -24,6 +24,9 @@ const EXPONENTS = {
 
 export type CurrencyCode = keyof typeof EXPONENTS;
 
+// Every code in the table, in table order.
+export const CURRENCY_CODES = Object.keys(EXPONENTS) as readonly CurrencyCode[];
+
 // Case-insensitive lookup: `eur` -> `EUR`. Returns undefined for codes not in the table.
 export function toCurrencyCode(raw: string): CurrencyCode | undefined {
   const code = raw.toUpperCase();

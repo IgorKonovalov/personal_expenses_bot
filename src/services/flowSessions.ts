@@ -18,7 +18,14 @@ export const FLOW_TTL_MS = 10 * 60 * 1000;
 // A non-expense text this soon after a flow expired gets flowExpired instead of help.
 export const EXPIRED_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export type Screen = { readonly name: 'categories'; readonly ledgerId: LedgerId };
+export interface CategoriesScreen {
+  readonly name: 'categories';
+  readonly ledgerId: LedgerId;
+  // Opened from the settings hub: the screen carries a [« Назад] back to it.
+  readonly fromSettings?: true;
+}
+
+export type Screen = CategoriesScreen | { readonly name: 'settings' };
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -26,13 +33,15 @@ export interface ScreenAnchor {
   readonly screen: Screen;
 }
 
-export type Flow =
+export type CategoryFlow =
   | { readonly kind: 'categoryAdd'; readonly ledgerId: LedgerId }
   | {
       readonly kind: 'categoryRename';
       readonly ledgerId: LedgerId;
       readonly categoryId: CategoryId;
     };
+
+export type Flow = CategoryFlow | { readonly kind: 'setTimezone' };
 
 type Deps = { readonly db: Db };
 
@@ -105,14 +114,19 @@ export function routeText(
 // A row written by a later version, or damaged, reads as no screen rather than failing.
 function parseScreen(name: string, ctx: string): Screen | undefined {
   const parsed = parseObject(ctx);
+  if (name === 'settings' && parsed !== undefined) return { name };
   if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
-    return { name, ledgerId: parsed.ledgerId as LedgerId };
+    const ledgerId = parsed.ledgerId as LedgerId;
+    return parsed.fromSettings === true
+      ? { name, ledgerId, fromSettings: true }
+      : { name, ledgerId };
   }
   return undefined;
 }
 
 function parseFlow(kind: string, payload: string): Flow | undefined {
   const parsed = parseObject(payload);
+  if (kind === 'setTimezone' && parsed !== undefined) return { kind };
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
   if (kind === 'categoryAdd') return { kind, ledgerId };

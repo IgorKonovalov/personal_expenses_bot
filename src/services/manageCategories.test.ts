@@ -5,7 +5,7 @@ import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
-import { routeText, setAnchor, type Flow } from './flowSessions.js';
+import { routeText, setAnchor, type CategoryFlow as Flow } from './flowSessions.js';
 import {
   answerCategoryFlow,
   hideCategory,
@@ -32,6 +32,7 @@ beforeEach(() => {
     db,
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
+    defaultTimezone: 'Europe/Belgrade',
   };
   const provisioned = provisionUser(deps, {
     provider: 'telegram',

@@ -3,12 +3,15 @@ import type { User } from '../db/users.js';
 import {
   cancelFlow,
   currentAnchor,
+  type CategoriesScreen,
   type Flow,
   type ScreenAnchor,
 } from '../services/flowSessions.js';
 import { answerCategoryFlow } from '../services/manageCategories.js';
+import { answerTimezoneFlow, userSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
+import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
 import { messages } from './messages.js';
 import { replyHtml } from './render/html.js';
@@ -57,7 +60,9 @@ async function show(ctx: Context, anchor: ScreenAnchor | undefined, view: Screen
 export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User): Promise<void> {
   const anchor = currentAnchor(deps, user);
   if (anchor === undefined) return;
-  const view = categoriesScreenFor(deps, user, anchor.screen.ledgerId);
+  const { screen } = anchor;
+  const view =
+    screen.name === 'settings' ? settingsView(deps, user) : categoriesScreenFor(deps, user, screen);
   if (view !== undefined) await renderAnchor(ctx, anchor, view);
 }
 
@@ -74,9 +79,24 @@ export async function answerFlow(
   },
 ): Promise<void> {
   const { user, flow } = input;
-  const result = answerCategoryFlow(deps, { ...input, now: deps.now() });
   const anchor = currentAnchor(deps, user);
 
+  if (flow.kind === 'setTimezone') {
+    const result = answerTimezoneFlow(deps, input);
+    if (result.kind === 'invalid') {
+      const { timezone } = userSettings(deps, user);
+      await show(
+        ctx,
+        anchor,
+        timezonePromptView(timezone, messages.timezoneRefused[result.reason]),
+      );
+      return;
+    }
+    await show(ctx, anchor, settingsView(deps, { ...user, timezone: result.timezone }));
+    return;
+  }
+
+  const result = answerCategoryFlow(deps, { ...input, flow, now: deps.now() });
   switch (result.kind) {
     case 'invalid':
       await show(
@@ -97,7 +117,13 @@ export async function answerFlow(
           : result.kind === 'restored'
             ? messages.categoryRestored(result.category.name)
             : messages.categoryRenamed(result.category.name);
-      const view = categoriesScreenFor(deps, user, flow.ledgerId, header);
+      // The flow's ledger, with the anchor's back route to the settings hub when it has one.
+      const fromSettings = anchor?.screen.name === 'categories' && anchor.screen.fromSettings;
+      const screen: CategoriesScreen =
+        fromSettings === true
+          ? { name: 'categories', ledgerId: flow.ledgerId, fromSettings }
+          : { name: 'categories', ledgerId: flow.ledgerId };
+      const view = categoriesScreenFor(deps, user, screen, header);
       if (view !== undefined) await show(ctx, anchor, view);
       return;
     }

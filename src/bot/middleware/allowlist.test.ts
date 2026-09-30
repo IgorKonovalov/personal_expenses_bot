@@ -48,7 +48,13 @@ describe('allowlist', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
 
     expect(calls).toMatchObject([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.welcome } },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
+        },
+      },
     ]);
   });
 });

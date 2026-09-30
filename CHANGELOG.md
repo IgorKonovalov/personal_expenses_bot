@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.4.0 (2026-09-30)
+
+From Plan 0005 (settings).
+
+- `/settings` and the `⚙️ Настройки` menu button open the settings: your timezone and the
+  ledger's default currency, each changeable in place, and a link to the categories.
+- The timezone comes from a list of cities, or [Другой…] takes any IANA name such as
+  `Europe/Istanbul`. "Today" follows the chosen zone; recorded expenses keep their date.
+- The ledger owner picks the currency for new expenses. Recorded expenses keep theirs.
+- The menu's second row is now `[⚙️ Настройки] [❓ Помощь]`.
+
 ## 0.3.0 (2026-09-30)
 
 From Plan 0003 (categories).

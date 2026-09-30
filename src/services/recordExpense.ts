@@ -18,9 +18,12 @@ import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
 import type { Logger } from '../logger.js';
 import type { ServiceDeps } from './provisionUser.js';
+import { resolveUserTimezone } from './settings.js';
 
 export interface RecordDeps extends ServiceDeps {
   readonly logger: Logger;
+  // The fallback for a stored timezone the runtime doesn't know.
+  readonly defaultTimezone: string;
 }
 
 export interface RecordExpenseInput {
@@ -94,7 +97,7 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     currency: parsed.currency,
     description: parsed.description,
     occurredAt: input.occurredAt,
-    occurredOn: localDateOf(input.occurredAt, user.timezone),
+    occurredOn: localDateOf(input.occurredAt, resolveUserTimezone(deps, user)),
     sourceKey: input.sourceKey,
     createdAt: input.now,
     categoryId: category.id,

@@ -1,6 +1,7 @@
 import type { Composer, Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import { provisionUser } from '../../services/provisionUser.js';
+import { userSettings } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
 import { menuKeyboard } from '../keyboards.js';
 import { messages } from '../messages.js';
@@ -21,7 +22,9 @@ export function ensureUser(deps: HandlerDeps, telegramUserId: number, now: Date)
 export function registerStart(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('start', async (ctx) => {
     if (ctx.from === undefined) return;
-    ensureUser(deps, ctx.from.id, deps.now());
-    await replyHtml(ctx, messages.welcome, { reply_markup: menuKeyboard() });
+    const { timezone, ledger } = userSettings(deps, ensureUser(deps, ctx.from.id, deps.now()));
+    await replyHtml(ctx, messages.welcome({ timezone, currency: ledger.defaultCurrency }), {
+      reply_markup: menuKeyboard(),
+    });
   });
 }

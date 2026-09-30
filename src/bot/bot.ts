@@ -13,6 +13,7 @@ import { registerChangelog } from './handlers/changelog.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
+import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
@@ -58,6 +59,7 @@ export function createBot(options: BotOptions): Bot {
   registerStart(bot, options);
   registerToday(bot, options);
   registerCategories(bot, options);
+  registerSettings(bot, options);
   registerCancel(bot, options);
   registerHelp(bot);
   registerChangelog(bot);

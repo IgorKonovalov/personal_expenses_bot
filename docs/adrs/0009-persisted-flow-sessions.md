@@ -2,7 +2,7 @@
 
 > **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0003](../plans/done/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md), [Plan 0005](../plans/0005-settings.md)
+> **Related plan(s):** [Plan 0003](../plans/done/0003-categories.md), [Plan 0004](../plans/0004-dates-edit-summaries.md), [Plan 0005](../plans/done/0005-settings.md)
 > **Revised:** 2026-09-29, before acceptance: prompts edit the anchor instead of using
 > `force_reply`, expiry is answered, expense-shaped answers are rejected, and the row also holds
 > ADR-0011's screen anchor.

@@ -38,7 +38,7 @@ export function insertLedger(
 
 export function insertMember(
   db: Db,
-  member: { ledgerId: LedgerId; userId: UserId; role: 'owner' | 'member' },
+  member: { ledgerId: LedgerId; userId: UserId; role: LedgerRole },
 ): void {
   db.prepare<[string, string, string]>(
     'INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)',
@@ -72,6 +72,29 @@ export function findLedgerForMember(
     )
     .get(ledgerId, userId);
   return row === undefined ? undefined : toLedger(row);
+}
+
+export type LedgerRole = 'owner' | 'member';
+
+// The user's role in the ledger; undefined for a non-member.
+export function findMemberRole(db: Db, ledgerId: LedgerId, userId: UserId): LedgerRole | undefined {
+  return db
+    .prepare<[string, string], LedgerRole>(
+      'SELECT role FROM ledger_members WHERE ledger_id = ? AND user_id = ?',
+    )
+    .pluck()
+    .get(ledgerId, userId);
+}
+
+// Returns false when the ledger already has this currency: nothing is written.
+export function updateLedgerCurrency(db: Db, ledgerId: LedgerId, currency: CurrencyCode): boolean {
+  return (
+    db
+      .prepare<[string, string, string]>(
+        'UPDATE ledgers SET default_currency = ? WHERE id = ? AND default_currency <> ?',
+      )
+      .run(currency, ledgerId, currency).changes > 0
+  );
 }
 
 function toLedger(row: LedgerRow): Ledger {

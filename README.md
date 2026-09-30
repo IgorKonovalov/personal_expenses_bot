@@ -25,12 +25,13 @@ when an amount could be read two ways.
 | [Удалить]         | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                                                                                                            |
 | [Вернуть]         | Restores the expense, and `/today` counts it again                                                                                                                                                                                                         |
 | `/categories`     | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back                                                                    |
+| `/settings`       | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта] and [Категории]. The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                |
 | `/cancel`         | Drops a pending question (like the new category's name) and puts the list back                                                                                                                                                                             |
 | `/help`           | How to record an expense, and what the menu buttons do                                                                                                                                                                                                     |
 | `/changelog`      | What's new: one entry per version, newest first                                                                                                                                                                                                            |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
-`/today`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
+`/today`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
 command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
 photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
 the record, and the bot says so.
