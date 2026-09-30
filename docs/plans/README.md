@@ -10,7 +10,6 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
-| [0002](0002-deploy-docker-vps.md) | Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups | in-progress (amended 2026-09-30) |
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
 | [0005](0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | approved (2026-09-29) |
 | [0008](0008-version-announcements.md) | Version announcements: tell the admin about each new version, and /changelog | approved (2026-09-30) |
@@ -19,6 +18,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0002](done/0002-deploy-docker-vps.md) | Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups | done (2026-09-30): built as planned, prod shares the dev bot token, no version bump |
 | [0006](done/0006-conductor-trial.md) | Conductor trial: fork Ritmolux's conductor, run Plans 0007 and 0003 unattended | done (2026-09-30): built as planned, trial verdict go, no version bump |
 | [0003](done/0003-categories.md) | Categories: preset per ledger, suggestion from history, change and manage | done (2026-09-30): built as planned after one fix round, `/help` copy owed, v0.3.0 |
 | [0007](done/0007-navigation-shell.md) | Navigation shell: menu, HTML seam, callback dispatcher, and the shipped-UX fixes | done (2026-09-30): built as planned, v0.2.0 |

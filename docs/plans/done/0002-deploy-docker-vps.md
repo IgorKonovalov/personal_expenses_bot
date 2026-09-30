@@ -1,13 +1,13 @@
 # 0002: Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups
 
-> **Status:** in-progress
+> **Status:** done (2026-09-30): built as planned, prod shares the dev bot token by the user's call, no version bump
 > **Created:** 2026-09-29
 > **Amended:** 2026-09-30, before implementation: migrations 0002 to 0004 exist, soft-deleted
 > expenses, a fixed `DATABASE_PATH` in Compose, and the pnpm workspace file in the image.
 > Amended again 2026-09-30, after Phase 3, for the VPS survey: a new dev Phase 4 (memory cap,
 > build-cache pruning, a forced-command deploy key), and provisioning moves to Phase 5 with no
 > sudo and the siblings' backup location
-> **Related ADRs:** [ADR-0001](../adrs/0001-tech-stack.md), [ADR-0006](../adrs/0006-production-runs-compiled-js.md)
+> **Related ADRs:** [ADR-0001](../../adrs/0001-tech-stack.md), [ADR-0006](../../adrs/0006-production-runs-compiled-js.md)
 
 ## TL;DR
 
@@ -416,8 +416,12 @@ sets it to the siblings' location). The heartbeat path is derived as
 
 ## Followups
 
-- A separate production BotFather bot, so `pnpm dev` and the VPS stop sharing a token.
+- A separate production BotFather bot, so `pnpm dev` and the VPS stop sharing a token. Until
+  then, an expense sent while `pnpm dev` runs lands in the laptop's database, not the VPS's.
 - Build cache growth: 2.851 GB after one deploy, and pruning keeps a week of it. Watch
   `docker system df` over the next deploys and switch to a size cap if it climbs.
 - The README's in-place restore steps have never been run end to end.
 - GitHub annotated the run: `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19.
+- The workflow-level `concurrency: deploy` group also holds PR runs, and a newer pending run
+  cancels an older pending one, so a PR `check` can cancel a queued `main` deploy. Scope the group
+  to the `deploy` job.

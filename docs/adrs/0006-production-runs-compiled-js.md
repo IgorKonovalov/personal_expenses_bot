@@ -1,8 +1,8 @@
 # ADR-0006: Production runs tsc-compiled JavaScript from dist/
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-30)
 > **Date:** 2026-09-29
-> **Related plan(s):** [Plan 0002](../plans/0002-deploy-docker-vps.md)
+> **Related plan(s):** [Plan 0002](../plans/done/0002-deploy-docker-vps.md)
 
 ## Context
 
