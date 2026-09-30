@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0008`
+- **Next free number:** `0009`
 
 ## Active
 
@@ -13,6 +13,7 @@ status and date. What a plan did lives in the plan.
 | [0002](0002-deploy-docker-vps.md) | Deploy: Docker Compose on the shared VPS, CI gate, daily SQLite backups | in-progress (amended 2026-09-30) |
 | [0004](0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | approved (2026-09-29) |
 | [0005](0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | approved (2026-09-29) |
+| [0008](0008-version-announcements.md) | Version announcements: tell the admin about each new version, and /changelog | draft (2026-09-30) |
 
 ## Recently closed
 
