@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0022`
+- **Next free number:** `0024`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -28,3 +28,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0019](0019-qr-decoding-zxing-wasm.md) | Decode receipt QR codes with zxing-wasm, with its wasm binary loaded from node_modules | proposed (2026-10-01) |
 | [0020](0020-sealed-ledgers-write-open-read-locked.md) | An encrypted ledger is sealed to its own public key: recording stays open, reading needs the owner's passphrase | proposed (2026-10-01) |
 | [0021](0021-bank-sms-template-parsers-plain-expense.md) | A bank SMS is read by an exact per-template parser and recorded as a plain expense keyed by its content | accepted (2026-10-01) |
+| [0022](0022-fx-nbs-middle-rate-ledger-currency.md) | Reports convert into the ledger's default currency at the NBS middle rate of each expense's day | proposed (2026-10-01) |
+| [0023](0023-budgets-count-converted-spending.md) | Budgets count spending in every currency, converted into the budget's currency | proposed (2026-10-01) |
