@@ -1,6 +1,6 @@
 # 0016: Close findings: receipt backoff, links with a note, group dates, caps currency, budget navigation
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
@@ -212,13 +212,20 @@ type SetLimitResult =
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A receipt whose data fails to apply backs off | dev | not started | |
+| 1: A receipt whose data fails to apply backs off | dev | done | committed with this row |
 | 2: A SUF link with a note; test code out of the image | dev | not started | |
 | 3: A group expense in DM uses the ledger's timezone | dev | not started | |
 | 4: A currency change drops the category caps | dev | not started | |
 | 5: Budget navigation and the read-only group line | dev | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/receiptWorker.ts` is unchanged; the guard test needed no hook in it. The
+  apply throw is injected with a test-only `BEFORE INSERT` trigger on `receipt_items`. Checked by
+  hand: with the `resetFailedReceipt` CAS made unconditional, the [Повторить] test fails, on its
+  toast assertion (the second tap answers «Загружаю позиции»); the fetch half stays green, since
+  both taps land before the fetch. With the worker's `inFlight` check removed,
+  `receiptWorker.test.ts` fails with 3 fetcher calls. Both reverted.
 
 ### Close triggers
 

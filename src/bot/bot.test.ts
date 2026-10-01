@@ -3820,7 +3820,10 @@ describe('fiscal receipts', () => {
       let fetches = 0;
       const fetcher = () => {
         fetches++;
-        return Promise.resolve({ kind: 'failed', reason: 'http' } as const);
+        return Promise.resolve({
+          kind: 'fetched',
+          receipt: { sellerName: 'Test Market', totalMinor: 82912, items: [] },
+        } as const);
       };
       const deps = {
         db,
@@ -3831,8 +3834,10 @@ describe('fiscal receipts', () => {
         placeholder: messages.receiptPlaceholder,
       };
       const signal = new AbortController().signal;
-      await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal });
-      await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal });
+      expect((await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal })).kind).toBe('settled');
+      expect(await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal })).toEqual({
+        kind: 'idle',
+      });
       expect(fetches).toBe(1);
     });
   });

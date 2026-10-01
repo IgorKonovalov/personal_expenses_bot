@@ -211,6 +211,24 @@ describe('fetchDueReceipt', () => {
     expect(fetcherCalls).toBe(6);
   });
 
+  it('backs off a receipt whose fetched data fails to apply', async () => {
+    db.exec(`CREATE TRIGGER reject_items BEFORE INSERT ON receipt_items
+             BEGIN SELECT RAISE(ABORT, 'rejected'); END`);
+
+    expect(await run()).toEqual({ kind: 'pending' });
+
+    expect(db.prepare('SELECT fetch_state, attempts, next_fetch_at FROM receipts').get()).toEqual({
+      fetch_state: 'pending',
+      attempts: 1,
+      next_fetch_at: new Date(T0.getTime() + 60_000).toISOString(),
+    });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM receipt_items').get()).toEqual({ n: 0 });
+    expect(await run()).toEqual({ kind: 'idle' });
+    expect(fetcherCalls).toBe(1);
+    await run(new Date(T0.getTime() + 60_000));
+    expect(fetcherCalls).toBe(2);
+  });
+
   it('inserts the items once when the same receipt is fetched twice at once (a restart mid-fetch)', async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {

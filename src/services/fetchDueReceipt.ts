@@ -82,12 +82,23 @@ export async function fetchDueReceipt(
   const outcome = await runFetcher(deps, receipt, input.signal);
   if (outcome.kind === 'failed') return failed(deps, receipt, outcome.reason, input.now);
   const fetched = outcome.receipt;
-  const applied = db.transaction(() => {
-    if (!markReceiptFetched(db, receipt.id, fetched.sellerName)) return false;
-    insertReceiptItems(db, receipt.id, fetched.items);
-    enrichExpense(deps, receipt, fetched.sellerName);
-    return true;
-  })();
+  let applied: boolean;
+  try {
+    applied = db.transaction(() => {
+      if (!markReceiptFetched(db, receipt.id, fetched.sellerName)) return false;
+      insertReceiptItems(db, receipt.id, fetched.items);
+      enrichExpense(deps, receipt, fetched.sellerName);
+      return true;
+    })();
+  } catch (error) {
+    // The transaction rolled back and left the receipt `pending` and due: without a recorded
+    // failure the next tick would fetch it again at once.
+    deps.logger.warn(
+      { receiptId: receipt.id, err: error instanceof Error ? error.name : typeof error },
+      'fetched receipt failed to apply',
+    );
+    return failed(deps, receipt, 'error', input.now);
+  }
   if (!applied) return { kind: 'pending' };
   deps.logger.info(
     { receiptId: receipt.id, country: receipt.country, items: fetched.items.length },
