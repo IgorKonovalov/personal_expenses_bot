@@ -19,7 +19,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
-| [0021](done/0021-bank-sms-card-purchase.md) | A pasted Serbian card-purchase SMS records the purchase | done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check owed, v0.10.0 |
+| [0021](done/0021-bank-sms-card-purchase.md) | A pasted Serbian card-purchase SMS records the purchase | done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check passed, v0.10.0 |
 | [0020](done/0020-receipt-urls-wrapped-vl-and-port.md) | Receipt links with a line-wrapped vl or an explicit :443 port | done (2026-10-01): built as planned, one nit open, Phase 2 real-receipts check passed, v0.9.3 |
 | [0017](done/0017-conductor-followups-queue-hygiene.md) | Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy | done (2026-10-01): built as planned, one nit and one conductor followup open, no version bump |
 | [0018](done/0018-latin-note-after-link-and-check-gaps.md) | A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs | done (2026-10-01): built as planned, no findings, v0.9.2 |

@@ -1,6 +1,6 @@
 # 0021: A pasted Serbian card-purchase SMS records the purchase
 
-> **Status:** done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check owed, v0.10.0
+> **Status:** done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check passed, v0.10.0
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0021](../../adrs/0021-bank-sms-template-parsers-plain-expense.md) (per-template
 > parser, plain expense keyed by content), [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md)
@@ -245,7 +245,7 @@ type BankSmsResult =
 |---|---|---|---|
 | 1: A pasted SMS records the purchase, once | dev | done | `925aeee` |
 | 2: Refusals, /help and README | dev | done | `5929349` |
-| 3: Paste the real SMS into the deployed bot | human | not started | |
+| 3: Paste the real SMS into the deployed bot | human | done | (no commit) |
 
 ### Notes
 
@@ -271,7 +271,7 @@ type BankSmsResult =
   829 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236
   tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
   `node scripts/check-doc-links.mjs` exit 0.
-- **Outstanding `human` phases:** Phase 3 (paste the real SMS into the deployed bot, does not
-  block merge).
+- **Outstanding `human` phases:** none. Phase 3 passed on 2026-10-01: the user reports the
+  smoke test on the deployed bot passed.
 
 ## Followups
