@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0014`
+- **Next free number:** `0016`
 
 ## Active
 
@@ -14,6 +14,8 @@ status and date. What a plan did lives in the plan.
 | [0011](0011-budgets.md) | Budgets: a payday-period limit, a daily allowance, essential categories and category caps | approved (2026-10-01) |
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
+| [0014](0014-fiscal-receipts-rs-me.md) | Fiscal receipts: a QR photo or link from Serbia or Montenegro becomes an expense with its line items | approved (2026-10-01) |
+| [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
 
 ## Recently closed
 

@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0018`
+- **Next free number:** `0020`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -24,3 +24,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0015](0015-shared-ledgers-carry-a-timezone.md) | A shared ledger carries its own timezone, used for its dates and periods | proposed (2026-09-30) |
 | [0016](0016-readiness-runs-before-a-plan-is-queued.md) | The readiness check runs before a plan is queued, and `run` refuses a plan without one | accepted (2026-10-01) |
 | [0017](0017-budgets-payday-periods-cumulative-allowance.md) | Budgets run over payday periods, with a cumulative daily allowance in the budget's currency | proposed (2026-09-30) |
+| [0018](0018-receipts-record-offline-enrich-async.md) | A fiscal receipt records its total from the QR at once, and line items arrive by a background fetch | proposed (2026-10-01) |
+| [0019](0019-qr-decoding-zxing-wasm.md) | Decode receipt QR codes with zxing-wasm, with its wasm binary loaded from node_modules | proposed (2026-10-01) |
