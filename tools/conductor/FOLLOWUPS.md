@@ -7,6 +7,12 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-01 afternoon: Plan 0018
+
+Queue `a: 0018`. Merged as v0.9.2: review round 1, no findings, no parks, no hand interventions.
+One `run --until-idle`, 12:32 to 12:46 local, about $3.50. This is the first run with zero
+hand work.
+
 ## 2026-10-01 midday: Plan 0016
 
 Queue `a: 0016`. Merged as v0.9.1, review round 1, three nits. Two `run --until-idle`
