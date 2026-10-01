@@ -218,7 +218,7 @@ type SetLimitResult =
 | 1: A receipt whose data fails to apply backs off | dev | done | 1aac740 |
 | 2: A SUF link with a note; test code out of the image | dev | done | b9b047c |
 | 3: A group expense in DM uses the ledger's timezone | dev | done | edfecc4 |
-| 4: A currency change drops the category caps | dev | parked: plan_wrong | |
+| 4: A currency change drops the category caps | dev | done | committed with this row |
 | 5: Budget navigation and the read-only group line | dev | not started | |
 
 ### Notes
@@ -244,6 +244,11 @@ type SetLimitResult =
   `answerBudgetFlow`'s result. Showing «Лимиты по категориям сброшены…» needs that call site to
   pass `droppedCapsCurrency` on to the screen, and `src/bot/flows.ts` is not in Phase 4's
   `Files touched`. Phase 5 was not started.
+- Phase 4 resumed after the plan named `src/bot/flows.ts`. `deleteLedgerCaps` deletes archived
+  categories' caps too, and `droppedCapsCurrency` is reported whenever it deleted a row, so a
+  ledger whose only cap was on an archived category also gets the line. The failure case is
+  injected with a test-only `BEFORE UPDATE` trigger on `ledger_budgets`. No bot-level test shows
+  the line on the screen.
 
 ### Close triggers
 

@@ -133,6 +133,16 @@ export function clearCategoryCap(db: Db, categoryId: CategoryId): boolean {
   );
 }
 
+// Deletes every cap of the ledger's categories, archived ones included. Returns how many.
+export function deleteLedgerCaps(db: Db, ledgerId: LedgerId): number {
+  return db
+    .prepare<[string]>(
+      `DELETE FROM category_caps
+        WHERE category_id IN (SELECT id FROM categories WHERE ledger_id = ?)`,
+    )
+    .run(ledgerId).changes;
+}
+
 // Sets what the limit counts. A ledger without a budget gets one with no limit, in `currency`.
 // Returns false when the scope is already set: nothing is written.
 export function setBudgetScope(

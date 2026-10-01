@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearCategoryCap,
+  deleteLedgerCaps,
   ensureLedgerBudget,
   findLedgerBudget,
   listLedgerCaps,
@@ -78,6 +79,41 @@ describe('ledger budgets', () => {
     expect(clearCategoryCap(db, cafe.id)).toBe(true);
     expect(clearCategoryCap(db, cafe.id)).toBe(false);
     expect(listLedgerCaps(db, LEDGER)).toEqual([]);
+  });
+
+  it("deletes the ledger's caps, archived ones too, and leaves another ledger's", () => {
+    const OTHER = 'ledger-b' as LedgerId;
+    const OTHER_USER = 'user-b' as UserId;
+    insertUser(db, { id: OTHER_USER, timezone: 'Europe/Moscow', createdAt: NOW });
+    insertLedger(db, {
+      id: OTHER,
+      kind: 'personal',
+      name: 'Other',
+      defaultCurrency: 'RUB',
+      ownerUserId: OTHER_USER,
+      createdAt: NOW,
+    });
+    const categories = [
+      { name: 'Кафе', nameKey: 'кафе', presetKey: 'cafe' },
+      { name: 'Подарки', nameKey: 'подарки', presetKey: 'gifts' },
+    ];
+    insertCategoriesOrIgnore(db, LEDGER, categories, NOW);
+    insertCategoriesOrIgnore(db, OTHER, categories, NOW);
+    const [cafe, gifts] = listActiveCategories(db, LEDGER);
+    const [otherCafe] = listActiveCategories(db, OTHER);
+    if (cafe === undefined || gifts === undefined || otherCafe === undefined) {
+      throw new Error('setup failed');
+    }
+    setCategoryCap(db, cafe.id, 500_000, NOW);
+    setCategoryCap(db, gifts.id, 100_000, NOW);
+    archiveCategory(db, gifts.id, NOW);
+    setCategoryCap(db, otherCafe.id, 300_000, NOW);
+
+    expect(deleteLedgerCaps(db, LEDGER)).toBe(2);
+    expect(deleteLedgerCaps(db, LEDGER)).toBe(0);
+    expect(listLedgerCaps(db, OTHER)).toEqual([
+      { categoryId: otherCafe.id, name: 'Кафе', capMinor: 300_000 },
+    ]);
   });
 
   it('ensures a budget without a limit once, keeping an existing one', () => {

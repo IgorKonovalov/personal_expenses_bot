@@ -229,6 +229,65 @@ describe('category caps', () => {
   });
 });
 
+describe('a limit in a new currency', () => {
+  const cafeId = () =>
+    db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .pluck()
+      .get(ledger.id) as CategoryId;
+  const capRows = () =>
+    db
+      .prepare(
+        `SELECT k.cap_minor FROM category_caps k JOIN categories c ON c.id = k.category_id
+          WHERE c.ledger_id = ?`,
+      )
+      .pluck()
+      .all(ledger.id);
+  const budgetRow = () =>
+    db
+      .prepare('SELECT limit_minor, currency FROM ledger_budgets WHERE ledger_id = ?')
+      .get(ledger.id);
+
+  // A RUB ledger with a 30000 limit and a 5000 cap on «Кафе и рестораны».
+  beforeEach(() => {
+    setLimit('30000');
+    const flow = { kind: 'budgetCap', ledgerId: ledger.id, categoryId: cafeId() } as const;
+    expect(startBudgetFlow(deps, { user, flow, now: OCT_1 })).toBe(true);
+    const text = '5000';
+    answerBudgetFlow(deps, { user, flow, text, inputKey: `tg:1:${++messageId}`, now: OCT_1 });
+    expect(capRows()).toEqual([500_000]);
+  });
+
+  function switchToEur() {
+    db.prepare("UPDATE ledgers SET default_currency = 'EUR' WHERE id = ?").run(ledger.id);
+    ledger = { ...ledger, defaultCurrency: 'EUR' };
+  }
+
+  it('deletes the caps and reports their currency', () => {
+    switchToEur();
+    expect(setLimit('1000')).toEqual({ kind: 'set', ledger, droppedCapsCurrency: 'RUB' });
+    expect(budgetRow()).toEqual({ limit_minor: 100_000, currency: 'EUR' });
+    expect(capRows()).toEqual([]);
+  });
+
+  it('keeps the caps when the currency is unchanged', () => {
+    expect(setLimit('40000')).toEqual({ kind: 'set', ledger });
+    expect(budgetRow()).toEqual({ limit_minor: 4_000_000, currency: 'RUB' });
+    expect(capRows()).toEqual([500_000]);
+  });
+
+  it('leaves the limit and the caps as they were when the transaction fails', () => {
+    switchToEur();
+    db.exec(
+      `CREATE TRIGGER fail_budget BEFORE UPDATE ON ledger_budgets
+       BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+    );
+    expect(() => setLimit('1000')).toThrow('injected');
+    expect(budgetRow()).toEqual({ limit_minor: 3_000_000, currency: 'RUB' });
+    expect(capRows()).toEqual([500_000]);
+  });
+});
+
 describe('a group ledger (ADR-0015)', () => {
   const CHAT = -100500;
   const groupDeps = () => ({

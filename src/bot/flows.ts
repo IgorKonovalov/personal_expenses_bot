@@ -155,7 +155,12 @@ export async function answerFlow(
         await restoreScreen(ctx, deps, user);
         return;
       case 'set': {
-        const view = budgetView(deps, user, { name: 'budget', ledgerId: flow.ledgerId });
+        const view = budgetView(
+          deps,
+          user,
+          { name: 'budget', ledgerId: flow.ledgerId },
+          result.droppedCapsCurrency,
+        );
         if (view !== undefined) await show(ctx, anchor, view);
         return;
       }

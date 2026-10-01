@@ -802,6 +802,9 @@ export const messages = {
       ? ask
       : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
   },
+  // Above the budget screen after a limit in a new currency deleted the category caps.
+  budgetCapsDropped: (currency: CurrencyCode): Html =>
+    html`Лимиты по категориям сброшены: они были в ${currency}.`,
   budgetStartDayButton: 'День начала периода',
   // Category caps (ADR-0017): a paged category list, then a prompt per category.
   budgetCapsButton: 'Лимиты по категориям',

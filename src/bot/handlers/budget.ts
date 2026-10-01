@@ -2,6 +2,7 @@ import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { BudgetScope } from '../../db/budgets.js';
 import type { CategoryId } from '../../db/categories.js';
 import type { User } from '../../db/users.js';
+import type { CurrencyCode } from '../../domain/currencies.js';
 import {
   activeLedgerId,
   budgetScreen,
@@ -44,7 +45,8 @@ import { ensureUser } from './start.js';
 // The limit and the period start day are asked through text flows (ADR-0009); flows.ts takes
 // the answers.
 
-function screenView(view: BudgetScreenView): ScreenView {
+function screenView(view: BudgetScreenView, header?: Html): ScreenView {
+  const body = messages.budgetScreen(view);
   const current = view.status?.scope ?? 'all';
   const scopeButton = (scope: BudgetScope) => {
     const label = messages.budgetScopeButton(scope);
@@ -54,7 +56,7 @@ function screenView(view: BudgetScreenView): ScreenView {
     );
   };
   return {
-    text: messages.budgetScreen(view),
+    text: header === undefined ? body : joinHtml([header, body], '\n\n'),
     markup: InlineKeyboard.from([
       [InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)],
       [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
@@ -65,13 +67,19 @@ function screenView(view: BudgetScreenView): ScreenView {
 }
 
 // The screen for the ledger an anchor names; undefined once the user no longer owns it.
+// `droppedCapsCurrency` puts the line about deleted category caps above it.
 export function budgetView(
   deps: HandlerDeps,
   user: User,
   screen: BudgetScreen,
+  droppedCapsCurrency?: CurrencyCode,
 ): ScreenView | undefined {
   const view = budgetScreen(deps, { user, ledgerId: screen.ledgerId, now: deps.now() });
-  return view === undefined ? undefined : screenView(view);
+  if (view === undefined) return undefined;
+  return screenView(
+    view,
+    droppedCapsCurrency === undefined ? undefined : messages.budgetCapsDropped(droppedCapsCurrency),
+  );
 }
 
 // A flow's prompt in the anchor, naming the value in effect, with a refusal line above it when

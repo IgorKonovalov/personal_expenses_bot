@@ -1,5 +1,6 @@
 import {
   clearCategoryCap,
+  deleteLedgerCaps,
   ensureLedgerBudget,
   findLedgerBudget,
   listLedgerCaps,
@@ -285,7 +286,12 @@ export type BudgetRefusal =
     };
 
 export type BudgetAnswerResult =
-  | { readonly kind: 'set'; readonly ledger: Ledger }
+  | {
+      readonly kind: 'set';
+      readonly ledger: Ledger;
+      // Present when a limit in a new currency deleted the ledger's category caps: theirs.
+      readonly droppedCapsCurrency?: CurrencyCode;
+    }
   // The flow stays pending and the prompt is asked again.
   | ({
       readonly kind: 'invalid';
@@ -357,10 +363,19 @@ export function answerBudgetFlow(
       return refuse({ reason: 'expenseShaped' });
     }
     let changed: boolean;
+    let droppedCapsCurrency: CurrencyCode | undefined;
     switch (flow.kind) {
       case 'budgetLimit': {
         const limit = parseLimit(text, ledger.defaultCurrency);
         if (limit.kind === 'refused') return refuse(limit.refusal);
+        // A budget's amounts share one currency (ADR-0017): caps in the old one are deleted.
+        if (
+          current !== undefined &&
+          current.currency !== ledger.defaultCurrency &&
+          deleteLedgerCaps(db, ledger.id) > 0
+        ) {
+          droppedCapsCurrency = current.currency;
+        }
         changed = setBudgetLimit(
           db,
           ledger.id,
@@ -399,6 +414,8 @@ export function answerBudgetFlow(
     if (changed) {
       logger.info({ ledgerId: ledger.id, userId: user.id, field: flow.kind }, 'budget changed');
     }
-    return { kind: 'set', ledger };
+    return droppedCapsCurrency === undefined
+      ? { kind: 'set', ledger }
+      : { kind: 'set', ledger, droppedCapsCurrency };
   })();
 }
