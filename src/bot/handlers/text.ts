@@ -1,6 +1,8 @@
 import type { Composer, Context } from 'grammy';
+import { parseBankSms } from '../../domain/bankSms/index.js';
 import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
+import { recordBankSms } from '../../services/recordBankSms.js';
 import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import { answerFlow } from '../flows.js';
@@ -42,6 +44,17 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     const receipt = decodeReceiptUrl(ctx.message.text);
     if (receipt.kind !== 'notReceipt') {
       await answerReceipt(ctx, deps, { user, decoded: receipt, occurredAt, now });
+      return;
+    }
+
+    // A message that is one bank card-purchase SMS records the purchase (ADR-0021).
+    const sms = parseBankSms(ctx.message.text);
+    if (sms.kind === 'purchase') {
+      const recorded = recordBankSms(deps, { user, sms, occurredAt, now });
+      const card = cardFor(cardView(deps, user, recorded));
+      await replyHtml(ctx, recorded.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
+        reply_markup: card.markup,
+      });
       return;
     }
 

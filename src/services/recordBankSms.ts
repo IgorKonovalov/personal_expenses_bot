@@ -1,0 +1,91 @@
+import { listActiveCategories } from '../db/categories.js';
+import {
+  findExpenseBySourceKey,
+  findHistoryCategory,
+  insertExpenseOrGetExisting,
+  type Expense,
+  type ExpenseId,
+} from '../db/expenses.js';
+import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
+import type { User } from '../db/users.js';
+import type { BankSmsPurchase } from '../domain/bankSms/types.js';
+import { descriptionKey, suggestCategory } from '../domain/categories.js';
+import { localDateOf } from '../domain/time.js';
+import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
+
+export interface RecordBankSmsInput {
+  readonly user: User;
+  readonly sms: BankSmsPurchase;
+  // When the user sent it (the Telegram message date).
+  readonly occurredAt: Date;
+  readonly now: Date;
+}
+
+export type RecordBankSmsResult = {
+  readonly kind: 'recorded';
+  readonly expense: Expense;
+  readonly ledger: Ledger;
+  // The same SMS was already recorded into this ledger: nothing new was written.
+  readonly duplicate: boolean;
+};
+
+// Records a bank SMS purchase into the user's active ledger as one ordinary expense in the
+// charged amount and currency, dated the purchase instant's local date (ADR-0021). The source key
+// carries the SMS's content fingerprint and the ledger, so the same SMS pasted again into the
+// same ledger returns the stored expense.
+export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): RecordBankSmsResult {
+  const { db, logger } = deps;
+  const { user, sms } = input;
+
+  const ledger = findActiveLedger(db, user.id);
+  if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  const sourceKey = `sms:${sms.template}:${sms.fingerprint}:${ledger.id}`;
+
+  const seen = findExpenseBySourceKey(db, sourceKey);
+  if (seen !== undefined) return duplicate(deps, user, seen, sms);
+
+  const timezone = effectiveTimezone(deps, user, ledger);
+  const key = descriptionKey(sms.description);
+  const category = suggestCategory({
+    description: sms.description,
+    categories: listActiveCategories(db, ledger.id),
+    historyCategoryId: findHistoryCategory(db, ledger.id, key),
+  });
+  const { expense, created } = insertExpenseOrGetExisting(db, {
+    id: deps.newId() as ExpenseId,
+    ledgerId: ledger.id,
+    createdBy: user.id,
+    amountMinor: sms.amountMinor,
+    currency: sms.currency,
+    description: sms.description,
+    occurredAt: input.occurredAt,
+    occurredOn: localDateOf(sms.issuedAt, timezone),
+    sourceKey,
+    createdAt: input.now,
+    categoryId: category.id,
+    descriptionKey: key,
+  });
+  if (!created) return duplicate(deps, user, expense, sms);
+
+  logger.info(
+    { expenseId: expense.id, userId: user.id, template: sms.template },
+    'bank sms recorded',
+  );
+  return { kind: 'recorded', expense, ledger, duplicate: false };
+}
+
+function duplicate(
+  deps: RecordDeps,
+  user: User,
+  expense: Expense,
+  sms: BankSmsPurchase,
+): RecordBankSmsResult {
+  const ledger = findLedgerForMember(deps.db, expense.ledgerId, user.id);
+  if (ledger === undefined)
+    throw new Error(`bank sms source key reused across users (${expense.id})`);
+  deps.logger.info(
+    { expenseId: expense.id, userId: user.id, template: sms.template },
+    'duplicate bank sms',
+  );
+  return { kind: 'recorded', expense, ledger, duplicate: true };
+}

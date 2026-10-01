@@ -13,6 +13,7 @@ import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
+import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
@@ -3957,5 +3958,114 @@ describe('fiscal receipts', () => {
       expect(content).not.toContain('suf.purs');
       expect(content).not.toContain(RS_LINK.slice(40, 80));
     }
+  });
+});
+
+describe('bank card-purchase SMS (ADR-0021)', () => {
+  // The synthetic SMS's purchase is 2026-09-14T22:30:00Z, 00:30 on the 15th in Belgrade.
+  const SMS_SENT = new Date('2026-09-15T08:00:00Z');
+  const SMS = buildKoriscenjeSms();
+  const SMS_CARD = 'Записано в «Личные расходы»: <b>6.00 USD</b> — EXAMPLE.COM · Другое';
+
+  function smsBot() {
+    const harness = createTestBot({ now: SMS_SENT });
+    let updateId = 0;
+    const send = (text: string) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, date: SMS_SENT }),
+      );
+    const tap = (data: string) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data }));
+    const setTimezone = (timezone: string) =>
+      harness.db.prepare('UPDATE users SET timezone = ?').run(timezone);
+    return { ...harness, send, tap, setTimezone };
+  }
+
+  function cardKeyboard(expenseId: unknown) {
+    const id = String(expenseId);
+    return {
+      inline_keyboard: [
+        [
+          { text: 'Категория', callback_data: `exp:cat:${id}` },
+          { text: 'Изменить', callback_data: `exp:edit:${id}` },
+        ],
+        [{ text: messages.undoButton, callback_data: `exp:undo:${id}` }],
+      ],
+    };
+  }
+
+  function expenses(db: Db): unknown[] {
+    return db
+      .prepare('SELECT amount_minor, currency, description, occurred_on FROM expenses')
+      .all();
+  }
+
+  it('records a pasted SMS as 600 USD dated the Belgrade day, then answers a re-paste as recorded', async () => {
+    const { send, calls, db } = smsBot();
+    await send('/start');
+    calls.length = 0;
+
+    await send(SMS);
+    await send(SMS);
+
+    const expenseId = db.prepare('SELECT id FROM expenses').pluck().get();
+    expect(expenses(db)).toEqual([
+      { amount_minor: 600, currency: 'USD', description: 'EXAMPLE.COM', occurred_on: '2026-09-15' },
+    ]);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: SMS_CARD,
+          reply_markup: cardKeyboard(expenseId),
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: `Уже записано.\n${SMS_CARD}`,
+          reply_markup: cardKeyboard(expenseId),
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('dates the purchase the 14th for a New York user, 18:30 EDT', async () => {
+    const { send, setTimezone, db } = smsBot();
+    await send('/start');
+    setTimezone('America/New_York');
+
+    await send(SMS);
+
+    expect(db.prepare('SELECT occurred_on FROM expenses').pluck().all()).toEqual(['2026-09-14']);
+  });
+
+  it('files a second SMS from the same merchant in the category the first was moved to', async () => {
+    const { send, tap, db } = smsBot();
+    await send(SMS);
+    const firstId = db.prepare('SELECT id FROM expenses').pluck().get() as ExpenseId;
+    const groceries = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'groceries'")
+      .pluck()
+      .get() as CategoryId;
+    await tap(setCategoryData(firstId, groceries));
+
+    await send(buildKoriscenjeSms({ datum: '15.09.2026 09:00:00', iznos: '9,00 USD' }));
+
+    expect(
+      db
+        .prepare(
+          `SELECT e.amount_minor, c.name FROM expenses e JOIN categories c ON c.id = e.category_id
+            ORDER BY e.rowid`,
+        )
+        .all(),
+    ).toEqual([
+      { amount_minor: 600, name: 'Продукты' },
+      { amount_minor: 900, name: 'Продукты' },
+    ]);
   });
 });

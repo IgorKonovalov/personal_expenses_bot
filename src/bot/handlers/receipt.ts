@@ -54,7 +54,7 @@ export async function answerReceipt(
   const card = cardFor(cardView(deps, user, result));
   const sent = await replyHtml(
     ctx,
-    result.duplicate ? messages.receiptAlreadyRecorded(card.text) : card.text,
+    result.duplicate ? messages.alreadyRecorded(card.text) : card.text,
     { reply_markup: card.markup },
   );
   // The newest card is the one the worker edits once the items arrive. The test fake answers

@@ -1,6 +1,6 @@
 # 0021: A pasted Serbian card-purchase SMS records the purchase
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0021](../adrs/0021-bank-sms-template-parsers-plain-expense.md) (per-template
 > parser, plain expense keyed by content), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md)
@@ -243,11 +243,16 @@ type BankSmsResult =
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A pasted SMS records the purchase, once | dev | not started | |
+| 1: A pasted SMS records the purchase, once | dev | done | committed with this row |
 | 2: Refusals, /help and README | dev | not started | |
 | 3: Paste the real SMS into the deployed bot | human | not started | |
 
 ### Notes
+
+- Phase 1: a header line followed by a body that can't be read returns `notBankSms`, which falls
+  through to the free-text parser. Phase 2 turns these into refusals.
+- Phase 1: a re-paste logs `duplicate bank sms` at info, with the same fields as
+  `bank sms recorded` (`expenseId`, `userId`, `template`).
 
 ### Close triggers
 

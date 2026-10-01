@@ -535,11 +535,12 @@ export const messages = {
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
 
+  // The same receipt or bank SMS sent again into the same ledger: above its existing card.
+  alreadyRecorded: (card: Html): Html => joinHtml([html`Уже записано.`, card], '\n'),
+
   // Fiscal receipts (ADR-0018). The description a receipt expense carries until the shop's name
   // arrives.
   receiptPlaceholder: 'Чек',
-  // The same receipt sent again into the same ledger: above its existing card.
-  receiptAlreadyRecorded: (card: Html): Html => joinHtml([html`Уже записано.`, card], '\n'),
   receiptRefused: {
     malformed: html`Не удалось прочитать чек: ссылка повреждена или обрезана. Ничего не записано. Скопируйте ссылку целиком или отправьте сумму текстом, например «829,12 чек».`,
     fractionalTotal: html`Не удалось прочитать сумму чека. Ничего не записано. Отправьте сумму текстом, например «829,12 чек».`,
