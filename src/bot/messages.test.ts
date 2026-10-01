@@ -4,6 +4,18 @@ import { readAppVersion } from '../version.js';
 import { messages } from './messages.js';
 import { html } from './render/html.js';
 
+describe('/help', () => {
+  it('mentions past dates, the card buttons and receipts, within one message', () => {
+    expect(messages.help).toContain('«450 такси вчера»');
+    expect(messages.help).toContain('[Категория]');
+    expect(messages.help).toContain('[Изменить]');
+    expect(messages.help).toContain('Чек из Сербии или Черногории');
+    expect(messages.help).toContain('фото QR-кода');
+    // HTML length bounds the visible length Telegram counts.
+    expect(messages.help.length).toBeLessThan(4096);
+  });
+});
+
 describe('version announcements (ADR-0013)', () => {
   // The gate: a version bump in package.json without its announcement fails the suite.
   it('has an entry for the version in package.json', () => {

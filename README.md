@@ -37,8 +37,9 @@ when an amount could be read two ways.
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
 command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
-photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
-the record, and the bot says so.
+stickers, voice messages and files that aren't images get the help reply. Photos are read for a
+receipt QR code (see Receipts below). Editing a sent expense doesn't change the record, and the
+bot says so.
 
 Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply in a private chat. Everyone
 else is ignored there. The first id listed is the admin: on a boot with a new version, the bot
@@ -68,6 +69,34 @@ The bot can keep a group's shared books, such as a family's, next to everyone's 
 Other chatter, stickers and other bots' commands get no reply. Expenses you send the bot in
 private stay in your personal ledger and never appear in the group. Removing the bot keeps the
 ledger; adding it back (an allowlisted user) picks the same ledger up again.
+
+### Receipts
+
+In a private chat, a Serbian or Montenegrin fiscal receipt becomes one expense
+([ADR-0018](docs/adrs/0018-receipts-record-offline-enrich-async.md)). Send a photo of its QR
+code, the photo as a file, or the link the QR code holds (`https://suf.purs.gov.rs/v/?vl=…` or
+`https://mapr.tax.gov.me/ic/#/verify?…`).
+
+- The bot reads the total, the date and the receipt's fiscal id from the QR code alone, offline,
+  and records the total in RSD or EUR, dated the receipt's day in your timezone. The card reads
+  `… — Чек` at first.
+- Within a few seconds the bot fetches the shop and the line items from the tax authority's
+  site. The card then names the shop, shows `Магазин · 12 позиций` and gains [Позиции], which
+  lists the items in the same message. If the site stays unreachable (6 attempts over about
+  14.5 hours), the card says so and offers [Повторить]. The expense keeps the QR total either way.
+- The same receipt sent again, as a photo or as a link, records nothing and answers «Уже
+  записано» with the existing card. Refunds, copies, pro-forma and advance invoices are refused.
+- QR codes are decoded with [zxing-wasm](https://github.com/Sec-ant/zxing-wasm), loaded from
+  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). If a photo doesn't
+  decode, send it as a file or paste the link.
+
+Besides Telegram, these are the only hosts the bot connects to, and only to fetch a receipt's
+shop and items:
+
+- `suf.purs.gov.rs` (Serbia): the verify URL as JSON and as HTML, and `POST /specifications`
+- `mapr.tax.gov.me` (Montenegro): `POST /ic/api/verifyInvoice`
+
+Groups ignore photos and receipt links.
 
 ### Amount rules
 
@@ -246,6 +275,7 @@ src/
 ├── db/         SQLite connection, forward-only migrations, repositories. The only place with SQL
 ├── services/   use-cases orchestrating domain + db
 ├── bot/        the Telegram adapter (grammY): handlers, middleware, the Russian messages module
+├── fiscal/     the receipts adapter: QR decoding and the tax-site fetchers
 ├── config.ts   env -> typed config, validated at boot
 ├── version.ts  the running version, read from package.json at boot
 └── index.ts    boot
@@ -279,7 +309,7 @@ git hooks that guard commits.
 The approved and in-progress plans are listed in [docs/plans/README.md](docs/plans/README.md).
 Next come deploy to a VPS with daily backups, categories with learned suggestions, past dates,
 editing, weekly and monthly summaries, and per-user settings. Further out: shared ledgers,
-currency conversion, fiscal QR receipts, bank SMS parsing, CSV/XLSX export and optional
+currency conversion, fiscal receipts from Russia and Kazakhstan, bank SMS parsing, CSV/XLSX export and optional
 encryption of personal ledgers.
 
 ## License

@@ -359,8 +359,8 @@ type DecodedReceipt = {
 | 2: A pasted Montenegrin link | dev | done | 0d71306 |
 | 3: Photos and image files | dev | done | e3aa895 |
 | 4: The background fetch fills in the shop and the items | dev | done | 303cd3b |
-| 5: [Позиции] and [Повторить] on the card | dev | done | committed with this row |
-| 6: Help and the README | dev | not started | |
+| 5: [Позиции] and [Повторить] on the card | dev | done | 764cb13 |
+| 6: Help and the README | dev | done | committed with this row |
 | 7: Real receipts in production | human | not started | |
 
 ### Notes
@@ -408,6 +408,9 @@ type DecodedReceipt = {
   HTML length. A foreign [Позиции] tap gets the toast «Позиции видит только тот, кто записал
   трату», like the forbidden toasts of the other card taps. "The worker fetches it once" is
   tested by calling `fetchDueReceipt` twice after the double tap.
+- Phase 6: the README also says photos are read for receipts rather than answered with help,
+  adds `fiscal/` to its architecture tree, and narrows the roadmap's receipts item to Russia and
+  Kazakhstan.
 
 ### Close triggers
 
