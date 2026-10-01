@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.7.0 (2026-10-01)
+
+From Plan 0009 (group ledgers).
+
+- An allowed user adds the bot to a Telegram group, and the group gets its own shared ledger.
+  Any member writes `450 кафе` there, and it's recorded in the group's ledger under their name.
+  Personal expenses in DM stay private and never appear in the group.
+- A recognised expense gets a ✍ reaction. One that falls to «Другое» gets a card with
+  [Удалить], and [Изменить в личке] for allowed users. Only the author can delete or edit.
+  Replying `/card` to a recorded message shows its card.
+- `/today`, `/week` and `/month` in the group show the group's spending by category and by
+  person, in the group ledger's timezone.
+- The group owner's `/settings` links to a DM screen for the group ledger's timezone and
+  currency. Removing the bot keeps the ledger, and adding it back resumes it.
+
 ## 0.6.0 (2026-09-30)
 
 From Plan 0004 (past dates, summaries by category, and the edit flow).

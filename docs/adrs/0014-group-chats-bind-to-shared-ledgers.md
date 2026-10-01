@@ -1,8 +1,8 @@
 # ADR-0014: A group chat binds to one shared ledger, and the chat, not the active ledger, routes its messages
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-09-30
-> **Related plan(s):** [Plan 0009](../plans/0009-group-ledgers.md)
+> **Related plan(s):** [Plan 0009](../plans/done/0009-group-ledgers.md)
 
 ## Context
 

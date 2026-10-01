@@ -1,9 +1,10 @@
 # 0009: Group ledgers: the bot as a group's accountant, with personal books kept private
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, one minor open (DM edits of a group expense
+> use the viewer's timezone), Phase 5 live check owed, v0.7.0
 > **Created:** 2026-09-30
-> **Related ADRs:** [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md),
-> [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md)
+> **Related ADRs:** [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md),
+> [ADR-0015](../../adrs/0015-shared-ledgers-carry-a-timezone.md)
 
 ## TL;DR
 
@@ -386,4 +387,137 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 - **Outstanding `human` phases:** Phase 5 (live check in the family group, BotFather
   `/setjoingroups` and `/setprivacy`), not started.
 
+## Close review
+
+Closed 2026-10-01 by the conductor after review round 1 (tip 7dc6064). There was no fix round, so
+no earlier finding was resolved by a fix commit. Phase 5 (`human`, `Blocks merge: no`) stays
+**owed**: the BotFather `/setjoingroups` and `/setprivacy` settings and the live check in the
+family group are not done, so the plan is not verified live. Minor 1 and the nit stay open; minor 1
+is copied to `## Followups`. The round 1 review, in full:
+
+> # Plan 0009 review, round 1 (tip 7dc60644f574c39bf491ddceebd67be5376c2602)
+>
+> **Verdict:** Clean. Phases 1 to 4 deliver what the plan asked for, every named done-when has a test
+> whose assertion matches the claim, and the gate is green. There are no blockers and no majors.
+> One minor finding: the DM edit paths still date a group expense in the viewer's timezone, not the
+> ledger's. One nit. Both can go to followups.
+>
+> ## Gate (run in this session, at the tip)
+>
+> - `pnpm typecheck`: exit 0.
+> - `pnpm lint`: exit 0.
+> - `pnpm test`: exit 0, 42 files and 570 tests passed.
+> - `node scripts/check-doc-links.mjs`: exit 0, 125 relative links resolve.
+>
+> ## Alignment
+>
+> - The implementation log maps phases 1 to 4 to commits 1f014da, 74800f8, 7848f4a and 6f35073.
+>   Phase 5 (`human`, `Blocks merge: no`) is owed. Each phase has exactly one in-vocabulary owner
+>   tag. The log is shorter than the phases section and discloses every file changed outside
+>   `Files touched`.
+> - I read every done-when's assertion in `src/bot/group/group.test.ts`, then the service tests:
+>   `groupChats.test.ts`, the target-ledger block in `recordExpense.test.ts`, `summarizeByAuthor`
+>   in `aggregate.test.ts`, `groupPeriodSummary` in `periodSummary.test.ts`, `setLedgerTimezone`
+>   in `settings.test.ts`, the settings-screen and timezone-flow round trips in
+>   `flowSessions.test.ts`, and the `insertLedger` refusal in `ledgers.test.ts`. The assertions are
+>   exact payload or row equalities, not "non-empty". The arithmetic matches the plan:
+>   195000 = 45000 + 120000 + 30000, A 165000, and the `2026-09-30T23:30:00Z` instant gives
+>   Belgrade `2026-10-01` and New York `2026-09-30`. The two-currency property is stated in the
+>   test comment, as the plan required.
+> - Phase 2 "existing tests pass unmodified": the pre-existing tests that changed were fixture
+>   timezones on shared ledgers (`categories.test.ts`, `ledgers.test.ts`), the migration list in
+>   `connection.test.ts`, and a second `setMyCommands` call in `bot.test.ts`. The log discloses all
+>   of them, and none changes a personal-ledger assertion.
+> - Phase 2's service author check came from existing code (`createdBy` checks in
+>   `editExpense.ts:52` and `changeCategory.ts:96`). `answerEditFlow` goes back through `openEdit`,
+>   so the write path is guarded too, not only the flow start.
+> - No ADR was silently reversed. ADR-0014 (separate group composer, binding gate, author-only
+>   edits, closed DM allowlist) and ADR-0015 (`ledger.timezone ?? user.timezone` for `occurred_on`
+>   at record time and for report periods) hold on the record and report paths. The minor finding
+>   below is the edit path, which ADR-0015 doesn't name explicitly.
+>
+> ## Layering and correctness
+>
+> - grammY is imported only under `src/bot/`. `groupChats`, `periodSummary` and `todaySummary`
+>   take a numeric chat id and never take a Telegram type. `ledger_chats` keys on
+>   `(provider, chat_id)` text, and the ledger id is a UUID.
+> - All copy lives in `messages.ts`, and user text (first names, ledger names) goes through the
+>   `html` template (escaping asserted for `<b>Ира</b>`).
+> - No float money and no `new Date()` in domain code. Sums go through `sumByCurrency` / `safeSum`.
+> - Idempotency: redelivery records once (source key `tg:<chat>:<msg>`) and doesn't re-confirm. A
+>   repeated `my_chat_member` writes nothing and sends no second welcome. Card taps are guarded by
+>   soft-delete state.
+> - Privacy: the logs carry ids only, never titles or names. Group reports read only the bound
+>   ledger, via the binder's membership.
+> - Telegram limits: `grp:del|res:<uuid>` is 44 bytes, asserted through `assertCallbackData`. The
+>   `e_` and `gs_` payloads are 38 and 39 bytes, asserted.
+>
+> ## Findings
+>
+> ### blocker
+>
+> None.
+>
+> ### major
+>
+> None.
+>
+> ### minor
+>
+> 1. **The DM card and the date edit for a group expense use the viewer's timezone, not the
+>    ledger's.**
+>    - **Where:** `src/bot/handlers/card.ts:47` (`sentOn` from `resolveUserTimezone`), and
+>      `src/services/editExpense.ts:70`, `:116` and `:194` (`today` for the date prompt, the typed
+>      date and the quick buttons).
+>    - **Why it matters:** Phase 2 routes every group edit through the author's DM card
+>      (`/start e_<id>`). ADR-0015 makes `ledger.timezone ?? user.timezone` the effective zone of
+>      an expense, and these paths are the case where the two differ, which nothing probes.
+>      Scenario: SECOND_ALLOWED_ID (America/New_York) records `500 такси` in the Belgrade group at
+>      `2026-09-30T23:30:00Z`, so `occurred_on` is `2026-10-01`. Opened from the deep link, the DM
+>      card computes `sentOn = 2026-09-30` and labels the expense «за 1 октября». The date editor
+>      offers New York's 30 September as «сегодня», so one tap moves the expense into September in
+>      the group's books. Typing `01.10` is refused as a future date, although the ledger's today
+>      is 1 October.
+>    - **Suggested fix:** compute `today` and `sentOn` with `effectiveTimezone(deps, user, ledger)`
+>      (exported from `src/services/recordExpense.ts`). `openEdit` already returns the ledger, and
+>      `cardView` receives it. Add a test in `group.test.ts` with the New York member above,
+>      asserting that the card shows no «за …» suffix and that the quick-button `today` is
+>      `2026-10-01`. This can be a followup plan: the plan didn't name the edit paths, and the
+>      exposure is a member in a different zone near midnight.
+>
+> ### nit
+>
+> 1. **The per-person section isn't budgeted against the 4096-character limit.**
+>    - **Where:** `src/bot/messages.ts`, `periodSummary`: the totals-only fallback still appends
+>      `peopleSection(people)` in full.
+>    - **Why it matters:** a group with very many members could still exceed Telegram's message
+>      limit after the fallback. At family scale this doesn't happen.
+>    - **Suggested fix:** none now. Revisit if groups grow.
+>
+> ## Bookkeeping owed at close
+>
+> - Copy the two followups that `dev` logged in Notes into the plan's empty `## Followups`:
+>   - In a group, an ambiguous (`1.200 обед`), invalid or future-dated text records nothing and
+>     gets no reply.
+>   - After a supergroup migration, `/card` replied to an earlier message finds nothing, because
+>     the source key carries the old chat id.
+>   - Add minor 1 above.
+> - Accept ADR-0014 and ADR-0015 (`proposed` to `accepted`), and refresh `docs/adrs/README.md`.
+> - Bump the version as a feature plan: minor, 0.6.0 to 0.7.0. Update `package.json`, add a
+>   `CHANGELOG.md` entry and the `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013).
+> - Phase 5 (`human`, `Blocks merge: no`) stays owed: the BotFather `/setjoingroups` and
+>   `/setprivacy` settings, then the live check in the family group. Record it in the close
+>   section, so the plan doesn't read as fully verified live.
+> - Flip the plan's status to `done`, move it to `docs/plans/done/`, repair its links (`../adrs/`
+>   to `../../adrs/`, plus inbound links), run `node scripts/check-doc-links.mjs`, and refresh
+>   `docs/plans/README.md`.
+
 ## Followups
+
+- In a group, an ambiguous (`1.200 обед`), invalid or future-dated text records nothing and gets
+  no reply.
+- After a supergroup migration, `/card` replied to an earlier message finds nothing, because the
+  source key carries the old chat id.
+- The DM card and the date editor for a group expense compute "today" in the viewer's timezone,
+  not the ledger's (`src/bot/handlers/card.ts`, `src/services/editExpense.ts`): use
+  `effectiveTimezone` and test with a New York member in the Belgrade group near midnight.

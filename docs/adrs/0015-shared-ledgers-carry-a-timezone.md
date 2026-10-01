@@ -1,8 +1,8 @@
 # ADR-0015: A shared ledger carries its own timezone, used for its dates and periods
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-09-30
-> **Related plan(s):** [Plan 0009](../plans/0009-group-ledgers.md)
+> **Related plan(s):** [Plan 0009](../plans/done/0009-group-ledgers.md)
 
 ## Context
 
