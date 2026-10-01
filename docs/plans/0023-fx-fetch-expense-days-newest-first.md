@@ -1,6 +1,6 @@
 # 0023: The rate worker fetches only expense days, newest first
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
 > rate, the worker)
