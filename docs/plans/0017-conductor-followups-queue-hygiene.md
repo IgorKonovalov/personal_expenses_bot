@@ -1,6 +1,6 @@
 # 0017: Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0010, [ADR-0016](../adrs/0016-readiness-runs-before-a-plan-is-queued.md)
 
@@ -134,12 +134,16 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A malformed Blocks merge line is a plan error | dev | not started | |
+| 1: A malformed Blocks merge line is a plan error | dev | done | committed with this row |
 | 2: prune removes a merged plan everywhere | dev | not started | |
 | 3: ready warns about an uncommitted edit; mid-run queue notice | dev | not started | |
 | 4: Readiness checks done-when reachability | dev | not started | |
 
 ### Notes
+
+- Phase 1: `check` validates only queued plans and the queue is empty, so every plan under
+  `docs/plans/` was run through `readPlanFile` instead. None carries the new error. 0015 (a draft
+  stub) reports `no ## Implementation phases section`, which predates this phase.
 
 ### Close triggers
 

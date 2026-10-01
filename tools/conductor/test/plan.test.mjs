@@ -200,3 +200,19 @@ test("Blocks merge: no makes a human phase owed rather than parked, and only a h
   writePlan(repo, { number: "0101", phases: wrong });
   assert.deepEqual(validateQueue({ lanes: { a: ["0101"] } }, repo).errors, ["plan 0101: Phase 1 carries Blocks merge, which only a human phase may (it is dev)"]);
 });
+
+test("a Blocks merge line the parser can't read is an error naming the phase, not a silent default", () => {
+  const withTag = (blocksMerge) => parsePlan(planText({ number: "0101", phases: [{ id: "1", owner: "dev" }, { id: "2", owner: "human", blocksMerge }] }));
+
+  const malformed = withTag("no (needs deploy)");
+  assert.deepEqual(malformed.errors, ['Phase 2 carries a Blocks merge line that is not `no` or `yes`: "- **Blocks merge:** no (needs deploy)"']);
+  assert.equal(malformed.phases[1].blocksMerge, null);
+
+  for (const value of ["`no`", "no"]) {
+    const plan = withTag(value);
+    assert.deepEqual(plan.errors, [], value);
+    assert.equal(plan.phases[1].blocksMerge, "no", value);
+  }
+
+  assert.deepEqual(withTag("maybe").errors, ['Phase 2 carries Blocks merge "maybe"; it is no or yes']);
+});

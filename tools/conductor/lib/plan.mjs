@@ -84,8 +84,13 @@ export function parsePlan(raw) {
     }
     const stop = line.match(/^- \*\*Stop condition:\*\*\s*(.+)$/);
     if (stop) current.stopCondition = stop[1].trim();
-    const blocks = line.match(/^- \*\*Blocks merge:\*\*\s*`?([\w-]+)`?\s*$/);
-    if (blocks) current.blocksMerge = blocks[1].toLowerCase();
+    // A tag whose value the pattern can't read is an error, never a skipped line: a skipped tag
+    // leaves the phase blocking, which parks the plan `human_phase` with nothing said.
+    if (/^- \*\*Blocks merge:\*\*/.test(line)) {
+      const blocks = line.match(/^- \*\*Blocks merge:\*\*\s*`?([\w-]+)`?\s*$/);
+      if (blocks) current.blocksMerge = blocks[1].toLowerCase();
+      else plan.errors.push(`Phase ${current.id} carries a Blocks merge line that is not \`no\` or \`yes\`: "${line.trim()}"`);
+    }
   }
   for (const p of plan.phases) {
     if (!OWNERS.has(p.owner)) plan.errors.push(`Phase ${p.id} has no valid owner tag (${p.owner})`);
