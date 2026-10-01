@@ -1,6 +1,6 @@
 # 0029: Opening by invite: invite links, abuse limits, a privacy policy and account deletion
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),

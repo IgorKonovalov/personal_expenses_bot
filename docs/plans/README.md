@@ -19,7 +19,7 @@ status and date. What a plan did lives in the plan.
 | [0026](0026-monthly-summary-push.md) | Monthly summary push: last period's report arrives on its own | draft, stub (2026-10-01) |
 | [0027](0027-bank-statement-import.md) | Bank statement import: a Serbian bank's export file becomes expenses | draft, stub (2026-10-01) |
 | [0028](0028-donations.md) | Donations: everything free, `/donate` via Telegram Stars and an external link | draft, stub (2026-10-01) |
-| [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | draft (2026-10-01) |
+| [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | approved (2026-10-01) |
 
 ## Recently closed
 
