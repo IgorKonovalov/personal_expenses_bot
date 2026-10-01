@@ -12,7 +12,7 @@ import {
   type BudgetAnswerResult,
   type BudgetScreenView,
 } from '../../services/budget.js';
-import type { BudgetFlow, BudgetScreen } from '../../services/flowSessions.js';
+import { cancelFlowIf, type BudgetFlow, type BudgetScreen } from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   BUDGET_CAP,
@@ -23,6 +23,7 @@ import {
   BUDGET_OPEN,
   BUDGET_SCOPE,
   BUDGET_START_DAY,
+  SETTINGS_OPEN,
   budgetCapClearData,
   budgetCapData,
   budgetCapsPageData,
@@ -32,6 +33,7 @@ import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { joinHtml, replyHtml, type Html } from '../render/html.js';
 import {
+  backRow,
   cancelRow,
   renderAnchor,
   requireScreen,
@@ -45,7 +47,8 @@ import { ensureUser } from './start.js';
 // The limit and the period start day are asked through text flows (ADR-0009); flows.ts takes
 // the answers.
 
-function screenView(view: BudgetScreenView, header?: Html): ScreenView {
+// Opened from a settings hub, the screen ends with [« Назад] to it.
+function screenView(view: BudgetScreenView, screen: BudgetScreen, header?: Html): ScreenView {
   const body = messages.budgetScreen(view);
   const current = view.status?.scope ?? 'all';
   const scopeButton = (scope: BudgetScope) => {
@@ -62,6 +65,7 @@ function screenView(view: BudgetScreenView, header?: Html): ScreenView {
       [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
       [scopeButton('all'), scopeButton('optional')],
       [InlineKeyboard.text(messages.budgetCapsButton, BUDGET_CAPS_OPEN)],
+      ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
     ]),
   };
 }
@@ -78,6 +82,7 @@ export function budgetView(
   if (view === undefined) return undefined;
   return screenView(
     view,
+    screen,
     droppedCapsCurrency === undefined ? undefined : messages.budgetCapsDropped(droppedCapsCurrency),
   );
 }
@@ -112,7 +117,8 @@ export function budgetPromptView(
         currency,
         current: capMinor === null ? undefined : { amountMinor: capMinor, currency },
       });
-      // A capped category's prompt offers [Убрать лимит] above [Отмена].
+      // A capped category's prompt offers [Убрать лимит], then [« Назад] to the cap list's
+      // first page above [Отмена].
       return {
         text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
         markup: InlineKeyboard.from([
@@ -126,6 +132,7 @@ export function budgetPromptView(
                   ),
                 ],
               ]),
+          backRow(BUDGET_CAPS_OPEN),
           cancelRow(),
         ]),
       };
@@ -217,7 +224,7 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
     const tap = await budgetTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, screenView(tap.view));
+    await renderAnchor(ctx, tap.anchor, screenView(tap.view, tap.screen));
   });
 
   bot.callbackQuery(BUDGET_SCOPE, async (ctx) => {
@@ -242,9 +249,11 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
     }
   });
 
+  // The cap list, also reached by [« Назад] on a cap prompt: that prompt's flow is cancelled.
   bot.callbackQuery(BUDGET_CAPS, async (ctx) => {
     const tap = await budgetTap(ctx, deps);
     if (tap === undefined) return;
+    cancelFlowIf(deps, tap.user, (flow) => flow.kind === 'budgetCap');
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, capsPickerView(tap.view, Number(ctx.match[1] ?? 1)));
   });

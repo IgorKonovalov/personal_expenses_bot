@@ -146,7 +146,7 @@ export function setCategoryEssentialData(categoryId: CategoryId, essential: bool
 }
 
 // The /settings hub (ADR-0011). `set:open` shows the hub in the anchor, from any of its pickers
-// and from the categories screen it opened.
+// and from the categories or budget screen it opened.
 export const SETTINGS_OPEN = 'set:open';
 export const SETTINGS_CATEGORIES = 'set:cat';
 // The hub scoped to a shared ledger opens that ledger's /budget screen in the anchor.

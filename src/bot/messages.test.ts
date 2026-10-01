@@ -5,12 +5,13 @@ import { messages } from './messages.js';
 import { html } from './render/html.js';
 
 describe('/help', () => {
-  it('mentions past dates, the card buttons and receipts, within one message', () => {
+  it('mentions past dates, the card buttons, receipts and /cancel, within one message', () => {
     expect(messages.help).toContain('«450 такси вчера»');
     expect(messages.help).toContain('[Категория]');
     expect(messages.help).toContain('[Изменить]');
     expect(messages.help).toContain('Чек из Сербии или Черногории');
     expect(messages.help).toContain('фото QR-кода');
+    expect(messages.help).toContain('/cancel — отменить ввод');
     // HTML length bounds the visible length Telegram counts.
     expect(messages.help.length).toBeLessThan(4096);
   });

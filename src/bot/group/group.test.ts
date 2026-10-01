@@ -1,5 +1,5 @@
 import type { Bot } from 'grammy';
-import type { Update } from 'grammy/types';
+import type { InlineKeyboardMarkup, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { CategoryId } from '../../db/categories.js';
 import type { Db } from '../../db/connection.js';
@@ -1137,6 +1137,9 @@ describe('budgets on group ledgers (ADR-0017)', () => {
       '<b>Бюджет «Семья»</b>\nЛимит не задан. Задайте лимит на период, и после каждой траты я ' +
         'покажу, сколько осталось на сегодня.',
     );
+    const keyboard = (calls.at(-1)?.payload as { reply_markup: InlineKeyboardMarkup }).reply_markup
+      .inline_keyboard;
+    expect(keyboard.at(-1)).toEqual([{ text: '« Назад', callback_data: 'set:open' }]);
     await tap(ALLOWED_ID, 'bud:lim', { messageId: SENT_ID });
     await dm(ALLOWED_ID, '30000', 181);
     expect(db.prepare('SELECT ledger_id, limit_minor FROM ledger_budgets').get()).toEqual({
@@ -1163,6 +1166,39 @@ describe('budgets on group ledgers (ADR-0017)', () => {
         'Осталось до 31 окт: 29 550.00 RSD',
       ].join('\n'),
     );
+  });
+
+  it('goes back from the budget screen to the scoped hub, and only the DM screen says to re-set the limit', async () => {
+    const { bot, db, calls, say, dm, tap } = await bound({ now: LATE });
+    returnSentMessages(bot);
+    const ledgerId = groupLedgerId(db);
+    await dm(ALLOWED_ID, `/start gs_${ledgerId}`, 180);
+    await tap(ALLOWED_ID, 'set:bud', { messageId: SENT_ID });
+    await tap(ALLOWED_ID, 'bud:lim', { messageId: SENT_ID });
+    await dm(ALLOWED_ID, '30000', 181);
+    const keyboard = (calls.at(-1)?.payload as { reply_markup: InlineKeyboardMarkup }).reply_markup
+      .inline_keyboard;
+    expect(keyboard.at(-1)).toEqual([{ text: '« Назад', callback_data: 'set:open' }]);
+
+    await tap(ALLOWED_ID, 'set:open', { messageId: SENT_ID });
+    expect(
+      db.prepare("SELECT screen, screen_ctx FROM flow_sessions WHERE screen_ctx != '{}'").get(),
+    ).toEqual({ screen: 'settings', screen_ctx: JSON.stringify({ ledgerId }) });
+    await tap(ALLOWED_ID, 'set:cur:EUR', { messageId: SENT_ID });
+    expect(
+      db.prepare('SELECT default_currency FROM ledgers WHERE id = ?').pluck().get(ledgerId),
+    ).toBe('EUR');
+
+    await tap(ALLOWED_ID, 'set:bud', { messageId: SENT_ID });
+    expect(sentText(calls.at(-1))).toContain(
+      'Бюджет в RSD, а новые траты — в EUR. Задайте лимит заново, чтобы перейти на EUR.',
+    );
+
+    await say(STRANGER_ID, '/budget', 183, { firstName: 'Борис' });
+    expect(calls.at(-1)?.payload).toMatchObject({ chat_id: GROUP_ID });
+    const groupText = sentText(calls.at(-1));
+    expect(groupText).toContain('Бюджет в RSD, а новые траты — в EUR.');
+    expect(groupText).not.toContain('Задайте лимит заново');
   });
 
   it("refuses the budget setup to a member who isn't the owner", async () => {

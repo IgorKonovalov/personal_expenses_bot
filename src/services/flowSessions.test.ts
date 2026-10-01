@@ -82,6 +82,12 @@ describe('screen anchor', () => {
     expect(currentAnchor({ db }, user)).toBeUndefined();
   });
 
+  it('round-trips a budget screen opened from a settings hub', () => {
+    const screen = { name: 'budget', ledgerId, fromSettings: true } as const;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 11, screen });
+    expect(currentAnchor({ db }, user)?.screen).toEqual(screen);
+  });
+
   it('reads a summary row without a ledger id as no screen', () => {
     db.prepare("UPDATE flow_sessions SET screen = 'summary', screen_ctx = '{}'").run();
 

@@ -179,13 +179,18 @@ function hubView(deps: HandlerDeps, tap: SettingsTap, user: User = tap.user): Sc
 export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('settings', (ctx) => sendSettings(ctx, deps));
 
-  // Back to the hub from its pickers, and from the categories screen it opened. A scoped hub
-  // keeps its ledger.
+  // Back to the hub from its pickers, and from the categories or budget screen it opened. A
+  // scoped hub keeps its ledger; only a scoped hub opens a budget screen.
   bot.callbackQuery(SETTINGS_OPEN, async (ctx) => {
     const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
+    const from = tap.anchor.screen;
     const screen: SettingsScreen =
-      tap.anchor.screen.name === 'settings' ? tap.anchor.screen : { name: 'settings' };
+      from.name === 'settings'
+        ? from
+        : from.name === 'budget'
+          ? { name: 'settings', ledgerId: from.ledgerId }
+          : { name: 'settings' };
     const view = settingsView(deps, tap.user, screen.ledgerId);
     if (view === undefined) {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
@@ -222,7 +227,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
-    const budget: BudgetScreen = { name: 'budget', ledgerId: screen.ledgerId };
+    const budget: BudgetScreen = { name: 'budget', ledgerId: screen.ledgerId, fromSettings: true };
     const view = budgetView(deps, tap.user, budget);
     if (view === undefined) {
       await ctx.answerCallbackQuery({ text: messages.budgetNotOwnerToast });

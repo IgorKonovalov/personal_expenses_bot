@@ -8,6 +8,7 @@ import {
   currentAnchor,
   isBudgetFlow,
   isEditFlow,
+  type BudgetScreen,
   type CategoriesScreen,
   type EditFlow,
   type Flow,
@@ -155,12 +156,13 @@ export async function answerFlow(
         await restoreScreen(ctx, deps, user);
         return;
       case 'set': {
-        const view = budgetView(
-          deps,
-          user,
-          { name: 'budget', ledgerId: flow.ledgerId },
-          result.droppedCapsCurrency,
-        );
+        // The flow's ledger, with the anchor's back route to the settings hub when it has one.
+        const fromSettings = anchor?.screen.name === 'budget' && anchor.screen.fromSettings;
+        const screen: BudgetScreen =
+          fromSettings === true
+            ? { name: 'budget', ledgerId: flow.ledgerId, fromSettings }
+            : { name: 'budget', ledgerId: flow.ledgerId };
+        const view = budgetView(deps, user, screen, result.droppedCapsCurrency);
         if (view !== undefined) await show(ctx, anchor, view);
         return;
       }

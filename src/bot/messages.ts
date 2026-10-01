@@ -472,6 +472,7 @@ export const messages = {
       html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
       html`/changelog — что нового в боте`,
+      html`/cancel — отменить ввод`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
     ],
@@ -730,8 +731,8 @@ export const messages = {
     `Валюту «${ledgerName(ledger)}» может изменить только владелец`,
 
   // The /budget screen (ADR-0017). Amounts are in the budget's currency; spend in other
-  // currencies is listed as not counted.
-  budgetScreen: ({ ledger, status }: BudgetScreenView): Html => {
+  // currencies is listed as not counted. `readOnly` leaves out what only the owner can act on.
+  budgetScreen: ({ ledger, status }: BudgetScreenView, readOnly = false): Html => {
     const title = html`<b>Бюджет «${ledgerName(ledger)}»</b>`;
     const noLimit = html`Лимит не задан. Задайте лимит на период, и после каждой траты я покажу, сколько осталось на сегодня.`;
     if (status === undefined) return joinHtml([title, noLimit], '\n');
@@ -764,8 +765,14 @@ export const messages = {
       lines.push(html`Не учтено, другая валюта: ${amounts.join(', ')}`);
     }
     if (currency !== ledger.defaultCurrency) {
+      const mismatch = html`Бюджет в ${currency}, а новые траты — в ${ledger.defaultCurrency}.`;
       lines.push(
-        html`Бюджет в ${currency}, а новые траты — в ${ledger.defaultCurrency}. Задайте лимит заново, чтобы перейти на ${ledger.defaultCurrency}.`,
+        readOnly
+          ? mismatch
+          : joinHtml(
+              [mismatch, html`Задайте лимит заново, чтобы перейти на ${ledger.defaultCurrency}.`],
+              ' ',
+            ),
       );
     }
     return joinHtml(lines, '\n');
@@ -782,7 +789,7 @@ export const messages = {
         '\n',
       );
     }
-    return messages.budgetScreen(view);
+    return messages.budgetScreen(view, true);
   },
   // The group ledger's settings hub opens its budget screen (owner only).
   settingsBudgetButton: 'Бюджет',

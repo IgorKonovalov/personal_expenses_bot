@@ -1969,6 +1969,39 @@ describe('/budget and the card line (ADR-0017)', () => {
     );
   });
 
+  it('offers [« Назад] on the cap prompt, which cancels the cap flow and shows the cap list', async () => {
+    const { say, tap, calls, db } = await withLimit();
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+      .pluck()
+      .get() as number;
+    await say('/budget', 3);
+    await tap(`bud:cap:${String(cafe)}`, 102);
+    await say('5000', 4);
+
+    await tap(`bud:cap:${String(cafe)}`, 102);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Убрать лимит', callback_data: `bud:capx:${String(cafe)}` }],
+            [{ text: '« Назад', callback_data: 'bud:caps' }],
+            [{ text: 'Отмена', callback_data: 'flow:cancel' }],
+          ],
+        },
+      },
+    });
+
+    await tap('bud:caps', 102);
+    expect(lastText(calls)).toBe(
+      'Лимит на период для категории. Выберите категорию, чтобы задать или убрать лимит.',
+    );
+    expect(db.prepare('SELECT kind FROM flow_sessions').pluck().get()).toBeNull();
+    await say('6000', 5);
+    expect(db.prepare('SELECT cap_minor FROM category_caps').pluck().all()).toEqual([500_000]);
+  });
+
   it("neither lists an archived category's cap nor puts it on the card", async () => {
     const { say, tap, calls, db } = await withLimit();
     const cafe = db

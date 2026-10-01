@@ -218,8 +218,8 @@ type SetLimitResult =
 | 1: A receipt whose data fails to apply backs off | dev | done | 1aac740 |
 | 2: A SUF link with a note; test code out of the image | dev | done | b9b047c |
 | 3: A group expense in DM uses the ledger's timezone | dev | done | edfecc4 |
-| 4: A currency change drops the category caps | dev | done | committed with this row |
-| 5: Budget navigation and the read-only group line | dev | not started | |
+| 4: A currency change drops the category caps | dev | done | 1ebafe7 |
+| 5: Budget navigation and the read-only group line | dev | done | committed with this row |
 
 ### Notes
 
@@ -249,6 +249,13 @@ type SetLimitResult =
   ledger whose only cap was on an archived category also gets the line. The failure case is
   injected with a test-only `BEFORE UPDATE` trigger on `ledger_budgets`. No bot-level test shows
   the line on the screen.
+- Phase 5: the cap flow is cancelled in the `bud:caps` handler in `src/bot/handlers/budget.ts`,
+  not in `src/bot/flows.ts`; `flows.ts` carries the anchor's `fromSettings` into the screen after
+  a typed answer. `set:open` from a budget screen opens the hub scoped to that budget's ledger.
+  The group `/budget` keeps the first half of the currency line («Бюджет в RSD, а новые траты — в
+  EUR.») and drops only the re-set sentence. The DM half of that done-when is checked on the
+  screen opened through `set:bud`, since the DM `/budget` opens the personal ledger. Checked by
+  hand: with the cancel line removed, the [« Назад] test fails on the pending flow assertion.
 
 ### Close triggers
 

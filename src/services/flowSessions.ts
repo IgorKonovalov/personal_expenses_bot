@@ -49,6 +49,8 @@ export interface SettingsScreen {
 export interface BudgetScreen {
   readonly name: 'budget';
   readonly ledgerId: LedgerId;
+  // Opened from a settings hub: the screen carries a [« Назад] back to it.
+  readonly fromSettings?: true;
 }
 
 export type Screen =
@@ -206,10 +208,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
     return { name, expenseId: parsed.expenseId as ExpenseId };
   }
-  if (name === 'budget' && typeof parsed?.ledgerId === 'string') {
-    return { name, ledgerId: parsed.ledgerId as LedgerId };
-  }
-  if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
+  if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
       ? { name, ledgerId, fromSettings: true }
