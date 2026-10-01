@@ -1,8 +1,8 @@
 # 0017: Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy
 
-> **Status:** in-progress (2026-10-01)
+> **Status:** done (2026-10-01): built as planned, one nit and one conductor followup open, no version bump
 > **Created:** 2026-10-01
-> **Related ADRs:** ADR-0010, [ADR-0016](../adrs/0016-readiness-runs-before-a-plan-is-queued.md)
+> **Related ADRs:** ADR-0010, [ADR-0016](../../adrs/0016-readiness-runs-before-a-plan-is-queued.md)
 
 ## TL;DR
 
@@ -168,3 +168,11 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 - **Outstanding `human` phases:** none.
 
 ## Followups
+
+Tracked in `tools/conductor/FOLLOWUPS.md` as F22 and F23.
+
+- **`cmdPrune` rewrites only when a lane entry was dropped** (`dev`'s Phase 2 note). A queue whose
+  lanes are already clean but whose `plans` map still names a merged plan reports "nothing to
+  prune" and keeps the map. Rewrite whenever the pruned queue differs from the one read.
+- **nit: the `ready` drift warning after a park is untested.** Phase 3's What warns after a pass
+  or a park; `cli.test.mjs` covers the pass only. Add the park case next to the pass case.
