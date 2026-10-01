@@ -1,6 +1,6 @@
 # 0021: A pasted Serbian card-purchase SMS records the purchase
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0021](../adrs/0021-bank-sms-template-parsers-plain-expense.md) (per-template
 > parser, plain expense keyed by content), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md)
