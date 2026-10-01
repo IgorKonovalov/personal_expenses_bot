@@ -2,6 +2,13 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.9.3 (2026-10-01)
+
+From Plan 0020 (receipt links with a wrapped vl or :443).
+
+- A Serbian receipt whose QR link wraps its data across lines, or names the host with `:443`,
+  is read as a receipt instead of being refused or ignored. A Montenegrin link with `:443` is too.
+
 ## 0.9.2 (2026-10-01)
 
 From Plan 0018 (close nits of Plan 0016).

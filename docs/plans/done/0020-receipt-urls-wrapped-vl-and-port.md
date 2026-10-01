@@ -1,9 +1,9 @@
 # 0020: Receipt links with a line-wrapped vl or an explicit :443 port
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, one nit open, Phase 2 real-receipts check owed, v0.9.3
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (the URL is
-> decoded offline), [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (QR decoding)
+> **Related ADRs:** [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md) (the URL is
+> decoded offline), [ADR-0019](../../adrs/0019-qr-decoding-zxing-wasm.md) (QR decoding)
 
 ## TL;DR
 
@@ -158,3 +158,8 @@ None. No schema, type or callback-data change.
 - **Outstanding `human` phases:** Phase 2 (re-send the two real receipts after deploy).
 
 ## Followups
+
+- **nit (close review):** `src/fiscal/qr.fixtures/generate.ts` is not reproducible for
+  `example.png`: a rerun rewrites it with different bytes for the same image (Implementation log,
+  Phase 1 notes). A fixture regeneration then shows a spurious diff. Pin the PNG encoder's output
+  (e.g. strip timestamps/metadata) in a future fixtures chore.
