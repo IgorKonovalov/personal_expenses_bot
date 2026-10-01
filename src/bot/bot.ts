@@ -6,6 +6,7 @@ import type { Logger } from '../logger.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { clearFlowOnCommand } from './flows.js';
 import { groupComposer, isGroupChat } from './group/index.js';
+import { registerBudget } from './handlers/budget.js';
 import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
@@ -68,6 +69,7 @@ export function createBot(options: BotOptions): Bot {
   registerToday(dm, options);
   registerSummary(dm, options);
   registerCategories(dm, options);
+  registerBudget(dm, options);
   registerSettings(dm, options);
   registerCancel(dm, options);
   registerHelp(dm);

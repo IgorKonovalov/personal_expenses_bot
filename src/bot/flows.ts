@@ -1,10 +1,12 @@
 import type { Context, MiddlewareFn } from 'grammy';
 import type { User } from '../db/users.js';
+import { answerBudgetFlow, budgetScreen } from '../services/budget.js';
 import { showExpense } from '../services/changeCategory.js';
 import { answerEditFlow } from '../services/editExpense.js';
 import {
   cancelFlow,
   currentAnchor,
+  isBudgetFlow,
   isEditFlow,
   type CategoriesScreen,
   type EditFlow,
@@ -14,6 +16,7 @@ import {
 import { answerCategoryFlow } from '../services/manageCategories.js';
 import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
+import { budgetView, limitPromptView, limitRefusal } from './handlers/budget.js';
 import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { editPromptView } from './handlers/edit.js';
@@ -79,7 +82,9 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const view =
     screen.name === 'settings'
       ? settingsView(deps, user, screen.ledgerId)
-      : categoriesScreenFor(deps, user, screen);
+      : screen.name === 'budget'
+        ? budgetView(deps, user, screen)
+        : categoriesScreenFor(deps, user, screen);
   if (view !== undefined) await renderAnchor(ctx, anchor, view);
 }
 
@@ -135,6 +140,26 @@ export async function answerFlow(
   if (isEditFlow(flow)) {
     await answerEdit(ctx, deps, anchor, { ...input, flow });
     return;
+  }
+
+  if (isBudgetFlow(flow)) {
+    const result = answerBudgetFlow(deps, { ...input, flow, now: deps.now() });
+    switch (result.kind) {
+      case 'invalid': {
+        const view = budgetScreen(deps, { user, ledgerId: flow.ledgerId, now: deps.now() });
+        if (view !== undefined)
+          await show(ctx, anchor, limitPromptView(view, limitRefusal(result)));
+        return;
+      }
+      case 'gone':
+        await restoreScreen(ctx, deps, user);
+        return;
+      case 'set': {
+        const view = budgetView(deps, user, { name: 'budget', ledgerId: flow.ledgerId });
+        if (view !== undefined) await show(ctx, anchor, view);
+        return;
+      }
+    }
   }
 
   if (flow.kind === 'setTimezone') {

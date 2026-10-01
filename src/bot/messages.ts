@@ -24,10 +24,45 @@ interface ExpenseView {
   readonly ledger: LedgerRef;
 }
 
+// What's left of a ledger's budget, under a recorded card. Negative amounts are overspend.
+interface BudgetLineView {
+  readonly currency: CurrencyCode;
+  readonly todayLeftMinor: number;
+  readonly periodLeftMinor: number;
+  // The period's last day.
+  readonly to: LocalDate;
+}
+
 interface RecordedView extends ExpenseView {
   readonly expense: ExpenseView['expense'] & { readonly occurredOn: LocalDate };
   // The author's local date when they sent it. An expense dated otherwise names its date.
   readonly sentOn: LocalDate;
+  // Absent when the ledger has no overall limit.
+  readonly budget?: BudgetLineView | undefined;
+}
+
+interface BudgetScreenView {
+  readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
+  readonly status?:
+    | {
+        readonly currency: CurrencyCode;
+        readonly period: {
+          readonly from: LocalDate;
+          readonly to: LocalDate;
+          readonly day: number;
+          readonly days: number;
+        };
+        readonly limit?:
+          | {
+              readonly limitMinor: number;
+              readonly spentMinor: number;
+              readonly todayLeftMinor: number;
+              readonly periodLeftMinor: number;
+            }
+          | undefined;
+        readonly notCounted: ReadonlyMap<CurrencyCode, number>;
+      }
+    | undefined;
 }
 
 // A group expense: who recorded it (their Telegram first name, user text) and what.
@@ -139,7 +174,10 @@ function dateParts(date: LocalDate): { year: string; month: number; day: number 
 }
 
 // `21–27 сентября`, or `28 сентября – 4 октября` across a month end.
-function weekRange({ from, to }: PeriodRef, months: readonly string[]): string {
+function weekRange(
+  { from, to }: Pick<PeriodRef, 'from' | 'to'>,
+  months: readonly string[],
+): string {
   const a = dateParts(from);
   const b = dateParts(to);
   return a.month === b.month
@@ -193,6 +231,30 @@ function ledgerName(ledger: LedgerRef): string {
   return ledger.kind === 'personal' ? 'Личные расходы' : ledger.name;
 }
 
+// `31 окт`: a period's last day in the budget lines.
+function shortDate(date: LocalDate): string {
+  const { month, day } = dateParts(date);
+  return `${day} ${SHORT_MONTHS[month] ?? ''}`;
+}
+
+// `Осталось на сегодня: 517.74 RUB` or `Сегодня перерасход 532.26 RUB`.
+function todayLeft(amountMinor: number, currency: CurrencyCode): string {
+  return amountMinor < 0
+    ? `Сегодня перерасход ${formatMoney({ amountMinor: -amountMinor, currency })}`
+    : `Осталось на сегодня: ${formatMoney({ amountMinor, currency })}`;
+}
+
+// `до 31 окт: 29 550.00 RUB` or `до 31 окт перерасход 1 000.00 RUB`.
+function periodLeft(amountMinor: number, currency: CurrencyCode, to: LocalDate): string {
+  return amountMinor < 0
+    ? `до ${shortDate(to)} перерасход ${formatMoney({ amountMinor: -amountMinor, currency })}`
+    : `до ${shortDate(to)}: ${formatMoney({ amountMinor, currency })}`;
+}
+
+function budgetLine({ currency, todayLeftMinor, periodLeftMinor, to }: BudgetLineView): Html {
+  return html`${todayLeft(todayLeftMinor, currency)} · ${periodLeft(periodLeftMinor, currency, to)}`;
+}
+
 // Telegram rejects messages over 4096 characters, and a description can be almost that long.
 // Replies show at most this many code points of it; the stored description is untouched. The cut
 // runs on raw text, before escaping, so it can never split an entity.
@@ -211,6 +273,7 @@ const menu = {
   today: '📊 Сегодня',
   week: '📅 Неделя',
   month: '🗓 Месяц',
+  budget: '💰 Бюджет',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
 } as const;
@@ -280,6 +343,7 @@ export const messages = {
     { command: 'today', description: 'Траты за сегодня' },
     { command: 'week', description: 'Траты за неделю по категориям' },
     { command: 'month', description: 'Траты за месяц по категориям' },
+    { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'settings', description: 'Часовой пояс и валюта' },
     { command: 'help', description: 'Как записать трату' },
@@ -330,6 +394,7 @@ export const messages = {
       html``,
       html`${menu.today} — траты за сегодня`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
+      html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
       html`/changelog — что нового в боте`,
@@ -375,7 +440,8 @@ export const messages = {
       occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
     );
     const { category } = view.expense;
-    return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+    const card = category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+    return view.budget === undefined ? card : joinHtml([card, budgetLine(view.budget)], '\n');
   },
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
@@ -530,6 +596,68 @@ export const messages = {
   currencyUnchanged: 'Эта валюта уже выбрана',
   currencyForbidden: (ledger: LedgerRef): string =>
     `Валюту «${ledgerName(ledger)}» может изменить только владелец`,
+
+  // The /budget screen (ADR-0017). Amounts are in the budget's currency; spend in other
+  // currencies is listed as not counted.
+  budgetScreen: ({ ledger, status }: BudgetScreenView): Html => {
+    const title = html`<b>Бюджет «${ledgerName(ledger)}»</b>`;
+    const limit = status?.limit;
+    if (status === undefined || limit === undefined) {
+      return joinHtml(
+        [
+          title,
+          html`Лимит не задан. Задайте лимит на период, и после каждой траты я покажу, сколько осталось на сегодня.`,
+        ],
+        '\n',
+      );
+    }
+    const { currency, period } = status;
+    const lines = [
+      title,
+      html`Период: ${weekRange(period, GENITIVE_MONTHS)}, день ${period.day} из ${period.days}`,
+      html`Лимит: ${formatMoney({ amountMinor: limit.limitMinor, currency })}, потрачено ${formatMoney({ amountMinor: limit.spentMinor, currency })}`,
+      html`${todayLeft(limit.todayLeftMinor, currency)}`,
+      limit.periodLeftMinor < 0
+        ? html`Перерасход за период: ${formatMoney({ amountMinor: -limit.periodLeftMinor, currency })}`
+        : html`Осталось до ${shortDate(period.to)}: ${formatMoney({ amountMinor: limit.periodLeftMinor, currency })}`,
+    ];
+    if (status.notCounted.size > 0) {
+      const amounts = [...status.notCounted].map(([code, amountMinor]) =>
+        formatMoney({ amountMinor, currency: code }),
+      );
+      lines.push(html`Не учтено, другая валюта: ${amounts.join(', ')}`);
+    }
+    if (currency !== ledger.defaultCurrency) {
+      lines.push(
+        html`Бюджет в ${currency}, а новые траты — в ${ledger.defaultCurrency}. Задайте лимит заново, чтобы перейти на ${ledger.defaultCurrency}.`,
+      );
+    }
+    return joinHtml(lines, '\n');
+  },
+  budgetLimitButton: 'Задать лимит',
+  budgetOwnerOnly: html`Бюджет этого учёта может настраивать только его владелец.`,
+  // `current` is the limit in effect, if any.
+  budgetLimitPrompt: ({
+    currency,
+    current,
+  }: {
+    currency: CurrencyCode;
+    current?: Money | undefined;
+  }): Html => {
+    const ask = html`Лимит на период в ${currency}. Отправьте сумму, например «30 000».`;
+    return current === undefined
+      ? ask
+      : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
+  },
+  // Asked above the prompt again when an answer is refused; the flow stays pending.
+  budgetLimitRefused: {
+    invalidAmount: html`Не удалось разобрать сумму.`,
+    ambiguousAmount: (readings: readonly Money[]): Html =>
+      html`Сумму можно понять по-разному: ${readings.map(formatMoney).join(' или ')}. Тысячи отделяйте пробелом («30 000»), копейки — запятой («1,20»).`,
+    tooLarge: html`Слишком большая сумма.`,
+    // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
+    expenseShaped: html`Похоже на трату. Сейчас я жду лимит. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+  },
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',

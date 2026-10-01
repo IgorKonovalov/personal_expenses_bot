@@ -1,6 +1,6 @@
 # 0011: Budgets: a payday-period limit, a daily allowance, essential categories and category caps
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress (2026-10-01)
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
@@ -280,7 +280,7 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | not started | |
+| 1: Walking skeleton | dev | done | committed with this row |
 | 2: Payday periods | dev | not started | |
 | 3: Essential categories | dev | not started | |
 | 4: Per-category caps | dev | not started | |
@@ -288,6 +288,18 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 | 6: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: no too-large copy existed. The limit flow refuses a limit with `L * 31` past
+  `Number.MAX_SAFE_INTEGER` using a new `budgetLimitRefused.tooLarge` line.
+- Phase 1: the card and screen copy renders amounts through `formatMoney` («517.74 RSD»), not
+  the illustrative «517,74 ₽».
+- Phase 1: the budget screen and its setup are owner-only from the start. `/budget` on an
+  active ledger the user doesn't own replies `budgetOwnerOnly`.
+- Phase 1: the `bot.test.ts` budget tests run in RSD/`Europe/Belgrade`, the harness defaults.
+  The plan's RUB/`Europe/Moscow` numbers are asserted in `src/services/budget.test.ts`.
+- Phase 1: `/budget` was added to `messages.commands` and to the help text, and
+  `💰 Бюджет` to the menu bar. The pinned menu and command-list expectations in `bot.test.ts`
+  were updated.
 
 ### Close triggers
 

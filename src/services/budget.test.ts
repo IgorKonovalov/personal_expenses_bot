@@ -1,0 +1,129 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { openDatabase, type Db } from '../db/connection.js';
+import { softDeleteExpense } from '../db/expenses.js';
+import type { Ledger } from '../db/ledgers.js';
+import { runMigrations } from '../db/migrate.js';
+import type { User } from '../db/users.js';
+import { createLogger } from '../logger.js';
+import { answerBudgetFlow, memberBudgetStatus, startBudgetFlow } from './budget.js';
+import { provisionUser } from './provisionUser.js';
+import { recordExpense, type RecordDeps } from './recordExpense.js';
+
+// 2026-10-01 12:00 in Moscow (UTC+3).
+const OCT_1 = new Date('2026-10-01T09:00:00Z');
+const OCT_2 = new Date('2026-10-02T09:00:00Z');
+
+let db: Db;
+let deps: RecordDeps;
+let user: User;
+let ledger: Ledger;
+let messageId = 0;
+
+beforeEach(() => {
+  db = openDatabase(':memory:');
+  runMigrations(db, OCT_1);
+  let n = 0;
+  deps = {
+    db,
+    newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
+    logger: createLogger('silent'),
+    defaultTimezone: 'Europe/Moscow',
+  };
+  const provisioned = provisionUser(deps, {
+    provider: 'telegram',
+    externalId: '1001',
+    defaultTimezone: 'Europe/Moscow',
+    defaultCurrency: 'RUB',
+    now: OCT_1,
+  });
+  user = provisioned.user;
+  ledger = provisioned.ledger;
+});
+
+function setLimit(text: string, now: Date = OCT_1) {
+  const flow = { kind: 'budgetLimit', ledgerId: ledger.id } as const;
+  expect(startBudgetFlow(deps, { user, flow, now })).toBe(true);
+  return answerBudgetFlow(deps, { user, flow, text, inputKey: `tg:1:${++messageId}`, now });
+}
+
+function spend(text: string, at: Date) {
+  const result = recordExpense(deps, {
+    user,
+    text,
+    sourceKey: `tg:1001:${++messageId}`,
+    occurredAt: at,
+    now: at,
+  });
+  if (result.kind !== 'recorded') throw new Error(`not recorded: ${result.kind}`);
+  return result.expense;
+}
+
+const status = (now: Date) => memberBudgetStatus(deps, { user, ledger, now });
+
+describe('budgetStatus over a calendar month (ADR-0017)', () => {
+  it('has no budget before a limit is set', () => {
+    expect(status(OCT_1)).toBeUndefined();
+  });
+
+  it('takes 450 кофе from day 1 and 300 такси from day 2 of a 30000 limit', () => {
+    expect(setLimit('30000').kind).toBe('set');
+
+    spend('450 кофе', OCT_1);
+    expect(status(OCT_1)).toMatchObject({
+      currency: 'RUB',
+      period: { from: '2026-10-01', to: '2026-10-31', day: 1, days: 31 },
+      limit: { limitMinor: 3_000_000, todayLeftMinor: 51_774, periodLeftMinor: 2_955_000 },
+    });
+
+    spend('300 такси', OCT_2);
+    expect(status(OCT_2)?.limit).toEqual({
+      limitMinor: 3_000_000,
+      spentMinor: 75_000,
+      todayLeftMinor: 118_548,
+      periodLeftMinor: 2_925_000,
+    });
+  });
+
+  it('carries day 1 overspend into day 2', () => {
+    setLimit('30000');
+    spend('1500 ресторан', OCT_1);
+
+    expect(status(OCT_1)?.limit?.todayLeftMinor).toBe(-53_226);
+    expect(status(OCT_2)?.limit?.todayLeftMinor).toBe(43_548);
+  });
+
+  it('counts neither an EUR expense nor a deleted one, and lists the EUR one apart', () => {
+    setLimit('30000');
+    spend('450 кофе', OCT_1);
+    spend('12,50 EUR такси', OCT_1);
+    const deleted = spend('1000 ужин', OCT_1);
+    softDeleteExpense(db, deleted.id, OCT_1);
+
+    const s = status(OCT_1);
+    expect(s?.limit?.todayLeftMinor).toBe(51_774);
+    expect(s?.limit?.periodLeftMinor).toBe(2_955_000);
+    expect([...(s?.notCounted ?? [])]).toEqual([['EUR', 1_250]]);
+  });
+});
+
+describe('the limit flow', () => {
+  it('refuses an expense, an ambiguous amount and a limit beyond the safe range', () => {
+    expect(setLimit('450 кофе')).toMatchObject({ kind: 'invalid', reason: 'expenseShaped' });
+    expect(setLimit('30.000')).toMatchObject({ kind: 'invalid', reason: 'ambiguousAmount' });
+    // 3e14 minor parses, but 3e14 * 31 is past Number.MAX_SAFE_INTEGER.
+    expect(setLimit('3000000000000')).toMatchObject({ kind: 'invalid', reason: 'tooLarge' });
+    expect(setLimit('тридцать')).toMatchObject({ kind: 'invalid', reason: 'invalidAmount' });
+    expect(status(OCT_1)).toBeUndefined();
+  });
+
+  it('adopts the ledger default currency of the time it is set', () => {
+    setLimit('30000');
+    db.prepare("UPDATE ledgers SET default_currency = 'EUR'").run();
+    const eurLedger = { ...ledger, defaultCurrency: 'EUR' as const };
+    expect(memberBudgetStatus(deps, { user, ledger: eurLedger, now: OCT_1 })?.currency).toBe('RUB');
+
+    ledger = eurLedger;
+    setLimit('1000');
+    expect(status(OCT_1)).toMatchObject({ currency: 'EUR', limit: { limitMinor: 100_000 } });
+  });
+});

@@ -2,7 +2,9 @@ import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { Expense, ExpenseId } from '../../db/expenses.js';
 import type { Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
+import type { CurrencyCode } from '../../domain/currencies.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
+import { memberBudgetStatus } from '../../services/budget.js';
 import { restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import { resolveUserTimezone } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
@@ -29,6 +31,16 @@ export interface CardView {
   // The viewer's local date of occurred_at, the day they sent it. A card for an expense dated
   // otherwise names its date.
   readonly sentOn: LocalDate;
+  // What's left of the ledger's overall limit, as of now: absent for a deleted expense or a
+  // ledger without a limit.
+  readonly budget?: CardBudget;
+}
+
+export interface CardBudget {
+  readonly currency: CurrencyCode;
+  readonly todayLeftMinor: number;
+  readonly periodLeftMinor: number;
+  readonly to: LocalDate;
 }
 
 export interface Card {
@@ -36,15 +48,25 @@ export interface Card {
   readonly markup: InlineKeyboard;
 }
 
+// The budget figures are read on every render, so a card re-rendered after an edit, a category
+// change or a restore shows current numbers.
 export function cardView(
   deps: HandlerDeps,
   user: User,
   { expense, ledger }: { readonly expense: Expense; readonly ledger: Ledger },
 ): CardView {
-  return {
+  const view = {
     expense,
     ledger,
     sentOn: localDateOf(expense.occurredAt, resolveUserTimezone(deps, user)),
+  };
+  if (expense.deletedAt !== null) return view;
+  const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
+  if (status?.limit === undefined) return view;
+  const { todayLeftMinor, periodLeftMinor } = status.limit;
+  return {
+    ...view,
+    budget: { currency: status.currency, todayLeftMinor, periodLeftMinor, to: status.period.to },
   };
 }
 

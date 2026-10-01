@@ -89,7 +89,7 @@ describe('error boundary', () => {
 const menuKeyboard = {
   keyboard: [
     [{ text: '📊 Сегодня' }, { text: '📅 Неделя' }, { text: '🗓 Месяц' }],
-    [{ text: '⚙️ Настройки' }, { text: '❓ Помощь' }],
+    [{ text: '💰 Бюджет' }, { text: '⚙️ Настройки' }, { text: '❓ Помощь' }],
   ],
   is_persistent: true,
   resize_keyboard: true,
@@ -116,6 +116,7 @@ describe('menu and help', () => {
       today: '📊 Сегодня',
       week: '📅 Неделя',
       month: '🗓 Месяц',
+      budget: '💰 Бюджет',
       settings: '⚙️ Настройки',
       help: '❓ Помощь',
     });
@@ -327,7 +328,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /categories, /settings, /help and /changelog from messages', async () => {
+  it('registers /today, /week, /month, /budget, /categories, /settings, /help and /changelog from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -340,10 +341,11 @@ describe('command registration at boot', () => {
             { command: 'today', description: messages.commands[0].description },
             { command: 'week', description: messages.commands[1].description },
             { command: 'month', description: messages.commands[2].description },
-            { command: 'categories', description: messages.commands[3].description },
-            { command: 'settings', description: messages.commands[4].description },
-            { command: 'help', description: messages.commands[5].description },
-            { command: 'changelog', description: messages.commands[6].description },
+            { command: 'budget', description: messages.commands[3].description },
+            { command: 'categories', description: messages.commands[4].description },
+            { command: 'settings', description: messages.commands[5].description },
+            { command: 'help', description: messages.commands[6].description },
+            { command: 'changelog', description: messages.commands[7].description },
           ],
         },
       },
@@ -1712,6 +1714,175 @@ describe('editing an expense from its card', () => {
         expect(logContent(line)).not.toContain(secret);
       }
     }
+  });
+});
+
+describe('/budget and the card line (ADR-0017)', () => {
+  // 2026-10-01 12:00 in Belgrade: day 1 of a 31-day October.
+  const OCT_1 = new Date('2026-10-01T10:00:00Z');
+  const botInfo = createTestBot().bot.botInfo;
+
+  function budgetBot() {
+    const clock = { now: OCT_1 };
+    const db = openDatabase(':memory:');
+    runMigrations(db, OCT_1);
+    let ids = 0;
+    let messageId = 100;
+    const bot = createBot({
+      token: '123456:test-token',
+      allowedTelegramIds: new Set([ALLOWED_ID]),
+      logger: silentLogger(),
+      db,
+      newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+      now: () => clock.now,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      botInfo,
+    });
+    const calls: ApiCall[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      calls.push({ method, payload });
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      const result =
+        method === 'sendMessage' ? { message_id: ++messageId, date: 0, chat, text: '' } : true;
+      return Promise.resolve({ ok: true, result: result as never });
+    });
+    let updateId = 0;
+    const say = (text: string, messageId: number) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text, date: clock.now }));
+    const tap = (data: string, messageId: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    return { bot, db, calls, clock, say, tap };
+  }
+
+  const lastText = (calls: readonly ApiCall[]) => sentTexts(calls).at(-1);
+
+  // /budget (anchor 101), [Задать лимит], then the limit typed.
+  async function withLimit(limit = '30000') {
+    const harness = budgetBot();
+    await harness.say('/budget', 1);
+    await harness.tap('bud:lim', 101);
+    await harness.say(limit, 2);
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it.each(['/budget', '💰 Бюджет'])('opens the screen with no limit on %j', async (text) => {
+    const { say, calls } = budgetBot();
+
+    await say(text, 1);
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text:
+            '<b>Бюджет «Личные расходы»</b>\nЛимит не задан. Задайте лимит на период, и после ' +
+            'каждой траты я покажу, сколько осталось на сегодня.',
+          reply_markup: { inline_keyboard: [[{ text: 'Задать лимит', callback_data: 'bud:lim' }]] },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('asks for the limit in the anchor, stores 30000 and shows the screen with it', async () => {
+    const { say, tap, calls, db } = budgetBot();
+    await say('/budget', 1);
+    calls.length = 0;
+
+    await tap('bud:lim', 101);
+    expect(lastText(calls)).toBe('Лимит на период в RSD. Отправьте сумму, например «30 000».');
+
+    await say('30000', 2);
+    expect(db.prepare('SELECT limit_minor, currency FROM ledger_budgets').get()).toEqual({
+      limit_minor: 3_000_000,
+      currency: 'RSD',
+    });
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        message_id: 101,
+        text: [
+          '<b>Бюджет «Личные расходы»</b>',
+          'Период: 1–31 октября, день 1 из 31',
+          'Лимит: 30 000.00 RSD, потрачено 0.00 RSD',
+          'Осталось на сегодня: 967.74 RSD',
+          'Осталось до 31 окт: 30 000.00 RSD',
+        ].join('\n'),
+      },
+    });
+  });
+
+  it('re-asks 450 кофе in the limit prompt and records nothing', async () => {
+    const { say, tap, calls, db } = budgetBot();
+    await say('/budget', 1);
+    await tap('bud:lim', 101);
+
+    await say('450 кофе', 2);
+
+    expect(lastText(calls)).toBe(
+      'Похоже на трату. Сейчас я жду лимит. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.\n' +
+        'Лимит на период в RSD. Отправьте сумму, например «30 000».',
+    );
+    expect(expenseCount(db)).toEqual({ n: 0 });
+  });
+
+  it("adds what's left for today and the period under 450 кофе's card", async () => {
+    const { say, calls } = await withLimit();
+
+    await say('450 кофе', 3);
+
+    expect(lastText(calls)).toBe(
+      'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны\n' +
+        'Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD',
+    );
+  });
+
+  it('leaves the period remainder at 29 550.00 when 450 кофе is redelivered', async () => {
+    const { bot, calls, db } = await withLimit();
+    const update = textUpdate({ updateId: 50, messageId: 3, text: '450 кофе', date: OCT_1 });
+
+    await bot.handleUpdate(update);
+    await bot.handleUpdate(update);
+
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+    expect(String(lastText(calls))).toContain('до 31 окт: 29 550.00 RSD');
+  });
+
+  it('shows overspend as copy, not a negative amount', async () => {
+    const { say, calls } = await withLimit();
+
+    await say('1500 ресторан', 3);
+
+    const text = String(lastText(calls));
+    expect(text).toContain('\nСегодня перерасход 532.26 RSD · до 31 окт: 28 500.00 RSD');
+    expect(text).not.toContain('-532');
+  });
+
+  it('drops the line from the deleted card and brings it back on restore', async () => {
+    const { say, tap, calls, db } = await withLimit();
+    await say('450 кофе', 3);
+    const id = db.prepare('SELECT id FROM expenses').pluck().get() as ExpenseId;
+
+    await tap(undoExpenseData(id), 104);
+    expect(lastText(calls)).toBe('Удалено из «Личные расходы»: <b>450.00 RSD</b> — кофе');
+
+    await tap(restoreExpenseData(id), 104);
+    expect(String(lastText(calls))).toContain(
+      'Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD',
+    );
+  });
+
+  it('lists an EUR expense as not counted on the screen', async () => {
+    const { say, calls } = await withLimit();
+    await say('12,50 EUR такси', 3);
+
+    await say('/budget', 4);
+
+    expect(String(lastText(calls))).toContain('\nНе учтено, другая валюта: 12.50 EUR');
+    expect(String(lastText(calls))).toContain('Осталось до 31 окт: 30 000.00 RSD');
   });
 });
 

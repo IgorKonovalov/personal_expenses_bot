@@ -45,7 +45,14 @@ export interface SettingsScreen {
   readonly ledgerId?: LedgerId;
 }
 
-export type Screen = CategoriesScreen | SummaryScreen | ExpenseScreen | SettingsScreen;
+// The /budget screen of one ledger (ADR-0017). Its setup taps act on this ledger.
+export interface BudgetScreen {
+  readonly name: 'budget';
+  readonly ledgerId: LedgerId;
+}
+
+export type Screen =
+  CategoriesScreen | SummaryScreen | ExpenseScreen | SettingsScreen | BudgetScreen;
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -83,7 +90,19 @@ export interface TimezoneFlow {
   readonly ledgerId?: LedgerId;
 }
 
-export type Flow = CategoryFlow | EditFlow | TimezoneFlow;
+// A budget setting typed into the budget screen of `ledgerId`.
+export interface BudgetFlow {
+  readonly kind: 'budgetLimit';
+  readonly ledgerId: LedgerId;
+}
+
+const BUDGET_FLOW_KINDS: ReadonlySet<string> = new Set<BudgetFlow['kind']>(['budgetLimit']);
+
+export function isBudgetFlow(flow: Flow): flow is BudgetFlow {
+  return BUDGET_FLOW_KINDS.has(flow.kind);
+}
+
+export type Flow = CategoryFlow | EditFlow | TimezoneFlow | BudgetFlow;
 
 type Deps = { readonly db: Db };
 
@@ -183,6 +202,9 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
     return { name, expenseId: parsed.expenseId as ExpenseId };
   }
+  if (name === 'budget' && typeof parsed?.ledgerId === 'string') {
+    return { name, ledgerId: parsed.ledgerId as LedgerId };
+  }
   if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
@@ -207,7 +229,7 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   }
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
-  if (kind === 'categoryAdd') return { kind, ledgerId };
+  if (kind === 'categoryAdd' || kind === 'budgetLimit') return { kind, ledgerId };
   if (kind === 'categoryRename' && typeof parsed.categoryId === 'number') {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }

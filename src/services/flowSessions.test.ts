@@ -73,6 +73,14 @@ describe('screen anchor', () => {
     expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'settings' });
   });
 
+  it('round-trips the budget screen with its ledger id, and reads one without it as no screen', () => {
+    setAnchor({ db }, user, { chatId: 1001, messageId: 10, screen: { name: 'budget', ledgerId } });
+    expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'budget', ledgerId });
+
+    db.prepare("UPDATE flow_sessions SET screen_ctx = '{}'").run();
+    expect(currentAnchor({ db }, user)).toBeUndefined();
+  });
+
   it('reads a summary row without a ledger id as no screen', () => {
     db.prepare("UPDATE flow_sessions SET screen = 'summary', screen_ctx = '{}'").run();
 
@@ -87,6 +95,14 @@ describe('routeText (ADR-0009)', () => {
 
     startFlow({ db }, user, { kind: 'setTimezone' }, T);
     expect(route('tg:1:2', T)).toEqual({ kind: 'flow', flow: { kind: 'setTimezone' } });
+  });
+
+  it("carries the budget's ledger id in the limit flow, and reads one without it as no flow", () => {
+    startFlow({ db }, user, { kind: 'budgetLimit', ledgerId }, T);
+    expect(route('tg:1:1', T)).toEqual({ kind: 'flow', flow: { kind: 'budgetLimit', ledgerId } });
+
+    db.prepare("UPDATE flow_sessions SET payload = '{}'").run();
+    expect(route('tg:1:2', T)).toEqual({ kind: 'free', expiredFlow: true });
   });
 
   it('is free text with no expired flow when nothing was ever pending', () => {

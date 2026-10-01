@@ -9,6 +9,7 @@ export function menuKeyboard(): Keyboard {
     .text(messages.menu.week)
     .text(messages.menu.month)
     .row()
+    .text(messages.menu.budget)
     .text(messages.menu.settings)
     .text(messages.menu.help)
     .resized()
