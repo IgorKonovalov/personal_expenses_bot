@@ -284,7 +284,7 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 | 2: Payday periods | dev | done | c1cfd43 |
 | 3: Essential categories | dev | done | db7b104 |
 | 4: Per-category caps | dev | done | 111aeaf |
-| 5: Group ledgers | dev | done | committed with this row |
+| 5: Group ledgers | dev | done | 47dd3a2 |
 | 6: Live check | human | not started | |
 
 ### Notes
@@ -337,12 +337,26 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
   anchor written directly for the member, because `/start gs_` never opens one for a non-owner.
 - Phase 5: `/budget` was added to `messages.groupCommands` and to the group help text. In a group
   with no limit and no caps, `/budget` replies with where to set one.
+- Followup, not acted on: `messages.versionAnnouncements` has no entry for the budget features.
+  The next version's entry is the architect's call at the close.
+- Followup, not acted on: the cap prompt offers [Убрать лимит] and [Отмена] but no way back to
+  the cap list. [Отмена] restores the budget screen.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** migrations `0008_budgets.sql` (`ledger_budgets`, `category_caps`) and
+  `0009_category_essential.sql`; `src/domain/budget.ts`, `budgetPeriodOf` in
+  `src/domain/periods.ts`, `src/db/budgets.ts`, `src/services/budget.ts`,
+  `src/bot/handlers/budget.ts`; the budget and cap lines on the DM card; the essential picker on
+  the categories screen; `/budget` in bound groups; [Бюджет] on the group ledger's settings hub.
+- **User-visible surface changed:** new DM command `/budget` and menu label `💰 Бюджет`; the
+  `/budget` screen with [Задать лимит], [День начала периода], [Считать все] /
+  [Только необязательные] and [Лимиты по категориям]; [Обязательные] on `/categories`; one or
+  two new lines under a DM expense card when a limit or a cap applies; group command `/budget`
+  (also in `messages.groupCommands` and the group help); [Бюджет] on the group ledger's settings
+  hub; `/budget` in `messages.commands` and the DM help.
+- **Gate at the tip:** at 47dd3a2: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0, 45 files, 632 tests passed; `pnpm build` exit 0.
+- **Outstanding `human` phases:** Phase 6 (Live check, `Blocks merge: no`).
 
 ## Followups
