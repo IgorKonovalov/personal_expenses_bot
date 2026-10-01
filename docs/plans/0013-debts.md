@@ -30,6 +30,12 @@ members.
 - Splitting a bill: does `1200 кафе /3` record 400 as the expense and 800 as debts owed to me?
 - Partial repayments. A debt in a currency other than the ledger default. Undoing a repayment.
 - Is a debt per ledger or per user? Can a debt be private in a shared ledger?
+- Splitting a receipt by its line items (added 2026-10-01 from the market check): a receipt card
+  with items (Plan 0014) offers [Разделить], each item is assigned to me or to a person, and the
+  others' items become debts owed to me. SplitFast sells this with AI photo reading; we already
+  have exact items from the tax site. In this plan, or a follow-on once debts exist?
+- Debt simplification across several people (A owes B, B owes C → A owes C): wanted, and only
+  within one currency?
 
 ## Implementation phases
 
