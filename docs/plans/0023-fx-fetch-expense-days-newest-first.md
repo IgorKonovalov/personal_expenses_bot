@@ -1,6 +1,6 @@
 # 0023: The rate worker fetches only expense days, newest first
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
 > rate, the worker)
@@ -124,10 +124,16 @@ Nothing deletes them, and they cost nothing.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Owe expense days and today, newest first | dev | not started | |
+| 1: Owe expense days and today, newest first | dev | done | committed with this row |
 | 2: Check the deployed worker | human | not started | |
 
 ### Notes
+
+- Phase 1: `listFxDayFetches` keeps its range form, called over the oldest candidate through
+  today.
+- Phase 1: the failure test fails 2026-09-28 (today, asked first) instead of 2026-09-27, which is
+  no longer asked. It asserts `{ fetched: 1, failed: 1 }` and a row for the 26th only.
+- Phase 1: with no expense at all, a tick now asks today (it used to ask nothing).
 
 ### Close triggers
 

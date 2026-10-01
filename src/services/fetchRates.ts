@@ -1,18 +1,17 @@
 import type { Db } from '../db/connection.js';
 import {
-  earliestExpenseDay,
+  expenseDaysThrough,
   listFxDayFetches,
   setFxDay,
   storeFxList,
   type FxList,
 } from '../db/fxRates.js';
-import { addDays } from '../domain/dateText.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import type { Logger } from '../logger.js';
 
 // NBS lists are dated in Belgrade (ADR-0022).
 const NBS_TIMEZONE = 'Europe/Belgrade';
-// Days fetched per tick at most; a long backlog drains over several ticks.
+// Days fetched per tick at most; a long backlog drains over several ticks, newest first.
 const MAX_DAYS_PER_TICK = 31;
 
 export type RateListFailure = 'timeout' | 'network' | 'http' | 'empty' | 'unparseable';
@@ -22,6 +21,7 @@ export type RateListOutcome =
   | { readonly kind: 'failed'; readonly reason: RateListFailure };
 
 // The list in force on a Belgrade day; for a weekend or holiday that is an earlier day's list.
+// Asked only for the days daysOwed returns, newest first.
 export type RateListFetcher = (day: LocalDate, signal: AbortSignal) => Promise<RateListOutcome>;
 
 export interface FetchRatesDeps {
@@ -30,21 +30,22 @@ export interface FetchRatesDeps {
   readonly fetchList: RateListFetcher;
 }
 
-// Which days a tick fetches: every Belgrade date from the earliest expense's day through today
-// that has no fx_days row, or whose row was fetched on or before that same Belgrade date (its
-// list may not have been out yet). Oldest first, at most MAX_DAYS_PER_TICK.
+// Which days a tick fetches: each Belgrade date that has a non-deleted expense, up to today, plus
+// today itself, that has no fx_days row or whose row was fetched on or before that same Belgrade
+// date (its list may not have been out yet). Newest first, at most MAX_DAYS_PER_TICK.
 export function daysOwed(db: Db, now: Date): LocalDate[] {
-  const earliest = earliestExpenseDay(db);
   const today = localDateOf(now, NBS_TIMEZONE);
-  if (earliest === undefined || earliest > today) return [];
-  const fetches = listFxDayFetches(db, earliest, today);
-  const owed: LocalDate[] = [];
-  for (let day = earliest; day <= today && owed.length < MAX_DAYS_PER_TICK;) {
-    const fetchedAt = fetches.get(day);
-    if (fetchedAt === undefined || localDateOf(fetchedAt, NBS_TIMEZONE) <= day) owed.push(day);
-    day = addDays(day, 1);
-  }
-  return owed;
+  const days = expenseDaysThrough(db, today);
+  if (days.at(-1) !== today) days.push(today);
+  const [oldest = today] = days;
+  const fetches = listFxDayFetches(db, oldest, today);
+  return days
+    .filter((day) => {
+      const fetchedAt = fetches.get(day);
+      return fetchedAt === undefined || localDateOf(fetchedAt, NBS_TIMEZONE) <= day;
+    })
+    .reverse()
+    .slice(0, MAX_DAYS_PER_TICK);
 }
 
 // One tick: fetches each owed day in turn and stores its list. A failed day is logged and left

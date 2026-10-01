@@ -61,15 +61,16 @@ export function listFxDayFetches(
   return new Map(rows.map((row) => [row.day as LocalDate, new Date(row.fetched_at)]));
 }
 
-// The earliest occurred_on of any non-deleted expense, in any ledger: the first day a rate may
-// be needed for.
-export function earliestExpenseDay(db: Db): LocalDate | undefined {
-  const row = db
-    .prepare<[], { day: string | null }>(
-      'SELECT MIN(occurred_on) AS day FROM expenses WHERE deleted_at IS NULL',
+// The distinct occurred_on of non-deleted expenses, in any ledger, on or before `today`, oldest
+// first: the days a rate is needed for.
+export function expenseDaysThrough(db: Db, today: LocalDate): LocalDate[] {
+  return db
+    .prepare<[string], { day: string }>(
+      `SELECT DISTINCT occurred_on AS day FROM expenses
+       WHERE deleted_at IS NULL AND occurred_on <= ? ORDER BY occurred_on`,
     )
-    .get();
-  return (row?.day ?? undefined) as LocalDate | undefined;
+    .all(today)
+    .map((row) => row.day as LocalDate);
 }
 
 // A lookup over the days [from, to], loaded once. A day with no fx_days row borrows the latest

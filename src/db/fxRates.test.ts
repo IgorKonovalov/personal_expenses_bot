@@ -3,7 +3,7 @@ import type { LocalDate } from '../domain/time.js';
 import { openDatabase, type Db } from './connection.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from './expenses.js';
 import {
-  earliestExpenseDay,
+  expenseDaysThrough,
   listFxDayFetches,
   rateLookupBetween,
   setFxDay,
@@ -88,9 +88,9 @@ describe('listFxDayFetches', () => {
   });
 });
 
-describe('earliestExpenseDay', () => {
-  it('is the earliest occurred_on of a non-deleted expense', () => {
-    expect(earliestExpenseDay(db)).toBeUndefined();
+describe('expenseDaysThrough', () => {
+  it('is the distinct occurred_on of non-deleted expenses through today, oldest first', () => {
+    expect(expenseDaysThrough(db, d('2026-09-28'))).toEqual([]);
     const user = 'user-a' as UserId;
     const ledger = 'ledger-a' as LedgerId;
     insertUser(db, { id: user, timezone: 'Europe/Belgrade', createdAt: NOW });
@@ -105,7 +105,10 @@ describe('earliestExpenseDay', () => {
     insertMember(db, { ledgerId: ledger, userId: user, role: 'owner' });
     for (const [n, day] of [
       [1, '2026-09-20'],
-      [2, '2026-09-26'],
+      [2, '2026-09-28'],
+      [3, '2026-09-26'],
+      [4, '2026-09-26'],
+      [5, '2026-09-29'],
     ] as const) {
       insertExpenseOrGetExisting(db, {
         id: `expense-${n}` as ExpenseId,
@@ -121,6 +124,6 @@ describe('earliestExpenseDay', () => {
       });
     }
     softDeleteExpense(db, 'expense-1' as ExpenseId, NOW);
-    expect(earliestExpenseDay(db)).toBe('2026-09-26');
+    expect(expenseDaysThrough(db, d('2026-09-28'))).toEqual(['2026-09-26', '2026-09-28']);
   });
 });
