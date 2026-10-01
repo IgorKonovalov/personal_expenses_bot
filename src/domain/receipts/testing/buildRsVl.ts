@@ -49,7 +49,27 @@ export function buildRsVl(fields: RsVlFields = {}): string {
   return buildRsVlBytes(fields).toString('base64');
 }
 
+export interface RsUrlShape {
+  // Wraps the base64 every 76 characters with this percent-encoded line break, MIME-style.
+  readonly wrap?: '%0A' | '%0D%0A';
+  // Prints the host as `suf.purs.gov.rs:443`.
+  readonly port?: boolean;
+}
+
+const WRAP_WIDTH = 76;
+
 // The verification URL as a QR code prints it, with `vl` percent-encoded.
-export function buildRsUrl(fields: RsVlFields = {}): string {
-  return `https://suf.purs.gov.rs/v/?vl=${encodeURIComponent(buildRsVl(fields))}`;
+export function buildRsUrl(fields: RsVlFields = {}, shape: RsUrlShape = {}): string {
+  const host = shape.port === true ? 'suf.purs.gov.rs:443' : 'suf.purs.gov.rs';
+  return `https://${host}/v/?vl=${encodeRsVl(buildRsVl(fields), shape.wrap)}`;
+}
+
+// Percent-encodes a base64 vl, wrapped every 76 characters when `wrap` is given.
+export function encodeRsVl(vl: string, wrap?: RsUrlShape['wrap']): string {
+  if (wrap === undefined) return encodeURIComponent(vl);
+  const lines: string[] = [];
+  for (let at = 0; at < vl.length; at += WRAP_WIDTH) {
+    lines.push(encodeURIComponent(vl.slice(at, at + WRAP_WIDTH)));
+  }
+  return lines.join(wrap);
 }

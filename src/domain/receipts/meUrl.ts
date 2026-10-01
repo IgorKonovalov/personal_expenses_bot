@@ -4,8 +4,10 @@ import type { DecodeReceiptResult, ReceiptRefusal } from './types.js';
 // The Montenegrin fiscal receipt (EFI) verification URL. Its parameters sit in the hash
 // fragment: `https://mapr.tax.gov.me/ic/#/verify?iic=<32 hex>&tin=<tin>&crtd=<ISO instant>&prc=<total>&bu=<unit>&…`.
 // The total is EUR with a dot decimal; the currency is inferred, not printed (Plan 0014 risks).
+// The host may carry an explicit `:443`, over https only.
 
-const URL_PATTERN = /^https?:\/\/mapr\.tax\.gov\.me\/ic\/?#\/verify\?(\S*)$/i;
+const URL_PATTERN =
+  /^(?:https?:\/\/mapr\.tax\.gov\.me|https:\/\/mapr\.tax\.gov\.me:443)\/ic\/?#\/verify\?(\S*)$/i;
 const IIC = /^[0-9a-f]{32}$/i;
 const TIN = /^\d{8,13}$/;
 const BUSINESS_UNIT = /^[a-z0-9]{1,20}$/i;

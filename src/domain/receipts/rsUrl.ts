@@ -15,9 +15,9 @@ import type { DecodeReceiptResult, ReceiptRefusal } from './types.js';
 // The query runs to the first whitespace, except that a space followed by more base64 or
 // percent-encoded text may be a `+` that form-style decoding split (see vlParameter); decodeRsUrl
 // settles it by the journal. Anything else after whitespace, such as a note under the link, makes
-// the text not a receipt.
+// the text not a receipt. The host may carry an explicit `:443`, over https only.
 const URL_PATTERN =
-  /^https?:\/\/suf\.purs\.gov\.rs\/v\/?\?([^#\s]*(?: +[A-Za-z0-9+/=%&]+)*)(?:#\S*)?$/i;
+  /^(?:https?:\/\/suf\.purs\.gov\.rs|https:\/\/suf\.purs\.gov\.rs:443)\/v\/?\?([^#\s]*(?: +[A-Za-z0-9+/=%&]+)*)(?:#\S*)?$/i;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const ISSUER_ID = /^[A-Za-z0-9]{8}$/;
 
@@ -51,6 +51,8 @@ export function decodeRsUrl(text: string): DecodeReceiptResult {
 
 // The raw `vl` value, percent-decoded. A `+` survives as `+`, `%2B` becomes `+`, and a space,
 // which is what form-style decoding makes of a `+`, is turned back into one. Base64 has no spaces.
+// Some printers wrap the base64 MIME-style with `%0A` or `%0D%0A`; line breaks carry no data and
+// are dropped, so a wrapped link yields the same vl, verifyUrl and fiscalId as its unwrapped twin.
 function vlParameter(query: string): string | undefined {
   const raw = query
     .split('&')
@@ -58,7 +60,9 @@ function vlParameter(query: string): string | undefined {
     ?.slice(3);
   if (raw === undefined) return undefined;
   try {
-    return decodeURIComponent(raw).replaceAll(' ', '+');
+    return decodeURIComponent(raw)
+      .replaceAll(/[\r\n]/g, '')
+      .replaceAll(' ', '+');
   } catch {
     return undefined;
   }

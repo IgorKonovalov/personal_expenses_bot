@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { decodeRsUrl } from './rsUrl.js';
-import { buildRsUrl, buildRsVl, buildRsVlBytes, type RsVlFields } from './testing/buildRsVl.js';
+import {
+  buildRsUrl,
+  buildRsVl,
+  buildRsVlBytes,
+  encodeRsVl,
+  type RsVlFields,
+} from './testing/buildRsVl.js';
 
 const SUF = 'https://suf.purs.gov.rs/v/?vl=';
 
@@ -93,6 +99,77 @@ describe('decodeRsUrl', () => {
     });
     expect(decodeRsUrl(`${SUF}${vl}`)).toEqual(expected);
     expect(decodeRsUrl(`${SUF}${encoded.replaceAll('%2B', ' ')}`)).toEqual(expected);
+  });
+
+  describe('a vl wrapped every 76 characters', () => {
+    const unwrapped = {
+      kind: 'receipt',
+      receipt: {
+        country: 'RS',
+        totalMinor: 82912,
+        currency: 'RSD',
+        fiscalId: 'AAAA1111-AAAA1111-16898',
+        issuedAt: new Date('2026-09-30T22:30:00Z'),
+        merchantKey: 'rs:AAAA1111',
+        verifyUrl: buildRsUrl(),
+      },
+    };
+
+    it.each(['%0A', '%0D%0A'] as const)('decodes %s wrapping like the unwrapped link', (wrap) => {
+      const link = buildRsUrl({}, { wrap });
+      expect(link).toContain(wrap);
+
+      expect(decodeRsUrl(buildRsUrl())).toEqual(unwrapped);
+      expect(decodeRsUrl(link)).toEqual(unwrapped);
+    });
+
+    it('decodes a wrapped vl with a trailing %0A like the unwrapped link', () => {
+      expect(decodeRsUrl(`${buildRsUrl({}, { wrap: '%0A' })}%0A`)).toEqual(unwrapped);
+    });
+
+    it('keeps a + in a wrapped vl, whether it arrives as %2B or a space', () => {
+      let fields: RsVlFields = {};
+      for (let counter = 1; !buildRsVl(fields).includes('+'); counter++) {
+        fields = { totalCounter: counter };
+      }
+      const vl = buildRsVl(fields);
+      const wrapped = encodeRsVl(vl, '%0A');
+      expect(wrapped).toContain('%0A');
+      expect(wrapped).toContain('%2B');
+      const expected = {
+        kind: 'receipt',
+        receipt: {
+          ...unwrapped.receipt,
+          fiscalId: `AAAA1111-AAAA1111-${String(fields.totalCounter)}`,
+          verifyUrl: `${SUF}${encodeURIComponent(vl)}`,
+        },
+      };
+
+      expect(decodeRsUrl(`${SUF}${encodeURIComponent(vl)}`)).toEqual(expected);
+      expect(decodeRsUrl(`${SUF}${wrapped}`)).toEqual(expected);
+      expect(decodeRsUrl(`${SUF}${wrapped.replaceAll('%2B', ' ')}`)).toEqual(expected);
+    });
+  });
+
+  describe('an explicit port', () => {
+    it('decodes :443 like the portless link, with a portless verifyUrl', () => {
+      const link = buildRsUrl({}, { port: true });
+      expect(link.startsWith('https://suf.purs.gov.rs:443/v/?vl=')).toBe(true);
+
+      const result = decodeRsUrl(link);
+
+      expect(result).toEqual(decodeRsUrl(buildRsUrl()));
+      expect(result).toMatchObject({ receipt: { totalMinor: 82912, verifyUrl: buildRsUrl() } });
+    });
+
+    it.each([
+      ['another port', 'https://suf.purs.gov.rs:8443/v/?vl='],
+      ['http with :443', 'http://suf.purs.gov.rs:443/v/?vl='],
+    ])('is not a receipt with %s', (_name, prefix) => {
+      expect(decodeRsUrl(`${prefix}${encodeURIComponent(buildRsVl())}`)).toEqual({
+        kind: 'notReceipt',
+      });
+    });
   });
 
   it('is not a receipt when the link sits next to other words', () => {

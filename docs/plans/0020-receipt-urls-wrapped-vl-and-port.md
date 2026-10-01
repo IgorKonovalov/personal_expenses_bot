@@ -1,6 +1,6 @@
 # 0020: Receipt links with a line-wrapped vl or an explicit :443 port
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (the URL is
 > decoded offline), [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (QR decoding)
@@ -131,7 +131,7 @@ None. No schema, type or callback-data change.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The decoders accept a wrapped vl and the :443 port | dev | not started | |
+| 1: The decoders accept a wrapped vl and the :443 port | dev | done | committed with this row |
 | 2: Re-send the two receipts to the deployed bot | human | not started | |
 
 ### Notes

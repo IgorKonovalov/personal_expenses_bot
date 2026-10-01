@@ -61,6 +61,29 @@ describe('decodeMeUrl', () => {
     expect(decodeMeUrl(meUrl({ iic: 'xyz' }))).toEqual({ kind: 'refused', reason: 'malformed' });
   });
 
+  it('decodes the host with :443 like the portless link, with a portless verifyUrl', () => {
+    const link = meUrl({}).replace('mapr.tax.gov.me/', 'mapr.tax.gov.me:443/');
+    expect(link).toContain('https://mapr.tax.gov.me:443/ic/#/verify?');
+
+    const result = decodeMeUrl(link);
+
+    expect(result).toEqual(decodeMeUrl(meUrl({})));
+    expect(result).toMatchObject({
+      kind: 'receipt',
+      receipt: {
+        totalMinor: 4250,
+        verifyUrl:
+          'https://mapr.tax.gov.me/ic/#/verify?iic=0123456789abcdef0123456789abcdef&tin=02000000&crtd=2026-09-30T23%3A15%3A00%2B02%3A00&prc=42.50',
+      },
+    });
+  });
+
+  it('is not a receipt on the host with another port', () => {
+    const link = meUrl({}).replace('mapr.tax.gov.me/', 'mapr.tax.gov.me:8443/');
+
+    expect(decodeMeUrl(link)).toEqual({ kind: 'notReceipt' });
+  });
+
   it('is not a receipt next to other words or on another host', () => {
     expect(decodeMeUrl(`кофе ${meUrl({})}`)).toEqual({ kind: 'notReceipt' });
     expect(decodeMeUrl('https://example.com/ic/#/verify?iic=1')).toEqual({ kind: 'notReceipt' });

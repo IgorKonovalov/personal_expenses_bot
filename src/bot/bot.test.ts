@@ -3700,6 +3700,24 @@ describe('fiscal receipts', () => {
       expect(sentTexts(calls)).toEqual([`Уже записано.\n${RS_CARD}`]);
     });
 
+    it('records a photo of a wrapped :443 receipt QR, then answers its plain link as recorded', async () => {
+      const { sendPhoto, send, calls, db } = receiptBot();
+
+      await sendPhoto('rs-receipt-wrapped.jpg');
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 82912, currency: 'RSD' },
+      ]);
+      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      calls.length = 0;
+
+      await send(RS_LINK);
+
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS n FROM receipts').get()).toEqual({ n: 1 });
+      expect(sentTexts(calls)).toEqual([`Уже записано.\n${RS_CARD}`]);
+    });
+
     it('reads an image sent as a file', async () => {
       const { sendDocument, db } = receiptBot();
 

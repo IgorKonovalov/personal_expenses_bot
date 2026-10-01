@@ -31,6 +31,17 @@ describe('decodeQr', () => {
     expect(result).toEqual({ kind: 'decoded', texts: [buildRsUrl()] });
   });
 
+  it('decodes the wrapped :443 Serbian receipt JPEG to exactly its URL', async () => {
+    const text = buildRsUrl({}, { wrap: '%0A', port: true });
+    expect(text).toMatch(/^https:\/\/suf\.purs\.gov\.rs:443\/v\/\?vl=/);
+    expect(text).toContain('%0A');
+
+    expect(await decodeQr(fixture('rs-receipt-wrapped.jpg'))).toEqual({
+      kind: 'decoded',
+      texts: [text],
+    });
+  });
+
   it('decodes a QR that is not a receipt to its text', async () => {
     expect(await decodeQr(fixture('example.png'))).toEqual({
       kind: 'decoded',
