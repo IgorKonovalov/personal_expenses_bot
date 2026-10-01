@@ -135,8 +135,8 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: A malformed Blocks merge line is a plan error | dev | done | `c90a362` |
-| 2: prune removes a merged plan everywhere | dev | done | committed with this row |
-| 3: ready warns about an uncommitted edit; mid-run queue notice | dev | not started | |
+| 2: prune removes a merged plan everywhere | dev | done | `a53f3cd` |
+| 3: ready warns about an uncommitted edit; mid-run queue notice | dev | done | committed with this row |
 | 4: Readiness checks done-when reachability | dev | not started | |
 
 ### Notes
@@ -150,6 +150,8 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 - Phase 2, followup not acted on: `cmdPrune` rewrites only when a lane entry was dropped, so a
   queue whose lanes are already clean but whose `plans` map names a merged plan reports "nothing
   to prune" and keeps that map.
+- Phase 3: `readyOnMain` now also returns `hash` (main's contract hash) with a park, so the
+  warning runs after a park as well as a pass.
 
 ### Close triggers
 

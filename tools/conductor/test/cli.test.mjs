@@ -999,6 +999,28 @@ test("ready on a plan the check passes records the contract hash and main's tip,
   assert.equal(sh(["worktree", "list"], repo), worktrees);
 });
 
+test("ready warns when the plan's working copy differs above the log from main, and only then", async () => {
+  const { repo, cli } = setup([{ number: "0101", phases: [dev("1")] }], { a: [] }, { ready: false });
+  const planPath = join(repo, "docs", "plans", "0101-fixture.md");
+  const committed = readFileSync(planPath, "utf8");
+  const warning = "conductor: warning: plan 0101's working copy differs from the text on main that was checked; commit it and run `ready` again, or `check` will refuse";
+
+  const clean = await cli("ready", "0101");
+  assert.equal(clean.code, 0, clean.err.join("\n"));
+  assert.deepEqual(clean.err, []);
+
+  writeFileSync(planPath, committed.replace("- **What:** phase 1.", "- **What:** phase 1, and a second output."));
+  const edited = await cli("ready", "0101");
+  assert.equal(edited.code, 0, edited.err.join("\n"));
+  assert.deepEqual(edited.err, [warning]);
+
+  // The log is outside the contract hash, so an edit there alone says nothing.
+  writeFileSync(planPath, committed.replace("### Notes", "### Notes\n\n- a resume note."));
+  const logOnly = await cli("ready", "0101");
+  assert.equal(logOnly.code, 0, logOnly.err.join("\n"));
+  assert.deepEqual(logOnly.err, []);
+});
+
 test("check refuses a queued, unstarted plan with no readiness record, passes after ready, and refuses again after a phase edit", async () => {
   const { repo, p, cli } = setup(
     [

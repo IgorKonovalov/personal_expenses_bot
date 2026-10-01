@@ -402,7 +402,10 @@ function setLane(ctx, lane, extra) {
 /**
  * Re-reads queue.json from the main checkout. A queue that no longer validates is not taken: the
  * lane keeps the one it had and says so once per distinct error, since a half-edited queue is the
- * owner mid-change rather than a new instruction.
+ * owner mid-change rather than a new instruction. A plan the new queue lists for the first time,
+ * unstarted and with no readiness record matching its contract, skipped the queue-time gate (`ready`
+ * is refused while a run is live), so it is taken with one line saying its readiness runs at pick
+ * time. The line is said once: on the next refresh the plan is no longer new.
  */
 function refreshQueue(ctx) {
   if (!ctx.reloadQueue) return;
@@ -414,6 +417,13 @@ function refreshQueue(ctx) {
     return;
   }
   ctx.queueError = null;
+  for (const [plan, entry] of Object.entries(q.plans ?? {})) {
+    if (ctx.queue?.plans?.[plan] || !entry.path || merged(ctx, plan)) continue;
+    const rec = ctx.state.plans[plan];
+    if (rec?.steps?.some((s) => s.kind === "implement")) continue;
+    if (rec?.readiness?.hash === planContractHash(readFileSync(entry.path, "utf8"))) continue;
+    live(ctx, plan, "  lane   queued during a live run: its readiness runs when the lane picks it");
+  }
   ctx.queue = q;
 }
 
@@ -679,8 +689,9 @@ async function readiness(ctx, rec, file, mainTip) {
  * `ready NNNN` (ADR-0016): the readiness session against `main`, before the plan is queued, in a
  * detached worktree of `main` that is removed whatever the session ends on. A `ready` records
  * { hash, main, at } on the plan's record; a park records none and drops any older record, since a
- * verdict that no longer holds is not one `run` may start on. Returns { record } or { park }, or
- * { error } when the check could not start.
+ * verdict that no longer holds is not one `run` may start on. Returns { record } or { park, hash },
+ * `hash` being the contract hash of the text on `main` the park was given on, or { error } when the
+ * check could not start.
  */
 export async function readyOnMain(ctx, plan) {
   const mainTip = resolveCommit("main", ctx.repo);
@@ -696,13 +707,14 @@ export async function readyOnMain(ctx, plan) {
     if (!file) return { error: `plan ${plan} is not on main (${mainTip.slice(0, 7)})` };
     if (file.done) return { error: `plan ${plan} is already under docs/plans/done/ on main` };
     const rec = planRecord(ctx.state, plan);
+    const hash = planContractHash(readFileSync(file.path, "utf8"));
     const parked = await readinessSession(ctx, rec, { cwd: wt, file, branch: `main (detached at ${mainTip.slice(0, 7)})` });
     if (parked) {
       delete rec.readiness;
       save(ctx);
-      return { park: parked };
+      return { park: parked, hash };
     }
-    rec.readiness = { hash: planContractHash(readFileSync(file.path, "utf8")), main: mainTip, at: now() };
+    rec.readiness = { hash, main: mainTip, at: now() };
     save(ctx);
     return { record: rec.readiness };
   } finally {

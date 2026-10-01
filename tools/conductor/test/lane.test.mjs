@@ -1212,6 +1212,42 @@ test("a plan appended to the queue while a resident run is up is started", async
   assert.match(watching, /^- lane a: idle, watching the queue\.$/m);
 });
 
+// ADR-0016: `ready` is refused while a run is live, so a plan queued mid-run skipped its gate.
+test("a plan queued mid-run with no matching readiness record is announced once and stays queued", async () => {
+  const { ctx, repo } = scratch({
+    plans: [
+      { number: "0101", phases: [dev("1")] },
+      { number: "0102", phases: [dev("1")] },
+      { number: "0103", phases: [dev("1")] },
+    ],
+    lanes: { a: [] },
+  });
+  // 0103 carries a record matching its contract, as `ready 0103` before the run would leave.
+  const text = readFileSync(findPlan(repo, "0103").path, "utf8");
+  planRecord(ctx.state, "0103").readiness = { hash: planContractHash(text), main: resolveCommit("main", repo), at: "2026-10-01T00:00:00.000Z" };
+  // Only lane a runs, so lane b's plans are never picked and stay queued across every refresh.
+  ctx.lanes = ["a"];
+  let lanes = { a: [] };
+  ctx.reloadQueue = () => validateQueue({ lanes }, repo, new Set(Object.keys(ctx.state.plans)));
+  const lines = [];
+  ctx.live = (l) => lines.push(l);
+  const r = resident(ctx, {
+    done: () => false,
+    maxLooks: 6,
+    onLook: (lane, looks) => {
+      if (looks === 1) lanes = { a: [], b: ["0102", "0103"] };
+    },
+  });
+  await runLanes(ctx);
+
+  assert.equal(r.looks(), 6, "the queue was refreshed after each look");
+  const notices = lines.filter((l) => l.includes("queued during a live run"));
+  assert.equal(notices.length, 1, lines.join("\n"));
+  assert.match(notices[0], / 0102 {3}lane {3}queued during a live run: its readiness runs when the lane picks it$/);
+  assert.deepEqual(ctx.queue.lanes.b, ["0102", "0103"]);
+  assert.equal(ctx.state.plans["0102"], undefined, "0102 is queued, not started");
+});
+
 test("a run whose spend reaches run_budget_usd pauses: the plan in flight merges and no other starts", async () => {
   const { ctx } = scratch({
     plans: [

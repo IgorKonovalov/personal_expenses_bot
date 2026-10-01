@@ -54,8 +54,8 @@ All of them run from the main checkout as `node tools/conductor/conductor.mjs <c
 
 | Command | What it does |
 |---|---|
-| `ready NNNN` | Runs the readiness check on plan NNNN as it stands on `main`, in a detached worktree removed afterwards. On a pass it records the plan's contract hash and `main`'s tip. On a park it prints the phase, the detail and the transcript, and exits 1. Refused while a run is live. |
-| `run [--lane a\|b] [--once \| --until-idle]` | Runs the queue until `pause`, `abort` or Ctrl+C. `--until-idle` ends once no lane can move; `--once` stops a lane after one plan. |
+| `ready NNNN` | Runs the readiness check on plan NNNN as it stands on `main`, in a detached worktree removed afterwards. On a pass it records the plan's contract hash and `main`'s tip. On a park it prints the phase, the detail and the transcript, and exits 1. After either, it warns when the plan's working copy differs above its `## Implementation log` from the text on `main` it checked: commit it and run `ready` again, or `check` refuses. Refused while a run is live. |
+| `run [--lane a\|b] [--once \| --until-idle]` | Runs the queue until `pause`, `abort` or Ctrl+C. `--until-idle` ends once no lane can move; `--once` stops a lane after one plan. A live run re-reads `queue.json`. A plan added there unstarted and with no matching `ready` record gets one line, `NNNN queued during a live run: its readiness runs when the lane picks it`, and the lane runs the readiness check when it picks it. |
 | `status` | Per lane: the plan, the step, the time in it and the spend so far, then every parked plan with its reason, and any resume ask a live run has not taken yet. Regenerates the digest. |
 | `digest [--history]` | Rewrites `digest.md`. `--history` writes the per-run account to `digest-history.md`. |
 | `resume NNNN` | Queues a parked plan again. Refused while the park's reason still holds, such as a `human` phase whose log row does not read `done`. Against a live run it leaves an ask, which the run takes when the plan's lane next picks a plan. That is after the plan the lane is running, which the answer names. |

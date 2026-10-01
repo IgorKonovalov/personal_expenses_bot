@@ -219,7 +219,9 @@ const isPlan = (s) => /^\d{4}$/.test(s ?? "");
 
 /**
  * `ready NNNN` (ADR-0016): the readiness session against `main`, in a worktree removed after it. It
- * writes the plan's record, so a live run, which rewrites the record whole, refuses it.
+ * writes the plan's record, so a live run, which rewrites the record whole, refuses it. The session
+ * reads `main`'s tip while `check` hashes the main checkout's working copy, so after a verdict it
+ * warns when the two contracts differ: the record would not match what `check` reads.
  */
 async function cmdReady(args, o) {
   const p = o.p;
@@ -256,12 +258,21 @@ async function cmdReady(args, o) {
     o.err(`conductor: ${r.error}`);
     return 1;
   }
+  const working = findPlan(p.repo, plan);
+  const checked = r.record?.hash ?? r.hash;
+  const drifted = working && !working.done && planContractHash(readFileSync(working.path, "utf8")) !== checked;
+  const drift = () => {
+    if (!drifted) return;
+    o.err(`conductor: warning: plan ${plan}'s working copy differs from the text on main that was checked; commit it and run \`ready\` again, or \`check\` will refuse`);
+  };
   if (r.park) {
     o.err(`conductor: plan ${plan} is not ready (${r.park.reason})${r.park.phase ? ` at Phase ${r.park.phase}` : ""}: ${r.park.detail}`);
     if (r.park.read) o.err(`read: ${r.park.read}`);
+    drift();
     return 1;
   }
   o.log(`conductor: plan ${plan} is ready against main ${r.record.main.slice(0, 7)}; \`run\` takes it once it is approved and queued`);
+  drift();
   return 0;
 }
 
