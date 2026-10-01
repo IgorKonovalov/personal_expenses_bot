@@ -1,6 +1,6 @@
 # 0015: Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the encryption tip),
 > [Plan 0024](0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
