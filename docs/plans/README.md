@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0030`
+- **Next free number:** `0031`
 
 ## Active
 
@@ -20,6 +20,7 @@ status and date. What a plan did lives in the plan.
 | [0027](0027-bank-statement-import.md) | Bank statement import: a Serbian bank's export file becomes expenses | draft, stub (2026-10-01) |
 | [0028](0028-donations.md) | Donations: everything free, `/donate` via Telegram Stars and an external link | draft, stub (2026-10-01) |
 | [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | approved (2026-10-01) |
+| [0030](0030-mini-app-charts-and-qr-scan.md) | A Mini App for charts and a live QR scan, static with no backend | draft (2026-10-01) |
 
 ## Recently closed
 
