@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0028`
+- **Next free number:** `0029`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -34,3 +34,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0025](0025-static-mini-app-fragment-in-senddata-out.md) | A static Mini App with no backend: data arrives in the URL fragment and leaves by sendData | proposed (2026-10-01) |
 | [0026](0026-export-csv-and-hand-rolled-xlsx.md) | Export writes CSV and a hand-rolled XLSX, with no spreadsheet dependency | proposed (2026-10-01) |
 | [0027](0027-donations-only-funding.md) | The bot is funded by donations only: no paid tier, and a donation unlocks nothing | proposed (2026-10-01) |
+| [0028](0028-contextual-tips-registry.md) | Contextual tips are a registry of conditions, shown as one capped message, seen when sent | proposed (2026-10-01) |
