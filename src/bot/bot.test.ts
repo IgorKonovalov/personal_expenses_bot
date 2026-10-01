@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Bot } from 'grammy';
 import type { Message, Update } from 'grammy/types';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
@@ -255,7 +255,10 @@ describe('input that is not an expense text', () => {
   }
 
   it.each([
-    ['photo', { photo: [{ file_id: 'p', file_unique_id: 'p', width: 1, height: 1 }] }],
+    [
+      'non-image file',
+      { document: { file_id: 'd', file_unique_id: 'd', mime_type: 'application/pdf' } },
+    ],
     [
       'sticker',
       {
@@ -3370,7 +3373,45 @@ describe('fiscal receipts', () => {
       );
     const setTimezone = (timezone: string) =>
       harness.db.prepare('UPDATE users SET timezone = ?').run(timezone);
-    return { ...harness, send, setTimezone };
+    // getFile answers with `files/<file_id>`; the harness's fake answers `true` to the rest.
+    const getFiles: string[] = [];
+    harness.bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'getFile') return prev(method, payload, signal);
+      const { file_id } = payload as { file_id: string };
+      getFiles.push(file_id);
+      return Promise.resolve({
+        ok: true,
+        result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+      });
+    });
+    const sendMedia = (content: Record<string, unknown>) =>
+      harness.bot.handleUpdate({
+        update_id: ++updateId,
+        message: {
+          message_id: updateId,
+          date: Math.floor(RECEIPT_SENT.getTime() / 1000),
+          chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+          from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+          ...content,
+        },
+      });
+    const sendPhoto = (fileId: string) =>
+      sendMedia({
+        photo: [
+          { file_id: `${fileId}-small`, file_unique_id: 's', width: 90, height: 90 },
+          { file_id: fileId, file_unique_id: 'l', width: 1280, height: 1280, file_size: 200_000 },
+        ],
+      });
+    const sendDocument = (fileId: string, mimeType: string, fileSize: number) =>
+      sendMedia({
+        document: {
+          file_id: fileId,
+          file_unique_id: fileId,
+          mime_type: mimeType,
+          file_size: fileSize,
+        },
+      });
+    return { ...harness, send, setTimezone, sendPhoto, sendDocument, getFiles };
   }
 
   function receiptKeyboard(expenseId: string) {
@@ -3534,6 +3575,108 @@ describe('fiscal receipts', () => {
 
       expect(expenseCount(db)).toEqual({ n: 1 });
       expect(String(sentTexts(calls)[0])).toMatch(/^Уже записано\.\n/);
+    });
+  });
+
+  describe('photos and image files', () => {
+    // The download goes through fetch; it serves the QR fixtures by file id.
+    const realFetch = globalThis.fetch;
+    let fetched: string[] = [];
+    beforeEach(() => {
+      fetched = [];
+      globalThis.fetch = (input) => {
+        const url = String(input instanceof Request ? input.url : input);
+        fetched.push(url);
+        const name = url.slice(url.lastIndexOf('/') + 1);
+        const body = readFileSync(new URL(`../fiscal/qr.fixtures/${name}`, import.meta.url));
+        return Promise.resolve(new Response(body));
+      };
+    });
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    it('records a photo of the Serbian receipt QR like the pasted link: 82912 RSD', async () => {
+      const { sendPhoto, calls, db, getFiles } = receiptBot();
+
+      await sendPhoto('rs-receipt.jpg');
+
+      expect(getFiles).toEqual(['rs-receipt.jpg']);
+      expect(fetched).toEqual([
+        'https://api.telegram.org/file/bot123456:test-token/files/rs-receipt.jpg',
+      ]);
+      expect(db.prepare('SELECT amount_minor, currency, occurred_on FROM expenses').all()).toEqual([
+        { amount_minor: 82912, currency: 'RSD', occurred_on: '2026-10-01' },
+      ]);
+      expect(sentTexts(calls)).toEqual([RS_CARD]);
+    });
+
+    it('records the same receipt sent as a photo and then as a link once', async () => {
+      const { sendPhoto, send, calls, db } = receiptBot();
+      await sendPhoto('rs-receipt.jpg');
+      calls.length = 0;
+
+      await send(RS_LINK);
+
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      expect(sentTexts(calls)).toEqual([`Уже записано.\n${RS_CARD}`]);
+    });
+
+    it('reads an image sent as a file', async () => {
+      const { sendDocument, db } = receiptBot();
+
+      await sendDocument('rs-receipt.jpg', 'image/jpeg', 200_000);
+
+      expect(db.prepare('SELECT amount_minor FROM expenses').pluck().all()).toEqual([82912]);
+    });
+
+    it.each([
+      ['no QR', 'no-qr.jpg'],
+      ['a QR that is not a receipt', 'example.png'],
+    ])('answers a photo with %s with the hint and records nothing', async (_name, fileId) => {
+      const { sendPhoto, calls, db } = receiptBot();
+
+      await sendPhoto(fileId);
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+    });
+
+    it('does not download an image file over 20 MB and answers with the hint', async () => {
+      const { sendDocument, calls, getFiles } = receiptBot();
+
+      await sendDocument('rs-receipt.jpg', 'image/jpeg', 25_000_000);
+
+      expect(getFiles).toEqual([]);
+      expect(fetched).toEqual([]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+    });
+
+    it('does not download a non-image file and keeps the help reply', async () => {
+      const { sendDocument, calls, getFiles } = receiptBot();
+
+      await sendDocument('report.pdf', 'application/pdf', 1000);
+
+      expect(getFiles).toEqual([]);
+      expect(fetched).toEqual([]);
+      expect(sentTexts(calls)).toEqual([messages.help]);
+    });
+
+    it('never logs the download URL, which carries the bot token', async () => {
+      const { sendPhoto, logLines } = receiptBot({ logLevel: 'info' });
+      globalThis.fetch = (input) => {
+        fetched.push(String(input instanceof Request ? input.url : input));
+        return Promise.resolve(new Response('gone', { status: 404 }));
+      };
+
+      await sendPhoto('rs-receipt.jpg');
+
+      expect(fetched).toHaveLength(1);
+      expect(logLines.some((line) => line.includes('handler failed'))).toBe(true);
+      for (const line of logLines) {
+        expect(line).not.toContain('test-token');
+        expect(line).not.toContain('api.telegram.org/file');
+      }
     });
   });
 

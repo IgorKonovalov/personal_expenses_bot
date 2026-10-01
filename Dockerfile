@@ -19,6 +19,15 @@ RUN pnpm build
 # rebuild the one native dep so its binding is in the tree the runtime stage copies.
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm rebuild better-sqlite3
 RUN node -e "new (require('better-sqlite3'))(':memory:').close()"
+# The receipt QR decoder must load its wasm from the prod node_modules, never from the network
+# (ADR-0019): with fetch made to throw, it decodes the synthetic Serbian fixture to its URL.
+RUN node --input-type=module -e " \
+  globalThis.fetch = () => { throw new Error('the QR decoder reached the network'); }; \
+  const { readFileSync } = await import('node:fs'); \
+  const { decodeQr } = await import('./dist/fiscal/qr.js'); \
+  const { buildRsUrl } = await import('./dist/domain/receipts/testing/buildRsVl.js'); \
+  const result = await decodeQr(readFileSync('src/fiscal/qr.fixtures/rs-receipt.jpg')); \
+  if (result.kind !== 'decoded' || result.texts[0] !== buildRsUrl()) process.exit(1);"
 
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 

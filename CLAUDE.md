@@ -18,6 +18,7 @@ src/
 ├── db/              # connection, migrations, repositories: the only place with SQL
 ├── services/        # use-cases orchestrating domain + db
 ├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module
+├── fiscal/          # the receipts adapter: QR decoding (zxing-wasm) and the tax-site fetchers
 ├── config.ts        # env -> typed config, validated at boot
 ├── logger.ts        # pino factory
 ├── heartbeat.ts     # liveness file + the Docker health-check entry

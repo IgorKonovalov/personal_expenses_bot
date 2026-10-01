@@ -15,6 +15,7 @@ import { registerChangelog } from './handlers/changelog.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
+import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerSummary } from './handlers/summary.js';
@@ -64,7 +65,8 @@ export function createBot(options: BotOptions): Bot {
   dm.use(clearFlowOnCommand(options));
 
   // Commands and exact menu labels first: the text handler treats any other text as a flow
-  // answer or an expense attempt, and whatever isn't text gets the help reply.
+  // answer, a receipt link or an expense attempt; photos and image files are read for a receipt
+  // QR; whatever else isn't text gets the help reply.
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
@@ -79,6 +81,7 @@ export function createBot(options: BotOptions): Bot {
   registerCard(dm, options);
   registerCategory(dm, options);
   registerText(dm, options);
+  registerReceiptMedia(dm, options, telegramFileDownloader(options.token));
   registerNonText(dm);
   registerEdited(dm, options);
 

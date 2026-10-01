@@ -491,6 +491,8 @@ export const messages = {
     refund: html`Это чек возврата. Возвраты пока не записываются, ничего не записано.`,
   },
   futureReceipt: html`Дата на чеке ещё не наступила. Ничего не записано.`,
+  // A photo or image file without a readable receipt QR code (ADR-0019).
+  receiptPhotoHint: html`Не нашёл QR-код чека на изображении. Сфотографируйте QR-код крупнее, отправьте фото файлом без сжатия или вставьте ссылку из QR-кода.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.
