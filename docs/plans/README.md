@@ -11,7 +11,6 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0009](0009-group-ledgers.md) | Group ledgers: the bot as a group's accountant, with personal books kept private | approved (2026-09-30) |
-| [0010](0010-conductor-followups-readiness-at-queue-time.md) | Conductor followups: readiness at queue time, main before readiness, resume and idle fixes | approved (2026-09-30) |
 | [0011](0011-budgets.md) | Budgets: a payday-period limit, a daily allowance, essential categories and category caps | draft (2026-09-30) |
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
@@ -20,6 +19,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0010](done/0010-conductor-followups-readiness-at-queue-time.md) | Conductor followups: readiness at queue time, main before readiness, resume and idle fixes | done (2026-10-01): built as planned, two conductor followups logged, no version bump |
 | [0004](done/0004-dates-edit-summaries.md) | Past dates, /week and /month by category, and the edit flow | done (2026-09-30): built as planned after one fix round, `/help` copy owed, v0.6.0 |
 | [0008](done/0008-version-announcements.md) | Version announcements: tell the admin about each new version, and /changelog | done (2026-09-30): built as planned after one docs fix round, v0.5.0 |
 | [0005](done/0005-settings.md) | /settings: timezone from a city list, and the ledger's default currency | done (2026-09-30): built as planned, one minor open, v0.4.0 |

@@ -1,8 +1,8 @@
 # 0010: Conductor followups: readiness at queue time, main before readiness, resume and idle fixes
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, two conductor followups logged, no version bump
 > **Created:** 2026-09-30
-> **Related ADRs:** [ADR-0016](../adrs/0016-readiness-runs-before-a-plan-is-queued.md), ADR-0010, ADR-0013
+> **Related ADRs:** [ADR-0016](../../adrs/0016-readiness-runs-before-a-plan-is-queued.md), ADR-0010, ADR-0013
 
 ## TL;DR
 
@@ -268,3 +268,14 @@ rec.merges.push({ where: "pre-readiness", commit, session: false, at });
 - No migration, no dependency change, no `package.json` version change.
 
 ## Followups
+
+Both items `dev` noted in `### Notes` are real and go to the next conductor plan. They are tracked
+as F12 and F13 in `tools/conductor/FOLLOWUPS.md`.
+
+- **A plan queued while a resident run is live skips the queue-time gate.** `refreshQueue` reloads
+  `queue.json` through `loadQueue` without `readinessErrors`, and `ready` is refused during a live
+  run. Only the lane's readiness check covers such a plan.
+- **`ready` checks `main`'s tip, but `check` hashes the main checkout's working copy.** An
+  architect who runs `ready` before committing a plan edit gets a pass on the old text, then a
+  `check` refusal. That is safe but confusing. `ready` should warn when the working copy's
+  contract differs from `main`'s.

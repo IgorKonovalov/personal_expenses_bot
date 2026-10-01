@@ -98,6 +98,9 @@ next free number. That index is the one-minute entry point for every future sess
 
 When the user approves, flip the plan's `Status:` to `approved` and update the index row.
 
+A plan bound for the conductor's queue first passes `node tools/conductor/conductor.mjs ready NNNN`
+on its committed text (ADR-0016). Fix a park in this session, while the plan is still fresh.
+
 ---
 
 ## Mode 2: Write an ADR
@@ -197,7 +200,9 @@ Commit by explicit path, in this order:
 5. **Bump the version, once per plan and never per phase.** Use minor for a feature plan, patch
    for a fix-only plan, and none for docs/chore-only (a deliberate call, not a miss). This is the
    most-forgotten close step, so decide it every time. Bump `package.json` and add a
-   `CHANGELOG.md` entry. `dev`'s close triggers say what shipped. The level is your call.
+   `CHANGELOG.md` entry, plus the version's `versionAnnouncements` entry in the messages module
+   (ADR-0013; the gate fails a bump without one). `dev`'s close triggers say what shipped. The
+   level is your call.
 6. Commit as `docs(plans): close plan NNNN + vX.Y.Z`. **The user pushes.**
 
 ---

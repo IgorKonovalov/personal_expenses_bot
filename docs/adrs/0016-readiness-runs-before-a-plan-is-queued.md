@@ -1,8 +1,8 @@
 # ADR-0016: The readiness check runs before a plan is queued, and `run` refuses a plan without one
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-09-30
-> **Related plan(s):** [Plan 0010](../plans/0010-conductor-followups-readiness-at-queue-time.md)
+> **Related plan(s):** [Plan 0010](../plans/done/0010-conductor-followups-readiness-at-queue-time.md)
 
 ## Context
 
