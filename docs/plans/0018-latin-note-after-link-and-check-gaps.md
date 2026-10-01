@@ -125,11 +125,18 @@ None.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A Latin note after a SUF link is not a receipt | dev | done | committed with this row |
-| 2: The budget screen shows the caps-dropped line | dev | not started | |
+| 1: A Latin note after a SUF link is not a receipt | dev | done | 63e678d |
+| 2: The budget screen shows the caps-dropped line | dev | done | committed with this row |
 | 3: The link checker reads only tracked docs | dev | not started | |
 
 ### Notes
+
+- Phase 2: the test switches the default currency to RUB through `/settings` first (the
+  harness default is RSD), and re-opens `/budget` before tapping the cap, as the existing cap
+  tests do. The edited anchor reads the dropped line, a blank line, then the screen.
+- Phase 2: with `result.droppedCapsCurrency` removed from the `budgetView` call in
+  `src/bot/flows.ts`, the test failed (the anchor started with `<b>Бюджет`); reverted with
+  `git checkout -- src/bot/flows.ts`.
 
 ### Close triggers
 

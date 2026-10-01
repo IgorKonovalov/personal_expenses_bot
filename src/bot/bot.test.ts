@@ -2002,6 +2002,38 @@ describe('/budget and the card line (ADR-0017)', () => {
     expect(db.prepare('SELECT cap_minor FROM category_caps').pluck().all()).toEqual([500_000]);
   });
 
+  it('says the RUB caps were dropped when the limit is set again in EUR', async () => {
+    const { say, tap, calls, db } = budgetBot();
+    await say('/settings', 1);
+    await tap('set:cur:RUB', 101);
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+      .pluck()
+      .get() as number;
+    await say('/budget', 2);
+    await tap('bud:lim', 102);
+    await say('30000', 3);
+    await say('/budget', 4);
+    await tap(`bud:cap:${String(cafe)}`, 103);
+    await say('5000', 5);
+    expect(db.prepare('SELECT cap_minor FROM category_caps').pluck().all()).toEqual([500_000]);
+
+    await say('/settings', 6);
+    await tap('set:cur:EUR', 104);
+    await say('/budget', 7);
+    await tap('bud:lim', 105);
+    await say('1000', 8);
+
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: { message_id: 105 },
+    });
+    expect(String(lastText(calls))).toMatch(
+      /^Лимиты по категориям сброшены: они были в RUB\.\n\n<b>Бюджет «Личные расходы»<\/b>\n/,
+    );
+    expect(db.prepare('SELECT COUNT(*) FROM category_caps').pluck().get()).toBe(0);
+  });
+
   it("neither lists an archived category's cap nor puts it on the card", async () => {
     const { say, tap, calls, db } = await withLimit();
     const cafe = db
