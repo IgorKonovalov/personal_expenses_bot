@@ -65,6 +65,14 @@ describe('screen anchor', () => {
     expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'expense', expenseId });
   });
 
+  it('round-trips the settings hub with and without the ledger it is scoped to', () => {
+    setAnchor({ db }, user, { chatId: 1001, messageId: 8, screen: { name: 'settings', ledgerId } });
+    expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'settings', ledgerId });
+
+    setAnchor({ db }, user, { chatId: 1001, messageId: 9, screen: { name: 'settings' } });
+    expect(currentAnchor({ db }, user)?.screen).toEqual({ name: 'settings' });
+  });
+
   it('reads a summary row without a ledger id as no screen', () => {
     db.prepare("UPDATE flow_sessions SET screen = 'summary', screen_ctx = '{}'").run();
 
@@ -73,6 +81,14 @@ describe('screen anchor', () => {
 });
 
 describe('routeText (ADR-0009)', () => {
+  it("carries the shared ledger's id in a timezone flow, and none for the user's own zone", () => {
+    startFlow({ db }, user, { kind: 'setTimezone', ledgerId }, T);
+    expect(route('tg:1:1', T)).toEqual({ kind: 'flow', flow: { kind: 'setTimezone', ledgerId } });
+
+    startFlow({ db }, user, { kind: 'setTimezone' }, T);
+    expect(route('tg:1:2', T)).toEqual({ kind: 'flow', flow: { kind: 'setTimezone' } });
+  });
+
   it('is free text with no expired flow when nothing was ever pending', () => {
     expect(route('tg:1:1', T)).toEqual({ kind: 'free', expiredFlow: false });
   });

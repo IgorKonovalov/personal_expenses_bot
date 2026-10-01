@@ -161,6 +161,19 @@ export function updateLedgerCurrency(db: Db, ledgerId: LedgerId, currency: Curre
   );
 }
 
+// A shared ledger's zone. Returns false when it already has this zone: nothing is written.
+// Recorded rows keep their occurred_on (ADR-0015).
+export function updateLedgerTimezone(db: Db, ledgerId: LedgerId, timezone: string): boolean {
+  return (
+    db
+      .prepare<[string, string, string]>(
+        `UPDATE ledgers SET timezone = ?
+          WHERE id = ? AND kind = 'shared' AND timezone IS NOT ?`,
+      )
+      .run(timezone, ledgerId, timezone).changes > 0
+  );
+}
+
 function toLedger(row: LedgerRow): Ledger {
   const defaultCurrency = toCurrencyCode(row.default_currency);
   if (defaultCurrency === undefined) {

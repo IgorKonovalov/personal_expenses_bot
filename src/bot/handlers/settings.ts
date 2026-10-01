@@ -1,16 +1,22 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
-import type { Ledger } from '../../db/ledgers.js';
+import type { Ledger, LedgerId } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { CURRENCY_CODES, toCurrencyCode } from '../../domain/currencies.js';
 import { TIMEZONES, timezoneBySlug } from '../../domain/timezones.js';
-import { setAnchor, type CategoriesScreen } from '../../services/flowSessions.js';
+import {
+  setAnchor,
+  type CategoriesScreen,
+  type SettingsScreen,
+} from '../../services/flowSessions.js';
 import { activeLedgerCategories } from '../../services/manageCategories.js';
 import {
+  screenSettings,
   setLedgerCurrency,
+  setLedgerTimezone,
   startTimezoneFlow,
   updateTimezone,
-  userSettings,
+  type SettingsView,
 } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -44,18 +50,43 @@ import { ensureUser } from './start.js';
 // The /settings hub (ADR-0011): the user's timezone and the active ledger's default currency,
 // each changed in place in the anchor, and a way into the categories screen. [Другой…] asks for
 // an IANA name through a text flow (ADR-0009); flows.ts takes the answer.
+// Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
+// link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
 
-export function settingsView(deps: HandlerDeps, user: User): ScreenView {
-  return {
-    text: messages.settingsScreen(userSettings(deps, user)),
-    markup: InlineKeyboard.from([
-      [
-        InlineKeyboard.text(messages.timezoneButton, TIMEZONE_PICKER),
-        InlineKeyboard.text(messages.currencyButton, CURRENCY_PICKER),
-      ],
-      [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
-    ]),
-  };
+// Undefined when the screen is scoped to a ledger the user doesn't own.
+export function settingsView(
+  deps: HandlerDeps,
+  user: User,
+  ledgerId?: LedgerId,
+): ScreenView | undefined {
+  const settings = screenSettings(deps, user, ledgerId);
+  if (settings === undefined) return undefined;
+  const pickers = [
+    InlineKeyboard.text(messages.timezoneButton, TIMEZONE_PICKER),
+    InlineKeyboard.text(messages.currencyButton, CURRENCY_PICKER),
+  ];
+  return ledgerId === undefined
+    ? {
+        text: messages.settingsScreen(settings),
+        markup: InlineKeyboard.from([
+          pickers,
+          [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
+        ]),
+      }
+    : { text: messages.ledgerSettingsScreen(settings), markup: InlineKeyboard.from([pickers]) };
+}
+
+// Opens the hub scoped to a shared ledger the user owns. False when they don't own it.
+export async function sendLedgerSettings(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  ledgerId: LedgerId,
+): Promise<boolean> {
+  const view = settingsView(deps, user, ledgerId);
+  if (view === undefined) return false;
+  await showScreen(ctx, deps, user, { name: 'settings', ledgerId }, view);
+  return true;
 }
 
 // The city list two per row, the current zone marked, then the pager, [Другой…] and [« Назад].
@@ -103,31 +134,58 @@ export function timezonePromptView(timezone: string, refusal?: Html): ScreenView
 export async function sendSettings(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
-  await showScreen(ctx, deps, user, { name: 'settings' }, settingsView(deps, user));
+  const view = settingsView(deps, user);
+  if (view === undefined) throw new Error('the personal settings view always exists');
+  await showScreen(ctx, deps, user, { name: 'settings' }, view);
 }
 
-// A settings callback on an anchor that shows another screen is stale.
-async function settingsTap(ctx: Context, deps: HandlerDeps): Promise<ScreenTap | undefined> {
+interface SettingsTap extends ScreenTap {
+  // The ledger the hub is scoped to; undefined for the user's own settings.
+  readonly ledgerId: LedgerId | undefined;
+  readonly settings: SettingsView;
+}
+
+// A settings callback on an anchor that shows another screen, or scoped to a ledger the user no
+// longer owns, is stale.
+async function settingsTap(ctx: Context, deps: HandlerDeps): Promise<SettingsTap | undefined> {
   const tap = await requireScreen(ctx, deps);
   if (tap === undefined) return undefined;
-  if (tap.anchor.screen.name !== 'settings') {
+  const { screen } = tap.anchor;
+  const settings =
+    screen.name === 'settings' ? screenSettings(deps, tap.user, screen.ledgerId) : undefined;
+  if (screen.name !== 'settings' || settings === undefined) {
     await ctx.answerCallbackQuery({ text: messages.staleScreen });
     return undefined;
   }
-  return tap;
+  return { ...tap, ledgerId: screen.ledgerId, settings };
+}
+
+// The hub for the tap's scope, after a change.
+function hubView(deps: HandlerDeps, tap: SettingsTap, user: User = tap.user): ScreenView {
+  const view = settingsView(deps, user, tap.ledgerId);
+  if (view === undefined) throw new Error('settings scope vanished mid-tap');
+  return view;
 }
 
 export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('settings', (ctx) => sendSettings(ctx, deps));
 
-  // Back to the hub from its pickers, and from the categories screen it opened.
+  // Back to the hub from its pickers, and from the categories screen it opened. A scoped hub
+  // keeps its ledger.
   bot.callbackQuery(SETTINGS_OPEN, async (ctx) => {
     const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
-    const anchor = { ...tap.anchor, screen: { name: 'settings' } as const };
+    const screen: SettingsScreen =
+      tap.anchor.screen.name === 'settings' ? tap.anchor.screen : { name: 'settings' };
+    const view = settingsView(deps, tap.user, screen.ledgerId);
+    if (view === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const anchor = { ...tap.anchor, screen };
     setAnchor(deps, tap.user, anchor);
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, anchor, settingsView(deps, tap.user));
+    await renderAnchor(ctx, anchor, view);
   });
 
   bot.callbackQuery(SETTINGS_CATEGORIES, async (ctx) => {
@@ -149,7 +207,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     const tap = await settingsTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    const { timezone } = userSettings(deps, tap.user);
+    const { timezone } = tap.settings;
     await renderAnchor(ctx, tap.anchor, timezonePickerView(timezone, Number(ctx.match[1] ?? 1)));
   });
 
@@ -159,20 +217,30 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     // A slug no longer in the list: answered silently by the dispatcher, nothing written.
     const entry = timezoneBySlug(ctx.match[1] ?? '');
     if (entry === undefined) return;
-    const result = updateTimezone(deps, { user: tap.user, timezone: entry.iana });
-    if (result.kind === 'unchanged') {
-      await ctx.answerCallbackQuery({ text: messages.timezoneUnchanged });
-      return;
+    const { user, ledgerId } = tap;
+    const result =
+      ledgerId === undefined
+        ? updateTimezone(deps, { user, timezone: entry.iana })
+        : setLedgerTimezone(deps, { user, ledgerId, timezone: entry.iana });
+    switch (result.kind) {
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.timezoneUnchanged });
+        return;
+      case 'updated':
+        await ctx.answerCallbackQuery({ text: messages.timezoneChangedToast });
+        await renderAnchor(ctx, tap.anchor, hubView(deps, tap, { ...user, timezone: entry.iana }));
+        return;
     }
-    await ctx.answerCallbackQuery({ text: messages.timezoneChangedToast });
-    await renderAnchor(ctx, tap.anchor, settingsView(deps, { ...tap.user, timezone: entry.iana }));
   });
 
   bot.callbackQuery(CURRENCY_PICKER, async (ctx) => {
     const tap = await settingsTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, currencyPickerView(userSettings(deps, tap.user).ledger));
+    await renderAnchor(ctx, tap.anchor, currencyPickerView(tap.settings.ledger));
   });
 
   bot.callbackQuery(SET_CURRENCY, async (ctx) => {
@@ -181,7 +249,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     // A code not in the table: answered silently by the dispatcher, nothing written.
     const currency = toCurrencyCode(ctx.match[1] ?? '');
     if (currency === undefined) return;
-    const result = setLedgerCurrency(deps, { user: tap.user, currency });
+    const result = setLedgerCurrency(deps, { user: tap.user, currency, ledgerId: tap.ledgerId });
     switch (result.kind) {
       case 'forbidden':
         await ctx.answerCallbackQuery({ text: messages.currencyForbidden(result.ledger) });
@@ -191,7 +259,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
         return;
       case 'updated':
         await ctx.answerCallbackQuery({ text: messages.currencyChangedToast });
-        await renderAnchor(ctx, tap.anchor, settingsView(deps, tap.user));
+        await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
         return;
     }
   });
@@ -199,9 +267,8 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
   bot.callbackQuery(TIMEZONE_OTHER, async (ctx) => {
     const tap = await settingsTap(ctx, deps);
     if (tap === undefined) return;
-    const { timezone } = userSettings(deps, tap.user);
-    startTimezoneFlow(deps, tap.user, deps.now());
+    startTimezoneFlow(deps, tap.user, deps.now(), tap.ledgerId);
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, timezonePromptView(timezone));
+    await renderAnchor(ctx, tap.anchor, timezonePromptView(tap.settings.timezone));
   });
 }

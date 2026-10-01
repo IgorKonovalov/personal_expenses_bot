@@ -318,6 +318,10 @@ export const messages = {
   // A deep link to the author's DM card, shown only to an allowlisted author (ADR-0014).
   groupEditInDmButton: 'Изменить в личке',
   groupNotAuthor: 'Это может только тот, кто записал трату',
+  // The group's /settings, for the ledger's owner: the settings open in the DM.
+  groupSettingsLink: html`Настройки группы — часовой пояс и валюта — открываются в личной переписке со мной.`,
+  groupSettingsButton: 'Открыть настройки',
+  groupSettingsOwnerOnly: html`Настройки группы может менять только тот, кто добавил меня в группу.`,
   genericError: html`Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.`,
   help: joinHtml(
     [
@@ -328,6 +332,8 @@ export const messages = {
       html`${menu.settings} — часовой пояс, валюта и категории`,
       html`${menu.help} — эта подсказка`,
       html`/changelog — что нового в боте`,
+      html``,
+      html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
     ],
     '\n',
   ),
@@ -339,6 +345,7 @@ export const messages = {
       html`/today — траты группы за сегодня`,
       html`/week и /month — по категориям и по участникам`,
       html`/card — ответом на сообщение с тратой: показать её карточку`,
+      html`/settings — часовой пояс и валюта группы (для того, кто добавил меня)`,
       html`/help — эта подсказка`,
       html``,
       html`Личные траты из переписки со мной сюда не попадают.`,
@@ -351,6 +358,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
+    { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
   ],
   editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
@@ -484,6 +492,16 @@ export const messages = {
         html`<b>Настройки</b>`,
         html`Часовой пояс: ${timezoneName(timezone)}`,
         html`Валюта по умолчанию для новых трат в «${ledgerName(ledger)}»: ${ledger.defaultCurrency}`,
+      ],
+      '\n',
+    ),
+  // The hub scoped to a shared ledger (ADR-0015): the ledger's own zone and currency.
+  ledgerSettingsScreen: ({ timezone, ledger }: SettingsScreenView): Html =>
+    joinHtml(
+      [
+        html`<b>Настройки «${ledgerName(ledger)}»</b>`,
+        html`Часовой пояс группы: ${timezoneName(timezone)}. Ваш личный часовой пояс не меняется.`,
+        html`Валюта по умолчанию для новых трат: ${ledger.defaultCurrency}`,
       ],
       '\n',
     ),

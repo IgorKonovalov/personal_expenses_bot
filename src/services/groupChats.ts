@@ -1,7 +1,12 @@
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
-import { findLedgerChat, insertLedgerChat } from '../db/ledgerChats.js';
+import {
+  findLedgerChat,
+  insertLedgerChat,
+  moveLedgerChat,
+  setLedgerChatActive,
+} from '../db/ledgerChats.js';
 import {
   findLedgerById,
   findPersonalLedger,
@@ -54,11 +59,14 @@ export type BindResult = {
   readonly kind: 'bound';
   readonly ledger: Ledger;
   readonly created: boolean;
+  // An inactive binding (the bot was removed) turned back on: the same ledger, nothing new.
+  readonly reactivated: boolean;
 };
 
 // Binds the chat to a new shared ledger named after it, owned by the adder: the adder's personal
 // currency and timezone, the preset categories, and an active binding. The caller has checked
-// the adder against the allowlist. A chat already bound returns its ledger and writes nothing.
+// the adder against the allowlist. A chat bound before returns its ledger, reactivating the
+// binding if the bot had been removed, and creates nothing.
 export function bindGroup(
   deps: GroupDeps,
   input: {
@@ -75,7 +83,9 @@ export function bindGroup(
     if (existing !== undefined) {
       const ledger = findLedgerById(db, existing.ledgerId);
       if (ledger === undefined) throw new Error(`binding to a missing ledger ${existing.ledgerId}`);
-      return { kind: 'bound', ledger, created: false };
+      const reactivated = setLedgerChatActive(db, 'telegram', chatKey(input.chatId), true);
+      if (reactivated) logger.info({ ledgerId: ledger.id }, 'group binding reactivated');
+      return { kind: 'bound', ledger, created: false, reactivated };
     }
     const adder = ensureSender(deps, input.adder, deps.defaultTimezone, now);
     const personal = findPersonalLedger(db, adder.id);
@@ -104,8 +114,27 @@ export function bindGroup(
       boundAt: now,
     });
     logger.info({ ledgerId: ledger.id, userId: adder.id }, 'group bound to a new shared ledger');
-    return { kind: 'bound', ledger, created: true };
+    return { kind: 'bound', ledger, created: true, reactivated: false };
   })();
+}
+
+// The bot left or was removed: the binding goes inactive, and the ledger and its expenses stay.
+// Returns false when the chat had no active binding.
+export function unbindGroup({ db, logger }: GroupDeps, chatId: number): boolean {
+  const changed = setLedgerChatActive(db, 'telegram', chatKey(chatId), false);
+  if (changed) logger.info('group binding deactivated');
+  return changed;
+}
+
+// A group upgraded to a supergroup gets a new chat id; its binding moves with it. Telegram
+// reports the move in both chats, so a second report finds nothing to move.
+export function migrateGroup(
+  { db, logger }: GroupDeps,
+  input: { readonly from: number; readonly to: number },
+): boolean {
+  const moved = moveLedgerChat(db, 'telegram', chatKey(input.from), chatKey(input.to));
+  if (moved) logger.info('group binding moved to a new chat id');
+  return moved;
 }
 
 // The ledger an active binding routes the chat to; undefined for an unbound or inactive chat.

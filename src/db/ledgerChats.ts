@@ -54,6 +54,37 @@ export function findLedgerChat(
   return row === undefined ? undefined : toLedgerChat(row);
 }
 
+// Turns the binding on or off; the ledger and its expenses are untouched. Returns false when it
+// was already in that state.
+export function setLedgerChatActive(
+  db: Db,
+  provider: ChatProvider,
+  chatId: string,
+  active: boolean,
+): boolean {
+  return (
+    db
+      .prepare<[number, string, string, number]>(
+        'UPDATE ledger_chats SET active = ? WHERE provider = ? AND chat_id = ? AND active <> ?',
+      )
+      .run(active ? 1 : 0, provider, chatId, active ? 1 : 0).changes > 0
+  );
+}
+
+// Moves a binding to the chat's new id (a group upgraded to a supergroup). Returns false when
+// there is no binding at `from`, or one already exists at `to`.
+export function moveLedgerChat(db: Db, provider: ChatProvider, from: string, to: string): boolean {
+  return (
+    db
+      .prepare<[string, string, string, string, string]>(
+        `UPDATE ledger_chats SET chat_id = ?
+          WHERE provider = ? AND chat_id = ?
+            AND NOT EXISTS (SELECT 1 FROM ledger_chats WHERE provider = ? AND chat_id = ?)`,
+      )
+      .run(to, provider, from, provider, to).changes > 0
+  );
+}
+
 function toLedgerChat(row: LedgerChatRow): LedgerChat {
   return {
     provider: row.provider,

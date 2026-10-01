@@ -12,7 +12,7 @@ import {
   type ScreenAnchor,
 } from '../services/flowSessions.js';
 import { answerCategoryFlow } from '../services/manageCategories.js';
-import { answerTimezoneFlow, userSettings } from '../services/settings.js';
+import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
 import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
@@ -77,7 +77,9 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     return;
   }
   const view =
-    screen.name === 'settings' ? settingsView(deps, user) : categoriesScreenFor(deps, user, screen);
+    screen.name === 'settings'
+      ? settingsView(deps, user, screen.ledgerId)
+      : categoriesScreenFor(deps, user, screen);
   if (view !== undefined) await renderAnchor(ctx, anchor, view);
 }
 
@@ -136,18 +138,32 @@ export async function answerFlow(
   }
 
   if (flow.kind === 'setTimezone') {
-    const result = answerTimezoneFlow(deps, input);
-    if (result.kind === 'invalid') {
-      const { timezone } = userSettings(deps, user);
-      await show(
-        ctx,
-        anchor,
-        timezonePromptView(timezone, messages.timezoneRefused[result.reason]),
-      );
-      return;
+    // The user's own zone, or the shared ledger's when the prompt came from its scoped hub.
+    const { ledgerId } = flow;
+    const result = answerTimezoneFlow(deps, { ...input, ledgerId });
+    switch (result.kind) {
+      case 'invalid': {
+        const current = screenSettings(deps, user, ledgerId)?.timezone;
+        if (current === undefined) return;
+        await show(
+          ctx,
+          anchor,
+          timezonePromptView(current, messages.timezoneRefused[result.reason]),
+        );
+        return;
+      }
+      case 'forbidden':
+        await restoreScreen(ctx, deps, user);
+        return;
+      case 'updated': {
+        const view =
+          ledgerId === undefined
+            ? settingsView(deps, { ...user, timezone: result.timezone })
+            : settingsView(deps, user, ledgerId);
+        if (view !== undefined) await show(ctx, anchor, view);
+        return;
+      }
     }
-    await show(ctx, anchor, settingsView(deps, { ...user, timezone: result.timezone }));
-    return;
   }
 
   const result = answerCategoryFlow(deps, { ...input, flow, now: deps.now() });

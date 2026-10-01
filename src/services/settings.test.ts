@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
-import type { User } from '../db/users.js';
+import type { LedgerId } from '../db/ledgers.js';
+import { findUserByIdentity, type User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { routeText } from './flowSessions.js';
+import { bindGroup, recordGroupExpense } from './groupChats.js';
 import { provisionUser } from './provisionUser.js';
 import type { RecordDeps } from './recordExpense.js';
 import {
   answerTimezoneFlow,
+  ledgerSettings,
   resolveUserTimezone,
   setLedgerCurrency,
+  setLedgerTimezone,
   startTimezoneFlow,
   updateTimezone,
   userSettings,
@@ -139,5 +143,72 @@ describe('setLedgerCurrency', () => {
       kind: 'forbidden',
     });
     expect(storedCurrency()).toBe('RSD');
+  });
+});
+
+describe('setLedgerTimezone', () => {
+  let ledgerId: LedgerId;
+  let member: User;
+
+  beforeEach(() => {
+    const groupDeps = { ...deps, defaultCurrency: 'RSD' as const };
+    ledgerId = bindGroup(groupDeps, {
+      chatId: -100500,
+      title: 'Семья',
+      adder: { telegramId: 1001, firstName: 'Анна' },
+      now: NOW,
+    }).ledger.id;
+    recordGroupExpense(groupDeps, {
+      chatId: -100500,
+      sender: { telegramId: 2002, firstName: 'Борис' },
+      text: '300 такси',
+      sourceKey: 'tg:-100500:1',
+      occurredAt: NOW,
+      now: NOW,
+    });
+    member = findUserByIdentity(db, 'telegram', '2002') as User;
+  });
+
+  const ledgerTimezone = () =>
+    db.prepare('SELECT timezone FROM ledgers WHERE id = ?').pluck().get(ledgerId);
+
+  it("sets the shared ledger's zone for its owner and leaves the owner's own zone", () => {
+    expect(setLedgerTimezone(deps, { user, ledgerId, timezone: 'America/New_York' })).toEqual({
+      kind: 'updated',
+    });
+    expect(ledgerTimezone()).toBe('America/New_York');
+    expect(storedTimezone()).toBe('Europe/Belgrade');
+    expect(setLedgerTimezone(deps, { user, ledgerId, timezone: 'America/New_York' })).toEqual({
+      kind: 'unchanged',
+    });
+    expect(ledgerSettings(deps, user, ledgerId)?.timezone).toBe('America/New_York');
+  });
+
+  it('refuses a member who is not the owner, and a personal ledger', () => {
+    expect(
+      setLedgerTimezone(deps, { user: member, ledgerId, timezone: 'America/New_York' }),
+    ).toEqual({ kind: 'forbidden' });
+    expect(ledgerTimezone()).toBe('Europe/Belgrade');
+    expect(ledgerSettings(deps, member, ledgerId)).toBeUndefined();
+
+    const personal = userSettings(deps, user).ledger.id;
+    expect(
+      setLedgerTimezone(deps, { user, ledgerId: personal, timezone: 'America/New_York' }),
+    ).toEqual({ kind: 'forbidden' });
+  });
+
+  it("stores a typed zone for the flow's ledger, not the user", () => {
+    startTimezoneFlow(deps, user, NOW, ledgerId);
+
+    expect(
+      answerTimezoneFlow(deps, {
+        user,
+        text: 'america/new_york',
+        inputKey: 'tg:1001:9',
+        ledgerId,
+      }),
+    ).toEqual({ kind: 'updated', timezone: 'America/New_York' });
+    expect(ledgerTimezone()).toBe('America/New_York');
+    expect(storedTimezone()).toBe('Europe/Belgrade');
   });
 });

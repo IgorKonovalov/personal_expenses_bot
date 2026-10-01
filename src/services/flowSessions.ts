@@ -38,8 +38,14 @@ export interface ExpenseScreen {
   readonly expenseId: ExpenseId;
 }
 
-export type Screen =
-  CategoriesScreen | SummaryScreen | ExpenseScreen | { readonly name: 'settings' };
+// The /settings hub; with `ledgerId`, the hub scoped to that shared ledger (its timezone and
+// currency), opened from its group's /settings deep link.
+export interface SettingsScreen {
+  readonly name: 'settings';
+  readonly ledgerId?: LedgerId;
+}
+
+export type Screen = CategoriesScreen | SummaryScreen | ExpenseScreen | SettingsScreen;
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -71,7 +77,13 @@ export function isEditFlow(flow: Flow): flow is EditFlow {
   return EDIT_FLOW_KINDS.has(flow.kind);
 }
 
-export type Flow = CategoryFlow | EditFlow | { readonly kind: 'setTimezone' };
+// [Другой…]: the user's own zone, or with `ledgerId` the shared ledger's.
+export interface TimezoneFlow {
+  readonly kind: 'setTimezone';
+  readonly ledgerId?: LedgerId;
+}
+
+export type Flow = CategoryFlow | EditFlow | TimezoneFlow;
 
 type Deps = { readonly db: Db };
 
@@ -160,7 +172,11 @@ export function routeText(
 // A row written by a later version, or damaged, reads as no screen rather than failing.
 function parseScreen(name: string, ctx: string): Screen | undefined {
   const parsed = parseObject(ctx);
-  if (name === 'settings' && parsed !== undefined) return { name };
+  if (name === 'settings' && parsed !== undefined) {
+    return typeof parsed.ledgerId === 'string'
+      ? { name, ledgerId: parsed.ledgerId as LedgerId }
+      : { name };
+  }
   if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
     return { name, ledgerId: parsed.ledgerId as LedgerId };
   }
@@ -178,7 +194,11 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
 
 function parseFlow(kind: string, payload: string): Flow | undefined {
   const parsed = parseObject(payload);
-  if (kind === 'setTimezone' && parsed !== undefined) return { kind };
+  if (kind === 'setTimezone' && parsed !== undefined) {
+    return typeof parsed.ledgerId === 'string'
+      ? { kind, ledgerId: parsed.ledgerId as LedgerId }
+      : { kind };
+  }
   if (
     (kind === 'editAmount' || kind === 'editDescription' || kind === 'editDate') &&
     typeof parsed?.expenseId === 'string'

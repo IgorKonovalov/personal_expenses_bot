@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
-import { bindGroup, boundLedger, recordGroupExpense, type GroupDeps } from './groupChats.js';
+import {
+  bindGroup,
+  boundLedger,
+  migrateGroup,
+  recordGroupExpense,
+  unbindGroup,
+  type GroupDeps,
+} from './groupChats.js';
 
 const NOW = new Date('2026-09-30T10:00:00Z');
 const CHAT = -100500;
@@ -74,9 +81,47 @@ describe('bindGroup', () => {
     const first = bind();
     const second = bind();
 
-    expect(second).toEqual({ kind: 'bound', ledger: first.ledger, created: false });
+    expect(second).toEqual({
+      kind: 'bound',
+      ledger: first.ledger,
+      created: false,
+      reactivated: false,
+    });
     expect(count('ledger_chats')).toBe(1);
     expect(db.prepare("SELECT COUNT(*) FROM ledgers WHERE kind = 'shared'").pluck().get()).toBe(1);
+  });
+
+  it('reactivates the same binding and ledger after the bot was removed', () => {
+    const first = bind();
+    say(BORIS, '300 такси', 1);
+
+    expect(unbindGroup(deps, CHAT)).toBe(true);
+    expect(unbindGroup(deps, CHAT)).toBe(false);
+    expect(boundLedger(deps, CHAT)).toBeUndefined();
+    expect(count('expenses')).toBe(1);
+
+    expect(bind()).toEqual({
+      kind: 'bound',
+      ledger: first.ledger,
+      created: false,
+      reactivated: true,
+    });
+    expect(db.prepare('SELECT chat_id, ledger_id, active FROM ledger_chats').all()).toEqual([
+      { chat_id: String(CHAT), ledger_id: first.ledger.id, active: 1 },
+    ]);
+    expect(db.prepare("SELECT COUNT(*) FROM ledgers WHERE kind = 'shared'").pluck().get()).toBe(1);
+  });
+});
+
+describe('migrateGroup', () => {
+  it('moves the binding to the new chat id once', () => {
+    const { ledger } = bind();
+
+    expect(migrateGroup(deps, { from: CHAT, to: -100999 })).toBe(true);
+    expect(migrateGroup(deps, { from: CHAT, to: -100999 })).toBe(false);
+
+    expect(boundLedger(deps, CHAT)).toBeUndefined();
+    expect(boundLedger(deps, -100999)?.id).toBe(ledger.id);
   });
 });
 

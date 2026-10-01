@@ -1,8 +1,13 @@
+import type { Db } from '../db/connection.js';
 import {
   findActiveLedger,
+  findLedgerById,
+  findLedgerForMember,
   findMemberRole,
   updateLedgerCurrency,
+  updateLedgerTimezone,
   type Ledger,
+  type LedgerId,
 } from '../db/ledgers.js';
 import { updateUserTimezone, type User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
@@ -43,6 +48,55 @@ export function userSettings(deps: SettingsDeps, user: User): SettingsView {
   return { timezone: resolveUserTimezone(deps, user), ledger };
 }
 
+// A shared ledger the user owns, for the settings screen scoped to it: the ledger's own zone
+// (ADR-0015) and currency. Undefined for a personal ledger, or anyone but the owner.
+export function ledgerSettings(
+  deps: SettingsDeps,
+  user: User,
+  ledgerId: LedgerId,
+): SettingsView | undefined {
+  const ledger = ownedSharedLedger(deps.db, user, ledgerId);
+  if (ledger === undefined || ledger.timezone === null) return undefined;
+  const { tz, fellBack } = resolveTimezone(ledger.timezone, deps.defaultTimezone);
+  if (fellBack) {
+    deps.logger.warn(
+      { ledgerId: ledger.id },
+      'stored ledger timezone is invalid, using the default',
+    );
+  }
+  return { timezone: tz, ledger };
+}
+
+// The settings a screen shows: the ledger it is scoped to, else the user's own.
+export function screenSettings(
+  deps: SettingsDeps,
+  user: User,
+  ledgerId: LedgerId | undefined,
+): SettingsView | undefined {
+  return ledgerId === undefined ? userSettings(deps, user) : ledgerSettings(deps, user, ledgerId);
+}
+
+function ownedSharedLedger(db: Db, user: User, ledgerId: LedgerId): Ledger | undefined {
+  const ledger = findLedgerForMember(db, ledgerId, user.id);
+  if (ledger?.kind !== 'shared') return undefined;
+  return findMemberRole(db, ledgerId, user.id) === 'owner' ? ledger : undefined;
+}
+
+export type LedgerTimezoneResult = { readonly kind: 'updated' | 'unchanged' | 'forbidden' };
+
+// Sets a shared ledger's zone, for its owner. The owner's own zone is untouched, and rows
+// recorded earlier keep their occurred_on (ADR-0015).
+export function setLedgerTimezone(
+  deps: SettingsDeps,
+  input: { readonly user: User; readonly ledgerId: LedgerId; readonly timezone: string },
+): LedgerTimezoneResult {
+  const { db, logger } = deps;
+  if (ownedSharedLedger(db, input.user, input.ledgerId) === undefined) return { kind: 'forbidden' };
+  if (!updateLedgerTimezone(db, input.ledgerId, input.timezone)) return { kind: 'unchanged' };
+  logger.info({ ledgerId: input.ledgerId, userId: input.user.id }, 'ledger timezone changed');
+  return { kind: 'updated' };
+}
+
 // Stores a zone from the picker. `unchanged` when it is already the stored one: nothing written.
 export function updateTimezone(
   deps: SettingsDeps,
@@ -53,8 +107,19 @@ export function updateTimezone(
   return { kind: 'updated' };
 }
 
-export function startTimezoneFlow(deps: SettingsDeps, user: User, now: Date): void {
-  startFlow(deps, user, { kind: 'setTimezone' }, now);
+// The [Другой…] prompt: for the user's own zone, or for the shared ledger `ledgerId`.
+export function startTimezoneFlow(
+  deps: SettingsDeps,
+  user: User,
+  now: Date,
+  ledgerId?: LedgerId,
+): void {
+  startFlow(
+    deps,
+    user,
+    ledgerId === undefined ? { kind: 'setTimezone' } : { kind: 'setTimezone', ledgerId },
+    now,
+  );
 }
 
 export type TimezoneRefusal = 'unknown' | 'expenseShaped';
@@ -62,20 +127,29 @@ export type TimezoneRefusal = 'unknown' | 'expenseShaped';
 export type TimezoneAnswerResult =
   | { readonly kind: 'updated'; readonly timezone: string }
   // The flow stays pending and the prompt is asked again.
-  | { readonly kind: 'invalid'; readonly reason: TimezoneRefusal };
+  | { readonly kind: 'invalid'; readonly reason: TimezoneRefusal }
+  // The user no longer owns the flow's ledger: the flow is answered, nothing written.
+  | { readonly kind: 'forbidden' };
 
-// A typed IANA name, stored in its canonical spelling. The write and the flow's completion commit
-// together, keyed by `inputKey`, so a redelivered answer finds the flow already answered.
+// A typed IANA name, stored in its canonical spelling: the user's zone, or the flow's ledger's.
+// The write and the flow's completion commit together, keyed by `inputKey`, so a redelivered
+// answer finds the flow already answered.
 export function answerTimezoneFlow(
   deps: SettingsDeps,
-  input: { readonly user: User; readonly text: string; readonly inputKey: string },
+  input: {
+    readonly user: User;
+    readonly text: string;
+    readonly inputKey: string;
+    readonly ledgerId?: LedgerId | undefined;
+  },
 ): TimezoneAnswerResult {
   const { db } = deps;
-  const { user } = input;
+  const { user, ledgerId } = input;
   return db.transaction((): TimezoneAnswerResult => {
     const timezone = canonicalTimezone(input.text);
     if (timezone === undefined) {
-      const ledger = findActiveLedger(db, user.id);
+      const ledger =
+        ledgerId === undefined ? findActiveLedger(db, user.id) : findLedgerById(db, ledgerId);
       const asExpense =
         ledger === undefined
           ? undefined
@@ -86,7 +160,11 @@ export function answerTimezoneFlow(
       };
     }
     completeFlow(deps, user, input.inputKey);
-    updateTimezone(deps, { user, timezone });
+    if (ledgerId === undefined) {
+      updateTimezone(deps, { user, timezone });
+    } else if (setLedgerTimezone(deps, { user, ledgerId, timezone }).kind === 'forbidden') {
+      return { kind: 'forbidden' };
+    }
     return { kind: 'updated', timezone };
   })();
 }
@@ -96,17 +174,24 @@ export type CurrencyResult =
   // Only the ledger's owner changes its currency.
   | { readonly kind: 'forbidden'; readonly ledger: Ledger };
 
-// Sets the active ledger's default currency. It applies to expenses recorded afterwards; stored
-// rows keep theirs (ADR-0003).
+// Sets the default currency of the active ledger, or of `ledgerId` from a ledger-scoped screen.
+// It applies to expenses recorded afterwards; stored rows keep theirs (ADR-0003).
 export function setLedgerCurrency(
   deps: SettingsDeps,
-  input: { readonly user: User; readonly currency: CurrencyCode },
+  input: {
+    readonly user: User;
+    readonly currency: CurrencyCode;
+    readonly ledgerId?: LedgerId | undefined;
+  },
 ): CurrencyResult {
   const { db, logger } = deps;
   const { user, currency } = input;
   return db.transaction((): CurrencyResult => {
-    const ledger = findActiveLedger(db, user.id);
-    if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+    const ledger =
+      input.ledgerId === undefined
+        ? findActiveLedger(db, user.id)
+        : findLedgerForMember(db, input.ledgerId, user.id);
+    if (ledger === undefined) throw new Error(`user ${user.id} has no such ledger`);
     if (findMemberRole(db, ledger.id, user.id) !== 'owner') return { kind: 'forbidden', ledger };
     if (!updateLedgerCurrency(db, ledger.id, currency)) return { kind: 'unchanged', ledger };
     logger.info({ ledgerId: ledger.id, userId: user.id }, 'ledger currency changed');

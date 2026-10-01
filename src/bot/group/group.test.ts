@@ -1,3 +1,4 @@
+import type { Bot } from 'grammy';
 import type { Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { CategoryId } from '../../db/categories.js';
@@ -680,6 +681,19 @@ const OCTOBER = monthOf('2026-10-01' as LocalDate);
 const SEPTEMBER = monthOf('2026-09-01' as LocalDate);
 const GROUP_LEDGER = { kind: 'shared', name: 'Семья' } as const;
 
+// A DM screen stores its anchor from the sent message, so the fake answers sendMessage with a
+// message: id SENT_ID in the chat it was sent to.
+const SENT_ID = 500;
+
+function returnSentMessages(bot: Bot) {
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    const response = await prev(method, payload, signal);
+    if (method !== 'sendMessage') return response;
+    const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+    return { ok: true, result: { message_id: SENT_ID, date: 0, chat, text: '' } as never };
+  });
+}
+
 function sentText(call: { payload: unknown } | undefined): string {
   return (call?.payload as { text?: string } | undefined)?.text ?? '';
 }
@@ -755,13 +769,7 @@ describe('group reports (Phase 3)', () => {
 
   it("shows A's DM month from the personal ledger alone", async () => {
     const { bot, calls, dm } = await october();
-    // The DM summary screen stores its anchor from the sent message, so the fake returns one.
-    bot.api.config.use(async (prev, method, payload, signal) => {
-      const response = await prev(method, payload, signal);
-      if (method !== 'sendMessage') return response;
-      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
-      return { ok: true, result: { message_id: 500, date: 0, chat, text: '' } as never };
-    });
+    returnSentMessages(bot);
 
     await dm(ALLOWED_ID, '/month', 111, OCT_NOW);
 
@@ -880,5 +888,182 @@ describe('group reports (Phase 3)', () => {
         payload: { chat_id: GROUP_ID, text: messages.groupHelp, ...htmlParseMode },
       },
     ]);
+  });
+});
+
+function sharedLedgerCount(db: Db, ownerTelegramId: number): unknown {
+  return db
+    .prepare("SELECT COUNT(*) FROM ledgers WHERE kind = 'shared' AND owner_user_id = ?")
+    .pluck()
+    .get(userOf(db, ownerTelegramId)?.id);
+}
+
+function ledgerTimezone(db: Db): unknown {
+  return db.prepare("SELECT timezone FROM ledgers WHERE kind = 'shared'").pluck().get();
+}
+
+describe('group lifecycle and ledger settings (Phase 4)', () => {
+  const memberChange = (
+    test: ReturnType<typeof harness>,
+    fromId: number,
+    oldStatus: 'left' | 'kicked' | 'member',
+    newStatus: 'left' | 'kicked' | 'member',
+  ) => test.send((id) => myChatMemberUpdate({ updateId: id, fromId, oldStatus, newStatus }));
+
+  it.each(['left', 'kicked'] as const)(
+    'deactivates the binding when the bot is %s, keeping the ledger and its expenses',
+    async (status) => {
+      const test = await bound();
+      const { db, calls, say } = test;
+      await say(STRANGER_ID, '300 такси', 11, { firstName: 'Борис' });
+      const ledgers = db.prepare('SELECT * FROM ledgers ORDER BY id').all();
+      const expenses = db.prepare('SELECT * FROM expenses ORDER BY id').all();
+
+      await memberChange(test, ALLOWED_ID, 'member', status);
+      calls.length = 0;
+      await say(ALLOWED_ID, '450 кафе', 12, { firstName: 'Анна' });
+
+      expect(db.prepare('SELECT active FROM ledger_chats').pluck().all()).toEqual([0]);
+      expect(calls).toEqual([]);
+      expect(db.prepare('SELECT * FROM ledgers ORDER BY id').all()).toEqual(ledgers);
+      expect(db.prepare('SELECT * FROM expenses ORDER BY id').all()).toEqual(expenses);
+    },
+  );
+
+  it('reactivates the same binding and ledger when A re-adds the bot; B re-adding makes it leave', async () => {
+    const test = await bound();
+    const { db, calls } = test;
+    const binding = db.prepare('SELECT ledger_id, bound_at FROM ledger_chats').get();
+
+    await memberChange(test, ALLOWED_ID, 'member', 'kicked');
+    calls.length = 0;
+    await memberChange(test, STRANGER_ID, 'kicked', 'member');
+    expect(calls).toEqual([{ method: 'leaveChat', payload: { chat_id: GROUP_ID } }]);
+    expect(db.prepare('SELECT active FROM ledger_chats').pluck().all()).toEqual([0]);
+
+    calls.length = 0;
+    await memberChange(test, ALLOWED_ID, 'left', 'member');
+    expect(db.prepare('SELECT ledger_id, bound_at FROM ledger_chats').get()).toEqual(binding);
+    expect(db.prepare('SELECT active FROM ledger_chats').pluck().all()).toEqual([1]);
+    expect(sharedLedgerCount(db, ALLOWED_ID)).toBe(1);
+    expect(calls.map((call) => call.method)).toEqual(['sendMessage']);
+  });
+
+  it("moves the binding on a supergroup migration, so B's next expense lands in the same ledger", async () => {
+    const { db, send, say } = await bound();
+    const ledgerId = groupLedgerId(db);
+
+    await send((id) =>
+      groupMessageUpdate({
+        updateId: id,
+        messageId: 160,
+        content: { migrate_to_chat_id: -100999 },
+      }),
+    );
+    await say(STRANGER_ID, '300 такси', 161, { firstName: 'Борис', chatId: -100999 });
+
+    expect(db.prepare('SELECT chat_id, ledger_id FROM ledger_chats').all()).toEqual([
+      { chat_id: '-100999', ledger_id: ledgerId },
+    ]);
+    expect(expensesIn(db, ledgerId)).toMatchObject([
+      { amount_minor: 30000, source_key: 'tg:-100999:161' },
+    ]);
+  });
+
+  it("gives A's /settings a DM deep link and B's the owner-only refusal", async () => {
+    const { db, calls, say } = await bound();
+    await say(STRANGER_ID, '300 такси', 11, { firstName: 'Борис' });
+    const ledgerId = groupLedgerId(db);
+    calls.length = 0;
+
+    await say(ALLOWED_ID, '/settings', 170);
+    await say(STRANGER_ID, '/settings', 171);
+    await say(THIRD_ID, '/settings', 172);
+
+    const link = `https://t.me/test_bot?start=gs_${ledgerId}`;
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: GROUP_ID,
+          text: messages.groupSettingsLink,
+          reply_markup: { inline_keyboard: [[{ text: messages.groupSettingsButton, url: link }]] },
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: GROUP_ID, text: messages.groupSettingsOwnerOnly, ...htmlParseMode },
+      },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: GROUP_ID, text: messages.groupSettingsOwnerOnly, ...htmlParseMode },
+      },
+    ]);
+    expect(Buffer.byteLength(`gs_${ledgerId}`, 'utf8')).toBe(39);
+    expect(userOf(db, THIRD_ID)).toBeUndefined();
+  });
+
+  it("sets the group ledger's timezone from A's DM screen, leaving A's own zone and earlier rows", async () => {
+    const test = await bound({ now: new Date('2026-10-20T03:00:00Z') });
+    const { bot, db, calls, say, dm, tap } = test;
+    returnSentMessages(bot);
+    await say(STRANGER_ID, '300 такси', 11, {
+      firstName: 'Борис',
+      date: new Date('2026-10-01T10:00:00Z'),
+    });
+    const ledgerId = groupLedgerId(db);
+    calls.length = 0;
+
+    await dm(ALLOWED_ID, `/start gs_${ledgerId}`, 180);
+    expect(calls[0]?.payload).toMatchObject({
+      chat_id: ALLOWED_ID,
+      text: messages.ledgerSettingsScreen({
+        timezone: 'Europe/Belgrade',
+        ledger: { kind: 'shared', name: 'Семья', defaultCurrency: 'RSD' },
+      }),
+    });
+    await tap(ALLOWED_ID, 'set:tzother', { messageId: SENT_ID });
+    await dm(ALLOWED_ID, 'America/New_York', 181);
+
+    expect(ledgerTimezone(db)).toBe('America/New_York');
+    expect(userOf(db, ALLOWED_ID)?.timezone).toBe('Europe/Belgrade');
+    expect(sentText(calls.at(-1))).toBe(
+      messages.ledgerSettingsScreen({
+        timezone: 'America/New_York',
+        ledger: { kind: 'shared', name: 'Семья', defaultCurrency: 'RSD' },
+      }),
+    );
+
+    // 22:00 on 19 October in New York (EDT, UTC-4).
+    await say(ALLOWED_ID, '450 кафе', 182, {
+      firstName: 'Анна',
+      date: new Date('2026-10-20T02:00:00Z'),
+    });
+    expect(expensesIn(db, ledgerId)).toMatchObject([
+      { source_key: `tg:${GROUP_ID}:11`, occurred_on: '2026-10-01' },
+      { source_key: `tg:${GROUP_ID}:182`, occurred_on: '2026-10-19' },
+    ]);
+  });
+
+  it("opens no settings screen for anyone but the owner's /start gs_", async () => {
+    const { bot, db, calls, say, dm } = await bound();
+    returnSentMessages(bot);
+    await say(STRANGER_ID, '300 такси', 11, { firstName: 'Борис' });
+    await say(SECOND_ALLOWED_ID, '500 такси', 12, { firstName: 'Вера' });
+    const ledgerId = groupLedgerId(db);
+    calls.length = 0;
+
+    await dm(STRANGER_ID, `/start gs_${ledgerId}`, 190);
+    expect(calls).toEqual([]);
+
+    await dm(SECOND_ALLOWED_ID, `/start gs_${ledgerId}`, 191);
+    expect(calls).toHaveLength(1);
+    expect(sentText(calls[0])).toBe(
+      messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
+    );
+    expect(
+      db.prepare("SELECT COUNT(*) FROM flow_sessions WHERE screen = 'settings'").pluck().get(),
+    ).toBe(0);
   });
 });

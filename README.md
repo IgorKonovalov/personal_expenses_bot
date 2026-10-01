@@ -39,9 +39,33 @@ command also drops a pending question, which otherwise expires after 10 minutes.
 photos, stickers and voice messages get the help reply. Editing a sent expense doesn't change
 the record, and the bot says so.
 
-Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply. Everyone else is
-ignored. The first id listed is the admin: on a boot with a new version, the bot sends them a
-short «🆕 Версия X.Y.Z» note (ADR-0013).
+Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply in a private chat. Everyone
+else is ignored there. The first id listed is the admin: on a boot with a new version, the bot
+sends them a short «🆕 Версия X.Y.Z» note (ADR-0013).
+
+### In a group
+
+The bot can keep a group's shared books, such as a family's, next to everyone's private ones
+([ADR-0014](docs/adrs/0014-group-chats-bind-to-shared-ledgers.md)).
+
+1. In [@BotFather](https://t.me/BotFather), set `/setjoingroups` to Enabled and `/setprivacy` to
+   Disabled, so the bot reads ordinary group messages. A privacy change applies only to groups
+   the bot joins afterwards, so remove the bot from a group and add it again after changing it.
+2. An allowlisted user adds the bot to the group. The group gets its own shared ledger, named
+   after the group, in that user's currency and timezone. Added by anyone else, the bot leaves.
+
+| In the group                | The bot does                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `450 кафе` from any member  | Records it in the group ledger under the sender's name, dated in the ledger's timezone. A recognised category gets a ✍ reaction; «Другое» gets a reply card with [Удалить]     |
+| [Удалить], [Вернуть]        | Work for the expense's author only. [Изменить в личке] on the card opens it in the author's private chat (allowlisted authors only)                                             |
+| `/card` as a reply          | Shows the card of the expense that message recorded                                                                                                                             |
+| `/today`, `/week`, `/month` | The group ledger's totals, by category and by person, one total per currency. The pager works for anyone in the group                                                           |
+| `/settings`                 | For the person who added the bot: a link to the group ledger's timezone and currency in the private chat. Your own timezone doesn't change. Anyone else gets a one-line refusal |
+| `/help`                     | The group's help text                                                                                                                                                           |
+
+Other chatter, stickers and other bots' commands get no reply. Expenses you send the bot in
+private stay in your personal ledger and never appear in the group. Removing the bot keeps the
+ledger; adding it back (an allowlisted user) picks the same ledger up again.
 
 ### Amount rules
 

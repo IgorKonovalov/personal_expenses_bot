@@ -314,8 +314,8 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 |---|---|---|---|
 | 1: Walking skeleton: bind a group, record into it | dev | done | 1f014da |
 | 2: Quiet confirmation and the author-only group card | dev | done | 74800f8 |
-| 3: Group reports with a per-person breakdown | dev | done | committed with this row |
-| 4: Group lifecycle and ledger settings | dev | not started | |
+| 3: Group reports with a per-person breakdown | dev | done | 7848f4a |
+| 4: Group lifecycle and ledger settings | dev | done | committed with this row |
 | 5: Live check in the family group | human | not started | |
 
 ### Notes
@@ -352,6 +352,18 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
   `src/db/ledgerChats.ts` for this.
 - Phase 3: group `/today` also carries the per-person section. Display names were already
   stored and refreshed by Phase 1's `joinMember`; no change there.
+- Phase 4: files changed outside `Files touched`: `src/bot/group/index.ts` (registers the group
+  `/settings` handler) and `README.md` (the group section the done-when names). `.env.example`
+  is unchanged: no variable changed.
+- Phase 4: the ledger scope travels in the anchor's settings screen (`ledgerId`) and in the
+  `setTimezone` flow, not in new callback data: the existing `set:*` data is reused unchanged,
+  so `src/bot/callbackData.ts` is untouched.
+- Phase 4: re-adding the bot to a group whose binding was inactive sends the group welcome again.
+- Phase 4: the DM `/help` text gained a paragraph on the group mode; the group `/help` and the
+  group command list gained `/settings`.
+- Phase 4: B's `/start gs_<ledgerId>` in DM is dropped by the allowlist before any handler
+  (asserted: no API call). The owner-only refusal of the scoped screen is asserted with
+  SECOND_ALLOWED_ID, a group member who isn't the owner: plain welcome, no settings anchor.
 
 ### Close triggers
 
