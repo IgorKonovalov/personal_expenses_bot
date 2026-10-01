@@ -360,7 +360,7 @@ type DecodedReceipt = {
 | 3: Photos and image files | dev | done | e3aa895 |
 | 4: The background fetch fills in the shop and the items | dev | done | 303cd3b |
 | 5: [Позиции] and [Повторить] on the card | dev | done | 764cb13 |
-| 6: Help and the README | dev | done | committed with this row |
+| 6: Help and the README | dev | done | 112dc4c |
 | 7: Real receipts in production | human | not started | |
 
 ### Notes
@@ -411,12 +411,27 @@ type DecodedReceipt = {
 - Phase 6: the README also says photos are read for receipts rather than answered with help,
   adds `fiscal/` to its architecture tree, and narrows the roadmap's receipts item to Russia and
   Kazakhstan.
+- Followup, not acted on: `tsconfig.build.json` compiles `src/fiscal/qr.fixtures/generate.ts`
+  and `src/domain/receipts/testing/buildRsVl.ts` into `dist/`. The Dockerfile check imports the
+  latter; the generator only runs when invoked.
+- Followup, not acted on: the test harness answers every Bot API call with `true`, so no bot test
+  sees a stored card message id or the worker's card edit.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** a DM text that is a SUF or EFI receipt verify URL, a photo, or an image file
+  whose QR holds one records one expense with the QR total in RSD or EUR, dated the issue
+  day in the user's timezone, deduped per fiscal id and ledger. A background worker fetches the
+  seller and line items, with backoff to `failed`. The card shows the shop and item count, with
+  [Позиции] (paged item list) or [Повторить]. `/help` and the README describe receipts. New
+  dependency: `zxing-wasm` 3.1.4. New migration: `0010_receipts.sql`.
+- **User-visible surface changed:** receipt links, photos and image files in DM; the receipt
+  card line, [Позиции] and [Повторить]; refusal and hint copy; three new `/help` lines; photos
+  no longer get the help reply.
+- **Gate at the tip (112dc4c):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0, 56 files and 749 tests passed; `pnpm build` exit 0; `node
+  scripts/check-doc-links.mjs` exit 0, 127 relative links resolve. The Docker image was not
+  built.
+- **Outstanding `human` phases:** Phase 7 (real receipts in production, does not block merge).
 
 ## Followups
