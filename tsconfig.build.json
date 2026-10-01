@@ -7,5 +7,10 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/bot/testHarness.ts"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/bot/testHarness.ts",
+    "src/domain/receipts/testing",
+    "src/fiscal/qr.fixtures"
+  ]
 }

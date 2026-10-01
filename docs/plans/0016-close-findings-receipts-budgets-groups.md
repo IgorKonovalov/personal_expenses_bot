@@ -212,8 +212,8 @@ type SetLimitResult =
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A receipt whose data fails to apply backs off | dev | done | committed with this row |
-| 2: A SUF link with a note; test code out of the image | dev | not started | |
+| 1: A receipt whose data fails to apply backs off | dev | done | 1aac740 |
+| 2: A SUF link with a note; test code out of the image | dev | done | committed with this row |
 | 3: A group expense in DM uses the ledger's timezone | dev | not started | |
 | 4: A currency change drops the category caps | dev | not started | |
 | 5: Budget navigation and the read-only group line | dev | not started | |
@@ -226,6 +226,10 @@ type SetLimitResult =
   toast assertion (the second tap answers «Загружаю позиции»); the fetch half stays green, since
   both taps land before the fetch. With the worker's `inFlight` check removed,
   `receiptWorker.test.ts` fails with 3 fetcher calls. Both reverted.
+- Phase 2: the image build was not run. The Dockerfile check's script body was run by hand
+  against a local `pnpm build` and printed `ok 82912 RSD`. A note after the link counts as part
+  of `vl` only when it follows a space and is all base64 or percent-encoding characters, so a
+  Latin-only note such as `<link> abc` still reaches the decoder and is refused `malformed`.
 
 ### Close triggers
 

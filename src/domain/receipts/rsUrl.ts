@@ -12,7 +12,11 @@ import type { DecodeReceiptResult, ReceiptRefusal } from './types.js';
 // The total has four implied decimals; RSD has two, so a total not divisible by 100 is refused
 // rather than rounded (ADR-0018).
 
-const URL_PATTERN = /^https?:\/\/suf\.purs\.gov\.rs\/v\/?\?([^#]*)(?:#.*)?$/i;
+// The query runs to the first whitespace, except that a space followed by more base64 or
+// percent-encoded text is a `+` that form-style decoding split (see vlParameter). Anything else
+// after whitespace, such as a note under the link, makes the text not a receipt.
+const URL_PATTERN =
+  /^https?:\/\/suf\.purs\.gov\.rs\/v\/?\?([^#\s]*(?: +[A-Za-z0-9+/=%&]+)*)(?:#\S*)?$/i;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const ISSUER_ID = /^[A-Za-z0-9]{8}$/;
 

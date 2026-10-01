@@ -87,13 +87,20 @@ describe('decodeRsUrl', () => {
     expect(encoded).toContain('%2B');
 
     const expected = decodeRsUrl(`${SUF}${encoded}`);
-    expect(expected.kind).toBe('receipt');
+    expect(expected).toMatchObject({
+      kind: 'receipt',
+      receipt: { totalMinor: 82912, currency: 'RSD' },
+    });
     expect(decodeRsUrl(`${SUF}${vl}`)).toEqual(expected);
     expect(decodeRsUrl(`${SUF}${encoded.replaceAll('%2B', ' ')}`)).toEqual(expected);
   });
 
   it('is not a receipt when the link sits next to other words', () => {
     expect(decodeRsUrl(`кофе ${buildRsUrl()}`)).toEqual({ kind: 'notReceipt' });
+  });
+
+  it.each([' кофе', '\n450 кофе'])('is not a receipt with a note after the link: %j', (note) => {
+    expect(decodeRsUrl(`${buildRsUrl()}${note}`)).toEqual({ kind: 'notReceipt' });
   });
 
   it('is not a receipt on another host', () => {
