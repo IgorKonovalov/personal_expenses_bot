@@ -96,13 +96,22 @@ export function createBot(options: BotOptions): Bot {
 }
 
 // The slash-command lists the client shows: the DM list by default, the group list in every
-// group (ADR-0014). A failure costs only those lists, so boot continues.
+// group (ADR-0014), plus the profile description texts. A failure costs only those, so boot
+// continues.
 export async function registerCommands(bot: Bot, logger: Logger): Promise<void> {
   try {
     await bot.api.setMyCommands(messages.commands);
     await bot.api.setMyCommands(messages.groupCommands, { scope: { type: 'all_group_chats' } });
   } catch (error) {
     logger.warn({ err: safeError(error) }, 'setMyCommands failed');
+  }
+  // The profile texts are overwritten on every boot, so editing them in messages ships with
+  // the next deploy. A failure costs only the texts.
+  try {
+    await bot.api.setMyDescription(messages.botDescription);
+    await bot.api.setMyShortDescription(messages.botShortDescription);
+  } catch (error) {
+    logger.warn({ err: safeError(error) }, 'setMyDescription failed');
   }
 }
 

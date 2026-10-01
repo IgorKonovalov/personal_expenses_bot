@@ -426,6 +426,7 @@ const CHANGELOG_SEPARATOR = '\n\n';
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.11.1': html`Исправление. После обновления бота курсы НБС загружаются сначала для последних дней с тратами, поэтому итоги /week и /month пересчитываются в одну валюту сразу, а не через несколько часов.`,
   '0.11.0': html`Итоги в разных валютах сводятся в одну сумму. /today, /week и /month показывают общий итог в валюте учёта: траты в EUR, USD и других валютах пересчитываются по среднему курсу НБС на день траты, а итог помечается «≈». Бюджет тоже учитывает такие траты. Валюты, которых нет в курсе НБС, например KZT, показываются отдельно.`,
   '0.10.0': html`Бот читает СМС банка о покупке картой. Перешлите или вставьте текст сербского СМС «Korišćenje kartice»: трата запишется в валюте покупки, с датой покупки и названием магазина. Повторно присланное СМС не записывается дважды.`,
   '0.9.3': html`Исправление. Бот читает чеки, в QR-коде которых ссылка разбита на строки или содержит «:443» после адреса сайта. Раньше такой чек не распознавался.`,
@@ -444,6 +445,21 @@ const versionAnnouncements: Readonly<Record<string, Html>> = {
 
 export const messages = {
   menu,
+  // The bot's profile texts, set at boot with setMyDescription (the empty-chat card, at most 512
+  // characters) and setMyShortDescription (the profile "About", at most 120). Plain text, no HTML.
+  botDescription: [
+    'Записываю личные траты прямо в чате.',
+    '',
+    'Отправьте «450 кофе» — трата записана, категория подобрана. Валюту и дату можно указать в той же строке: «12,50 EUR такси», «450 такси вчера».',
+    '',
+    'Читаю QR-коды чеков из Сербии и Черногории и СМС банка о покупке картой.',
+    '',
+    '/today, /week, /month — итоги по категориям, /budget — сколько осталось на сегодня. Траты в разных валютах пересчитываю по курсу НБС.',
+    '',
+    'Добавьте меня в группу — и у семьи будет общий учёт.',
+  ].join('\n'),
+  botShortDescription:
+    'Учёт трат в чате: «450 кофе» — и записано. Чеки, СМС банка, бюджет и итоги по категориям.',
   // Bot command menu registered with setMyCommands at boot.
   commands: [
     { command: 'today', description: 'Траты за сегодня' },

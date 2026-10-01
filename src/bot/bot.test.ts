@@ -395,7 +395,40 @@ describe('command registration at boot', () => {
         method: 'setMyCommands',
         payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
       },
+      { method: 'setMyDescription', payload: { description: messages.botDescription } },
+      {
+        method: 'setMyShortDescription',
+        payload: { short_description: messages.botShortDescription },
+      },
     ]);
+  });
+
+  it('keeps the profile texts within Telegram limits', () => {
+    expect(messages.botDescription.length).toBeLessThanOrEqual(512);
+    expect(messages.botShortDescription.length).toBeLessThanOrEqual(120);
+    expect(messages.botDescription).toContain('«450 кофе»');
+  });
+
+  it('still sets the commands when setMyDescription fails', async () => {
+    const { bot, calls } = createTestBot();
+    bot.api.config.use((prev, method, payload, signal) =>
+      method === 'setMyDescription'
+        ? Promise.reject(new Error('network down'))
+        : prev(method, payload, signal),
+    );
+    const lines: string[] = [];
+
+    await registerCommands(
+      bot,
+      createLogger('info', { write: (line: string) => void lines.push(line) }),
+    );
+
+    expect(calls.map((c) => c.method)).toEqual(['setMyCommands', 'setMyCommands']);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
+      level: 40,
+      msg: 'setMyDescription failed',
+    });
   });
 
   it('logs one warning and returns when setMyCommands fails', async () => {
@@ -408,8 +441,10 @@ describe('command registration at boot', () => {
       createLogger('info', { write: (line: string) => void lines.push(line) }),
     );
 
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ level: 40, msg: 'setMyCommands failed' });
+    expect(lines.map((l) => (JSON.parse(l) as { msg: string }).msg)).toEqual([
+      'setMyCommands failed',
+      'setMyDescription failed',
+    ]);
   });
 });
 
