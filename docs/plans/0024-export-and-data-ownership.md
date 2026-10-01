@@ -1,6 +1,6 @@
 # 0024: Export and data ownership: every expense out as CSV or XLSX, free
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
 > **Related ADRs:** [ADR-0026](../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
