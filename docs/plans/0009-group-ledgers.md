@@ -316,7 +316,7 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 | 2: Quiet confirmation and the author-only group card | dev | done | 74800f8 |
 | 3: Group reports with a per-person breakdown | dev | done | 7848f4a |
 | 4: Group lifecycle and ledger settings | dev | done | 6f35073 |
-| 5: Live check in the family group | human | not started | |
+| 5: Live check in the family group | human | owed | |
 
 ### Notes
 
