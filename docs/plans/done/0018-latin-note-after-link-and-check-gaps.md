@@ -1,8 +1,8 @@
 # 0018: A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs
 
-> **Status:** in-progress (2026-10-01)
+> **Status:** done (2026-10-01): built as planned, no findings, v0.9.2
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md)
+> **Related ADRs:** [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md)
 
 ## TL;DR
 
@@ -159,5 +159,82 @@ None.
   files, 768 tests; `pnpm build` exit 0; `node --test "scripts/*.test.mjs"` exit 0, 5 tests;
   `node scripts/check-doc-links.mjs` exit 0, 136 links.
 - **Outstanding `human` phases:** none.
+
+## Close review
+
+The round 1 review at tip `e268100`, in full:
+
+> **Verdict:** clean. All three phases landed as planned, every named test defends its done-when,
+> and the gate is green at the tip, so the plan can close as a patch release.
+>
+> **Gate (run in the lane at e268100).** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+> exit 0, 57 files, 768 tests; `node --test "scripts/*.test.mjs"` exit 0, 5 tests (2 new in
+> `scripts/check-doc-links.test.mjs`); `node scripts/check-doc-links.mjs` exit 0, 136 links.
+>
+> **Lens 1: alignment.**
+>
+> - **Phase 1 (63e678d).** `decodeRsUrl` (`src/domain/receipts/rsUrl.ts:36-50`) turns a
+>   `malformed` refusal into `notReceipt` when the query has a space-split tail. The Decision says
+>   "anything else is `notReceipt`", and the code maps only `malformed`. These are the same thing
+>   in practice. An appended note either breaks the base64 length or shape, or changes the bytes
+>   under the MD5. Both give `malformed`. A non-`malformed` refusal (`refund`, `notSale`,
+>   `fractionalTotal`) needs a valid MD5, which means a valid journal. The Decision files that
+>   case under "a valid journal is a receipt", so a refund behind a split `+` is still refused
+>   correctly.
+>   - `rsUrl.test.ts:106-111`: `' kafa'`, `' lunch'`, `' kafa i sok'` and `' abcd'` each
+>     `toEqual({ kind: 'notReceipt' })`. `' abcd'` is the interesting case: `+abcd` keeps the
+>     length a multiple of 4 and passes the shape check, so it exercises the MD5 path.
+>   - `rsUrl.test.ts:79-96`: the space-for-`+` case is unchanged and still decodes to `82912`
+>     `RSD`.
+>   - `rsUrl.test.ts:113-118`: a link truncated by 10 characters with no tail gives
+>     `{ kind: 'refused', reason: 'malformed' }`.
+>   - The other refusal tests are unmodified; the diff only adds lines.
+>   - `bot.test.ts:3612-3620`: no receipt row, no expense, and `sentTexts` does not contain
+>     `messages.receiptRefused.malformed`. The handler sends exactly that value (`receipt.ts:38`),
+>     and the sibling test at `bot.test.ts:3598` uses the same comparison with `toEqual`. So the
+>     negative assertion is not vacuous.
+> - **Phase 2 (6172cc4).** `bot.test.ts:2005-2035` follows the planned steps. The limit is
+>   `30000` (RUB), the cafe cap is `5000`, and the cap row is checked as `500_000`. Then the test
+>   switches to EUR through `/settings`, sets the limit `1000`, and asserts: the edit lands on the
+>   anchor (`message_id: 105`); the text matches
+>   `^Лимиты по категориям сброшены: они были в RUB\.\n\n<b>Бюджет …`; the caps table is empty.
+>   The log discloses two harness-driven extra steps (switch to RUB first, re-open `/budget`
+>   before the cap) and the hand mutation check: dropping the argument makes the anchor start
+>   with `<b>Бюджет`, and the change was reverted. Neither step weakens the claim.
+>   `src/bot/flows.ts` is unchanged at the tip.
+> - **Phase 3 (4057d61).** `markdownFiles` runs
+>   `git ls-files -z --cached --others --exclude-standard -- '*.md'` at the root, `SKIP_DIRS` is
+>   gone, and output and exit codes are the same. The `existsSync` filter covers a tracked file
+>   deleted from the working tree. `scripts/check-doc-links.test.mjs` covers all four planned
+>   cases over one layout. Test 1: exit 1, the tracked and untracked files are named, the count is
+>   exactly 2, and nothing ignored appears. Test 2: exit 0 once both are fixed, while the ignored
+>   file stays broken. Stdout is exactly `4 relative link(s) resolve.` CI runs this test through
+>   `.github/workflows/deploy.yml:36`. The "main checkout with `tools/conductor/state/` present"
+>   check ran in the lane with a gitignored scratch file instead. The log discloses this.
+> - No ADR was reversed. ADR-0018's offline decode is unchanged. The implementation log is
+>   shorter than the phases section, and it discloses its deviations.
+>
+> **Lens 2: layering.** The domain change is pure: no I/O and no framework. The bot change is
+> test-only. There is no new copy, so the messages module is untouched.
+>
+> **Lens 3: correctness.** No money arithmetic changed. No clock in the domain. Idempotency is
+> unaffected: a `notReceipt` goes to the existing expense path. The new test files hold no user
+> data; the Latin notes are generic words.
+>
+> **Lens 4: docs freshness.** The user-visible change: a link with a note now goes to the expense
+> parser instead of being refused. No command, default, env var or copy changed. `CLAUDE.md`
+> still describes `scripts/check-doc-links.mjs` accurately. Nothing outside plans mentions
+> `SKIP_DIRS` or the old directory walk.
+>
+> **Findings.** blocker: none. major: none. minor: none. nit: none.
+>
+> **Bookkeeping owed at close.** Flip the status and move the plan, repairing links; run the
+> checker in the main checkout with `tools/conductor/state/` present; mark F21 closed in
+> `tools/conductor/FOLLOWUPS.md`; refresh `docs/plans/README.md`; patch bump to v0.9.2 with the
+> `CHANGELOG.md` and `versionAnnouncements` entries; no paired ADR to accept.
+
+No earlier round raised a finding, so no fix commit is named here. The close ran in the lane, not
+the main checkout: the checker's run with the main checkout's `tools/conductor/state/` present is
+settled when the conductor merges this branch and the next close runs the checker there.
 
 ## Followups

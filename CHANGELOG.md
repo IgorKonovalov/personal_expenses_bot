@@ -2,6 +2,13 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.9.2 (2026-10-01)
+
+From Plan 0018 (close nits of Plan 0016).
+
+- A receipt link followed by a note in Latin letters, such as `<link> kafa`, is read as an
+  expense, not refused as a broken link.
+
 ## 0.9.1 (2026-10-01)
 
 From Plan 0016 (close findings of Plans 0003, 0009, 0011 and 0014).

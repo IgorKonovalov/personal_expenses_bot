@@ -24,7 +24,7 @@ invocations, 11:53 to 12:03 and 12:04 to 12:19 local. Spend was about $11 in all
 |---|---|---|---|
 | F19 | architect | **F14's template line covers a new screen or flow, but not a change to what an existing flow answers.** H1 changed a flow's confirmation, which `flows.ts` renders. Widen the line: any change to a flow's answer or a screen's rendering also touches `src/bot/flows.ts`. | done (this commit) |
 | F20 | - | `prune` 0016 from `queue.json`. | done (this commit) |
-| F21 | dev | **`scripts/check-doc-links.mjs` walks the filesystem, so it checks gitignored files.** In the main checkout it fails on `tools/conductor/state/reviews/0016-round-1.md`, whose review prose reads as a link. CI and lanes have no `state/`, so only the architect's close step sees it. List files with `git ls-files '*.md'` instead. | open: Plan 0018 Phase 3 |
+| F21 | dev | **`scripts/check-doc-links.mjs` walks the filesystem, so it checks gitignored files.** In the main checkout it fails on `tools/conductor/state/reviews/0016-round-1.md`, whose review prose reads as a link. CI and lanes have no `state/`, so only the architect's close step sees it. List files with `git ls-files '*.md'` instead. | done (4057d61, Plan 0018 Phase 3) |
 
 ## 2026-10-01 morning: Plans 0009, 0011 and 0014
 
