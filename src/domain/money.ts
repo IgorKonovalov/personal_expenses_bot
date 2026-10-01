@@ -53,6 +53,25 @@ export function parseAmount(token: string, currency: CurrencyCode): ParseAmountR
   return result(toMinor(integerDigits, fraction, exponent));
 }
 
+// A machine-written decimal, e.g. a JSON number's source text (`799.99`, `-5`, `0.29`), to
+// minor units, on the digits alone. Fraction digits past the currency's exponent must be zeros
+// (`1.500` RSD is 150, `1.005` RSD is undefined). Zero is allowed: a free line item. Undefined
+// for exponents, malformed text and anything beyond Number.MAX_SAFE_INTEGER.
+export function minorFromDecimal(source: string, currency: CurrencyCode): number | undefined {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(source);
+  if (match === null) return undefined;
+  const [, sign = '', integerDigits = '', fraction = ''] = match;
+  const exponent = currencyExponent(currency);
+  if (!/^0*$/.test(fraction.slice(exponent))) return undefined;
+  const digits = (integerDigits + fraction.slice(0, exponent).padEnd(exponent, '0')).replace(
+    /^0+(?=\d)/,
+    '',
+  );
+  if (digits.length > 15) return undefined;
+  const minor = Number(digits);
+  return sign === '-' && minor !== 0 ? -minor : minor;
+}
+
 // Formats with space-grouped thousands and a dot decimal: 120000 RSD -> `1 200.00 RSD`.
 export function formatMoney({ amountMinor, currency }: Money): string {
   if (!Number.isSafeInteger(amountMinor)) {

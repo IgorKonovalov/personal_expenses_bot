@@ -26,6 +26,23 @@ export type ReceiptRefusal =
   | 'notSale'
   | 'refund';
 
+// What the tax authority's site adds to a receipt (ADR-0018). Expense data: never logged.
+export interface FetchedReceipt {
+  readonly sellerName: string;
+  // The site's total, in minor units of the receipt's currency; compared, never stored.
+  readonly totalMinor: number;
+  // The currency the site names, when it names one.
+  readonly currencyCode?: string;
+  readonly items: readonly FetchedItem[];
+}
+
+export interface FetchedItem {
+  readonly name: string;
+  // The quantity's decimal source text, e.g. `0.535`: not money.
+  readonly quantity: string;
+  readonly totalMinor: number;
+}
+
 export type DecodeReceiptResult =
   | { readonly kind: 'receipt'; readonly receipt: DecodedReceipt }
   | { readonly kind: 'refused'; readonly reason: ReceiptRefusal }

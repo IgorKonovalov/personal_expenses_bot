@@ -3,6 +3,7 @@ import type { User } from '../../db/users.js';
 import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import type { DecodeReceiptResult } from '../../domain/receipts/types.js';
 import { decodeQr } from '../../fiscal/qr.js';
+import { rememberReceiptCard } from '../../services/fetchDueReceipt.js';
 import { recordReceipt } from '../../services/recordReceipt.js';
 import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
@@ -43,9 +44,19 @@ export async function answerReceipt(
   }
 
   const card = cardFor(cardView(deps, user, result));
-  await replyHtml(ctx, result.duplicate ? messages.receiptAlreadyRecorded(card.text) : card.text, {
-    reply_markup: card.markup,
-  });
+  const sent = await replyHtml(
+    ctx,
+    result.duplicate ? messages.receiptAlreadyRecorded(card.text) : card.text,
+    { reply_markup: card.markup },
+  );
+  // The newest card is the one the worker edits once the items arrive. The test fake answers
+  // every call with `true`, which carries no message id.
+  if (Number.isInteger(sent.message_id)) {
+    rememberReceiptCard(deps, result.receipt.id, {
+      chatId: sent.chat.id,
+      messageId: sent.message_id,
+    });
+  }
 }
 
 // Bots may download files of at most 20 MB through getFile.

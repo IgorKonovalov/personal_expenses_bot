@@ -62,9 +62,9 @@ export async function editHtml(ctx: Context, body: Html, extra: EditOther = {}):
 }
 
 // Edits a message other than the one the update is about: a screen anchor re-rendered after a
-// typed answer or /cancel (ADR-0009).
+// typed answer or /cancel (ADR-0009), or a receipt card the worker updates outside any update.
 export async function editHtmlAt(
-  ctx: Context,
+  ctx: Pick<Context, 'api'>,
   message: { readonly chatId: number; readonly messageId: number },
   body: Html,
   extra: EditOther = {},

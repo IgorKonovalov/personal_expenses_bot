@@ -357,8 +357,8 @@ type DecodedReceipt = {
 |---|---|---|---|
 | 1: A pasted Serbian link records the receipt's total | dev | done | 7b2687f |
 | 2: A pasted Montenegrin link | dev | done | 0d71306 |
-| 3: Photos and image files | dev | done | committed with this row |
-| 4: The background fetch fills in the shop and the items | dev | not started | |
+| 3: Photos and image files | dev | done | e3aa895 |
+| 4: The background fetch fills in the shop and the items | dev | done | committed with this row |
 | 5: [Позиции] and [Повторить] on the card | dev | not started | |
 | 6: Help and the README | dev | not started | |
 | 7: Real receipts in production | human | not started | |
@@ -383,6 +383,23 @@ type DecodedReceipt = {
   non-image document instead, since a photo is read for a QR.
 - Phase 3: the download goes through `telegramFileDownloader(token)` in `receipt.ts`, built in
   `createBot`. Its errors name only the HTTP status.
+- Phase 4: files outside Files touched: `src/domain/receipts/json.ts` (JSON.parse with a
+  reviver that keeps each number's source text), `src/domain/receipts/types.ts`
+  (`FetchedReceipt`, `FetchedItem`), and `src/bot/render/html.ts`, whose `editHtmlAt` now takes
+  `Pick<Context, 'api'>` so the worker can edit a card outside an update.
+- Phase 4: the worker leaves every expense field alone once the user changed the description
+  or the category (or any field that stamps `updated_at`). Only an untouched expense gets the
+  seller name, and the category re-suggestion, only from the fallback. The suggestion runs
+  before the description moves: otherwise the ADR-0008 history step finds the expense itself
+  under the seller's key.
+- Phase 4: the Serbian seller name is `invoiceRequest.locationName`, falling back to
+  `businessName`. The Montenegrin line total is `items[].priceAfterVat`. Both shapes are
+  assumed from the plan's research, not checked against a live response (Phase 7).
+- Phase 4: the worker ticks every 5 s and also drains once at start. It has no test of its
+  own (none is in Files touched); the card edit after a fetch is untested at the bot level.
+  The service, parsers and fetchers carry the done-when tests.
+- Phase 4: `answerReceipt` stores the card's message id only when the reply carries an integer
+  one. The test harness's fake answers `true`, so bot tests store none.
 
 ### Close triggers
 
