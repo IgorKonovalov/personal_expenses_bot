@@ -5,6 +5,7 @@ import type { User } from '../../db/users.js';
 import type { CurrencyCode } from '../../domain/currencies.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { memberBudgetStatus } from '../../services/budget.js';
+import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
 import { restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import { resolveUserTimezone } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
@@ -13,12 +14,15 @@ import {
   UNDO_EXPENSE,
   categoryPickerData,
   editExpenseData,
+  receiptItemsData,
+  receiptRetryData,
   restoreExpenseData,
   undoExpenseData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml, type Html } from '../render/html.js';
 import { registerEdit } from './edit.js';
+import { registerReceiptCard } from './receipt.js';
 import { ensureUser } from './start.js';
 
 // An expense card (ADR-0011): the message about one expense. It is edited in place between its
@@ -37,6 +41,8 @@ export interface CardView {
   // The expense's category against its cap: absent for a deleted expense or an uncapped
   // category.
   readonly cap?: CardCap;
+  // The receipt behind the expense: absent for a deleted expense or one typed in.
+  readonly receipt?: ReceiptSummary;
 }
 
 export interface CardCap {
@@ -71,12 +77,14 @@ export function cardView(
     sentOn: localDateOf(expense.occurredAt, resolveUserTimezone(deps, user)),
   };
   if (expense.deletedAt !== null) return view;
+  const receipt = receiptSummary(deps, expense.id);
+  const withReceipt = receipt === undefined ? view : { ...view, receipt };
   const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
-  if (status === undefined) return view;
+  if (status === undefined) return withReceipt;
   const { currency, limit } = status;
   const cap = status.caps.find((c) => c.categoryId === expense.category?.id);
   return {
-    ...view,
+    ...withReceipt,
     ...(limit === undefined
       ? {}
       : {
@@ -92,14 +100,22 @@ export function cardView(
 }
 
 // [Категория] [Изменить] above [Удалить]: the destructive button gets its own row (ADR-0011).
+// A receipt expense adds [Позиции] once fetched, or [Повторить] once the fetch gave up, on a row
+// between them.
 export function recordedCard(view: CardView): Card {
+  const id = view.expense.id;
+  const markup = new InlineKeyboard()
+    .text(messages.categoryButton, categoryPickerData(id))
+    .text(messages.editButton, editExpenseData(id))
+    .row();
+  if (view.receipt?.state === 'fetched') {
+    markup.text(messages.receiptItemsButton, receiptItemsData(id, 1)).row();
+  } else if (view.receipt?.state === 'failed') {
+    markup.text(messages.receiptRetryButton, receiptRetryData(id)).row();
+  }
   return {
     text: messages.expenseRecorded(view),
-    markup: new InlineKeyboard()
-      .text(messages.categoryButton, categoryPickerData(view.expense.id))
-      .text(messages.editButton, editExpenseData(view.expense.id))
-      .row()
-      .text(messages.undoButton, undoExpenseData(view.expense.id)),
+    markup: markup.text(messages.undoButton, undoExpenseData(id)),
   };
 }
 
@@ -119,9 +135,10 @@ export function expenseIdOf(match: string | RegExpMatchArray): ExpenseId | undef
   return typeof match === 'string' ? undefined : (match[1] as ExpenseId | undefined);
 }
 
-// The edit flow's taps on the card are registered with it.
+// The edit flow's and the receipt's taps on the card are registered with it.
 export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
   registerEdit(bot, deps);
+  registerReceiptCard(bot, deps);
 
   bot.callbackQuery(UNDO_EXPENSE, async (ctx) => {
     const expenseId = expenseIdOf(ctx.match);

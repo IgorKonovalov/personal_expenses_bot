@@ -93,6 +93,19 @@ export function setExpenseDateData(expenseId: ExpenseId, date: LocalDate): strin
   return assertCallbackData(`exp:dt:${expenseId}:${date}`);
 }
 
+// A receipt card's [Позиции] `exp:items:<uuid>:<page>` (at most 51 bytes), its 1-based item page,
+// and [Повторить] `exp:rcretry:<uuid>` (48 bytes), which refetches a failed receipt (ADR-0018).
+export const RECEIPT_ITEMS = /^exp:items:([0-9a-f-]{36}):(\d{1,4})$/;
+export const RECEIPT_RETRY = /^exp:rcretry:([0-9a-f-]{36})$/;
+
+export function receiptItemsData(expenseId: ExpenseId, page: number): string {
+  return assertCallbackData(`exp:items:${expenseId}:${page}`);
+}
+
+export function receiptRetryData(expenseId: ExpenseId): string {
+  return assertCallbackData(`exp:rcretry:${expenseId}`);
+}
+
 // The /categories screen (ADR-0011). Only the current screen anchor accepts these.
 export const CATEGORIES_OPEN = 'cat:open';
 export const CATEGORY_ADD = 'cat:add';

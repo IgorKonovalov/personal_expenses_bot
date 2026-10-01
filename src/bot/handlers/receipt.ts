@@ -3,12 +3,20 @@ import type { User } from '../../db/users.js';
 import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import type { DecodeReceiptResult } from '../../domain/receipts/types.js';
 import { decodeQr } from '../../fiscal/qr.js';
-import { rememberReceiptCard } from '../../services/fetchDueReceipt.js';
+import { receiptItems, rememberReceiptCard, retryReceipt } from '../../services/fetchDueReceipt.js';
 import { recordReceipt } from '../../services/recordReceipt.js';
 import type { HandlerDeps } from '../bot.js';
+import {
+  RECEIPT_ITEMS,
+  RECEIPT_RETRY,
+  receiptItemsData,
+  showExpenseData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
-import { cardFor, cardView } from './card.js';
+import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
+import { kickReceiptWorker } from '../receiptWorker.js';
+import { editHtml, replyHtml } from '../render/html.js';
+import { cardFor, cardView, expenseIdOf } from './card.js';
 import { ensureUser } from './start.js';
 
 // A decoded receipt URL, from a pasted link or a photo's QR, in DM (ADR-0018): records the
@@ -57,6 +65,73 @@ export async function answerReceipt(
       messageId: sent.message_id,
     });
   }
+}
+
+// A receipt card's [Позиции], paging through the items in the card, and [Повторить], which
+// refetches a failed receipt. Registered by registerCard.
+export function registerReceiptCard(bot: Composer<Context>, deps: HandlerDeps): void {
+  bot.callbackQuery(RECEIPT_ITEMS, async (ctx) => {
+    const expenseId = expenseIdOf(ctx.match);
+    if (expenseId === undefined) return;
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const result = receiptItems(deps, { user, expenseId });
+    switch (result.kind) {
+      case 'notFound':
+        await ctx.answerCallbackQuery({ text: messages.expenseNotFound });
+        return;
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.receiptItemsForbidden });
+        return;
+      case 'notFetched':
+        await ctx.answerCallbackQuery({ text: messages.receiptItemsUnavailable });
+        return;
+      case 'items':
+        break;
+    }
+    await ctx.answerCallbackQuery();
+    const pages = messages.receiptItemPages({
+      sellerName: result.sellerName,
+      currency: result.expense.currency,
+      items: result.items,
+    });
+    // One rendered page per pager page; a page number past the end shows the last one.
+    const shown = pageOf(pages, Number(ctx.match[2]), 1);
+    const [text] = shown.items;
+    if (text === undefined) return;
+    await editHtml(ctx, text, {
+      reply_markup: pickerKeyboard(
+        [],
+        pagerRow(shown, (page) => receiptItemsData(expenseId, page)),
+        showExpenseData(expenseId),
+      ),
+    });
+  });
+
+  bot.callbackQuery(RECEIPT_RETRY, async (ctx) => {
+    const expenseId = expenseIdOf(ctx.match);
+    if (expenseId === undefined) return;
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const result = retryReceipt(deps, { user, expenseId, now });
+    switch (result.kind) {
+      case 'retrying': {
+        kickReceiptWorker();
+        await ctx.answerCallbackQuery({ text: messages.receiptRetryToast });
+        const card = cardFor(cardView(deps, user, result));
+        await editHtml(ctx, card.text, { reply_markup: card.markup });
+        return;
+      }
+      case 'notFailed':
+        await ctx.answerCallbackQuery({ text: messages.receiptRetryNotFailed });
+        return;
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.receiptRetryForbidden });
+        return;
+      case 'notFound':
+        await ctx.answerCallbackQuery({ text: messages.expenseNotFound });
+        return;
+    }
+  });
 }
 
 // Bots may download files of at most 20 MB through getFile.

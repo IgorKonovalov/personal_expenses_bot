@@ -24,6 +24,13 @@ export interface ReceiptWorker {
   readonly stop: () => Promise<void>;
 }
 
+// The worker of this process, once started: [Повторить] kicks it without holding a reference.
+let running: ReceiptWorker | undefined;
+
+export function kickReceiptWorker(): void {
+  running?.kick();
+}
+
 export function startReceiptWorker(deps: ReceiptWorkerDeps, api: Api): ReceiptWorker {
   const { logger } = deps;
   const fetchDeps: FetchDeps = { ...deps, placeholder: messages.receiptPlaceholder };
@@ -65,13 +72,16 @@ export function startReceiptWorker(deps: ReceiptWorkerDeps, api: Api): ReceiptWo
   };
 
   const timer = setInterval(kick, TICK_MS);
-  kick();
-  return {
+  const worker: ReceiptWorker = {
     kick,
     stop: async () => {
       clearInterval(timer);
       stopping.abort();
+      if (running === worker) running = undefined;
       await inFlight;
     },
   };
+  running = worker;
+  kick();
+  return worker;
 }

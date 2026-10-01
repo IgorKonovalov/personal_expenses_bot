@@ -18,6 +18,7 @@ import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
 import { createLogger } from '../logger.js';
+import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createBot, registerCommands } from './bot.js';
 import {
   BUDGET_CAP,
@@ -35,6 +36,8 @@ import {
   categoryPickerData,
   editExpenseData,
   editFieldData,
+  receiptItemsData,
+  receiptRetryData,
   restoreExpenseData,
   setExpenseDateData,
   setCategoryData,
@@ -3677,6 +3680,160 @@ describe('fiscal receipts', () => {
         expect(line).not.toContain('test-token');
         expect(line).not.toContain('api.telegram.org/file');
       }
+    });
+  });
+
+  describe('[Позиции] and [Повторить]', () => {
+    function settle(db: Db, state: 'fetched' | 'failed', names: readonly string[] = []) {
+      const receiptId = db.prepare('SELECT id FROM receipts').pluck().get();
+      db.prepare(
+        'UPDATE receipts SET fetch_state = ?, seller_name = ?, attempts = 6, next_fetch_at = NULL',
+      ).run(state, state === 'fetched' ? 'Test Market' : null);
+      const insert = db.prepare(
+        "INSERT INTO receipt_items (receipt_id, position, name, quantity, total_minor) VALUES (?, ?, ?, '1', 100)",
+      );
+      names.forEach((name, index) => insert.run(receiptId, index + 1, name));
+    }
+
+    async function tapAs(bot: Bot, data: string, fromId = ALLOWED_ID, updateId = 900) {
+      await bot.handleUpdate(callbackUpdate({ updateId, data, fromId }));
+    }
+
+    it('shows the shop and item count with [Позиции] on a fetched receipt card', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      settle(db, 'fetched', ['Hleb', 'Mleko']);
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, showExpenseData(String(expenseId) as ExpenseId));
+
+      const edit = calls.find((c) => c.method === 'editMessageText');
+      expect(edit?.payload).toMatchObject({
+        text: `${RS_CARD}\nTest Market · 2 позиции`,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Категория', callback_data: `exp:cat:${String(expenseId)}` },
+              { text: 'Изменить', callback_data: `exp:edit:${String(expenseId)}` },
+            ],
+            [{ text: 'Позиции', callback_data: `exp:items:${String(expenseId)}:1` }],
+            [{ text: 'Удалить', callback_data: `exp:undo:${String(expenseId)}` }],
+          ],
+        },
+      });
+    });
+
+    it('pages 120 items of 60 characters within 4096 characters a page, all in order', () => {
+      const items = Array.from({ length: 120 }, (_, i) => ({
+        name: `${String(i + 1).padStart(3, '0')} ${'я'.repeat(56)}`,
+        quantity: '1',
+        totalMinor: 12345,
+      }));
+
+      const pages = messages.receiptItemPages({
+        sellerName: 'Test Market',
+        currency: 'RSD',
+        items,
+      });
+
+      expect(pages.length).toBeGreaterThan(1);
+      for (const page of pages) expect(page.length).toBeLessThanOrEqual(4096);
+      const listed = pages.flatMap((page) =>
+        page
+          .split('\n')
+          .slice(1)
+          .map((line) => line.slice(line.indexOf(' ') + 1, line.indexOf(' ') + 4)),
+      );
+      expect(listed).toEqual(items.map((item) => item.name.slice(0, 3)));
+    });
+
+    it('escapes item names and shows a quantity other than 1', () => {
+      const [page] = messages.receiptItemPages({
+        sellerName: 'Test Market',
+        currency: 'RSD',
+        items: [
+          { name: '<b>Хлеб & Co</b>', quantity: '1', totalMinor: 7999 },
+          { name: 'Сыр', quantity: '0.535', totalMinor: 2913 },
+        ],
+      });
+
+      expect(page).toBe(
+        '<b>Test Market</b> · 2 позиции\n1. &lt;b&gt;Хлеб &amp; Co&lt;/b&gt; — 79.99 RSD\n2. Сыр × 0.535 — 29.13 RSD',
+      );
+    });
+
+    it('edits the card into the item list with [« Назад]', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      settle(db, 'fetched', ['<b>Хлеб & Co</b>']);
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, receiptItemsData(String(expenseId) as ExpenseId, 1));
+
+      expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+        text: '<b>Test Market</b> · 1 позиция\n1. &lt;b&gt;Хлеб &amp; Co&lt;/b&gt; — 1.00 RSD',
+        reply_markup: {
+          inline_keyboard: [[{ text: '« Назад', callback_data: `exp:show:${String(expenseId)}` }]],
+        },
+      });
+    });
+
+    it("answers [Позиции] on another user's expense like other card taps, revealing no items", async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      await send('/start', SECOND_ALLOWED_ID);
+      settle(db, 'fetched', ['Hleb']);
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, receiptItemsData(String(expenseId) as ExpenseId, 1), SECOND_ALLOWED_ID);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: 'cb-900', text: messages.receiptItemsForbidden },
+        },
+      ]);
+    });
+
+    it('resets a failed receipt once on a double tap of [Повторить], and the worker fetches it once', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      settle(db, 'failed');
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, receiptRetryData(String(expenseId) as ExpenseId), ALLOWED_ID, 901);
+      await tapAs(bot, receiptRetryData(String(expenseId) as ExpenseId), ALLOWED_ID, 902);
+
+      expect(db.prepare('SELECT fetch_state, attempts FROM receipts').all()).toEqual([
+        { fetch_state: 'pending', attempts: 0 },
+      ]);
+      expect(
+        calls
+          .filter((c) => c.method === 'answerCallbackQuery')
+          .map((c) => (c.payload as { text?: string }).text),
+      ).toEqual([messages.receiptRetryToast, messages.receiptRetryNotFailed]);
+
+      let fetches = 0;
+      const fetcher = () => {
+        fetches++;
+        return Promise.resolve({ kind: 'failed', reason: 'http' } as const);
+      };
+      const deps = {
+        db,
+        logger: silentLogger(),
+        newId: () => 'unused',
+        defaultTimezone: 'Europe/Belgrade',
+        fetchers: { RS: fetcher, ME: fetcher },
+        placeholder: messages.receiptPlaceholder,
+      };
+      const signal = new AbortController().signal;
+      await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal });
+      await fetchDueReceipt(deps, { now: RECEIPT_SENT, signal });
+      expect(fetches).toBe(1);
     });
   });
 

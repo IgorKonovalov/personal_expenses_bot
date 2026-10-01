@@ -1,16 +1,23 @@
 import { listActiveCategories } from '../db/categories.js';
-import { findExpenseById, findHistoryCategory, type Expense } from '../db/expenses.js';
+import {
+  findExpenseById,
+  findHistoryCategory,
+  type Expense,
+  type ExpenseId,
+} from '../db/expenses.js';
 import { findLedgerForMember, type Ledger } from '../db/ledgers.js';
-import { insertReceiptItems } from '../db/receiptItems.js';
+import { countReceiptItems, insertReceiptItems, listReceiptItems } from '../db/receiptItems.js';
 import {
   fillReceiptCategory,
   fillReceiptDescription,
   findDueReceipt,
   findReceiptAuthor,
+  findReceiptByExpense,
   findReceiptById,
   findReceiptExpenseState,
   markReceiptFetched,
   recordReceiptFailure,
+  resetFailedReceipt,
   setReceiptCard,
   type Receipt,
   type ReceiptId,
@@ -18,7 +25,7 @@ import {
 import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
-import type { FetchedReceipt, ReceiptCountry } from '../domain/receipts/types.js';
+import type { FetchedItem, FetchedReceipt, ReceiptCountry } from '../domain/receipts/types.js';
 import type { RecordDeps } from './recordExpense.js';
 
 // Why a fetch failed. `error` is a fetcher that threw instead of answering.
@@ -182,6 +189,84 @@ function settled(deps: FetchDeps, receiptId: ReceiptId): FetchDueResult {
   // An author who left a shared ledger: nothing to show them.
   if (ledger === undefined) return { kind: 'pending' };
   return { kind: 'settled', receipt, expense, ledger, author };
+}
+
+// What a receipt expense's card shows about its receipt.
+export interface ReceiptSummary {
+  readonly state: Receipt['fetchState'];
+  readonly sellerName: string | null;
+  readonly itemCount: number;
+}
+
+export function receiptSummary(
+  { db }: Pick<FetchDeps, 'db'>,
+  expenseId: ExpenseId,
+): ReceiptSummary | undefined {
+  const receipt = findReceiptByExpense(db, expenseId);
+  if (receipt === undefined) return undefined;
+  return {
+    state: receipt.fetchState,
+    sellerName: receipt.sellerName,
+    itemCount: receipt.fetchState === 'fetched' ? countReceiptItems(db, receipt.id) : 0,
+  };
+}
+
+export type ReceiptItemsResult =
+  | {
+      readonly kind: 'items';
+      readonly expense: Expense;
+      readonly sellerName: string;
+      readonly items: readonly FetchedItem[];
+    }
+  | { readonly kind: 'notFound' }
+  // Only the expense's author sees its items.
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'notFetched' };
+
+export function receiptItems(
+  { db }: Pick<FetchDeps, 'db'>,
+  input: { readonly user: User; readonly expenseId: ExpenseId },
+): ReceiptItemsResult {
+  const expense = findExpenseById(db, input.expenseId);
+  if (expense === undefined) return { kind: 'notFound' };
+  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const receipt = findReceiptByExpense(db, expense.id);
+  if (receipt === undefined) return { kind: 'notFound' };
+  if (receipt.fetchState !== 'fetched' || receipt.sellerName === null) {
+    return { kind: 'notFetched' };
+  }
+  return {
+    kind: 'items',
+    expense,
+    sellerName: receipt.sellerName,
+    items: listReceiptItems(db, receipt.id),
+  };
+}
+
+export type RetryReceiptResult =
+  | { readonly kind: 'retrying'; readonly expense: Expense; readonly ledger: Ledger }
+  // Already pending or fetched: a double tap, or a stale card.
+  | { readonly kind: 'notFailed' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'notFound' };
+
+// [Повторить] on a failed receipt: back to `pending` with no attempts, due now. The caller kicks
+// the worker.
+export function retryReceipt(
+  deps: Pick<FetchDeps, 'db' | 'logger'>,
+  input: { readonly user: User; readonly expenseId: ExpenseId; readonly now: Date },
+): RetryReceiptResult {
+  const { db } = deps;
+  const expense = findExpenseById(db, input.expenseId);
+  if (expense === undefined) return { kind: 'notFound' };
+  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
+  if (ledger === undefined) return { kind: 'forbidden' };
+  const receipt = findReceiptByExpense(db, expense.id);
+  if (receipt === undefined) return { kind: 'notFound' };
+  if (!resetFailedReceipt(db, receipt.id, input.now)) return { kind: 'notFailed' };
+  deps.logger.info({ receiptId: receipt.id, country: receipt.country }, 'receipt fetch retried');
+  return { kind: 'retrying', expense, ledger };
 }
 
 // Remembers the message a receipt's card was sent as, so the worker can edit it.

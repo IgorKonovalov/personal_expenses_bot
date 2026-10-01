@@ -358,8 +358,8 @@ type DecodedReceipt = {
 | 1: A pasted Serbian link records the receipt's total | dev | done | 7b2687f |
 | 2: A pasted Montenegrin link | dev | done | 0d71306 |
 | 3: Photos and image files | dev | done | e3aa895 |
-| 4: The background fetch fills in the shop and the items | dev | done | committed with this row |
-| 5: [Позиции] and [Повторить] on the card | dev | not started | |
+| 4: The background fetch fills in the shop and the items | dev | done | 303cd3b |
+| 5: [Позиции] and [Повторить] on the card | dev | done | committed with this row |
 | 6: Help and the README | dev | not started | |
 | 7: Real receipts in production | human | not started | |
 
@@ -400,6 +400,14 @@ type DecodedReceipt = {
   The service, parsers and fetchers carry the done-when tests.
 - Phase 4: `answerReceipt` stores the card's message id only when the reply carries an integer
   one. The test harness's fake answers `true`, so bot tests store none.
+- Phase 5: files outside Files touched: `src/db/receipts.ts` (`resetFailedReceipt`, the
+  compare-and-set on `failed` behind [Повторить]) and `src/bot/receiptWorker.ts`
+  (`kickReceiptWorker`, a module-level handle on the running worker that the retry tap calls).
+- Phase 5: [Позиции] or [Повторить] sits on its own row between [Категория] [Изменить] and
+  [Удалить]. The item pages are built in `messages.receiptItemPages`, bounded by each page's
+  HTML length. A foreign [Позиции] tap gets the toast «Позиции видит только тот, кто записал
+  трату», like the forbidden toasts of the other card taps. "The worker fetches it once" is
+  tested by calling `fetchDueReceipt` twice after the double tap.
 
 ### Close triggers
 

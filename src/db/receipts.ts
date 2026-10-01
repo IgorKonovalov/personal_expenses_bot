@@ -155,6 +155,18 @@ export function recordReceiptFailure(
   return changes === 1;
 }
 
+// [Повторить]: a `failed` receipt becomes `pending` again, with no attempts, due at `now`.
+// Compare-and-set on `failed`, so a second tap changes nothing.
+export function resetFailedReceipt(db: Db, id: ReceiptId, now: Date): boolean {
+  const { changes } = db
+    .prepare<[string, string]>(
+      `UPDATE receipts SET fetch_state = 'pending', attempts = 0, next_fetch_at = ?
+        WHERE id = ? AND fetch_state = 'failed'`,
+    )
+    .run(now.toISOString(), id);
+  return changes === 1;
+}
+
 // The message the receipt's card was last sent as, for the worker's edit.
 export function setReceiptCard(
   db: Db,

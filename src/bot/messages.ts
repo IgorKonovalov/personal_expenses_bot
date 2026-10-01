@@ -41,6 +41,25 @@ interface RecordedView extends ExpenseView {
   readonly budget?: BudgetLineView | undefined;
   // Absent when the expense's category has no cap.
   readonly cap?: (CapView & { readonly currency: CurrencyCode }) | undefined;
+  // Absent for an expense not recorded from a receipt.
+  readonly receipt?: ReceiptLineView | undefined;
+}
+
+interface ReceiptLineView {
+  readonly state: 'pending' | 'fetched' | 'failed';
+  readonly sellerName: string | null;
+  readonly itemCount: number;
+}
+
+interface ReceiptItemsView {
+  readonly sellerName: string;
+  readonly currency: CurrencyCode;
+  readonly items: readonly {
+    readonly name: string;
+    // Decimal source text, e.g. `0.535`.
+    readonly quantity: string;
+    readonly totalMinor: number;
+  }[];
 }
 
 // A category's spend in the budget period against its cap.
@@ -273,6 +292,34 @@ function capLine({ name, spentMinor, capMinor }: CapView, currency: CurrencyCode
     : line;
 }
 
+// `1 позиция`, `2 позиции`, `5 позиций`, `21 позиция`.
+function itemCount(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} позиций`;
+  if (ones === 1) return `${n} позиция`;
+  if (ones >= 2 && ones <= 4) return `${n} позиции`;
+  return `${n} позиций`;
+}
+
+// `Test Market · 12 позиций` once fetched, a note once the fetch gave up, nothing while pending.
+function receiptLine({ state, sellerName, itemCount: n }: ReceiptLineView): Html[] {
+  if (state === 'fetched' && sellerName !== null) {
+    return [html`${shownDescription(sellerName)} · ${itemCount(n)}`];
+  }
+  return state === 'failed' ? [html`Позиции не загрузились.`] : [];
+}
+
+// `3. Хлеб × 0.535 — 79.99 RSD`: the quantity only when it isn't 1.
+function receiptItemLine(
+  position: number,
+  item: ReceiptItemsView['items'][number],
+  currency: CurrencyCode,
+): Html {
+  const quantity = /^1(?:\.0*)?$/.test(item.quantity) ? '' : ` × ${item.quantity}`;
+  return html`${position}. ${shownDescription(item.name)}${quantity} — ${formatMoney({ amountMinor: item.totalMinor, currency })}`;
+}
+
 function budgetLine({ currency, todayLeftMinor, periodLeftMinor, to }: BudgetLineView): Html {
   return html`${todayLeft(todayLeftMinor, currency)} · ${periodLeft(periodLeftMinor, currency, to)}`;
 }
@@ -466,10 +513,11 @@ export const messages = {
     );
     const { category } = view.expense;
     const card = category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
-    const { budget, cap } = view;
+    const { budget, cap, receipt } = view;
     return joinHtml(
       [
         card,
+        ...(receipt === undefined ? [] : receiptLine(receipt)),
         ...(budget === undefined ? [] : [budgetLine(budget)]),
         ...(cap === undefined ? [] : [capLine(cap, cap.currency)]),
       ],
@@ -491,6 +539,31 @@ export const messages = {
     refund: html`Это чек возврата. Возвраты пока не записываются, ничего не записано.`,
   },
   futureReceipt: html`Дата на чеке ещё не наступила. Ничего не записано.`,
+  // A receipt card's buttons: the item list once fetched, a refetch once the fetch gave up.
+  receiptItemsButton: 'Позиции',
+  receiptRetryButton: 'Повторить',
+  receiptItemsForbidden: 'Позиции видит только тот, кто записал трату',
+  receiptItemsUnavailable: 'Позиции чека ещё не загружены',
+  receiptRetryToast: 'Загружаю позиции',
+  receiptRetryNotFailed: 'Позиции уже загружаются',
+  receiptRetryForbidden: 'Повторить может только тот, кто записал трату',
+  // The item list, edited into the card: pages of whole lines, each page's HTML within
+  // Telegram's 4096 characters. Item names are shop text and go through `html`.
+  receiptItemPages: ({ sellerName, currency, items }: ReceiptItemsView): Html[] => {
+    const header = html`<b>${shownDescription(sellerName)}</b> · ${itemCount(items.length)}`;
+    const pages: Html[] = [];
+    let page = header;
+    items.forEach((item, index) => {
+      const line = receiptItemLine(index + 1, item, currency);
+      if (page !== header && page.length + 1 + line.length > MAX_VISIBLE_CHARS) {
+        pages.push(page);
+        page = header;
+      }
+      page = joinHtml([page, line], '\n');
+    });
+    pages.push(page);
+    return pages;
+  },
   // A photo or image file without a readable receipt QR code (ADR-0019).
   receiptPhotoHint: html`Не нашёл QR-код чека на изображении. Сфотографируйте QR-код крупнее, отправьте фото файлом без сжатия или вставьте ссылку из QR-кода.`,
 
