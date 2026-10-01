@@ -240,6 +240,10 @@ are stored per wrap, so they can change later without a migration.
 
 ## Risks & open questions
 
+- **A third record path.** [Plan 0021](0021-bank-sms-card-purchase.md) adds `recordBankSms`
+  (`src/services/recordBankSms.ts`) next to `recordExpense` and `recordReceipt`. Whichever plan
+  lands second routes it through the sealing seam. Its `sms:` source key is a hash of the
+  purchase's time, amount and merchant, which is low-entropy (ADR-0021, Negative).
 - **Rebuilding the `expenses` table.** SQLite can't relax `NOT NULL` with `ALTER`, so migration
   `0011` rebuilds the table. `receipts.expense_id` references it, and the indexes must be
   recreated. Check how `migrate.ts` handles `foreign_keys` during the copy.
