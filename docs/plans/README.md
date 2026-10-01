@@ -11,7 +11,7 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0009](0009-group-ledgers.md) | Group ledgers: the bot as a group's accountant, with personal books kept private | approved (2026-09-30) |
-| [0011](0011-budgets.md) | Budgets: a payday-period limit, a daily allowance, essential categories and category caps | draft (2026-09-30) |
+| [0011](0011-budgets.md) | Budgets: a payday-period limit, a daily allowance, essential categories and category caps | approved (2026-10-01) |
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
 

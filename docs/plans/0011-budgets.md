@@ -1,6 +1,6 @@
 # 0011: Budgets: a payday-period limit, a daily allowance, essential categories and category caps
 
-> **Status:** draft
+> **Status:** approved (2026-10-01)
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
