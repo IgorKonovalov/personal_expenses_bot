@@ -1,6 +1,6 @@
 # 0012: Tags for projects: `#отпуск` on an expense, and a report per tag
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-09-30
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
 > [Plan 0024](0024-export-and-data-ownership.md) (export gains a tags column)
