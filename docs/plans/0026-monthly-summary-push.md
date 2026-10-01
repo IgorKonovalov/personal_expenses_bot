@@ -28,6 +28,7 @@ dies. A push at the period boundary is the cheapest way to bring them back.
 - Delivery at a sane local hour (not 00:00), and exactly once per ledger and period across
   restarts.
 - A weekly variant, or not?
+- A one-line `/donate` footer on the push (Plan 0028 and ADR-0027 leave it to this plan).
 
 ## Implementation phases
 
