@@ -213,8 +213,8 @@ type SetLimitResult =
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: A receipt whose data fails to apply backs off | dev | done | 1aac740 |
-| 2: A SUF link with a note; test code out of the image | dev | done | committed with this row |
-| 3: A group expense in DM uses the ledger's timezone | dev | not started | |
+| 2: A SUF link with a note; test code out of the image | dev | done | b9b047c |
+| 3: A group expense in DM uses the ledger's timezone | dev | done | committed with this row |
 | 4: A currency change drops the category caps | dev | not started | |
 | 5: Budget navigation and the read-only group line | dev | not started | |
 
@@ -230,6 +230,11 @@ type SetLimitResult =
   against a local `pnpm build` and printed `ok 82912 RSD`. A note after the link counts as part
   of `vl` only when it follows a space and is all base64 or percent-encoding characters, so a
   Latin-only note such as `<link> abc` still reaches the decoder and is refused `malformed`.
+- Phase 3: `editExpense.test.ts` is unchanged; the behavior is tested in `group.test.ts` only.
+  With the old zone, typed `01.10` was not refused as a future date: it was read as
+  `2025-10-01` and stored. The test asserts the answer completes the flow and leaves
+  `occurred_on = '2026-10-01'`, which fails on the old code. Each of the three changed sites
+  was reverted by hand once and failed its half of the test.
 
 ### Close triggers
 

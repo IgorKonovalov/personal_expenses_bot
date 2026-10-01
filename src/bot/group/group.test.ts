@@ -13,7 +13,12 @@ import { changeCategory } from '../../services/changeCategory.js';
 import { openEdit, startEdit } from '../../services/editExpense.js';
 import { setAnchor } from '../../services/flowSessions.js';
 import { undoExpense } from '../../services/recordExpense.js';
-import { assertCallbackData, groupDeleteData, groupRestoreData } from '../callbackData.js';
+import {
+  assertCallbackData,
+  editFieldData,
+  groupDeleteData,
+  groupRestoreData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { htmlParseMode } from '../render/html.js';
 import {
@@ -219,6 +224,42 @@ describe('recording in a bound group (Phase 1)', () => {
     expect(expensesIn(db, second?.activeLedgerId ?? '')).toMatchObject([
       { occurred_on: '2026-09-30' },
     ]);
+  });
+
+  it("shows and edits a group expense in the member's DM in the ledger's timezone", async () => {
+    // 01:30 on 1 October in Belgrade (CEST), 19:30 on 30 September in New York (EDT).
+    const late = new Date('2026-09-30T23:30:00Z');
+    const { db, calls, say, dm, tap } = await bound({ now: late });
+    await dm(SECOND_ALLOWED_ID, '/start', 1, late);
+    db.prepare("UPDATE users SET timezone = 'America/New_York'").run();
+    await say(SECOND_ALLOWED_ID, '500 такси', 14, { date: late });
+    expect(expensesIn(db, groupLedgerId(db))).toMatchObject([{ occurred_on: '2026-10-01' }]);
+    const id = expenseIdOf(db, 14);
+    calls.length = 0;
+
+    await dm(SECOND_ALLOWED_ID, `/start e_${id}`, 2, late);
+    const card = calls.find((c) => c.method === 'sendMessage');
+    expect(sentText(card)).toContain('500.00 RSD');
+    expect(sentText(card)).not.toContain(' за ');
+
+    calls.length = 0;
+    await tap(SECOND_ALLOWED_ID, editFieldData(id, 't'), { messageId: 3 });
+    const prompt = calls.find((c) => c.method === 'editMessageText')?.payload as {
+      reply_markup: { inline_keyboard: { callback_data: string }[][] };
+    };
+    expect(prompt.reply_markup.inline_keyboard[0]?.[0]?.callback_data).toBe(
+      `exp:dt:${id}:2026-10-01`,
+    );
+
+    calls.length = 0;
+    await dm(SECOND_ALLOWED_ID, '01.10', 4, late);
+    const answered = calls.find((c) => c.method === 'editMessageText');
+    expect(sentText(answered)).not.toContain(messages.editRefused.futureDate);
+    // The answer completed the date flow: it is no longer pending.
+    expect(
+      db.prepare('SELECT COUNT(*) FROM flow_sessions WHERE kind IS NOT NULL').pluck().get(),
+    ).toBe(0);
+    expect(expensesIn(db, groupLedgerId(db))).toMatchObject([{ occurred_on: '2026-10-01' }]);
   });
 
   it("leaves A's pending DM flow untouched by A's group expense and group /month", async () => {

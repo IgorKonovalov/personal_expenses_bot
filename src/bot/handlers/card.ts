@@ -6,8 +6,7 @@ import type { CurrencyCode } from '../../domain/currencies.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { memberBudgetStatus } from '../../services/budget.js';
 import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
-import { restoreExpense, undoExpense } from '../../services/recordExpense.js';
-import { resolveUserTimezone } from '../../services/settings.js';
+import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   RESTORE_EXPENSE,
@@ -74,7 +73,7 @@ export function cardView(
   const view = {
     expense,
     ledger,
-    sentOn: localDateOf(expense.occurredAt, resolveUserTimezone(deps, user)),
+    sentOn: localDateOf(expense.occurredAt, effectiveTimezone(deps, user, ledger)),
   };
   if (expense.deletedAt !== null) return view;
   const receipt = receiptSummary(deps, expense.id);

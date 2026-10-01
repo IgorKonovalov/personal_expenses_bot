@@ -22,8 +22,7 @@ import {
   startFlow,
   type EditFlow,
 } from './flowSessions.js';
-import type { RecordDeps } from './recordExpense.js';
-import { resolveUserTimezone } from './settings.js';
+import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 // Editing an expense's amount, description or date from its card (ADR-0011), each through an
 // ADR-0009 text flow; the date also through quick buttons. Only the creator edits, and only a
@@ -58,8 +57,8 @@ export function openEdit({ db }: Pick<RecordDeps, 'db'>, input: ExpenseInput): O
 
 export type StartEditResult = (Editable & { readonly today: LocalDate }) | EditRefusal;
 
-// Starts the field's flow, replacing any pending one. `today` is the user's local date, for the
-// date prompt's quick buttons.
+// Starts the field's flow, replacing any pending one. `today` is the local date in the ledger's
+// zone (ADR-0015), for the date prompt's quick buttons.
 export function startEdit(
   deps: RecordDeps,
   input: ExpenseInput & { readonly kind: EditFlow['kind']; readonly now: Date },
@@ -67,7 +66,8 @@ export function startEdit(
   const found = openEdit(deps, input);
   if (found.kind !== 'editable') return found;
   startFlow(deps, input.user, { kind: input.kind, expenseId: input.expenseId }, input.now);
-  return { ...found, today: localDateOf(input.now, resolveUserTimezone(deps, input.user)) };
+  const timezone = effectiveTimezone(deps, input.user, found.ledger);
+  return { ...found, today: localDateOf(input.now, timezone) };
 }
 
 export type EditAnswerRefusal =
@@ -113,7 +113,7 @@ export function answerEditFlow(
       return ledger === undefined ? { kind: 'gone', expense } : { kind: 'gone', expense, ledger };
     }
     const { expense, ledger } = found;
-    const today = localDateOf(now, resolveUserTimezone(deps, user));
+    const today = localDateOf(now, effectiveTimezone(deps, user, ledger));
     const refuse = (refusal: EditAnswerRefusal): EditAnswerResult => ({
       kind: 'invalid',
       expense,
@@ -191,7 +191,7 @@ export function setDateFromButton(
     const found = openEdit(deps, input);
     if (found.kind !== 'editable') return found;
     const date = parseLocalDate(input.date);
-    const today = localDateOf(now, resolveUserTimezone(deps, user));
+    const today = localDateOf(now, effectiveTimezone(deps, user, found.ledger));
     if (date === undefined || date > today) return { kind: 'unavailable' };
     cancelFlowIf(deps, user, isEditOf(found.expense.id, 'editDate'));
     const changed = setExpenseDate(db, found.expense.id, date, now);
