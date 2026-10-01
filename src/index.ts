@@ -9,6 +9,8 @@ import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { createMeFetcher } from './fiscal/meFetcher.js';
 import { createRsFetcher } from './fiscal/rsFetcher.js';
+import { createNbsFetcher } from './fx/nbsFetcher.js';
+import { startRateWorker } from './fx/rateWorker.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
 import { createLogger } from './logger.js';
 import { announceVersion } from './services/announceVersion.js';
@@ -65,6 +67,14 @@ const receiptWorker = startReceiptWorker(
   bot.api,
 );
 
+// NBS middle rates for converted totals and budgets (ADR-0022): a tick now, then hourly.
+const rateWorker = startRateWorker({
+  db,
+  logger,
+  now: () => new Date(),
+  fetchList: createNbsFetcher(),
+});
+
 // Not awaited: a slow or refused send must not delay polling. announceVersion never rejects.
 const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 void announceVersion(
@@ -84,16 +94,15 @@ const heartbeat = createHeartbeat(heartbeatPath(config.databasePath), (error) =>
   );
 });
 
-// Shutdown order: the heartbeat and backup timers, then the receipt worker and its fetch in
-// flight, then polling and any backup in flight, then the DB. With nothing left on the event
-// loop the process exits 0 on its own.
+// Shutdown order: the heartbeat and backup timers, then the receipt and rate workers and their
+// fetches in flight, then polling and any backup in flight, then the DB. With nothing left on
+// the event loop the process exits 0 on its own.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     logger.info({ signal }, 'stopping');
     heartbeat.stop();
     const backupSettled = backups?.stop();
-    void receiptWorker
-      .stop()
+    void Promise.all([receiptWorker.stop(), rateWorker.stop()])
       .then(() => Promise.all([bot.stop(), backupSettled]))
       .finally(() => {
         db.close();

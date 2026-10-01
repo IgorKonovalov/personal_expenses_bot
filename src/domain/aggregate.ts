@@ -1,5 +1,7 @@
 import type { CurrencyCode } from './currencies.js';
+import { convert, type RateOf } from './fx.js';
 import type { Money } from './money.js';
+import type { LocalDate } from './time.js';
 
 // Totals per currency, in first-seen order. Never adds across currencies (ADR-0003).
 export function sumByCurrency(items: Iterable<Money>): ReadonlyMap<CurrencyCode, number> {
@@ -64,6 +66,49 @@ export function summarizeByCurrencyAndCategory(
       return { currency, totalMinor, lines: sorted };
     })
     .sort((a, b) => currencyOrder(a.currency, b.currency, firstCurrency));
+}
+
+export interface DatedMoney extends CategorizedMoney {
+  // The local day whose rate converts it (ADR-0022).
+  readonly occurredOn: LocalDate;
+}
+
+export interface ConvertedSummary {
+  // Everything with a rate, in `target`: each expense converted and rounded before any sum.
+  // Undefined when no expense converts.
+  readonly converted: CurrencySummary | undefined;
+  // The original totals of the foreign expenses inside `converted`, alphabetically.
+  readonly convertedFrom: readonly Money[];
+  // Per currency, the expenses with no rate, alphabetically, never added to anything.
+  readonly unconverted: readonly CurrencySummary[];
+}
+
+// One total in `target`, converted at each expense's day rate (ADR-0022). An expense already in
+// `target` counts as is; one with no rate stays in its own currency's block.
+export function summarizeConverted(
+  items: Iterable<DatedMoney>,
+  target: CurrencyCode,
+  rateOf: RateOf,
+): ConvertedSummary {
+  const inTarget: CategorizedMoney[] = [];
+  const foreign: Money[] = [];
+  const unconverted: CategorizedMoney[] = [];
+  for (const item of items) {
+    const converted = convert(item, target, (currency) => rateOf(currency, item.occurredOn));
+    if (converted === undefined) {
+      unconverted.push(item);
+      continue;
+    }
+    inTarget.push({ ...converted, category: item.category });
+    if (item.currency !== target) foreign.push(item);
+  }
+  return {
+    converted: summarizeByCurrencyAndCategory(inTarget, target)[0],
+    convertedFrom: [...sumByCurrency(foreign)]
+      .map(([currency, amountMinor]) => ({ currency, amountMinor }))
+      .sort((a, b) => currencyOrder(a.currency, b.currency, target)),
+    unconverted: summarizeByCurrencyAndCategory(unconverted, target),
+  };
 }
 
 export interface AuthoredMoney extends Money {

@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Exchange_Rates_List>
+ <header>
+  <Copyright>(trimmed)</Copyright>
+  <No>184</No>
+  <Date>28.09.2026</Date>
+  <Type>srednjiKurs</Type>
+ </header>
+ <item>
+  <Code>978</Code>
+  <Country>EMU</Country>
+  <Currency>EUR</Currency>
+  <Unit>1</Unit>
+  <Middle_Rate>117.49</Middle_Rate>
+ </item>
+ <item>
+  <Code>36</Code>
+  <Country>Australia</Country>
+  <Currency>AUD</Currency>
+  <Unit>1</Unit>
+  <Middle_Rate>72.4902</Middle_Rate>
+ </item>
+ <item>
+  <Code>348</Code>
+  <Country>Hungary</Country>
+  <Currency>HUF</Currency>
+  <Unit>100</Unit>
+  <Middle_Rate>32.0756</Middle_Rate>
+ </item>
+ <item>
+  <Code>392</Code>
+  <Country>Japan</Country>
+  <Currency>JPY</Currency>
+  <Unit>100</Unit>
+  <Middle_Rate>65.4009</Middle_Rate>
+ </item>
+ <item>
+  <Code>840</Code>
+  <Country>United States </Country>
+  <Currency>USD</Currency>
+  <Unit>1</Unit>
+  <Middle_Rate>103.1782</Middle_Rate>
+ </item>
+</Exchange_Rates_List>

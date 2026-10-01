@@ -1,4 +1,5 @@
 import { listLedgerExpensesBetween, type Expense } from '../db/expenses.js';
+import { rateLookupBetween } from '../db/fxRates.js';
 import { findLedgerChat } from '../db/ledgerChats.js';
 import {
   findActiveLedger,
@@ -11,9 +12,10 @@ import {
 import type { User, UserId } from '../db/users.js';
 import {
   summarizeByAuthor,
-  summarizeByCurrencyAndCategory,
+  summarizeConverted,
   type CurrencySummary,
 } from '../domain/aggregate.js';
+import type { CurrencyCode } from '../domain/currencies.js';
 import type { Money } from '../domain/money.js';
 import { next, periodOf, previous, type Period } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
@@ -29,8 +31,14 @@ export interface PersonTotals {
 export interface PeriodSummary {
   readonly ledger: Ledger;
   readonly period: Period;
-  // The ledger default currency first, then the others alphabetically; empty for no expenses.
+  // The ledger default currency first, holding every expense converted into it at the NBS rate
+  // of its day (ADR-0022), then each currency with no rate alphabetically; empty for no
+  // expenses.
   readonly currencies: readonly CurrencySummary[];
+  // The original totals of the foreign expenses converted into the first block, alphabetically.
+  readonly convertedFrom: readonly Money[];
+  // The currencies of the blocks after the first that have no rate.
+  readonly unconverted: readonly CurrencyCode[];
   readonly previous: Period;
   // Absent for the period holding the ledger's today: there is nothing after it yet.
   readonly next?: Period;
@@ -110,7 +118,7 @@ export function groupPeriodSummary(
   return summarize(deps, bound.readerId, bound.ledger, period, today, true);
 }
 
-// Rows by occurred_on in the period; sums in the domain (ADR-0002).
+// Rows by occurred_on in the period; converts and sums in the domain (ADR-0002, ADR-0022).
 function summarize(
   { db }: Deps,
   readerId: UserId,
@@ -126,10 +134,17 @@ function summarize(
     to: period.to,
   });
   const following = next(period);
+  const { converted, convertedFrom, unconverted } = summarizeConverted(
+    expenses,
+    ledger.defaultCurrency,
+    rateLookupBetween(db, period.from, period.to),
+  );
   return {
     ledger,
     period,
-    currencies: summarizeByCurrencyAndCategory(expenses, ledger.defaultCurrency),
+    currencies: converted === undefined ? unconverted : [converted, ...unconverted],
+    convertedFrom,
+    unconverted: unconverted.map((c) => c.currency),
     previous: previous(period),
     ...(following.from > today ? {} : { next: following }),
     ...(withPeople ? { people: peopleOf(db, ledger, expenses) } : {}),

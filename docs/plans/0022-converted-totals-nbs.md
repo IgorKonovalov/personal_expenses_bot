@@ -1,6 +1,6 @@
 # 0022: Totals and budgets converted into one currency at the NBS rate
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
 > rate, ledger currency, rounding), [ADR-0023](../adrs/0023-budgets-count-converted-spending.md)
@@ -271,5 +271,25 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 > above are the contract. This section records what happened.** Observations, never conclusions:
 > no pass list, no self-assessment. Deviations and unmet done-whens are **always** disclosed.
 > Keep it shorter than `## Implementation phases`.
+
+| phase | owner | state | commit |
+|---|---|---|---|
+| 1: /week and /month show one converted total | dev | done | committed with this row |
+
+### Notes
+
+- Phase 1: `convert(money, target, rateOf)` takes a lookup already bound to the expense's day
+  (`(currency) => Rate | undefined`); `summarizeConverted` binds `RateOf` per expense.
+- Phase 1: `PeriodSummary` keeps `currencies` (the converted block first, then the unconverted
+  blocks) and gains `convertedFrom` and `unconverted`. They are optional in the messages view, so
+  the direct-render tests in `group.test.ts` compile unchanged.
+- Phase 1: the conversion footnotes close the message, after the per-person section.
+- Phase 1: the existing mixed RSD + EUR /week and /month expectations in `bot.test.ts` gained the
+  `Без курса НБС, не пересчитано: EUR.` line (no rates are stored there). The all-RSD ones are
+  unchanged.
+- Phase 1: `earliestExpenseDay` (the worker's first owed day) lives in `src/db/fxRates.ts`.
+- Phase 1: the fixtures are trimmed from the live NBS pages for 2026-09-28, fetched on
+  2026-10-01. The XML keeps its BOM and CRLF line ends. The real page writes the XML link's `&`
+  unescaped.
 
 ## Followups

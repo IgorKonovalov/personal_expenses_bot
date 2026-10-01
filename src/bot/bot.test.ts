@@ -8,6 +8,7 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
 import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
@@ -2233,11 +2234,87 @@ describe('/week and /month', () => {
     '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n' +
     '<b>2 220.00 RSD</b>\nПродукты: 1 200.00\nКафе и рестораны: 750.00\nТранспорт: 200.00\n' +
     'Без категории: 70.00\n\n' +
-    '<b>12.50 EUR</b>\nТранспорт: 12.50';
+    '<b>12.50 EUR</b>\nТранспорт: 12.50\n\n' +
+    'Без курса НБС, не пересчитано: EUR.';
   const THIS_WEEK =
     '<b>Неделя, 28 сентября – 4 октября — «Личные расходы»</b>\n\n' +
     '<b>370.00 RSD</b>\nКафе и рестораны: 300.00\nБез категории: 70.00\n\n' +
-    '<b>12.50 EUR</b>\nТранспорт: 12.50';
+    '<b>12.50 EUR</b>\nТранспорт: 12.50\n\n' +
+    'Без курса НБС, не пересчитано: EUR.';
+
+  // The NBS middle rate list of 2026-09-28 (list 184), in force on the 28th.
+  function storeSept28Rates(db: Db) {
+    const day = '2026-09-28' as LocalDate;
+    storeFxList(
+      db,
+      {
+        listDate: day,
+        listNumber: 184,
+        rates: [
+          { currency: 'EUR', unit: 1, middleE4: 1174993 },
+          { currency: 'USD', unit: 1, middleE4: 1031782 },
+          { currency: 'JPY', unit: 100, middleE4: 654009 },
+        ],
+      },
+      NOW,
+    );
+    setFxDay(db, day, day, NOW);
+  }
+
+  // 3 420.00 RSD Другое, 450.00 RSD Кафе, 107.40 EUR Связь and 6.00 USD Другое, all on the 28th.
+  async function convertedWeekBot(opts: { rates: boolean; kzt?: boolean }) {
+    const bot = await summaryBot({ fixture: false });
+    if (opts.rates) storeSept28Rates(bot.db);
+    bot.add('W1', '2026-09-28', 342000, 'RSD', 'other');
+    bot.add('W2', '2026-09-28', 45000, 'RSD', 'cafe');
+    bot.add('W3', '2026-09-28', 10740, 'EUR', 'telecom');
+    bot.add('W4', '2026-09-28', 600, 'USD', 'other');
+    if (opts.kzt === true) bot.add('W5', '2026-09-28', 500000, 'KZT', 'other');
+    return bot;
+  }
+
+  const WEEK_28_HEADER = '<b>Неделя, 28 сентября – 4 октября — «Личные расходы»</b>';
+  const CONVERTED_WEEK_28 =
+    '<b>≈ 17 108.49 RSD</b>\nСвязь и интернет: 12 619.42\nДругое: 4 039.07\n' +
+    'Кафе и рестораны: 450.00';
+
+  it('converts the week into one RSD total at the NBS rate of each day', async () => {
+    const { say, calls } = await convertedWeekBot({ rates: true });
+
+    await say('/week', 2);
+
+    expect((calls[0]?.payload as { text: string }).text).toBe(
+      `${WEEK_28_HEADER}\n\n${CONVERTED_WEEK_28}\n\n` +
+        'Включая 107.40 EUR, 6.00 USD по курсу НБС на день траты.',
+    );
+  });
+
+  it('keeps a currency NBS does not list in its own block, named in a note', async () => {
+    const { say, calls } = await convertedWeekBot({ rates: true, kzt: true });
+
+    await say('/week', 2);
+
+    expect((calls[0]?.payload as { text: string }).text).toBe(
+      `${WEEK_28_HEADER}\n\n${CONVERTED_WEEK_28}\n\n` +
+        '<b>5 000.00 KZT</b>\nДругое: 5 000.00\n\n' +
+        'Включая 107.40 EUR, 6.00 USD по курсу НБС на день траты.\n' +
+        'Без курса НБС, не пересчитано: KZT.',
+    );
+  });
+
+  it('shows each currency apart, with no ≈, while no rate is stored', async () => {
+    const { say, calls } = await convertedWeekBot({ rates: false });
+
+    await say('/week', 2);
+
+    expect((calls[0]?.payload as { text: string }).text).toBe(
+      `${WEEK_28_HEADER}\n\n` +
+        '<b>3 870.00 RSD</b>\nДругое: 3 420.00\nКафе и рестораны: 450.00\n\n' +
+        '<b>107.40 EUR</b>\nСвязь и интернет: 107.40\n\n' +
+        '<b>6.00 USD</b>\nДругое: 6.00\n\n' +
+        'Без курса НБС, не пересчитано: EUR, USD.',
+    );
+  });
 
   function editOf(message: number, text: string, inline_keyboard: unknown) {
     return {

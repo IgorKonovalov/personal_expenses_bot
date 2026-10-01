@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { sumByCurrency, summarizeByAuthor, summarizeByCurrencyAndCategory } from './aggregate.js';
+import {
+  sumByCurrency,
+  summarizeByAuthor,
+  summarizeByCurrencyAndCategory,
+  summarizeConverted,
+} from './aggregate.js';
+import type { CurrencyCode } from './currencies.js';
+import type { Rate, RateOf } from './fx.js';
+import type { LocalDate } from './time.js';
 
 describe('sumByCurrency', () => {
   it('sums per currency with integer arithmetic', () => {
@@ -153,5 +161,94 @@ describe('summarizeByAuthor', () => {
 
   it('is empty for no items', () => {
     expect(summarizeByAuthor([], 'RSD')).toEqual([]);
+  });
+});
+
+describe('summarizeConverted', () => {
+  const other = { id: 1, name: 'Другое' };
+  const cafe = { id: 2, name: 'Кафе и рестораны' };
+  const telecom = { id: 3, name: 'Связь и интернет' };
+  const SEPT_28 = '2026-09-28' as LocalDate;
+  // The NBS middle rate list of 2026-09-28, in force on the 28th only.
+  const RATES: Partial<Record<CurrencyCode, Rate>> = {
+    EUR: { unit: 1, middleE4: 1174993 },
+    USD: { unit: 1, middleE4: 1031782 },
+  };
+  const rateOf: RateOf = (currency, day) => (day === SEPT_28 ? RATES[currency] : undefined);
+  const week = [
+    { amountMinor: 342000, currency: 'RSD', category: other, occurredOn: SEPT_28 },
+    { amountMinor: 45000, currency: 'RSD', category: cafe, occurredOn: SEPT_28 },
+    { amountMinor: 10740, currency: 'EUR', category: telecom, occurredOn: SEPT_28 },
+    { amountMinor: 600, currency: 'USD', category: other, occurredOn: SEPT_28 },
+  ] as const;
+
+  it('sums the rounded converted parts into one total in the target', () => {
+    expect(summarizeConverted(week, 'RSD', rateOf)).toEqual({
+      // 1 261 942 + 403 907 + 45 000
+      converted: {
+        currency: 'RSD',
+        totalMinor: 1710849,
+        lines: [
+          { categoryId: 3, name: 'Связь и интернет', amountMinor: 1261942 },
+          { categoryId: 1, name: 'Другое', amountMinor: 403907 },
+          { categoryId: 2, name: 'Кафе и рестораны', amountMinor: 45000 },
+        ],
+      },
+      convertedFrom: [
+        { currency: 'EUR', amountMinor: 10740 },
+        { currency: 'USD', amountMinor: 600 },
+      ],
+      unconverted: [],
+    });
+  });
+
+  it('keeps an expense with no rate in its own block', () => {
+    const summary = summarizeConverted(
+      [
+        ...week,
+        { amountMinor: 500000, currency: 'KZT', category: other, occurredOn: SEPT_28 },
+        {
+          amountMinor: 600,
+          currency: 'USD',
+          category: other,
+          occurredOn: '2026-09-20' as LocalDate,
+        },
+      ],
+      'RSD',
+      rateOf,
+    );
+    expect(summary.converted?.totalMinor).toBe(1710849);
+    expect(summary.unconverted).toEqual([
+      {
+        currency: 'KZT',
+        totalMinor: 500000,
+        lines: [{ categoryId: 1, name: 'Другое', amountMinor: 500000 }],
+      },
+      {
+        currency: 'USD',
+        totalMinor: 600,
+        lines: [{ categoryId: 1, name: 'Другое', amountMinor: 600 }],
+      },
+    ]);
+  });
+
+  it('converts nothing and names nothing with no rates at all', () => {
+    const summary = summarizeConverted(week, 'RSD', () => undefined);
+    expect(summary.converted?.totalMinor).toBe(387000);
+    expect(summary.convertedFrom).toEqual([]);
+    expect(summary.unconverted.map((c) => [c.currency, c.totalMinor])).toEqual([
+      ['EUR', 10740],
+      ['USD', 600],
+    ]);
+  });
+
+  it('has no converted block when nothing converts', () => {
+    expect(
+      summarizeConverted(
+        [{ amountMinor: 500000, currency: 'KZT', category: null, occurredOn: SEPT_28 }],
+        'RSD',
+        rateOf,
+      ).converted,
+    ).toBeUndefined();
   });
 });

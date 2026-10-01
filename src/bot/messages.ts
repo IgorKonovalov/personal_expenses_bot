@@ -148,6 +148,10 @@ interface SummaryView {
     // `name` null: the expenses without a category.
     readonly lines: readonly { readonly name: string | null; readonly amountMinor: number }[];
   }[];
+  // Non-empty when the first block holds converted foreign spending (ADR-0022). Absent is empty.
+  readonly convertedFrom?: readonly Money[] | undefined;
+  // The currencies left in their own blocks for want of a rate. Absent is empty.
+  readonly unconverted?: readonly CurrencyCode[] | undefined;
   readonly people?: PeopleView | undefined;
 }
 
@@ -236,6 +240,24 @@ function amountOnly(money: Money): string {
 }
 
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
+
+// What a converted report was converted from, and what it could not convert (ADR-0022). Empty
+// when nothing was foreign.
+function conversionNotes(
+  convertedFrom: readonly Money[],
+  unconverted: readonly CurrencyCode[],
+): Html[] {
+  const notes: Html[] = [];
+  if (convertedFrom.length > 0) {
+    notes.push(
+      html`Включая ${convertedFrom.map(formatMoney).join(', ')} по курсу НБС на день траты.`,
+    );
+  }
+  if (unconverted.length > 0) {
+    notes.push(html`Без курса НБС, не пересчитано: ${unconverted.join(', ')}.`);
+  }
+  return notes.length === 0 ? [] : [joinHtml(notes, '\n')];
+}
 
 // `Анна: 1 650.00 RSD, 12.50 EUR` per member, under a heading. Empty when nobody spent.
 function peopleSection(people: PeopleView | undefined): Html[] {
@@ -892,21 +914,29 @@ export const messages = {
     return joinHtml([joinHtml([header, ...lines], '\n'), ...peopleSection(people)], '\n\n');
   },
 
-  // /week and /month: per currency a bold total, then its categories by amount. A summary too
-  // long for one message shows the totals alone, with a note.
-  periodSummary: ({ ledger, period, currencies, people }: SummaryView): Html => {
+  // /week and /month: per currency a bold total, then its categories by amount. The first block
+  // is `≈` when it holds converted spending, and the conversion notes close the message. A
+  // summary too long for one message shows the totals alone, with a note.
+  periodSummary: ({
+    ledger,
+    period,
+    currencies,
+    convertedFrom = [],
+    unconverted = [],
+    people,
+  }: SummaryView): Html => {
     const title =
       period.kind === 'month'
         ? `${MONTHS[dateParts(period.from).month] ?? ''} ${dateParts(period.from).year}`
         : `Неделя, ${weekRange(period, GENITIVE_MONTHS)}`;
     const header = html`<b>${title} — «${ledgerName(ledger)}»</b>`;
     if (currencies.length === 0) return joinHtml([header, noExpenses], '\n');
-    const total = (c: SummaryView['currencies'][number]) =>
-      html`<b>${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;
-    const blocks = currencies.map((c) =>
+    const total = (c: SummaryView['currencies'][number], index: number) =>
+      html`<b>${index === 0 && convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;
+    const blocks = currencies.map((c, index) =>
       joinHtml(
         [
-          total(c),
+          total(c, index),
           ...c.lines.map(
             (line) =>
               html`${line.name ?? 'Без категории'}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
@@ -915,12 +945,14 @@ export const messages = {
         '\n',
       ),
     );
-    const full = joinHtml([header, ...blocks, ...peopleSection(people)], '\n\n');
+    const notes = conversionNotes(convertedFrom, unconverted);
+    const full = joinHtml([header, ...blocks, ...peopleSection(people), ...notes], '\n\n');
     if (visibleLength(full) <= MAX_VISIBLE_CHARS) return full;
     return joinHtml(
       [
         joinHtml([header, ...currencies.map(total)], '\n'),
         ...peopleSection(people),
+        ...notes,
         html`Категорий слишком много для одного сообщения, поэтому показаны только итоги.`,
       ],
       '\n\n',
