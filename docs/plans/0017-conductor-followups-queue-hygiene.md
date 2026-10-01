@@ -136,8 +136,8 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 |---|---|---|---|
 | 1: A malformed Blocks merge line is a plan error | dev | done | `c90a362` |
 | 2: prune removes a merged plan everywhere | dev | done | `a53f3cd` |
-| 3: ready warns about an uncommitted edit; mid-run queue notice | dev | done | committed with this row |
-| 4: Readiness checks done-when reachability | dev | not started | |
+| 3: ready warns about an uncommitted edit; mid-run queue notice | dev | done | `7c34987` |
+| 4: Readiness checks done-when reachability | dev | done | committed with this row |
 
 ### Notes
 

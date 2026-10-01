@@ -30,6 +30,11 @@ names, and prove it with the done-when it names. Check phase by phase:
    only if the plan gives that phase no other way to finish.
 6. No phase depends on the output of a `human` phase marked `**Blocks merge:** no`. Such a phase is
    owed after the merge, so nothing before the merge may read what it produces.
+7. Every done-when's actor can reach the code path it exercises under the gates already in this
+   tree, such as the allowlist (a user who isn't allowlisted never reaches a handler past it),
+   owner-only screens, and the chat type (a DM composer is not a group's, and the reverse). Read
+   the gate in the code. A done-when whose actor can't get there is `plan_wrong`: name the gate
+   and the actor in the detail.
 
 Read with the Read and Grep tools, `git grep <pattern>`, `git log <args>` and `git show <rev>`, one command per call. Run
 nothing that builds or tests. Nothing here needs it. A pattern holding a backtick or `$` goes through the Grep tool, not a shell call: the CLI refuses a
