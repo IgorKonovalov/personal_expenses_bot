@@ -131,11 +131,30 @@ None. No schema, type or callback-data change.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The decoders accept a wrapped vl and the :443 port | dev | done | committed with this row |
+| 1: The decoders accept a wrapped vl and the :443 port | dev | done | `cabb005` |
 | 2: Re-send the two receipts to the deployed bot | human | not started | |
 
 ### Notes
 
+- Phase 1: `buildRsUrl` takes a second argument, `{ wrap?: '%0A' | '%0D%0A'; port?: boolean }`.
+  The wrapping is also exported as `encodeRsVl(vl, wrap)` for the `+` test. `generate.ts` now
+  builds both receipt photos through one `receiptPhoto(text, name)` helper.
+- Phase 1, followup not acted on: running `generate.ts` rewrites `example.png` with different
+  bytes (same image). `rs-receipt.jpg` and `no-qr.jpg` came out byte-identical. The rewritten
+  `example.png` was restored and is not in the commit.
+
 ### Close triggers
+
+- **What shipped:** `decodeRsUrl` drops CR/LF from `vl` after percent-decoding. The RS and ME URL
+  patterns accept an optional `:443` over https. `verifyUrl` stays portless. A synthetic
+  `rs-receipt-wrapped.jpg` fixture with a `:443` host and a `%0A`-wrapped `vl`.
+- **User-visible surface changed:** a receipt link or photo with a wrapped `vl` or a `:443` host
+  now records an expense and shows the receipt card. Before, it answered with
+  `receiptRefused.malformed` or `receiptPhotoHint`. No copy changed.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 57 files,
+  779 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236
+  tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
+  `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 2 (re-send the two real receipts after deploy).
 
 ## Followups
