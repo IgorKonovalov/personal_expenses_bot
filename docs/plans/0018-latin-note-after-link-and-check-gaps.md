@@ -127,7 +127,7 @@ None.
 |---|---|---|---|
 | 1: A Latin note after a SUF link is not a receipt | dev | done | 63e678d |
 | 2: The budget screen shows the caps-dropped line | dev | done | 6172cc4 |
-| 3: The link checker reads only tracked docs | dev | done | committed with this row |
+| 3: The link checker reads only tracked docs | dev | done | 4057d61 |
 
 ### Notes
 
@@ -149,9 +149,15 @@ None.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `decodeRsUrl` answers `notReceipt` for a SUF link whose space-split tail
+  breaks the journal (63e678d); a bot test for the caps-dropped line
+  (6172cc4); `check-doc-links.mjs` lists files through `git ls-files`, with
+  `scripts/check-doc-links.test.mjs` (4057d61).
+- **User-visible surface changed:** a pasted SUF link followed by a note such as `kafa` goes to
+  the expense parser instead of the «ссылка повреждена» refusal. No copy changed.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 57
+  files, 768 tests; `pnpm build` exit 0; `node --test "scripts/*.test.mjs"` exit 0, 5 tests;
+  `node scripts/check-doc-links.mjs` exit 0, 136 links.
+- **Outstanding `human` phases:** none.
 
 ## Followups
