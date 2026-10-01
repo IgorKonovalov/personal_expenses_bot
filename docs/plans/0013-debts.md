@@ -1,6 +1,6 @@
 # 0013: Debts: who owes whom, closed in the currency they were opened in
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-09-30
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
 > **Related ADRs:** [ADR-0030](../adrs/0030-debts-as-operations-settle-up-per-currency.md) (the debt and settle-up model),
