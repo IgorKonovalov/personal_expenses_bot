@@ -1,5 +1,7 @@
 import type { Composer, Context } from 'grammy';
+import type { User } from '../../db/users.js';
 import { parseBankSms } from '../../domain/bankSms/index.js';
+import type { BankSmsResult } from '../../domain/bankSms/types.js';
 import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordBankSms } from '../../services/recordBankSms.js';
@@ -47,14 +49,11 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
 
-    // A message that is one bank card-purchase SMS records the purchase (ADR-0021).
+    // A message that is one bank card-purchase SMS records the purchase (ADR-0021). One whose
+    // header matched but whose body didn't is refused, never read as free text.
     const sms = parseBankSms(ctx.message.text);
-    if (sms.kind === 'purchase') {
-      const recorded = recordBankSms(deps, { user, sms, occurredAt, now });
-      const card = cardFor(cardView(deps, user, recorded));
-      await replyHtml(ctx, recorded.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
-        reply_markup: card.markup,
-      });
+    if (sms.kind !== 'notBankSms') {
+      await answerBankSms(ctx, deps, { user, sms, occurredAt, now });
       return;
     }
 
@@ -106,5 +105,37 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
       case 'readingUnavailable':
         throw new Error('no reading was chosen for a text message');
     }
+  });
+}
+
+async function answerBankSms(
+  ctx: Context,
+  deps: HandlerDeps,
+  input: {
+    readonly user: User;
+    readonly sms: Exclude<BankSmsResult, { kind: 'notBankSms' }>;
+    // The Telegram message date.
+    readonly occurredAt: Date;
+    readonly now: Date;
+  },
+): Promise<void> {
+  const { user, sms } = input;
+  if (sms.kind === 'refused') {
+    await replyHtml(
+      ctx,
+      sms.reason === 'malformed'
+        ? messages.bankSmsRefused.malformed
+        : messages.bankSmsRefused.unsupportedCurrency(sms.code),
+    );
+    return;
+  }
+  const result = recordBankSms(deps, { user, sms, occurredAt: input.occurredAt, now: input.now });
+  if (result.kind === 'futureSms') {
+    await replyHtml(ctx, messages.bankSmsFuture);
+    return;
+  }
+  const card = cardFor(cardView(deps, user, result));
+  await replyHtml(ctx, result.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
+    reply_markup: card.markup,
   });
 }

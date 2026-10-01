@@ -4044,6 +4044,57 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
     expect(db.prepare('SELECT occurred_on FROM expenses').pluck().all()).toEqual(['2026-09-14']);
   });
 
+  it.each([
+    ['a zero amount', { iznos: '0,00 RSD' }, messages.bankSmsRefused.malformed],
+    ['a dot decimal', { iznos: '6.00 USD' }, messages.bankSmsRefused.malformed],
+    ['a missing Mesto line', { mesto: null }, messages.bankSmsRefused.malformed],
+    ['31 February', { datum: '31.02.2026 10:00:00' }, messages.bankSmsRefused.malformed],
+    [
+      'an unknown currency',
+      { iznos: '6,00 XYZ' },
+      'В СМС валюта XYZ, её я пока не знаю. Ничего не записано.',
+    ],
+  ] as const)('refuses %s with its own reply and records nothing', async (_name, fields, reply) => {
+    const { send, calls, db } = smsBot();
+
+    await send(buildKoriscenjeSms(fields));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls)).toEqual([reply]);
+    expect(sentTexts(calls)).not.toContain(messages.help);
+    expect(sentTexts(calls)).not.toContain(messages.invalidAmount);
+  });
+
+  it('refuses an SMS dated the day after the message and records nothing', async () => {
+    const { send, calls, db } = smsBot();
+
+    // 08:00 UTC on the 16th, pasted at 08:00 UTC on the 15th.
+    await send(buildKoriscenjeSms({ datum: '16.09.2026 10:00:00' }));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls)).toEqual([messages.bankSmsFuture]);
+  });
+
+  it('records an SMS from 00:30 pasted at 00:40 the same Belgrade night', async () => {
+    const { bot, db } = smsBot();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, text: SMS, date: new Date('2026-09-14T22:40:00Z') }),
+    );
+
+    expect(db.prepare('SELECT occurred_on FROM expenses').pluck().all()).toEqual(['2026-09-15']);
+  });
+
+  it('lists bank SMS in /help', async () => {
+    const { send, calls } = smsBot();
+
+    await send('/help');
+
+    expect(String(sentTexts(calls)[0])).toContain(
+      'СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».',
+    );
+  });
+
   it('files a second SMS from the same merchant in the category the first was moved to', async () => {
     const { send, tap, db } = smsBot();
     await send(SMS);

@@ -98,6 +98,25 @@ shop and items:
 
 Groups ignore photos and receipt links.
 
+### Bank SMS
+
+In a private chat, paste or forward a card-purchase SMS from your bank and it becomes one expense
+([ADR-0021](docs/adrs/0021-bank-sms-template-parsers-plain-expense.md)). One template is read so
+far: the Serbian `Koriscenje kartice` / `Korišćenje kartice` SMS, with its `Datum:`, `Iznos:` and
+`Mesto:` lines. Other banks' SMS still get the `/help` answer.
+
+- The amount comes from `Iznos:` only, never the balance line, and is stored in the charged
+  currency: a USD charge on an RSD card is recorded in USD.
+- `Datum:` is read as Belgrade time, and the expense is dated that moment's day in your timezone.
+  An SMS dated after the day you send it is refused.
+- The description is the `Mesto:` merchant, without its trailing country code and phone number.
+- The same SMS pasted again, however its lines are wrapped, records nothing and answers «Уже
+  записано» with the existing card.
+- An SMS whose header matches but whose body can't be read, or whose currency the bot doesn't
+  know, is refused, and nothing is recorded.
+
+Groups ignore bank SMS.
+
 ### Amount rules
 
 One rule for everyone, regardless of locale ([ADR-0004](docs/adrs/0004-amount-parsing-rule.md)):

@@ -19,7 +19,16 @@ export interface BankSmsPurchase {
   readonly fingerprint: string;
 }
 
+// Why an SMS whose header matched records nothing.
+export type BankSmsRefusal =
+  // A required line is missing, or its value breaks the template: a bad date, an amount out of
+  // pattern, zero, or more fraction digits than the currency holds.
+  | { readonly kind: 'refused'; readonly reason: 'malformed' }
+  // A well-formed three-letter code the currency table doesn't have.
+  | { readonly kind: 'refused'; readonly reason: 'unsupportedCurrency'; readonly code: string };
+
 export type BankSmsResult =
   | BankSmsPurchase
+  | BankSmsRefusal
   // Not an SMS of any template we read.
   | { readonly kind: 'notBankSms' };

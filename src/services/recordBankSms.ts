@@ -21,13 +21,16 @@ export interface RecordBankSmsInput {
   readonly now: Date;
 }
 
-export type RecordBankSmsResult = {
-  readonly kind: 'recorded';
-  readonly expense: Expense;
-  readonly ledger: Ledger;
-  // The same SMS was already recorded into this ledger: nothing new was written.
-  readonly duplicate: boolean;
-};
+export type RecordBankSmsResult =
+  | {
+      readonly kind: 'recorded';
+      readonly expense: Expense;
+      readonly ledger: Ledger;
+      // The same SMS was already recorded into this ledger: nothing new was written.
+      readonly duplicate: boolean;
+    }
+  // The SMS's local purchase date is after the local date the message was sent.
+  | { readonly kind: 'futureSms' };
 
 // Records a bank SMS purchase into the user's active ledger as one ordinary expense in the
 // charged amount and currency, dated the purchase instant's local date (ADR-0021). The source key
@@ -45,6 +48,9 @@ export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): Reco
   if (seen !== undefined) return duplicate(deps, user, seen, sms);
 
   const timezone = effectiveTimezone(deps, user, ledger);
+  const purchasedOn = localDateOf(sms.issuedAt, timezone);
+  if (purchasedOn > localDateOf(input.occurredAt, timezone)) return { kind: 'futureSms' };
+
   const key = descriptionKey(sms.description);
   const category = suggestCategory({
     description: sms.description,
@@ -59,7 +65,7 @@ export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): Reco
     currency: sms.currency,
     description: sms.description,
     occurredAt: input.occurredAt,
-    occurredOn: localDateOf(sms.issuedAt, timezone),
+    occurredOn: purchasedOn,
     sourceKey,
     createdAt: input.now,
     categoryId: category.id,

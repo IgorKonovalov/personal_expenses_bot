@@ -55,6 +55,13 @@ function record(user: User, purchase = sms(), occurredAt = SENT) {
   return recordBankSms(deps, { user, sms: purchase, occurredAt, now: occurredAt });
 }
 
+// A record expected to land: anything else fails the test.
+function recorded(user: User, purchase = sms(), occurredAt = SENT) {
+  const result = record(user, purchase, occurredAt);
+  if (result.kind !== 'recorded') throw new Error(`expected a record, got ${result.kind}`);
+  return result;
+}
+
 function rows(sql: string): unknown[] {
   return db.prepare(sql).all();
 }
@@ -62,7 +69,7 @@ function rows(sql: string): unknown[] {
 describe('recordBankSms', () => {
   it('records the charge in USD, dated the local purchase day, keyed by the content', () => {
     const purchase = sms();
-    const result = record(alice, purchase);
+    const result = recorded(alice, purchase);
 
     expect(result).toMatchObject({ kind: 'recorded', duplicate: false });
     expect(
@@ -93,9 +100,9 @@ describe('recordBankSms', () => {
   });
 
   it('records the same SMS once per ledger, and again in another user ledger', () => {
-    const first = record(alice);
-    const again = record(alice, sms({ lineEnd: '\r\n' }), new Date('2026-09-15T09:00:00Z'));
-    const other = record(bob);
+    const first = recorded(alice);
+    const again = recorded(alice, sms({ lineEnd: '\r\n' }), new Date('2026-09-15T09:00:00Z'));
+    const other = recorded(bob);
 
     expect(again.duplicate).toBe(true);
     expect(again.expense.id).toBe(first.expense.id);
@@ -104,8 +111,24 @@ describe('recordBankSms', () => {
     expect(rows('SELECT COUNT(*) AS n FROM expenses')).toEqual([{ n: 2 }]);
   });
 
+  it('refuses an SMS dated after the local date of the message and records nothing', () => {
+    // 10:00 in Belgrade on the 16th, sent at 10:00 on the 15th.
+    const result = record(alice, sms({ datum: '16.09.2026 10:00:00' }));
+
+    expect(result).toEqual({ kind: 'futureSms' });
+    expect(rows('SELECT COUNT(*) AS n FROM expenses')).toEqual([{ n: 0 }]);
+  });
+
+  it('records an SMS from ten minutes before, just past local midnight', () => {
+    // 00:30 in Belgrade, sent at 00:40 on the same local day.
+    const result = record(alice, sms(), new Date('2026-09-14T22:40:00Z'));
+
+    expect(result).toMatchObject({ kind: 'recorded', duplicate: false });
+    expect(rows('SELECT occurred_on FROM expenses')).toEqual([{ occurred_on: '2026-09-15' }]);
+  });
+
   it('takes the category the merchant was last moved to', () => {
-    const first = record(alice);
+    const first = recorded(alice);
     const groceries = db
       .prepare<[string], number>(
         "SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'groceries'",

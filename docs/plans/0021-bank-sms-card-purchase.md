@@ -243,8 +243,8 @@ type BankSmsResult =
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A pasted SMS records the purchase, once | dev | done | committed with this row |
-| 2: Refusals, /help and README | dev | not started | |
+| 1: A pasted SMS records the purchase, once | dev | done | 925aeee |
+| 2: Refusals, /help and README | dev | done | committed with this row |
 | 3: Paste the real SMS into the deployed bot | human | not started | |
 
 ### Notes
@@ -253,6 +253,8 @@ type BankSmsResult =
   through to the free-text parser. Phase 2 turns these into refusals.
 - Phase 1: a re-paste logs `duplicate bank sms` at info, with the same fields as
   `bank sms recorded` (`expenseId`, `userId`, `template`).
+- Phase 2: the `/help` line is asserted in `bot.test.ts` (a `/help` reply), not in
+  `messages.test.ts`, which is outside `Files touched`.
 
 ### Close triggers
 

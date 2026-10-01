@@ -49,21 +49,21 @@ export function parseKoriscenjeKartice(text: string): BankSmsResult {
   const datum = labelled.get('datum');
   const iznos = labelled.get('iznos');
   const mesto = labelled.get('mesto');
-  if (datum === undefined || iznos === undefined || mesto === undefined) return failed();
+  if (datum === undefined || iznos === undefined || mesto === undefined) return malformed();
 
   const issuedAt = parseDatum(datum);
-  if (issuedAt === undefined) return failed();
+  if (issuedAt === undefined) return malformed();
 
   const amount = IZNOS.exec(iznos);
-  if (amount === null) return failed();
+  if (amount === null) return malformed();
   const [, integerPart = '', fraction = '', code = ''] = amount;
   const currency = toCurrencyCode(code);
-  if (currency === undefined) return failed();
+  if (currency === undefined) return { kind: 'refused', reason: 'unsupportedCurrency', code };
   const amountMinor = minorFromDecimal(`${integerPart.replaceAll('.', '')}.${fraction}`, currency);
-  if (amountMinor === undefined || amountMinor <= 0) return failed();
+  if (amountMinor === undefined || amountMinor <= 0) return malformed();
 
   const place = mesto.replaceAll(/\s+/g, ' ').trim();
-  if (place === '') return failed();
+  if (place === '') return malformed();
 
   return {
     kind: 'purchase',
@@ -78,9 +78,9 @@ export function parseKoriscenjeKartice(text: string): BankSmsResult {
   };
 }
 
-// A header whose body can't be read.
-function failed(): BankSmsResult {
-  return { kind: 'notBankSms' };
+// A header whose body can't be read: refused, never handed to the free-text parser.
+function malformed(): BankSmsResult {
+  return { kind: 'refused', reason: 'malformed' };
 }
 
 // `Š` -> `S`, `ć` -> `c`, `đ` -> `d`: Serbian Latin with its marks dropped, for matching labels.

@@ -468,6 +468,7 @@ export const messages = {
       html`Задним числом: дата последним словом, например «450 такси вчера» или «450 такси 25.09».`,
       html`Под подтверждением: [Категория] — сменить категорию, [Изменить] — сумму, описание или дату, [Удалить] — удалить трату.`,
       html`Чек из Сербии или Черногории: отправьте фото QR-кода с чека или ссылку из него. Я запишу сумму, а через несколько секунд добавлю магазин и кнопку [Позиции].`,
+      html`СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».`,
       html``,
       html`${menu.today} — траты за сегодня`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
@@ -548,6 +549,15 @@ export const messages = {
     refund: html`Это чек возврата. Возвраты пока не записываются, ничего не записано.`,
   },
   futureReceipt: html`Дата на чеке ещё не наступила. Ничего не записано.`,
+
+  // Bank card-purchase SMS (ADR-0021): the header matched, but the body records nothing.
+  bankSmsRefused: {
+    malformed: html`Похоже на СМС банка о покупке, но прочитать его не удалось. Ничего не записано. Отправьте сумму текстом, например «450 кофе».`,
+    unsupportedCurrency: (code: string): Html =>
+      html`В СМС валюта ${code}, её я пока не знаю. Ничего не записано.`,
+  },
+  bankSmsFuture: html`Дата в СМС ещё не наступила. Ничего не записано.`,
+
   // A receipt card's buttons: the item list once fetched, a refetch once the fetch gave up.
   receiptItemsButton: 'Позиции',
   receiptRetryButton: 'Повторить',

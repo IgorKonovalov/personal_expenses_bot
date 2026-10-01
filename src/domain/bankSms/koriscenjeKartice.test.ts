@@ -94,6 +94,40 @@ describe('parseKoriscenjeKartice', () => {
     expect(parseKoriscenjeKartice(text)).toEqual({ kind: 'notBankSms' });
     expect(parseBankSms(text)).toEqual({ kind: 'notBankSms' });
   });
+
+  it.each([
+    ['a zero amount', { iznos: '0,00 RSD' }],
+    ['a dot decimal', { iznos: '6.00 USD' }],
+    ['one fraction digit', { iznos: '6,0 USD' }],
+    ['a broken group', { iznos: '1.23,45 RSD' }],
+    ['yen with fraction digits', { iznos: '1.500,50 JPY' }],
+    ['a lowercase code', { iznos: '6,00 usd' }],
+    ['no Mesto line', { mesto: null }],
+    ['an empty Mesto', { mesto: '   ' }],
+    ['31 February', { datum: '31.02.2026 10:00:00' }],
+    ['hour 24', { datum: '15.09.2026 24:00:00' }],
+    ['a date without time', { datum: '15.09.2026' }],
+  ] as const)('refuses %s as malformed', (_name, fields) => {
+    expect(parseKoriscenjeKartice(buildKoriscenjeSms(fields))).toEqual({
+      kind: 'refused',
+      reason: 'malformed',
+    });
+  });
+
+  it('refuses a header with no labelled lines as malformed', () => {
+    expect(parseBankSms('Koriscenje kartice 1234**5678')).toEqual({
+      kind: 'refused',
+      reason: 'malformed',
+    });
+  });
+
+  it('refuses a currency code the table lacks, naming it', () => {
+    expect(parseBankSms(buildKoriscenjeSms({ iznos: '6,00 XYZ' }))).toEqual({
+      kind: 'refused',
+      reason: 'unsupportedCurrency',
+      code: 'XYZ',
+    });
+  });
 });
 
 describe('parseBankSms', () => {
