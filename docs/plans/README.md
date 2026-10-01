@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0019`
+- **Next free number:** `0020`
 
 ## Active
 
@@ -12,6 +12,7 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
+| [0019](0019-encrypted-personal-ledger.md) | Encrypted personal ledger: recording stays open, reading needs the owner's passphrase | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
 
 ## Recently closed
