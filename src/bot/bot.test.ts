@@ -3577,6 +3577,16 @@ describe('fiscal receipts', () => {
     ).toEqual({ n: 0 });
   });
 
+  it('sends a SUF link with a Latin note after it to the expense parser', async () => {
+    const { send, calls, db } = receiptBot();
+
+    await send(`${RS_LINK} kafa`);
+
+    expect(db.prepare('SELECT COUNT(*) AS n FROM receipts').get()).toEqual({ n: 0 });
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls)).not.toContain(messages.receiptRefused.malformed);
+  });
+
   describe('Montenegro', () => {
     const IIC = 'abcdef0123456789abcdef0123456789';
     const meLink = (iic = IIC) =>

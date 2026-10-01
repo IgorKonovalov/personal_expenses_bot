@@ -103,6 +103,20 @@ describe('decodeRsUrl', () => {
     expect(decodeRsUrl(`${buildRsUrl()}${note}`)).toEqual({ kind: 'notReceipt' });
   });
 
+  it.each([' kafa', ' lunch', ' kafa i sok', ' abcd'])(
+    'is not a receipt with a Latin note after the link: %j',
+    (note) => {
+      expect(decodeRsUrl(`${buildRsUrl()}${note}`)).toEqual({ kind: 'notReceipt' });
+    },
+  );
+
+  it('refuses a link truncated by 10 characters with no tail', () => {
+    expect(decodeRsUrl(buildRsUrl().slice(0, -10))).toEqual({
+      kind: 'refused',
+      reason: 'malformed',
+    });
+  });
+
   it('is not a receipt on another host', () => {
     expect(decodeRsUrl('https://example.com/v/?vl=AAAA')).toEqual({ kind: 'notReceipt' });
   });

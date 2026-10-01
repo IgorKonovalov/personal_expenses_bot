@@ -13,8 +13,9 @@ import type { DecodeReceiptResult, ReceiptRefusal } from './types.js';
 // rather than rounded (ADR-0018).
 
 // The query runs to the first whitespace, except that a space followed by more base64 or
-// percent-encoded text is a `+` that form-style decoding split (see vlParameter). Anything else
-// after whitespace, such as a note under the link, makes the text not a receipt.
+// percent-encoded text may be a `+` that form-style decoding split (see vlParameter); decodeRsUrl
+// settles it by the journal. Anything else after whitespace, such as a note under the link, makes
+// the text not a receipt.
 const URL_PATTERN =
   /^https?:\/\/suf\.purs\.gov\.rs\/v\/?\?([^#\s]*(?: +[A-Za-z0-9+/=%&]+)*)(?:#\S*)?$/i;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -35,9 +36,17 @@ const TOTAL_SCALE = 100n;
 export function decodeRsUrl(text: string): DecodeReceiptResult {
   const match = URL_PATTERN.exec(text.trim());
   if (match === null) return { kind: 'notReceipt' };
-  const vl = vlParameter(match[1] ?? '');
-  if (vl === undefined) return refused('malformed');
-  return decodeVl(vl);
+  const query = match[1] ?? '';
+  const vl = vlParameter(query);
+  const result = vl === undefined ? refused('malformed') : decodeVl(vl);
+  // A space-split tail is either a split `+` or a Latin note made of base64 characters, and only
+  // the rejoined journal tells them apart. A tail that breaks the journal is a note, so the text
+  // goes to the expense parser instead of being refused as a damaged link.
+  const hasTail = query.includes(' ');
+  if (hasTail && result.kind === 'refused' && result.reason === 'malformed') {
+    return { kind: 'notReceipt' };
+  }
+  return result;
 }
 
 // The raw `vl` value, percent-decoded. A `+` survives as `+`, `%2B` becomes `+`, and a space,

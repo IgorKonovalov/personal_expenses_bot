@@ -1,6 +1,6 @@
 # 0018: A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md)
 
@@ -125,7 +125,7 @@ None.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A Latin note after a SUF link is not a receipt | dev | not started | |
+| 1: A Latin note after a SUF link is not a receipt | dev | done | committed with this row |
 | 2: The budget screen shows the caps-dropped line | dev | not started | |
 | 3: The link checker reads only tracked docs | dev | not started | |
 
