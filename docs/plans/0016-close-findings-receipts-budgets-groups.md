@@ -219,7 +219,7 @@ type SetLimitResult =
 | 2: A SUF link with a note; test code out of the image | dev | done | b9b047c |
 | 3: A group expense in DM uses the ledger's timezone | dev | done | edfecc4 |
 | 4: A currency change drops the category caps | dev | done | 1ebafe7 |
-| 5: Budget navigation and the read-only group line | dev | done | committed with this row |
+| 5: Budget navigation and the read-only group line | dev | done | 63c4ac2 |
 
 ### Notes
 
@@ -238,13 +238,9 @@ type SetLimitResult =
   `2025-10-01` and stored. The test asserts the answer completes the flow and leaves
   `occurred_on = '2026-10-01'`, which fails on the old code. Each of the three changed sites
   was reverted by hand once and failed its half of the test.
-- Phase 4 parked before any code, as `plan_wrong`. The confirmation after a typed limit is
-  rendered by `answerFlow`'s `'set'` case in `src/bot/flows.ts`, which calls
-  `budgetView(deps, user, { name: 'budget', ledgerId })` and drops the rest of
-  `answerBudgetFlow`'s result. Showing «Лимиты по категориям сброшены…» needs that call site to
-  pass `droppedCapsCurrency` on to the screen, and `src/bot/flows.ts` is not in Phase 4's
-  `Files touched`. Phase 5 was not started.
-- Phase 4 resumed after the plan named `src/bot/flows.ts`. `deleteLedgerCaps` deletes archived
+- Phase 4 first parked before any code, as `plan_wrong`: the confirmation is rendered in
+  `src/bot/flows.ts`, which its `Files touched` did not name. It resumed after the plan named
+  it (d726f30). `deleteLedgerCaps` deletes archived
   categories' caps too, and `droppedCapsCurrency` is reported whenever it deleted a row, so a
   ledger whose only cap was on an archived category also gets the line. The failure case is
   injected with a test-only `BEFORE UPDATE` trigger on `ledger_budgets`. No bot-level test shows
@@ -259,9 +255,17 @@ type SetLimitResult =
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** 5 `dev` phases in 5 commits: 1aac740, b9b047c, edfecc4, 1ebafe7, 63c4ac2.
+- **User-visible surface changed:** a SUF link followed by a note goes to the expense parser; a
+  group expense opened in DM shows and edits dates in the ledger's timezone; the budget screen
+  after a limit in a new currency opens with «Лимиты по категориям сброшены: они были в <code>.»
+  and the caps are gone; the budget screen opened from a scoped settings hub ends with
+  [« Назад] to it; the cap prompt has [« Назад] to the cap list; the group `/budget` drops
+  «Задайте лимит заново…»; `/help` lists `/cancel — отменить ввод`. New copy:
+  `messages.budgetCapsDropped`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 57
+  files, 761 tests; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0, 134 links.
+  The Docker image build was not run.
+- **Outstanding `human` phases:** none.
 
 ## Followups
