@@ -214,8 +214,8 @@ type SetLimitResult =
 |---|---|---|---|
 | 1: A receipt whose data fails to apply backs off | dev | done | 1aac740 |
 | 2: A SUF link with a note; test code out of the image | dev | done | b9b047c |
-| 3: A group expense in DM uses the ledger's timezone | dev | done | committed with this row |
-| 4: A currency change drops the category caps | dev | not started | |
+| 3: A group expense in DM uses the ledger's timezone | dev | done | edfecc4 |
+| 4: A currency change drops the category caps | dev | parked: plan_wrong | |
 | 5: Budget navigation and the read-only group line | dev | not started | |
 
 ### Notes
@@ -235,6 +235,12 @@ type SetLimitResult =
   `2025-10-01` and stored. The test asserts the answer completes the flow and leaves
   `occurred_on = '2026-10-01'`, which fails on the old code. Each of the three changed sites
   was reverted by hand once and failed its half of the test.
+- Phase 4 parked before any code, as `plan_wrong`. The confirmation after a typed limit is
+  rendered by `answerFlow`'s `'set'` case in `src/bot/flows.ts`, which calls
+  `budgetView(deps, user, { name: 'budget', ledgerId })` and drops the rest of
+  `answerBudgetFlow`'s result. Showing «Лимиты по категориям сброшены…» needs that call site to
+  pass `droppedCapsCurrency` on to the screen, and `src/bot/flows.ts` is not in Phase 4's
+  `Files touched`. Phase 5 was not started.
 
 ### Close triggers
 
