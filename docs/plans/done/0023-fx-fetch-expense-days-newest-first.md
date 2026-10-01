@@ -1,8 +1,8 @@
 # 0023: The rate worker fetches only expense days, newest first
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, one nit open, Phase 2 live check owed, v0.11.1
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
+> **Related ADRs:** [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
 > rate, the worker)
 
 ## TL;DR

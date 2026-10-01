@@ -14,12 +14,12 @@ status and date. What a plan did lives in the plan.
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
 | [0019](0019-encrypted-personal-ledger.md) | Encrypted personal ledger: recording stays open, reading needs the owner's passphrase | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
-| [0023](0023-fx-fetch-expense-days-newest-first.md) | The rate worker fetches only expense days, newest first | approved (2026-10-01) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0023](done/0023-fx-fetch-expense-days-newest-first.md) | The rate worker fetches only expense days, newest first | done (2026-10-01): built as planned, one nit open, Phase 2 live check owed, v0.11.1 |
 | [0022](done/0022-converted-totals-nbs.md) | Totals and budgets converted into one currency at the NBS rate | done (2026-10-01): built as planned, three nits open, Phase 4 live check owed, v0.11.0 |
 | [0021](done/0021-bank-sms-card-purchase.md) | A pasted Serbian card-purchase SMS records the purchase | done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check passed, v0.10.0 |
 | [0020](done/0020-receipt-urls-wrapped-vl-and-port.md) | Receipt links with a line-wrapped vl or an explicit :443 port | done (2026-10-01): built as planned, one nit open, Phase 2 real-receipts check passed, v0.9.3 |

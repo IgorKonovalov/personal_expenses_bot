@@ -2,6 +2,14 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.11.1 (2026-10-01)
+
+From Plan 0023 (fx fetch of expense days, newest first).
+
+- After an update, the NBS rates load first for the most recent days with an expense, so this
+  week's and this month's totals convert right away instead of hours later. Days with no expense
+  are no longer fetched.
+
 ## 0.11.0 (2026-10-01)
 
 From Plan 0022 (converted totals at the NBS rate).
