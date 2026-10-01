@@ -14,7 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
 | [0017](0017-conductor-followups-queue-hygiene.md) | Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy | approved (2026-10-01) |
-| [0018](0018-latin-note-after-link-and-check-gaps.md) | A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs | draft (2026-10-01) |
+| [0018](0018-latin-note-after-link-and-check-gaps.md) | A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs | approved (2026-10-01) |
 
 ## Recently closed
 

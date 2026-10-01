@@ -1,6 +1,6 @@
 # 0018: A Latin note after a receipt link, the caps-dropped screen test, and a link checker that reads only tracked docs
 
-> **Status:** draft
+> **Status:** approved (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md)
 
