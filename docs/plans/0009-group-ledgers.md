@@ -315,7 +315,7 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 | 1: Walking skeleton: bind a group, record into it | dev | done | 1f014da |
 | 2: Quiet confirmation and the author-only group card | dev | done | 74800f8 |
 | 3: Group reports with a per-person breakdown | dev | done | 7848f4a |
-| 4: Group lifecycle and ledger settings | dev | done | committed with this row |
+| 4: Group lifecycle and ledger settings | dev | done | 6f35073 |
 | 5: Live check in the family group | human | not started | |
 
 ### Notes
@@ -364,12 +364,26 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 - Phase 4: B's `/start gs_<ledgerId>` in DM is dropped by the allowlist before any handler
   (asserted: no API call). The owner-only refusal of the scoped screen is asserted with
   SECOND_ALLOWED_ID, a group member who isn't the owner: plain welcome, no settings anchor.
+- Followup, not acted on: after a supergroup migration, `/card` replied to a message sent before
+  it finds nothing, because that expense's source key carries the old chat id.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** Phases 1 to 4: group binding and recording (1f014da), reaction or author-only
+  group card with the `e_` deep link (74800f8), group `/today` `/week` `/month` with a per-person
+  section, group `/help` and the group command list (7848f4a), binding deactivation,
+  reactivation and migration, and the group `/settings` link to a ledger-scoped DM settings
+  screen (6f35073).
+- **User-visible surface changed:** in groups: the welcome, ✍ reactions, the group card with
+  [Удалить] / [Вернуть] / [Изменить в личке], `/card`, `/today`, `/week`, `/month` with
+  «По участникам», `/help`, `/settings`, and a group command list registered with
+  `setMyCommands` scope `all_group_chats`. In DM: `/start e_<id>` opens the author's card,
+  `/start gs_<id>` opens the ledger-scoped settings for its owner, and `/help` gained a
+  paragraph on the group mode. README gained an «In a group» section.
+- **Gate at the tip (6f35073):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  42 files, 570 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0,
+  125 relative links resolve.
+- **Outstanding `human` phases:** Phase 5 (live check in the family group, BotFather
+  `/setjoingroups` and `/setprivacy`), not started.
 
 ## Followups
