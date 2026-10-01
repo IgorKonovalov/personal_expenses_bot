@@ -24,6 +24,19 @@ export function undoExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:undo:${expenseId}`);
 }
 
+// The group card's [Удалить] and [Вернуть] (ADR-0014): `grp:del:<uuid>` / `grp:res:<uuid>`
+// (44 bytes). Only the expense's author gets past the service's check.
+export const GROUP_DELETE = /^grp:del:([0-9a-f-]{36})$/;
+export const GROUP_RESTORE = /^grp:res:([0-9a-f-]{36})$/;
+
+export function groupDeleteData(expenseId: ExpenseId): string {
+  return assertCallbackData(`grp:del:${expenseId}`);
+}
+
+export function groupRestoreData(expenseId: ExpenseId): string {
+  return assertCallbackData(`grp:res:${expenseId}`);
+}
+
 // A reading of an ambiguous amount: `amb:t` thousands, `amb:d` decimal. The amount itself isn't
 // in the data; the tap re-parses the message the question replies to.
 export const AMBIGUOUS_READING = /^amb:([td])$/;

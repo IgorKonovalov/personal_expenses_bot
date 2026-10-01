@@ -1,8 +1,7 @@
 import type { Composer, Context } from 'grammy';
 import type { Message } from 'grammy/types';
 import { recordGroupExpense } from '../../services/groupChats.js';
-import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { reacted, replyGroupCard } from './card.js';
 import type { GroupHandlerDeps } from './index.js';
 
 // A group message that parses as an expense is recorded in the bound ledger under its sender.
@@ -35,8 +34,15 @@ export function registerGroupText(group: Composer<Context>, deps: GroupHandlerDe
     });
     // A redelivered message was confirmed the first time.
     if (result.kind !== 'recorded' || result.duplicate) return;
-    await replyHtml(ctx, messages.expenseRecorded(result), {
-      reply_parameters: { message_id: message.message_id },
+    // A recognised category is confirmed by a reaction alone; «Другое», or a chat that refuses
+    // reactions, gets the card.
+    if (!result.fallbackCategory && (await reacted(ctx, message.message_id))) return;
+    await replyGroupCard(deps, ctx, {
+      expense: result.expense,
+      author: ctx.from.first_name,
+      authorAllowlisted: deps.allowedTelegramIds.has(ctx.from.id),
+      ledger: result.ledger,
+      replyTo: message.message_id,
     });
   });
 }

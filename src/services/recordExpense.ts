@@ -1,4 +1,4 @@
-import { listActiveCategories } from '../db/categories.js';
+import { findCategory, listActiveCategories } from '../db/categories.js';
 import {
   findExpenseById,
   findExpenseBySourceKey,
@@ -15,8 +15,9 @@ import {
   type Ledger,
   type LedgerId,
 } from '../db/ledgers.js';
-import type { User } from '../db/users.js';
+import { findUserByIdentity, type User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
+import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
@@ -80,6 +81,8 @@ export type RecordExpenseResult =
       readonly expense: Expense;
       readonly ledger: Ledger;
       readonly duplicate: boolean;
+      // The expense sits in the ledger's fallback category («Другое»): nothing recognised it.
+      readonly fallbackCategory: boolean;
     }
   | {
       readonly kind: 'ambiguous';
@@ -107,7 +110,13 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     const ledger = findLedgerForMember(db, seen.ledgerId, user.id);
     if (ledger === undefined) throw new Error(`source key reused across users (${seen.id})`);
     logger.info({ expenseId: seen.id, userId: user.id }, 'duplicate expense delivery');
-    return { kind: 'recorded', expense: seen, ledger, duplicate: true };
+    return {
+      kind: 'recorded',
+      expense: seen,
+      ledger,
+      duplicate: true,
+      fallbackCategory: inFallbackCategory(deps, seen),
+    };
   }
 
   const ledger = targetLedger(deps, user, input.target ?? { kind: 'active' });
@@ -146,7 +155,19 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     { expenseId: expense.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },
     'expense recorded',
   );
-  return { kind: 'recorded', expense, ledger, duplicate: !created };
+  return {
+    kind: 'recorded',
+    expense,
+    ledger,
+    duplicate: !created,
+    fallbackCategory: inFallbackCategory(deps, expense),
+  };
+}
+
+// A stored expense without a category is not in the fallback either.
+function inFallbackCategory({ db }: Pick<RecordDeps, 'db'>, expense: Expense): boolean {
+  if (expense.category === null) return false;
+  return findCategory(db, expense.ledgerId, expense.category.id)?.presetKey === FALLBACK_PRESET;
 }
 
 function targetLedger({ db }: Pick<RecordDeps, 'db'>, user: User, target: RecordTarget): Ledger {
@@ -223,6 +244,15 @@ export function restoreExpense(
   if (!restoreDeletedExpense(db, expense.id)) return { kind: 'alreadyRestored' };
   logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense restored');
   return { kind: 'restored', expense: { ...expense, deletedAt: null }, ledger };
+}
+
+// The user behind a Telegram account, without provisioning one: a group tap or command from
+// someone who never recorded finds nobody and stores nothing.
+export function findTelegramUser(
+  { db }: Pick<ServiceDeps, 'db'>,
+  telegramId: number,
+): User | undefined {
+  return findUserByIdentity(db, 'telegram', String(telegramId));
 }
 
 // The expense a source message recorded, deleted or not. Read-only.

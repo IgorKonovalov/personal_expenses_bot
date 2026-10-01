@@ -1,6 +1,15 @@
 import type { Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
+import type { CategoryId } from '../../db/categories.js';
 import type { Db } from '../../db/connection.js';
+import type { ExpenseId } from '../../db/expenses.js';
+import { findUserByIdentity, type User } from '../../db/users.js';
+import type { LocalDate } from '../../domain/time.js';
+import { createLogger } from '../../logger.js';
+import { changeCategory } from '../../services/changeCategory.js';
+import { openEdit, startEdit } from '../../services/editExpense.js';
+import { undoExpense } from '../../services/recordExpense.js';
+import { assertCallbackData, groupDeleteData, groupRestoreData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { htmlParseMode } from '../render/html.js';
 import {
@@ -324,5 +333,337 @@ describe('recording in a bound group (Phase 1)', () => {
 
     expect(calls).toEqual([]);
     expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+  });
+});
+
+function expenseIdOf(db: Db, messageId: number): ExpenseId {
+  return db
+    .prepare('SELECT id FROM expenses WHERE source_key = ?')
+    .pluck()
+    .get(`tg:${GROUP_ID}:${messageId}`) as ExpenseId;
+}
+
+function deletedAtOf(db: Db, expenseId: ExpenseId): unknown {
+  return db.prepare('SELECT deleted_at FROM expenses WHERE id = ?').pluck().get(expenseId);
+}
+
+const TODAY = '2026-09-30' as LocalDate;
+
+// B's `2 минуты буду` as the group card shows it.
+function minutesCard(author: string, amountMinor: number, description: string) {
+  return messages.groupExpenseCard({
+    author,
+    expense: {
+      amountMinor,
+      currency: 'RSD',
+      description,
+      category: { name: 'Другое' },
+      occurredOn: TODAY,
+    },
+    sentOn: TODAY,
+  });
+}
+
+describe('quiet confirmation and the group card (Phase 2)', () => {
+  it("reacts to A's recognised expense and sends no message", async () => {
+    const { calls, say } = await bound();
+
+    await say(ALLOWED_ID, '450 кафе', 12, { firstName: 'Анна' });
+
+    expect(calls).toEqual([
+      {
+        method: 'setMessageReaction',
+        payload: {
+          chat_id: GROUP_ID,
+          message_id: 12,
+          reaction: [{ type: 'emoji', emoji: messages.groupRecordedReaction }],
+        },
+      },
+    ]);
+  });
+
+  it('replies a card with [Удалить] only to B, who is not allowlisted, and adds the DM link for A', async () => {
+    const { db, calls, say } = await bound();
+
+    await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
+    await say(ALLOWED_ID, '5 минут буду', 14, { firstName: 'Анна' });
+
+    const b = expenseIdOf(db, 13);
+    const a = expenseIdOf(db, 14);
+    expect(
+      db
+        .prepare(
+          `SELECT e.amount_minor, e.currency, c.name FROM expenses e
+             JOIN categories c ON c.id = e.category_id WHERE e.id = ?`,
+        )
+        .get(b),
+    ).toEqual({ amount_minor: 200, currency: 'RSD', name: 'Другое' });
+    expect(minutesCard('Борис', 200, 'минуты буду')).toContain('2.00 RSD');
+    expect(minutesCard('Борис', 200, 'минуты буду')).toContain('Борис');
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: GROUP_ID,
+          text: minutesCard('Борис', 200, 'минуты буду'),
+          reply_parameters: { message_id: 13 },
+          reply_markup: {
+            inline_keyboard: [[{ text: messages.undoButton, callback_data: `grp:del:${b}` }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: GROUP_ID,
+          text: minutesCard('Анна', 500, 'минут буду'),
+          reply_parameters: { message_id: 14 },
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: messages.undoButton, callback_data: `grp:del:${a}` },
+                {
+                  text: messages.groupEditInDmButton,
+                  url: `https://t.me/test_bot?start=e_${a}`,
+                },
+              ],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    // Telegram allows a start payload of 64 bytes.
+    expect(Buffer.byteLength(`e_${a}`, 'utf8')).toBe(38);
+  });
+
+  it('sends the card when the chat refuses the reaction, and records once', async () => {
+    const { db, calls, say } = await bound({ failMethods: ['setMessageReaction'] });
+
+    await say(ALLOWED_ID, '450 кафе', 12, { firstName: 'Анна' });
+
+    expect(calls.map((call) => call.method)).toEqual(['setMessageReaction', 'sendMessage']);
+    expect(calls[1]?.payload).toMatchObject({
+      chat_id: GROUP_ID,
+      reply_parameters: { message_id: 12 },
+    });
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+  });
+
+  it("lets only B delete B's expense from the card, once", async () => {
+    const { db, calls, say, tap } = await bound();
+    await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
+    const id = expenseIdOf(db, 13);
+    calls.length = 0;
+
+    await tap(ALLOWED_ID, groupDeleteData(id), { chatId: GROUP_ID, messageId: 70 });
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: {
+          callback_query_id: expect.any(String) as unknown,
+          text: messages.groupNotAuthor,
+        },
+      },
+    ]);
+    expect(deletedAtOf(db, id)).toBeNull();
+
+    calls.length = 0;
+    await tap(STRANGER_ID, groupDeleteData(id), { chatId: GROUP_ID, messageId: 70 });
+    const deletedAt = deletedAtOf(db, id);
+    expect(deletedAt).toBe(NOW.toISOString());
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as unknown, text: messages.undoneToast },
+      },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: GROUP_ID,
+          message_id: 70,
+          text: messages.groupExpenseDeleted({
+            author: 'Test',
+            expense: {
+              amountMinor: 200,
+              currency: 'RSD',
+              description: 'минуты буду',
+              category: { name: 'Другое' },
+              occurredOn: TODAY,
+            },
+            sentOn: TODAY,
+          }),
+          reply_markup: {
+            inline_keyboard: [[{ text: messages.restoreButton, callback_data: `grp:res:${id}` }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+
+    calls.length = 0;
+    await tap(STRANGER_ID, groupDeleteData(id), { chatId: GROUP_ID, messageId: 70 });
+    expect(deletedAtOf(db, id)).toBe(deletedAt);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as unknown, text: messages.alreadyUndone },
+      },
+    ]);
+
+    calls.length = 0;
+    await tap(ALLOWED_ID, groupRestoreData(id), { chatId: GROUP_ID, messageId: 70 });
+    expect(deletedAtOf(db, id)).toBe(deletedAt);
+    await tap(STRANGER_ID, groupRestoreData(id), { chatId: GROUP_ID, messageId: 70 });
+    expect(deletedAtOf(db, id)).toBeNull();
+  });
+
+  it('opens the DM card from the deep link for its author only', async () => {
+    const { db, calls, say, dm } = await bound();
+    await say(ALLOWED_ID, '5 минут буду', 14, { firstName: 'Анна' });
+    await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
+    const a = expenseIdOf(db, 14);
+    const b = expenseIdOf(db, 13);
+    calls.length = 0;
+
+    await dm(ALLOWED_ID, `/start e_${a}`, 80);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.expenseRecorded({
+            expense: {
+              amountMinor: 500,
+              currency: 'RSD',
+              description: 'минут буду',
+              category: { name: 'Другое' },
+              occurredOn: TODAY,
+            },
+            ledger: { kind: 'shared', name: 'Семья' },
+            sentOn: TODAY,
+          }),
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: messages.categoryButton, callback_data: `exp:cat:${a}` },
+                { text: messages.editButton, callback_data: `exp:edit:${a}` },
+              ],
+              [{ text: messages.undoButton, callback_data: `exp:undo:${a}` }],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+
+    calls.length = 0;
+    await dm(ALLOWED_ID, `/start e_${b}`, 81);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.payload).toMatchObject({
+      chat_id: ALLOWED_ID,
+      text: messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
+    });
+
+    calls.length = 0;
+    await dm(STRANGER_ID, `/start e_${b}`, 82);
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses A's undo, category change and amount edit of B's group expense in the service, writing nothing", async () => {
+    const { db, say } = await bound();
+    await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
+    const expenseId = expenseIdOf(db, 13);
+    const deps = {
+      db,
+      logger: createLogger('silent'),
+      newId: () => 'unused',
+      defaultTimezone: 'Europe/Belgrade',
+    };
+    const a = findUserByIdentity(db, 'telegram', String(ALLOWED_ID)) as User;
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .pluck()
+      .get(groupLedgerId(db)) as CategoryId;
+    const row = () => db.prepare('SELECT * FROM expenses WHERE id = ?').get(expenseId);
+    const before = row();
+
+    expect(undoExpense(deps, { user: a, expenseId, now: NOW })).toEqual({ kind: 'forbidden' });
+    expect(changeCategory(deps, { user: a, expenseId, categoryId: cafe, now: NOW })).toEqual({
+      kind: 'forbidden',
+    });
+    expect(openEdit(deps, { user: a, expenseId })).toEqual({ kind: 'forbidden' });
+    expect(startEdit(deps, { user: a, expenseId, kind: 'editAmount', now: NOW })).toEqual({
+      kind: 'forbidden',
+    });
+
+    expect(row()).toEqual(before);
+    expect(db.prepare('SELECT COUNT(*) FROM flow_sessions').pluck().get()).toBe(0);
+  });
+
+  it("shows B's card for a /card reply, and nothing for a reply to a message that recorded nothing", async () => {
+    const { db, calls, say, send } = await bound();
+    await say(STRANGER_ID, '300 такси', 11, { firstName: 'Борис' });
+    await say(STRANGER_ID, 'привет всем', 12, { firstName: 'Борис' });
+    const id = expenseIdOf(db, 11);
+    const cardReply = (replyTo: number, messageId: number) =>
+      send((updateId) =>
+        groupMessageUpdate({
+          updateId,
+          fromId: ALLOWED_ID,
+          messageId,
+          date: NOW,
+          content: {
+            text: '/card',
+            entities: [{ type: 'bot_command', offset: 0, length: 5 }],
+            reply_to_message: {
+              message_id: replyTo,
+              date: Math.floor(NOW.getTime() / 1000),
+              chat: { id: GROUP_ID, type: 'supergroup', title: 'Семья' },
+              from: { id: STRANGER_ID, is_bot: false, first_name: 'Борис' },
+            },
+          },
+        }),
+      );
+    calls.length = 0;
+
+    await cardReply(11, 90);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: GROUP_ID,
+          text: messages.groupExpenseCard({
+            author: 'Борис',
+            expense: {
+              amountMinor: 30000,
+              currency: 'RSD',
+              description: 'такси',
+              category: { name: 'Транспорт' },
+              occurredOn: TODAY,
+            },
+            sentOn: TODAY,
+          }),
+          reply_parameters: { message_id: 11 },
+          reply_markup: {
+            inline_keyboard: [[{ text: messages.undoButton, callback_data: `grp:del:${id}` }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+
+    calls.length = 0;
+    await cardReply(12, 91);
+    expect(calls).toEqual([]);
+  });
+
+  it('keeps every grp: callback datum within 64 bytes', () => {
+    const id = 'ffffffff-ffff-4fff-bfff-ffffffffffff' as ExpenseId;
+    for (const data of [groupDeleteData(id), groupRestoreData(id)]) {
+      expect(assertCallbackData(data)).toBe(data);
+      expect(Buffer.byteLength(data, 'utf8')).toBe(44);
+    }
   });
 });

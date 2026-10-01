@@ -313,7 +313,7 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: bind a group, record into it | dev | done | 1f014da |
-| 2: Quiet confirmation and the author-only group card | dev | not started | |
+| 2: Quiet confirmation and the author-only group card | dev | done | committed with this row |
 | 3: Group reports with a per-person breakdown | dev | not started | |
 | 4: Group lifecycle and ledger settings | dev | not started | |
 | 5: Live check in the family group | human | not started | |
@@ -331,17 +331,18 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
   A redelivered group message is not confirmed again.
 - Phase 1: a group text that parses as ambiguous (`1.200 обед`), invalid or future-dated records
   nothing and gets no reply, like chatter. Followup, not acted on.
-- Resume note (parked before Phase 2, nothing of Phase 2 written): Phase 2's done-when has B
-  (`STRANGER_ID`, not allowlisted) send `/start e_<id>` in DM and get the card. ADR-0014 says the
-  DM allowlist is unchanged, and the Phase 1 split keeps it on every non-group update, so B's DM
-  update is dropped before any handler runs. The [Изменить в личке] link has the same gap for any
-  non-allowlisted member. Needs a decision: admit members of an actively bound shared ledger to
-  DM (amends ADR-0014), or make the Phase 2 DM author an allowlisted user.
-- Noticed for Phase 4, not acted on: a ledger-scoped settings screen that reuses the `set:*`
-  pickers needs the ledger id in the anchor's screen (`src/services/flowSessions.ts`) or in new
-  callback data (`src/bot/callbackData.ts`), and [Другой…] (the only way to reach
-  `America/New_York`) answers through `src/bot/flows.ts`. None of the three is in Phase 4's
-  `Files touched`.
+- Phase 2: `src/bot/group/index.ts` changed outside `Files touched`: it registers the group card
+  handlers and the callback dispatcher on the group composer. `src/bot/bot.ts` is unchanged: the
+  group composer already received the allowlist in Phase 1.
+- Phase 2: the author checks in `undoExpense`, `restoreExpense`, `changeCategory` and the edit
+  service (`src/services/editExpense.ts`) existed before this phase for every ledger kind, and
+  their not-author result is `forbidden`. No service check was added; the done-when is asserted by
+  tests calling `undoExpense`, `changeCategory`, `openEdit` and `startEdit` (amount).
+- Phase 2: `src/services/recordExpense.ts` also gained `findTelegramUser`, a lookup without
+  provisioning, so a group tap by someone who never recorded creates no user.
+- Phase 2: the group card names the author by the Telegram first name from the update (the
+  sender, the tapper, or the `/card` reply's `reply_to_message.from`), not the stored display
+  name. The `/card` card replies to the expense's message, not to the `/card` message.
 
 ### Close triggers
 

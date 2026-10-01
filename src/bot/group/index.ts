@@ -1,6 +1,8 @@
 import { Composer, type Context } from 'grammy';
 import type { HandlerDeps } from '../bot.js';
+import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
+import { registerGroupCard } from './card.js';
 import { registerGroupText } from './text.js';
 
 // Every update from a group or supergroup (ADR-0014). Group interaction is stateless: no
@@ -19,7 +21,10 @@ export function isGroupChat(ctx: Context): boolean {
 
 export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   const group = new Composer<Context>();
+  // Answers every callback query once, silently for one no group handler claims.
+  group.use(callbackDispatcher());
   registerActivation(group, deps);
+  registerGroupCard(group, deps);
   registerGroupText(group, deps);
   group.use(() => undefined);
   return group;

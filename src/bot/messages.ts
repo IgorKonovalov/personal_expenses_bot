@@ -30,6 +30,13 @@ interface RecordedView extends ExpenseView {
   readonly sentOn: LocalDate;
 }
 
+// A group expense: who recorded it (their Telegram first name, user text) and what.
+interface GroupCardView {
+  readonly author: string;
+  readonly expense: RecordedView['expense'];
+  readonly sentOn: LocalDate;
+}
+
 interface AmbiguousView {
   readonly readings: readonly Money[];
 }
@@ -216,6 +223,12 @@ function expenseLine(verb: string, { expense, ledger }: ExpenseView, date?: stri
   return html`${verb} «${ledgerName(ledger)}»${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// `Ира: <b>2.00 RSD</b> — минуты буду`, or `Ира за 28 сентября: …` with a date.
+function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
+  const when = expense.occurredOn === sentOn ? '' : ` за ${shownDate(expense.occurredOn, sentOn)}`;
+  return html`${author}${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
+}
+
 // Telegram rejects messages over 4096 characters. The /changelog entries get at most this many
 // UTF-16 units of HTML, counted with their separators; the rest of the 4096 holds the header and
 // the truncation line. Markup counts too, so the visible text is shorter still.
@@ -264,6 +277,21 @@ export const messages = {
       ],
       '\n\n',
     ),
+  // The reaction on a group expense whose category was recognised (ADR-0014). Bots may react
+  // only with Telegram's standard emoji.
+  groupRecordedReaction: '✍',
+  // The group card, for an expense that fell through to «Другое», a reaction Telegram refused,
+  // or a /card reply.
+  groupExpenseCard: (view: GroupCardView): Html => {
+    const { category } = view.expense;
+    const line = groupExpenseLine(view);
+    return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+  },
+  groupExpenseDeleted: (view: GroupCardView): Html =>
+    joinHtml([html`Удалено.`, groupExpenseLine(view)], ' '),
+  // A deep link to the author's DM card, shown only to an allowlisted author (ADR-0014).
+  groupEditInDmButton: 'Изменить в личке',
+  groupNotAuthor: 'Это может только тот, кто записал трату',
   genericError: html`Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.`,
   help: joinHtml(
     [
