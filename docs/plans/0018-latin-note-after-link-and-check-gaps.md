@@ -126,8 +126,8 @@ None.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: A Latin note after a SUF link is not a receipt | dev | done | 63e678d |
-| 2: The budget screen shows the caps-dropped line | dev | done | committed with this row |
-| 3: The link checker reads only tracked docs | dev | not started | |
+| 2: The budget screen shows the caps-dropped line | dev | done | 6172cc4 |
+| 3: The link checker reads only tracked docs | dev | done | committed with this row |
 
 ### Notes
 
@@ -137,6 +137,15 @@ None.
 - Phase 2: with `result.droppedCapsCurrency` removed from the `budgetView` call in
   `src/bot/flows.ts`, the test failed (the anchor started with `<b>Бюджет`); reverted with
   `git checkout -- src/bot/flows.ts`.
+- Phase 3: the main checkout is outside the lane, so the "exits 0 with `tools/conductor/state/`
+  present" check ran in the lane instead: with a gitignored
+  `tools/conductor/state/scratch-review.md` holding `[Повторить]: the …` and a broken link,
+  `node scripts/check-doc-links.mjs` exited 0 (136 links); the scratch file was then removed.
+- Phase 3: `prettier --write` reformatted the whole of `scripts/check-doc-links.mjs` (double to
+  single quotes); lint-staged's `prettier --check` failed on it otherwise.
+- Phase 3: the four markdown cases run as two tests over one layout (all broken, then the
+  tracked and untracked ones fixed). The test strips `GIT_*` from the environment of the
+  temporary repository's git.
 
 ### Close triggers
 
