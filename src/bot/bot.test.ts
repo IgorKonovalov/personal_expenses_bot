@@ -19,7 +19,17 @@ import { compareVersions } from '../domain/version.js';
 import { createLogger } from '../logger.js';
 import { createBot, registerCommands } from './bot.js';
 import {
+  BUDGET_CAP,
+  BUDGET_CAP_CLEAR,
+  BUDGET_CAPS_OPEN,
+  BUDGET_LIMIT,
+  BUDGET_OPEN,
+  BUDGET_START_DAY,
   assertCallbackData,
+  budgetCapClearData,
+  budgetCapData,
+  budgetCapsPageData,
+  budgetScopeData,
   categoryPageData,
   categoryPickerData,
   editExpenseData,
@@ -1788,6 +1798,7 @@ describe('/budget and the card line (ADR-0017)', () => {
                 { text: '✓ Считать все', callback_data: 'bud:scope:a' },
                 { text: 'Только необязательные', callback_data: 'bud:scope:o' },
               ],
+              [{ text: 'Лимиты по категориям', callback_data: 'bud:caps' }],
             ],
           },
           ...htmlParseMode,
@@ -1920,6 +1931,78 @@ describe('/budget and the card line (ADR-0017)', () => {
       method: 'answerCallbackQuery',
       payload: { callback_query_id: 'cb-6', text: 'Уже выбрано' },
     });
+  });
+
+  it('caps Кафе и рестораны at 5000: the over-cap card uses the overspend copy, такси has no line', async () => {
+    const { say, tap, calls, db } = await withLimit();
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+      .pluck()
+      .get() as number;
+    await say('/budget', 3);
+    await tap('bud:caps', 102);
+    await tap(`bud:cap:${String(cafe)}`, 102);
+    expect(lastText(calls)).toBe(
+      'Лимит на период для «Кафе и рестораны» в RSD. Отправьте сумму, например «5 000».',
+    );
+    await say('5000', 4);
+
+    await say('450 кофе', 5);
+    expect(String(lastText(calls))).toMatch(/\nКафе и рестораны: 450\.00 из 5 000\.00 RSD$/);
+    await say('4800 ресторан', 6);
+    expect(String(lastText(calls))).toMatch(
+      /\nКафе и рестораны: 5 250\.00 из 5 000\.00 RSD, перерасход 250\.00 RSD$/,
+    );
+    await say('300 такси', 7);
+    expect(String(lastText(calls))).not.toContain(' из ');
+
+    await say('/budget', 8);
+    expect(String(lastText(calls))).toContain(
+      '<b>По категориям</b>\nКафе и рестораны: 5 250.00 из 5 000.00 RSD, перерасход 250.00 RSD',
+    );
+  });
+
+  it("neither lists an archived category's cap nor puts it on the card", async () => {
+    const { say, tap, calls, db } = await withLimit();
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+      .pluck()
+      .get() as number;
+    await say('/budget', 3);
+    await tap(`bud:cap:${String(cafe)}`, 102);
+    await say('5000', 4);
+    await say('450 кофе', 5);
+    db.prepare("UPDATE categories SET archived_at = '2026-10-01T10:00:00.000Z' WHERE id = ?").run(
+      cafe,
+    );
+
+    await say('/budget', 6);
+    expect(String(lastText(calls))).not.toContain('По категориям');
+    const id = db.prepare('SELECT id FROM expenses').pluck().get() as ExpenseId;
+    await tap(undoExpenseData(id), 104);
+    await tap(restoreExpenseData(id), 104);
+    expect(String(lastText(calls))).not.toContain(' из ');
+  });
+
+  it('builds every bud:* callback_data within 64 bytes at the largest id and page', () => {
+    // The largest id a number holds exactly: 16 digits, the most the \d{1,16} patterns admit.
+    const id = Number.MAX_SAFE_INTEGER as CategoryId;
+    for (const data of [
+      BUDGET_OPEN,
+      BUDGET_LIMIT,
+      BUDGET_START_DAY,
+      BUDGET_CAPS_OPEN,
+      budgetScopeData('all'),
+      budgetScopeData('optional'),
+      budgetCapsPageData(9999),
+      budgetCapData(id),
+      budgetCapClearData(id),
+    ]) {
+      expect(assertCallbackData(data)).toBe(data);
+      expect(Buffer.byteLength(data)).toBeLessThanOrEqual(64);
+    }
+    expect(budgetCapData(id)).toMatch(BUDGET_CAP);
+    expect(budgetCapClearData(id)).toMatch(BUDGET_CAP_CLEAR);
   });
 
   it('lists an EUR expense as not counted on the screen', async () => {

@@ -282,8 +282,8 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | e3c9052 |
 | 2: Payday periods | dev | done | c1cfd43 |
-| 3: Essential categories | dev | done | committed with this row |
-| 4: Per-category caps | dev | not started | |
+| 3: Essential categories | dev | done | db7b104 |
+| 4: Per-category caps | dev | done | committed with this row |
 | 5: Group ledgers | dev | not started | |
 | 6: Live check | human | not started | |
 
@@ -314,6 +314,18 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
   carries the opposite one. The scope is two buttons, [Считать все] and [Только необязательные],
   with the current one marked.
 - Phase 3: migration 0009 adds `CHECK (essential IN (0, 1))` to the column.
+- Phase 4: the paged category list uses `pickerKeyboard`/`pagerRow` from `src/bot/nav.ts`.
+  `src/bot/keyboards.ts` was not touched. The cap tests, the 64-byte check and the archived-cap
+  test are in `src/bot/bot.test.ts`, outside `Files touched`, and the pinned budget keyboard
+  there was updated.
+- Phase 4: the 64-byte check uses `Number.MAX_SAFE_INTEGER` (16 digits) as the largest id. A
+  16-nines literal is not exactly representable as a number.
+- Phase 4: a cap is in the budget's currency. Setting a cap on a ledger without a budget creates
+  a budget row with no limit, in the ledger default currency. The clear action is
+  [Убрать лимит] on a capped category's prompt (`bud:capx:<id>`). It also clears a pending cap
+  flow for that category.
+- Phase 4: a cap counts every expense of its category in the budget currency, whatever the
+  scope.
 
 ### Close triggers
 

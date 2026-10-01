@@ -1,4 +1,5 @@
 import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
+import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
 import type { LedgerId } from './ledgers.js';
 
@@ -63,6 +64,73 @@ export function setBudgetLimit(
     )
     .run(ledgerId, limit.limitMinor, limit.currency, updatedAt.toISOString());
   return changes === 1;
+}
+
+// Gives a ledger a budget with no limit, in `currency`, unless it has one: the row a category
+// cap's currency is read from. Returns false when the budget existed.
+export function ensureLedgerBudget(
+  db: Db,
+  ledgerId: LedgerId,
+  currency: CurrencyCode,
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, string]>(
+      `INSERT INTO ledger_budgets (ledger_id, currency, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (ledger_id) DO NOTHING`,
+    )
+    .run(ledgerId, currency, updatedAt.toISOString());
+  return changes === 1;
+}
+
+export interface CategoryCap {
+  readonly categoryId: CategoryId;
+  readonly name: string;
+  readonly capMinor: number;
+}
+
+// The caps of the ledger's active categories, in category order. An archived category's cap
+// stays stored but is neither listed nor counted.
+export function listLedgerCaps(db: Db, ledgerId: LedgerId): CategoryCap[] {
+  return db
+    .prepare<[string], { category_id: number; name: string; cap_minor: number }>(
+      `SELECT k.category_id, c.name, k.cap_minor
+         FROM category_caps k JOIN categories c ON c.id = k.category_id
+        WHERE c.ledger_id = ? AND c.archived_at IS NULL
+        ORDER BY c.id`,
+    )
+    .all(ledgerId)
+    .map((row) => ({
+      categoryId: row.category_id as CategoryId,
+      name: row.name,
+      capMinor: row.cap_minor,
+    }));
+}
+
+// Sets a category's cap for the period. Returns false when it already has this cap.
+export function setCategoryCap(
+  db: Db,
+  categoryId: CategoryId,
+  capMinor: number,
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[number, number, string]>(
+      `INSERT INTO category_caps (category_id, cap_minor, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (category_id) DO UPDATE
+          SET cap_minor = excluded.cap_minor, updated_at = excluded.updated_at
+        WHERE cap_minor IS NOT excluded.cap_minor`,
+    )
+    .run(categoryId, capMinor, updatedAt.toISOString());
+  return changes === 1;
+}
+
+// Returns false when the category had no cap.
+export function clearCategoryCap(db: Db, categoryId: CategoryId): boolean {
+  return (
+    db.prepare<[number]>('DELETE FROM category_caps WHERE category_id = ?').run(categoryId)
+      .changes === 1
+  );
 }
 
 // Sets what the limit counts. A ledger without a budget gets one with no limit, in `currency`.

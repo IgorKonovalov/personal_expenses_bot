@@ -39,6 +39,15 @@ interface RecordedView extends ExpenseView {
   readonly sentOn: LocalDate;
   // Absent when the ledger has no overall limit.
   readonly budget?: BudgetLineView | undefined;
+  // Absent when the expense's category has no cap.
+  readonly cap?: (CapView & { readonly currency: CurrencyCode }) | undefined;
+}
+
+// A category's spend in the budget period against its cap.
+interface CapView {
+  readonly name: string;
+  readonly spentMinor: number;
+  readonly capMinor: number;
 }
 
 interface BudgetScreenView {
@@ -61,6 +70,7 @@ interface BudgetScreenView {
               readonly periodLeftMinor: number;
             }
           | undefined;
+        readonly caps: readonly CapView[];
         readonly notCounted: ReadonlyMap<CurrencyCode, number>;
       }
     | undefined;
@@ -250,6 +260,17 @@ function periodLeft(amountMinor: number, currency: CurrencyCode, to: LocalDate):
   return amountMinor < 0
     ? `до ${shortDate(to)} перерасход ${formatMoney({ amountMinor: -amountMinor, currency })}`
     : `до ${shortDate(to)}: ${formatMoney({ amountMinor, currency })}`;
+}
+
+// `Кафе и рестораны: 450.00 из 5 000.00 RSD`, or with `, перерасход 250.00 RSD` past the cap.
+function capLine({ name, spentMinor, capMinor }: CapView, currency: CurrencyCode): Html {
+  const line = html`${name}: ${amountOnly({ amountMinor: spentMinor, currency })} из ${formatMoney({ amountMinor: capMinor, currency })}`;
+  return spentMinor > capMinor
+    ? joinHtml(
+        [line, html`перерасход ${formatMoney({ amountMinor: spentMinor - capMinor, currency })}`],
+        ', ',
+      )
+    : line;
 }
 
 function budgetLine({ currency, todayLeftMinor, periodLeftMinor, to }: BudgetLineView): Html {
@@ -442,7 +463,15 @@ export const messages = {
     );
     const { category } = view.expense;
     const card = category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
-    return view.budget === undefined ? card : joinHtml([card, budgetLine(view.budget)], '\n');
+    const { budget, cap } = view;
+    return joinHtml(
+      [
+        card,
+        ...(budget === undefined ? [] : [budgetLine(budget)]),
+        ...(cap === undefined ? [] : [capLine(cap, cap.currency)]),
+      ],
+      '\n',
+    );
   },
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
@@ -630,6 +659,9 @@ export const messages = {
           : html`Осталось до ${shortDate(period.to)}: ${formatMoney({ amountMinor: limit.periodLeftMinor, currency })}`,
       );
     }
+    if (status.caps.length > 0) {
+      lines.push(html`<b>По категориям</b>`, ...status.caps.map((cap) => capLine(cap, currency)));
+    }
     if (status.notCounted.size > 0) {
       const amounts = [...status.notCounted].map(([code, amountMinor]) =>
         formatMoney({ amountMinor, currency: code }),
@@ -659,6 +691,29 @@ export const messages = {
       : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
   },
   budgetStartDayButton: 'День начала периода',
+  // Category caps (ADR-0017): a paged category list, then a prompt per category.
+  budgetCapsButton: 'Лимиты по категориям',
+  budgetCapsPicker: html`Лимит на период для категории. Выберите категорию, чтобы задать или убрать лимит.`,
+  // A category's label in the list: its cap, when it has one.
+  capChoice: (name: string, cap: Money | null): string =>
+    cap === null ? name : `${name} — ${formatMoney(cap)}`,
+  budgetCapPrompt: ({
+    name,
+    currency,
+    current,
+  }: {
+    name: string;
+    currency: CurrencyCode;
+    current?: Money | undefined;
+  }): Html => {
+    const ask = html`Лимит на период для «${name}» в ${currency}. Отправьте сумму, например «5 000».`;
+    return current === undefined
+      ? ask
+      : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
+  },
+  budgetCapClearButton: 'Убрать лимит',
+  capClearedToast: 'Лимит категории убран',
+  capUnchanged: 'У категории нет лимита',
   // The two scope buttons; the current one is marked with currentChoice.
   budgetScopeButton: (scope: 'all' | 'optional'): string =>
     scope === 'all' ? 'Считать все' : 'Только необязательные',
@@ -679,6 +734,7 @@ export const messages = {
     expenseShaped: {
       budgetLimit: html`Похоже на трату. Сейчас я жду лимит. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
       budgetStartDay: html`Похоже на трату. Сейчас я жду день месяца. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+      budgetCap: html`Похоже на трату. Сейчас я жду лимит категории. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
     },
   },
 

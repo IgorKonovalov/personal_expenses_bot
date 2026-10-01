@@ -90,15 +90,16 @@ export interface TimezoneFlow {
   readonly ledgerId?: LedgerId;
 }
 
-// A budget setting typed into the budget screen of `ledgerId`.
-export interface BudgetFlow {
-  readonly kind: 'budgetLimit' | 'budgetStartDay';
-  readonly ledgerId: LedgerId;
-}
+// A budget setting typed into the budget screen of `ledgerId`: its limit, its period start day,
+// or one category's cap.
+export type BudgetFlow =
+  | { readonly kind: 'budgetLimit' | 'budgetStartDay'; readonly ledgerId: LedgerId }
+  | { readonly kind: 'budgetCap'; readonly ledgerId: LedgerId; readonly categoryId: CategoryId };
 
 const BUDGET_FLOW_KINDS: ReadonlySet<string> = new Set<BudgetFlow['kind']>([
   'budgetLimit',
   'budgetStartDay',
+  'budgetCap',
 ]);
 
 export function isBudgetFlow(flow: Flow): flow is BudgetFlow {
@@ -235,7 +236,10 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   if (kind === 'categoryAdd' || kind === 'budgetLimit' || kind === 'budgetStartDay') {
     return { kind, ledgerId };
   }
-  if (kind === 'categoryRename' && typeof parsed.categoryId === 'number') {
+  if (
+    (kind === 'categoryRename' || kind === 'budgetCap') &&
+    typeof parsed.categoryId === 'number'
+  ) {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }
   return undefined;

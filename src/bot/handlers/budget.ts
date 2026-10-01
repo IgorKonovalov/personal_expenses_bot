@@ -1,9 +1,11 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { BudgetScope } from '../../db/budgets.js';
+import type { CategoryId } from '../../db/categories.js';
 import type { User } from '../../db/users.js';
 import {
   activeLedgerId,
   budgetScreen,
+  clearCap,
   setScope,
   startBudgetFlow,
   type BudgetAnswerResult,
@@ -12,13 +14,21 @@ import {
 import type { BudgetFlow, BudgetScreen } from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
 import {
+  BUDGET_CAP,
+  BUDGET_CAP_CLEAR,
+  BUDGET_CAPS,
+  BUDGET_CAPS_OPEN,
   BUDGET_LIMIT,
   BUDGET_OPEN,
   BUDGET_SCOPE,
   BUDGET_START_DAY,
+  budgetCapClearData,
+  budgetCapData,
+  budgetCapsPageData,
   budgetScopeData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
+import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { joinHtml, replyHtml, type Html } from '../render/html.js';
 import {
   cancelRow,
@@ -49,6 +59,7 @@ function screenView(view: BudgetScreenView): ScreenView {
       [InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)],
       [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
       [scopeButton('all'), scopeButton('optional')],
+      [InlineKeyboard.text(messages.budgetCapsButton, BUDGET_CAPS_OPEN)],
     ]),
   };
 }
@@ -84,10 +95,59 @@ export function budgetPromptView(
     case 'budgetStartDay':
       prompt = messages.budgetStartDayPrompt(budget?.periodStartDay ?? 1);
       break;
+    case 'budgetCap': {
+      const category = view.categories.find((c) => c.id === flow.categoryId);
+      const currency = budget?.currency ?? view.ledger.defaultCurrency;
+      const capMinor = category?.capMinor ?? null;
+      prompt = messages.budgetCapPrompt({
+        name: category?.name ?? '',
+        currency,
+        current: capMinor === null ? undefined : { amountMinor: capMinor, currency },
+      });
+      // A capped category's prompt offers [Убрать лимит] above [Отмена].
+      return {
+        text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
+        markup: InlineKeyboard.from([
+          ...(capMinor === null
+            ? []
+            : [
+                [
+                  InlineKeyboard.text(
+                    messages.budgetCapClearButton,
+                    budgetCapClearData(flow.categoryId),
+                  ),
+                ],
+              ]),
+          cancelRow(),
+        ]),
+      };
+    }
   }
   return {
     text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
     markup: InlineKeyboard.from([cancelRow()]),
+  };
+}
+
+// The paged category list: each category labelled with its cap, then the pager and [« Назад].
+function capsPickerView(view: BudgetScreenView, page: number): ScreenView {
+  const currency = view.status?.currency ?? view.ledger.defaultCurrency;
+  const shown = pageOf(view.categories, page);
+  return {
+    text: messages.budgetCapsPicker,
+    markup: pickerKeyboard(
+      shown.items.map((c) =>
+        InlineKeyboard.text(
+          messages.capChoice(
+            c.name,
+            c.capMinor === null ? null : { amountMinor: c.capMinor, currency },
+          ),
+          budgetCapData(c.id),
+        ),
+      ),
+      pagerRow(shown, budgetCapsPageData),
+      BUDGET_OPEN,
+    ),
   };
 }
 
@@ -99,10 +159,7 @@ export function budgetRefusal(
   switch (result.reason) {
     case 'ambiguousAmount':
       return messages.budgetRefused.ambiguousAmount(
-        result.readings.map((r) => ({
-          amountMinor: r.amountMinor,
-          currency: result.ledger.defaultCurrency,
-        })),
+        result.readings.map((r) => ({ amountMinor: r.amountMinor, currency: result.currency })),
       );
     case 'expenseShaped':
       return messages.budgetRefused.expenseShaped[flow.kind];
@@ -172,6 +229,52 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
         await ctx.answerCallbackQuery({ text: messages.budgetScopeChangedToast });
         const view = budgetView(deps, tap.user, tap.screen);
         if (view !== undefined) await renderAnchor(ctx, tap.anchor, view);
+        return;
+      }
+    }
+  });
+
+  bot.callbackQuery(BUDGET_CAPS, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, capsPickerView(tap.view, Number(ctx.match[1] ?? 1)));
+  });
+
+  bot.callbackQuery(BUDGET_CAP, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    const categoryId = Number(ctx.match[1]) as CategoryId;
+    const flow: BudgetFlow = { kind: 'budgetCap', ledgerId: tap.screen.ledgerId, categoryId };
+    if (!startBudgetFlow(deps, { user: tap.user, flow, now: deps.now() })) {
+      await ctx.answerCallbackQuery({ text: messages.categoryGoneToast });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, budgetPromptView(flow, tap.view));
+  });
+
+  // Absolute: a second tap finds no cap and edits nothing.
+  bot.callbackQuery(BUDGET_CAP_CLEAR, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    const categoryId = Number(ctx.match[1]) as CategoryId;
+    const { ledgerId } = tap.screen;
+    const result = clearCap(deps, { user: tap.user, ledgerId, categoryId });
+    switch (result.kind) {
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.capUnchanged });
+        return;
+      case 'cleared': {
+        await ctx.answerCallbackQuery({ text: messages.capClearedToast });
+        const view = budgetScreen(deps, { user: tap.user, ledgerId, now: deps.now() });
+        if (view === undefined) return;
+        const index = view.categories.findIndex((c) => c.id === categoryId);
+        const page = Math.floor(Math.max(index, 0) / PAGE_SIZE) + 1;
+        await renderAnchor(ctx, tap.anchor, capsPickerView(view, page));
         return;
       }
     }

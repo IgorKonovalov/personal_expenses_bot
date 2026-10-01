@@ -177,6 +177,24 @@ export const BUDGET_SCOPE = /^bud:scope:([ao])$/;
 export function budgetScopeData(scope: 'all' | 'optional'): string {
   return assertCallbackData(`bud:scope:${scope === 'all' ? 'a' : 'o'}`);
 }
+// The category cap list: `bud:caps` opens page 1 and `bud:caps:p:<page>` pages it;
+// `bud:cap:<id>` asks for a category's cap and `bud:capx:<id>` clears it (at most 25 bytes).
+export const BUDGET_CAPS_OPEN = 'bud:caps';
+export const BUDGET_CAPS = /^bud:caps(?::p:(\d{1,4}))?$/;
+export const BUDGET_CAP = /^bud:cap:(\d{1,16})$/;
+export const BUDGET_CAP_CLEAR = /^bud:capx:(\d{1,16})$/;
+
+export function budgetCapsPageData(page: number): string {
+  return assertCallbackData(`bud:caps:p:${page}`);
+}
+
+export function budgetCapData(categoryId: CategoryId): string {
+  return assertCallbackData(`bud:cap:${categoryId}`);
+}
+
+export function budgetCapClearData(categoryId: CategoryId): string {
+  return assertCallbackData(`bud:capx:${categoryId}`);
+}
 
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';

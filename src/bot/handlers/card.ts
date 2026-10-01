@@ -34,6 +34,16 @@ export interface CardView {
   // What's left of the ledger's overall limit, as of now: absent for a deleted expense or a
   // ledger without a limit.
   readonly budget?: CardBudget;
+  // The expense's category against its cap: absent for a deleted expense or an uncapped
+  // category.
+  readonly cap?: CardCap;
+}
+
+export interface CardCap {
+  readonly name: string;
+  readonly spentMinor: number;
+  readonly capMinor: number;
+  readonly currency: CurrencyCode;
 }
 
 export interface CardBudget {
@@ -62,11 +72,22 @@ export function cardView(
   };
   if (expense.deletedAt !== null) return view;
   const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
-  if (status?.limit === undefined) return view;
-  const { todayLeftMinor, periodLeftMinor } = status.limit;
+  if (status === undefined) return view;
+  const { currency, limit } = status;
+  const cap = status.caps.find((c) => c.categoryId === expense.category?.id);
   return {
     ...view,
-    budget: { currency: status.currency, todayLeftMinor, periodLeftMinor, to: status.period.to },
+    ...(limit === undefined
+      ? {}
+      : {
+          budget: {
+            currency,
+            todayLeftMinor: limit.todayLeftMinor,
+            periodLeftMinor: limit.periodLeftMinor,
+            to: status.period.to,
+          },
+        }),
+    ...(cap === undefined ? {} : { cap: { ...cap, currency } }),
   };
 }
 

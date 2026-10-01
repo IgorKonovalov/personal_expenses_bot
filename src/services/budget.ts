@@ -1,12 +1,21 @@
 import {
+  clearCategoryCap,
+  ensureLedgerBudget,
   findLedgerBudget,
+  listLedgerCaps,
   setBudgetLimit,
   setBudgetScope,
   setBudgetStartDay,
+  setCategoryCap,
   type BudgetScope,
   type LedgerBudget,
 } from '../db/budgets.js';
-import { listEssentialCategoryIds, type CategoryId } from '../db/categories.js';
+import {
+  findCategory,
+  listActiveCategories,
+  listEssentialCategoryIds,
+  type CategoryId,
+} from '../db/categories.js';
 import { listLedgerExpensesBetween } from '../db/expenses.js';
 import {
   findActiveLedger,
@@ -22,7 +31,13 @@ import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
 import { budgetPeriodOf } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
-import { cancelFlow, completeFlow, startFlow, type BudgetFlow } from './flowSessions.js';
+import {
+  cancelFlow,
+  cancelFlowIf,
+  completeFlow,
+  startFlow,
+  type BudgetFlow,
+} from './flowSessions.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 // Budgets (ADR-0017): computed at read time from `expenses`, in the ledger's effective timezone
@@ -52,8 +67,18 @@ export interface BudgetStatus {
   readonly currency: CurrencyCode;
   readonly scope: BudgetScope;
   readonly limit?: BudgetLimitStatus;
+  // Each active capped category's spend in the period, in the budget's currency, whatever the
+  // scope. Empty when no category has a cap.
+  readonly caps: readonly CapStatus[];
   // Spend in the period in other currencies: listed, never converted (ADR-0003).
   readonly notCounted: ReadonlyMap<CurrencyCode, number>;
+}
+
+export interface CapStatus {
+  readonly categoryId: CategoryId;
+  readonly name: string;
+  readonly spentMinor: number;
+  readonly capMinor: number;
 }
 
 // The ledger's budget as of the local date `today`, reading expenses through `readerId`'s
@@ -87,12 +112,22 @@ export function budgetStatus(
     expenses.filter((e) => e.occurredOn <= today),
     budget.currency,
   );
+  const caps = listLedgerCaps(db, ledger.id).map(({ categoryId, name, capMinor }) => ({
+    categoryId,
+    name,
+    capMinor,
+    spentMinor: splitByCurrency(
+      all.filter((e) => e.category?.id === categoryId),
+      budget.currency,
+    ).countedMinor,
+  }));
   const base = {
     ledger,
     budget,
     period,
     currency: budget.currency,
     scope: budget.scope,
+    caps,
     notCounted: inPeriod.notCounted,
   };
   if (budget.limitMinor === null) return base;
@@ -127,6 +162,12 @@ export function memberBudgetStatus(
 export interface BudgetScreenView {
   readonly ledger: Ledger;
   readonly status?: BudgetStatus;
+  // The ledger's active categories with their caps (null: none), for the cap list.
+  readonly categories: readonly {
+    readonly id: CategoryId;
+    readonly name: string;
+    readonly capMinor: number | null;
+  }[];
 }
 
 // What the /budget screen shows for a ledger the user may set the budget of: its owner.
@@ -138,7 +179,33 @@ export function budgetScreen(
   const ledger = ownedLedger(deps, input.user, input.ledgerId);
   if (ledger === undefined) return undefined;
   const status = memberBudgetStatus(deps, { user: input.user, ledger, now: input.now });
-  return status === undefined ? { ledger } : { ledger, status };
+  const capOf = new Map(listLedgerCaps(deps.db, ledger.id).map((c) => [c.categoryId, c.capMinor]));
+  const categories = listActiveCategories(deps.db, ledger.id).map((c) => ({
+    id: c.id,
+    name: c.name,
+    capMinor: capOf.get(c.id) ?? null,
+  }));
+  return status === undefined ? { ledger, categories } : { ledger, status, categories };
+}
+
+export type ClearCapResult = { readonly kind: 'cleared' | 'unchanged' | 'forbidden' };
+
+// Removes a category's cap. Clears a pending cap flow for the same category, so its prompt's
+// answer can't put the cap back.
+export function clearCap(
+  deps: Deps,
+  input: { readonly user: User; readonly ledgerId: LedgerId; readonly categoryId: CategoryId },
+): ClearCapResult {
+  const { db, logger } = deps;
+  const { user, ledgerId, categoryId } = input;
+  return db.transaction((): ClearCapResult => {
+    if (ownedLedger(deps, user, ledgerId) === undefined) return { kind: 'forbidden' };
+    if (findCategory(db, ledgerId, categoryId) === undefined) return { kind: 'forbidden' };
+    cancelFlowIf(deps, user, (flow) => flow.kind === 'budgetCap' && flow.categoryId === categoryId);
+    if (!clearCategoryCap(db, categoryId)) return { kind: 'unchanged' };
+    logger.info({ ledgerId, categoryId, userId: user.id }, 'category cap cleared');
+    return { kind: 'cleared' };
+  })();
 }
 
 // The ledger /budget opens on: the user's active one.
@@ -159,8 +226,13 @@ export function startBudgetFlow(
   deps: Deps,
   input: { readonly user: User; readonly flow: BudgetFlow; readonly now: Date },
 ): boolean {
-  if (ownedLedger(deps, input.user, input.flow.ledgerId) === undefined) return false;
-  startFlow(deps, input.user, input.flow, input.now);
+  const { flow } = input;
+  if (ownedLedger(deps, input.user, flow.ledgerId) === undefined) return false;
+  if (flow.kind === 'budgetCap') {
+    const category = findCategory(deps.db, flow.ledgerId, flow.categoryId);
+    if (category === undefined || category.archivedAt !== null) return false;
+  }
+  startFlow(deps, input.user, flow, input.now);
   return true;
 }
 
@@ -192,7 +264,11 @@ export function setScope(
 
 export type BudgetRefusal =
   | { readonly reason: 'invalidAmount' | 'tooLarge' | 'expenseShaped' | 'invalidDay' }
-  | { readonly reason: 'ambiguousAmount'; readonly readings: readonly AmountReading[] };
+  | {
+      readonly reason: 'ambiguousAmount';
+      readonly readings: readonly AmountReading[];
+      readonly currency: CurrencyCode;
+    };
 
 export type BudgetAnswerResult =
   | { readonly kind: 'set'; readonly ledger: Ledger }
@@ -216,7 +292,7 @@ function parseLimit(text: string, currency: CurrencyCode): LimitAnswer {
     case 'ambiguous':
       return {
         kind: 'refused',
-        refusal: { reason: 'ambiguousAmount', readings: parsed.readings },
+        refusal: { reason: 'ambiguousAmount', readings: parsed.readings, currency },
       };
     case 'invalid':
       return { kind: 'refused', refusal: { reason: 'invalidAmount' } };
@@ -288,6 +364,20 @@ export function answerBudgetFlow(
           { startDay, currency: current?.currency ?? ledger.defaultCurrency },
           input.now,
         );
+        break;
+      }
+      case 'budgetCap': {
+        // A cap is in the budget's currency; a ledger without a budget gets one in its default.
+        const category = findCategory(db, ledger.id, flow.categoryId);
+        if (category === undefined || category.archivedAt !== null) {
+          cancelFlow(deps, user);
+          return { kind: 'gone' };
+        }
+        const currency = current?.currency ?? ledger.defaultCurrency;
+        const cap = parseLimit(text, currency);
+        if (cap.kind === 'refused') return refuse(cap.refusal);
+        ensureLedgerBudget(db, ledger.id, currency, input.now);
+        changed = setCategoryCap(db, category.id, cap.amountMinor, input.now);
         break;
       }
     }

@@ -5,7 +5,14 @@ import type { Ledger } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
-import { answerBudgetFlow, memberBudgetStatus, setScope, startBudgetFlow } from './budget.js';
+import type { CategoryId } from '../db/categories.js';
+import {
+  answerBudgetFlow,
+  clearCap,
+  memberBudgetStatus,
+  setScope,
+  startBudgetFlow,
+} from './budget.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
 
@@ -167,6 +174,55 @@ describe('the optional-only scope', () => {
     expect(setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_1 }).kind).toBe(
       'unchanged',
     );
+  });
+});
+
+describe('category caps', () => {
+  const cafeId = () =>
+    db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .pluck()
+      .get(ledger.id) as CategoryId;
+
+  function setCap(categoryId: CategoryId, text: string) {
+    const flow = { kind: 'budgetCap', ledgerId: ledger.id, categoryId } as const;
+    expect(startBudgetFlow(deps, { user, flow, now: OCT_1 })).toBe(true);
+    return answerBudgetFlow(deps, {
+      user,
+      flow,
+      text,
+      inputKey: `tg:1:${++messageId}`,
+      now: OCT_1,
+    });
+  }
+
+  it('counts 450 кофе and 4800 ресторан against a 5000 café cap with no overall limit', () => {
+    expect(setCap(cafeId(), '5000').kind).toBe('set');
+    spend('450 кофе', OCT_1);
+    spend('4800 ресторан', OCT_1);
+    spend('300 такси', OCT_1);
+
+    const s = status(OCT_1);
+    expect(s?.limit).toBeUndefined();
+    expect(s?.caps).toEqual([
+      { categoryId: cafeId(), name: 'Кафе и рестораны', spentMinor: 525_000, capMinor: 500_000 },
+    ]);
+    const cafe = s?.caps[0];
+    expect(cafe === undefined ? undefined : cafe.spentMinor - cafe.capMinor).toBe(25_000);
+  });
+
+  it("drops an archived category's cap, and clearing converges", () => {
+    setCap(cafeId(), '5000');
+    expect(clearCap(deps, { user, ledgerId: ledger.id, categoryId: cafeId() }).kind).toBe(
+      'cleared',
+    );
+    expect(clearCap(deps, { user, ledgerId: ledger.id, categoryId: cafeId() }).kind).toBe(
+      'unchanged',
+    );
+
+    setCap(cafeId(), '5000');
+    db.prepare("UPDATE categories SET archived_at = 'x' WHERE id = ?").run(cafeId());
+    expect(status(OCT_1)?.caps).toEqual([]);
   });
 });
 

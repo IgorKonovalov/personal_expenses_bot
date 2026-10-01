@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
@@ -102,6 +103,18 @@ describe('routeText (ADR-0009)', () => {
     expect(route('tg:1:1', T)).toEqual({ kind: 'flow', flow: { kind: 'budgetLimit', ledgerId } });
 
     db.prepare("UPDATE flow_sessions SET payload = '{}'").run();
+    expect(route('tg:1:2', T)).toEqual({ kind: 'free', expiredFlow: true });
+  });
+
+  it('carries the ledger and category ids in the cap flow, and reads one without a category as no flow', () => {
+    const categoryId = 7 as CategoryId;
+    startFlow({ db }, user, { kind: 'budgetCap', ledgerId, categoryId }, T);
+    expect(route('tg:1:1', T)).toEqual({
+      kind: 'flow',
+      flow: { kind: 'budgetCap', ledgerId, categoryId },
+    });
+
+    db.prepare('UPDATE flow_sessions SET payload = ?').run(JSON.stringify({ ledgerId }));
     expect(route('tg:1:2', T)).toEqual({ kind: 'free', expiredFlow: true });
   });
 
