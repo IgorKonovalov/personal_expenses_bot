@@ -124,8 +124,8 @@ Nothing deletes them, and they cost nothing.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Owe expense days and today, newest first | dev | done | committed with this row |
-| 2: Check the deployed worker | human | not started | |
+| 1: Owe expense days and today, newest first | dev | done | `2b5c8a9` |
+| 2: Check the deployed worker | human | pending | (no commit) |
 
 ### Notes
 
@@ -136,5 +136,17 @@ Nothing deletes them, and they cost nothing.
 - Phase 1: with no expense at all, a tick now asks today (it used to ask nothing).
 
 ### Close triggers
+
+- **What shipped:** `src/db/fxRates.ts` has `expenseDaysThrough(db, today)` (distinct
+  `occurred_on` of non-deleted expenses through `today`) in place of `earliestExpenseDay`.
+  `daysOwed` in `src/services/fetchRates.ts` owes those days plus Belgrade's today, newest first,
+  at most 31. No schema change, no new dependency.
+- **User-visible surface changed:** none in chat copy. After a deploy the first tick fetches
+  rates for the expense days, newest first, so recent totals convert on the boot tick.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 64 files,
+  884 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0,
+  236 tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
+  `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 2 (check the deployed worker; does not block merge).
 
 ## Followups
