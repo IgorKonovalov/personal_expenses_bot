@@ -63,17 +63,58 @@ export function summarizeByCurrencyAndCategory(
       );
       return { currency, totalMinor, lines: sorted };
     })
+    .sort((a, b) => currencyOrder(a.currency, b.currency, firstCurrency));
+}
+
+export interface AuthoredMoney extends Money {
+  // Who recorded it: an opaque id, named by the adapter.
+  readonly createdBy: string;
+}
+
+export interface AuthorSummary {
+  readonly authorId: string;
+  // One entry per currency the author spent in, `firstCurrency` first, then alphabetically.
+  // Each is that currency's sum alone: currencies are never added together (ADR-0003).
+  readonly totals: readonly Money[];
+}
+
+// Per author, the totals per currency. Authors are ordered by their `firstCurrency` total,
+// largest first, then by id; an author with none of it sorts after those who have some.
+export function summarizeByAuthor(
+  items: Iterable<AuthoredMoney>,
+  firstCurrency: CurrencyCode,
+): AuthorSummary[] {
+  const byAuthor = new Map<string, AuthoredMoney[]>();
+  for (const item of items) {
+    const list = byAuthor.get(item.createdBy) ?? [];
+    list.push(item);
+    byAuthor.set(item.createdBy, list);
+  }
+  const first = (author: AuthorSummary) =>
+    author.totals.find((t) => t.currency === firstCurrency)?.amountMinor ?? -1;
+  return [...byAuthor]
+    .map(([authorId, list]) => ({
+      authorId,
+      totals: [...sumByCurrency(list)]
+        .map(([currency, amountMinor]) => ({ currency, amountMinor }))
+        .sort((a, b) => currencyOrder(a.currency, b.currency, firstCurrency)),
+    }))
     .sort((a, b) =>
-      a.currency === b.currency
-        ? 0
-        : a.currency === firstCurrency
+      first(a) !== first(b)
+        ? first(b) - first(a)
+        : a.authorId < b.authorId
           ? -1
-          : b.currency === firstCurrency
+          : a.authorId > b.authorId
             ? 1
-            : a.currency < b.currency
-              ? -1
-              : 1,
+            : 0,
     );
+}
+
+function currencyOrder(a: CurrencyCode, b: CurrencyCode, first: CurrencyCode): number {
+  if (a === b) return 0;
+  if (a === first) return -1;
+  if (b === first) return 1;
+  return a < b ? -1 : 1;
 }
 
 function byAmountThenName(a: CategoryLine, b: CategoryLine): number {

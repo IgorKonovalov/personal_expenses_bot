@@ -54,10 +54,18 @@ interface SettingsScreenView {
   readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
 }
 
+// A group report's per-person section: each member's totals, one per currency, never added
+// together. `name` is the member's Telegram first name (user text), null when never stored.
+type PeopleView = readonly {
+  readonly name: string | null;
+  readonly totals: readonly Money[];
+}[];
+
 interface TodayView {
   readonly ledger: LedgerRef;
   readonly date: LocalDate;
   readonly totals: ReadonlyMap<CurrencyCode, number>;
+  readonly people?: PeopleView | undefined;
 }
 
 interface PeriodRef {
@@ -75,6 +83,7 @@ interface SummaryView {
     // `name` null: the expenses without a category.
     readonly lines: readonly { readonly name: string | null; readonly amountMinor: number }[];
   }[];
+  readonly people?: PeopleView | undefined;
 }
 
 const MONTHS = [
@@ -159,6 +168,23 @@ function amountOnly(money: Money): string {
 }
 
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
+
+// `Анна: 1 650.00 RSD, 12.50 EUR` per member, under a heading. Empty when nobody spent.
+function peopleSection(people: PeopleView | undefined): Html[] {
+  if (people === undefined || people.length === 0) return [];
+  return [
+    joinHtml(
+      [
+        html`<b>По участникам</b>`,
+        ...people.map(
+          (person) =>
+            html`${person.name ?? 'Без имени'}: ${person.totals.map(formatMoney).join(', ')}`,
+        ),
+      ],
+      '\n',
+    ),
+  ];
+}
 
 // `2026-09-30` -> `30 сентября`. The date is already local, so it is formatted in UTC.
 const dayMonth = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -305,6 +331,28 @@ export const messages = {
     ],
     '\n',
   ),
+  // /help in a group: no menu keyboard, the group's own commands (ADR-0014).
+  groupHelp: joinHtml(
+    [
+      html`Чтобы записать трату группы, напишите сумму и описание, например «450 кафе». Валюту можно указать после суммы: «12,50 EUR такси». Трата записывается на ваше имя; узнанную трату я отмечаю реакцией, остальные — карточкой с кнопкой [Удалить].`,
+      html``,
+      html`/today — траты группы за сегодня`,
+      html`/week и /month — по категориям и по участникам`,
+      html`/card — ответом на сообщение с тратой: показать её карточку`,
+      html`/help — эта подсказка`,
+      html``,
+      html`Личные траты из переписки со мной сюда не попадают.`,
+    ],
+    '\n',
+  ),
+  // The command list shown in groups (BotCommandScopeAllGroupChats).
+  groupCommands: [
+    { command: 'today', description: 'Траты группы за сегодня' },
+    { command: 'week', description: 'Траты за неделю по категориям и участникам' },
+    { command: 'month', description: 'Траты за месяц по категориям и участникам' },
+    { command: 'card', description: 'Ответом на трату: показать её карточку' },
+    { command: 'help', description: 'Как записать трату группы' },
+  ],
   editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
   futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
@@ -472,18 +520,18 @@ export const messages = {
   // The current value in a picker.
   currentChoice: (label: string): string => `✓ ${label}`,
 
-  today: ({ ledger, date, totals }: TodayView): Html => {
+  today: ({ ledger, date, totals, people }: TodayView): Html => {
     const header = html`<b>Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»</b>`;
     if (totals.size === 0) return joinHtml([header, noExpenses], '\n');
     const lines = [...totals].map(
       ([currency, amountMinor]) => html`${formatMoney({ amountMinor, currency })}`,
     );
-    return joinHtml([header, ...lines], '\n');
+    return joinHtml([joinHtml([header, ...lines], '\n'), ...peopleSection(people)], '\n\n');
   },
 
   // /week and /month: per currency a bold total, then its categories by amount. A summary too
   // long for one message shows the totals alone, with a note.
-  periodSummary: ({ ledger, period, currencies }: SummaryView): Html => {
+  periodSummary: ({ ledger, period, currencies, people }: SummaryView): Html => {
     const title =
       period.kind === 'month'
         ? `${MONTHS[dateParts(period.from).month] ?? ''} ${dateParts(period.from).year}`
@@ -504,11 +552,12 @@ export const messages = {
         '\n',
       ),
     );
-    const full = joinHtml([header, ...blocks], '\n\n');
+    const full = joinHtml([header, ...blocks, ...peopleSection(people)], '\n\n');
     if (visibleLength(full) <= MAX_VISIBLE_CHARS) return full;
     return joinHtml(
       [
         joinHtml([header, ...currencies.map(total)], '\n'),
+        ...peopleSection(people),
         html`Категорий слишком много для одного сообщения, поэтому показаны только итоги.`,
       ],
       '\n\n',

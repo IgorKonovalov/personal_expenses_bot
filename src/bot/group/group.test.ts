@@ -4,6 +4,7 @@ import type { CategoryId } from '../../db/categories.js';
 import type { Db } from '../../db/connection.js';
 import type { ExpenseId } from '../../db/expenses.js';
 import { findUserByIdentity, type User } from '../../db/users.js';
+import { monthOf } from '../../domain/periods.js';
 import type { LocalDate } from '../../domain/time.js';
 import { createLogger } from '../../logger.js';
 import { changeCategory } from '../../services/changeCategory.js';
@@ -31,7 +32,12 @@ const THIRD_ID = 3003;
 // Wednesday 30 September, 12:00 in Belgrade.
 const NOW = new Date('2026-09-30T10:00:00Z');
 
-function harness(options: { readonly failMethods?: readonly string[] } = {}) {
+interface HarnessOptions {
+  readonly failMethods?: readonly string[];
+  readonly now?: Date;
+}
+
+function harness(options: HarnessOptions = {}) {
   const test = createTestBot({ now: NOW, ...options });
   let updateId = 0;
   const send = (update: (id: number) => Update) => test.bot.handleUpdate(update(++updateId));
@@ -56,7 +62,7 @@ function harness(options: { readonly failMethods?: readonly string[] } = {}) {
 }
 
 // The harness with the group bound by A, and the calls so far cleared.
-async function bound(options: { readonly failMethods?: readonly string[] } = {}) {
+async function bound(options: HarnessOptions = {}) {
   const test = harness(options);
   await test.added(ALLOWED_ID);
   test.calls.length = 0;
@@ -665,5 +671,214 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
       expect(assertCallbackData(data)).toBe(data);
       expect(Buffer.byteLength(data, 'utf8')).toBe(44);
     }
+  });
+});
+
+// Thursday 15 October, 12:00 in Belgrade.
+const OCT_NOW = new Date('2026-10-15T10:00:00Z');
+const OCTOBER = monthOf('2026-10-01' as LocalDate);
+const SEPTEMBER = monthOf('2026-09-01' as LocalDate);
+const GROUP_LEDGER = { kind: 'shared', name: 'Семья' } as const;
+
+function sentText(call: { payload: unknown } | undefined): string {
+  return (call?.payload as { text?: string } | undefined)?.text ?? '';
+}
+
+// The group ledger with A's `450 кафе` and `1200 продукты` and B's `300 такси` in October, and
+// A's personal `999 секрет` on 10 October.
+async function october() {
+  const test = await bound({ now: OCT_NOW });
+  await test.say(ALLOWED_ID, '450 кафе', 101, {
+    firstName: 'Анна',
+    date: new Date('2026-10-05T10:00:00Z'),
+  });
+  await test.say(ALLOWED_ID, '1200 продукты', 102, {
+    firstName: 'Анна',
+    date: new Date('2026-10-06T10:00:00Z'),
+  });
+  await test.say(STRANGER_ID, '300 такси', 103, {
+    firstName: 'Борис',
+    date: new Date('2026-10-07T10:00:00Z'),
+  });
+  await test.dm(ALLOWED_ID, '999 секрет', 104, new Date('2026-10-10T10:00:00Z'));
+  test.calls.length = 0;
+  return test;
+}
+
+describe('group reports (Phase 3)', () => {
+  it('shows the group month by category and by person, without the personal ledger', async () => {
+    const { calls, say } = await october();
+
+    await say(STRANGER_ID, '/month', 110, { date: OCT_NOW });
+
+    const expected = messages.periodSummary({
+      ledger: GROUP_LEDGER,
+      period: OCTOBER,
+      currencies: [
+        {
+          currency: 'RSD',
+          totalMinor: 195000,
+          lines: [
+            { name: 'Продукты', amountMinor: 120000 },
+            { name: 'Кафе и рестораны', amountMinor: 45000 },
+            { name: 'Транспорт', amountMinor: 30000 },
+          ],
+        },
+      ],
+      people: [
+        { name: 'Анна', totals: [{ currency: 'RSD', amountMinor: 165000 }] },
+        { name: 'Борис', totals: [{ currency: 'RSD', amountMinor: 30000 }] },
+      ],
+    });
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: GROUP_ID,
+          text: expected,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: messages.periodPrev(SEPTEMBER), callback_data: 'sum:m:2026-09' }],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    // 45000 + 120000 + 30000 = 195000; A: 45000 + 120000 = 165000.
+    expect(expected).toContain('<b>1 950.00 RSD</b>');
+    expect(expected).toContain('Анна: 1 650.00 RSD');
+    expect(expected).toContain('Борис: 300.00 RSD');
+    expect(expected).not.toContain('999');
+    expect(expected).not.toContain('секрет');
+  });
+
+  it("shows A's DM month from the personal ledger alone", async () => {
+    const { bot, calls, dm } = await october();
+    // The DM summary screen stores its anchor from the sent message, so the fake returns one.
+    bot.api.config.use(async (prev, method, payload, signal) => {
+      const response = await prev(method, payload, signal);
+      if (method !== 'sendMessage') return response;
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      return { ok: true, result: { message_id: 500, date: 0, chat, text: '' } as never };
+    });
+
+    await dm(ALLOWED_ID, '/month', 111, OCT_NOW);
+
+    expect(sentText(calls.at(-1))).toBe(
+      messages.periodSummary({
+        ledger: { kind: 'personal', name: 'Personal' },
+        period: OCTOBER,
+        currencies: [
+          { currency: 'RSD', totalMinor: 99900, lines: [{ name: 'Другое', amountMinor: 99900 }] },
+        ],
+      }),
+    );
+    expect(sentText(calls.at(-1))).toContain('999.00 RSD');
+  });
+
+  // Property: a member who spent in two currencies gets one total per currency. RSD and EUR are
+  // never added together (ADR-0003 conversion is out of scope).
+  it('lists each currency of a member separately', async () => {
+    const { calls, say } = await october();
+    await say(ALLOWED_ID, '12,50 EUR такси', 105, { firstName: 'Анна', date: OCT_NOW });
+    calls.length = 0;
+
+    await say(ALLOWED_ID, '/month', 112, { date: OCT_NOW });
+
+    expect(sentText(calls[0])).toContain('Анна: 1 650.00 RSD, 12.50 EUR');
+    expect(sentText(calls[0])).toContain('Борис: 300.00 RSD');
+  });
+
+  it('pages the group month in place when B taps, writing no flow state for B', async () => {
+    const { db, calls, say, tap } = await october();
+    await say(STRANGER_ID, '/month', 113);
+    calls.length = 0;
+
+    await tap(STRANGER_ID, 'sum:m:2026-09', { chatId: GROUP_ID, messageId: 120 });
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as unknown },
+      },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: GROUP_ID,
+          message_id: 120,
+          text: messages.periodSummary({
+            ledger: GROUP_LEDGER,
+            period: SEPTEMBER,
+            currencies: [],
+            people: [],
+          }),
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: messages.periodPrev(monthOf('2026-08-01' as LocalDate)),
+                  callback_data: 'sum:m:2026-08',
+                },
+                { text: messages.periodNext(OCTOBER), callback_data: 'sum:m:2026-10' },
+              ],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    const b = userOf(db, STRANGER_ID);
+    expect(
+      db.prepare('SELECT COUNT(*) FROM flow_sessions WHERE user_id = ?').pluck().get(b?.id),
+    ).toBe(0);
+  });
+
+  it("counts an expense sent at 23:30 UTC on 30 September in the ledger's October", async () => {
+    const { calls, say, dm, tap, db } = await bound({ now: OCT_NOW });
+    await dm(SECOND_ALLOWED_ID, '/start', 1);
+    db.prepare("UPDATE users SET timezone = 'America/New_York'").run();
+    await say(SECOND_ALLOWED_ID, '500 такси', 14, {
+      firstName: 'Вера',
+      date: new Date('2026-09-30T23:30:00Z'),
+    });
+    calls.length = 0;
+
+    await say(ALLOWED_ID, '/month', 130);
+    await tap(ALLOWED_ID, 'sum:m:2026-09', { chatId: GROUP_ID, messageId: 131 });
+
+    expect(sentText(calls[0])).toContain('Вера: 500.00 RSD');
+    expect(sentText(calls[2])).toBe(
+      messages.periodSummary({
+        ledger: GROUP_LEDGER,
+        period: SEPTEMBER,
+        currencies: [],
+        people: [],
+      }),
+    );
+  });
+
+  it("shows a member's first name as literal text", async () => {
+    const { calls, say } = await bound({ now: OCT_NOW });
+    await say(THIRD_ID, '300 такси', 140, { firstName: '<b>Ира</b>', date: OCT_NOW });
+    calls.length = 0;
+
+    await say(ALLOWED_ID, '/month', 141, { date: OCT_NOW });
+
+    expect(sentText(calls[0])).toContain('&lt;b&gt;Ира&lt;/b&gt;: 300.00 RSD');
+    expect(sentText(calls[0])).not.toContain('<b>Ира</b>');
+  });
+
+  it('answers /help with the group help text and no menu keyboard', async () => {
+    const { calls, say } = await bound();
+
+    await say(STRANGER_ID, '/help', 150);
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: GROUP_ID, text: messages.groupHelp, ...htmlParseMode },
+      },
+    ]);
   });
 });

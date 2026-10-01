@@ -3,6 +3,8 @@ import type { HandlerDeps } from '../bot.js';
 import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
 import { registerGroupCard } from './card.js';
+import { registerGroupHelp } from './help.js';
+import { registerGroupSummary } from './summary.js';
 import { registerGroupText } from './text.js';
 
 // Every update from a group or supergroup (ADR-0014). Group interaction is stateless: no
@@ -25,6 +27,8 @@ export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   group.use(callbackDispatcher());
   registerActivation(group, deps);
   registerGroupCard(group, deps);
+  registerGroupSummary(group, deps);
+  registerGroupHelp(group, deps);
   registerGroupText(group, deps);
   group.use(() => undefined);
   return group;

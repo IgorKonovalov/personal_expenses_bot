@@ -90,10 +90,12 @@ export function createBot(options: BotOptions): Bot {
   return bot;
 }
 
-// The slash-command list the client shows. A failure costs only that list, so boot continues.
+// The slash-command lists the client shows: the DM list by default, the group list in every
+// group (ADR-0014). A failure costs only those lists, so boot continues.
 export async function registerCommands(bot: Bot, logger: Logger): Promise<void> {
   try {
     await bot.api.setMyCommands(messages.commands);
+    await bot.api.setMyCommands(messages.groupCommands, { scope: { type: 'all_group_chats' } });
   } catch (error) {
     logger.warn({ err: safeError(error) }, 'setMyCommands failed');
   }

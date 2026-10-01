@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sumByCurrency, summarizeByCurrencyAndCategory } from './aggregate.js';
+import { sumByCurrency, summarizeByAuthor, summarizeByCurrencyAndCategory } from './aggregate.js';
 
 describe('sumByCurrency', () => {
   it('sums per currency with integer arithmetic', () => {
@@ -104,5 +104,54 @@ describe('summarizeByCurrencyAndCategory', () => {
         'RSD',
       ),
     ).toThrow(RangeError);
+  });
+});
+
+describe('summarizeByAuthor', () => {
+  it('sums each author per currency, the largest first-currency total first', () => {
+    expect(
+      summarizeByAuthor(
+        [
+          { amountMinor: 45000, currency: 'RSD', createdBy: 'a' },
+          { amountMinor: 30000, currency: 'RSD', createdBy: 'b' },
+          { amountMinor: 120000, currency: 'RSD', createdBy: 'a' },
+        ],
+        'RSD',
+      ),
+    ).toEqual([
+      { authorId: 'a', totals: [{ amountMinor: 165000, currency: 'RSD' }] },
+      { authorId: 'b', totals: [{ amountMinor: 30000, currency: 'RSD' }] },
+    ]);
+  });
+
+  // Property: each total is the sum of that author's amounts in that one currency, so 1250 EUR
+  // minor units and 45000 RSD minor units stay two entries and are never added together.
+  it('lists each currency of an author separately and never adds across currencies', () => {
+    expect(
+      summarizeByAuthor(
+        [
+          { amountMinor: 1250, currency: 'EUR', createdBy: 'a' },
+          { amountMinor: 45000, currency: 'RSD', createdBy: 'a' },
+          { amountMinor: 500, currency: 'USD', createdBy: 'a' },
+          { amountMinor: 250, currency: 'EUR', createdBy: 'a' },
+          { amountMinor: 999, currency: 'USD', createdBy: 'b' },
+        ],
+        'RSD',
+      ),
+    ).toEqual([
+      {
+        authorId: 'a',
+        totals: [
+          { amountMinor: 45000, currency: 'RSD' },
+          { amountMinor: 1500, currency: 'EUR' },
+          { amountMinor: 500, currency: 'USD' },
+        ],
+      },
+      { authorId: 'b', totals: [{ amountMinor: 999, currency: 'USD' }] },
+    ]);
+  });
+
+  it('is empty for no items', () => {
+    expect(summarizeByAuthor([], 'RSD')).toEqual([]);
   });
 });

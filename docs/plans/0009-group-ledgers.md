@@ -313,8 +313,8 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: bind a group, record into it | dev | done | 1f014da |
-| 2: Quiet confirmation and the author-only group card | dev | done | committed with this row |
-| 3: Group reports with a per-person breakdown | dev | not started | |
+| 2: Quiet confirmation and the author-only group card | dev | done | 74800f8 |
+| 3: Group reports with a per-person breakdown | dev | done | committed with this row |
 | 4: Group lifecycle and ledger settings | dev | not started | |
 | 5: Live check in the family group | human | not started | |
 
@@ -343,6 +343,15 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 - Phase 2: the group card names the author by the Telegram first name from the update (the
   sender, the tapper, or the `/card` reply's `reply_to_message.from`), not the stored display
   name. The `/card` card replies to the expense's message, not to the `/card` message.
+- Phase 3: files changed outside `Files touched`: `src/bot/group/index.ts` (registers the group
+  summary and help handlers) and `src/bot/bot.test.ts` (the boot registration test now expects
+  the second `setMyCommands` call, scoped to `all_group_chats`).
+- Phase 3: group reports read the ledger through its chat binding, with the binder (`bound_by`,
+  the owner) as the member the repository's membership join checks, so a viewer who never
+  recorded sees the report and is not provisioned. `src/services/periodSummary.ts` reads
+  `src/db/ledgerChats.ts` for this.
+- Phase 3: group `/today` also carries the per-person section. Display names were already
+  stored and refreshed by Phase 1's `joinMember`; no change there.
 
 ### Close triggers
 

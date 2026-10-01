@@ -347,6 +347,10 @@ describe('command registration at boot', () => {
           ],
         },
       },
+      {
+        method: 'setMyCommands',
+        payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
+      },
     ]);
   });
 

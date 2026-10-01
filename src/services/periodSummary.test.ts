@@ -9,7 +9,8 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
-import { currentPeriodSummary, ledgerPeriodSummary } from './periodSummary.js';
+import { bindGroup, recordGroupExpense } from './groupChats.js';
+import { currentPeriodSummary, groupPeriodSummary, ledgerPeriodSummary } from './periodSummary.js';
 import { provisionUser } from './provisionUser.js';
 import type { RecordDeps } from './recordExpense.js';
 
@@ -157,6 +158,80 @@ describe('ledgerPeriodSummary', () => {
         user,
         ledgerId,
         period: weekOf('2026-10-05' as LocalDate),
+        now: NOW,
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe('groupPeriodSummary', () => {
+  const CHAT = -100500;
+  const groupDeps = () => ({ ...deps, defaultCurrency: 'RSD' as const });
+  const say = (telegramId: number, firstName: string, text: string, key: string, at: Date) =>
+    recordGroupExpense(groupDeps(), {
+      chatId: CHAT,
+      sender: { telegramId, firstName },
+      text,
+      sourceKey: key,
+      occurredAt: at,
+      now: at,
+    });
+
+  beforeEach(() => {
+    bindGroup(groupDeps(), {
+      chatId: CHAT,
+      title: 'Семья',
+      adder: { telegramId: 1001, firstName: 'Анна' },
+      now: NOW,
+    });
+  });
+
+  it('adds a per-person section, each member summed per currency and never across', () => {
+    say(1001, 'Анна', '450 кафе', 'g1', NOW);
+    say(1001, 'Анна', '1200 продукты', 'g2', NOW);
+    say(1001, 'Анна', '12,50 EUR такси', 'g3', NOW);
+    say(2002, 'Борис', '300 такси', 'g4', NOW);
+
+    const summary = groupPeriodSummary(deps, { chatId: CHAT, kind: 'month', now: NOW });
+
+    expect(summary?.currencies.map((c) => [c.currency, c.totalMinor])).toEqual([
+      ['RSD', 195000],
+      ['EUR', 1250],
+    ]);
+    expect(summary?.people).toEqual([
+      {
+        name: 'Анна',
+        totals: [
+          { currency: 'RSD', amountMinor: 165000 },
+          { currency: 'EUR', amountMinor: 1250 },
+        ],
+      },
+      { name: 'Борис', totals: [{ currency: 'RSD', amountMinor: 30000 }] },
+    ]);
+  });
+
+  it("dates the group's month in the ledger's timezone, not the viewer's", () => {
+    const shared = db.prepare("SELECT id FROM ledgers WHERE kind = 'shared'").pluck().get();
+    db.prepare("UPDATE ledgers SET timezone = 'America/New_York' WHERE id = ?").run(shared);
+    db.prepare('UPDATE users SET active_ledger_id = ? WHERE id = ?').run(shared, user.id);
+    // 22:00 on 30 September in New York (EDT), 04:00 on 1 October in Belgrade.
+    const late = new Date('2026-10-01T02:00:00Z');
+
+    expect(groupPeriodSummary(deps, { chatId: CHAT, kind: 'month', now: late })?.period).toEqual(
+      monthOf('2026-09-01' as LocalDate),
+    );
+    expect(currentPeriodSummary(deps, { user, kind: 'month', now: late }).period).toEqual(
+      monthOf('2026-09-01' as LocalDate),
+    );
+  });
+
+  it('is undefined for an unbound chat and for a period after the ledger’s today', () => {
+    expect(groupPeriodSummary(deps, { chatId: -100777, kind: 'month', now: NOW })).toBeUndefined();
+    expect(
+      groupPeriodSummary(deps, {
+        chatId: CHAT,
+        kind: 'month',
+        period: monthOf('2026-10-01' as LocalDate),
         now: NOW,
       }),
     ).toBeUndefined();
