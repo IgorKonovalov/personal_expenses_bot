@@ -1,8 +1,8 @@
 # ADR-0018: A fiscal receipt records its total from the QR at once, and line items arrive by a background fetch
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0014](../plans/0014-fiscal-receipts-rs-me.md)
+> **Related plan(s):** [Plan 0014](../plans/done/0014-fiscal-receipts-rs-me.md)
 
 ## Context
 

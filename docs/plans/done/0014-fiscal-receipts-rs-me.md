@@ -1,11 +1,12 @@
 # 0014: Fiscal receipts: a QR photo or link from Serbia or Montenegro becomes an expense with its line items
 
-> **Status:** in-progress (2026-10-01)
+> **Status:** done (2026-10-01): built as planned, three minors and one nit open as followups,
+> Phase 7 real-receipts check owed, v0.9.0
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md),
-> [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md),
-> [ADR-0004](../adrs/0004-amount-parsing-rule.md) (structured sources are exempt from it),
-> [ADR-0011](../adrs/0011-navigation-model.md) (the expense card)
+> **Related ADRs:** [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md),
+> [ADR-0019](../../adrs/0019-qr-decoding-zxing-wasm.md),
+> [ADR-0004](../../adrs/0004-amount-parsing-rule.md) (structured sources are exempt from it),
+> [ADR-0011](../../adrs/0011-navigation-model.md) (the expense card)
 
 ## TL;DR
 
@@ -434,4 +435,179 @@ type DecodedReceipt = {
   built.
 - **Outstanding `human` phases:** Phase 7 (real receipts in production, does not block merge).
 
+## Close review
+
+Closed 2026-10-01 by the conductor, after one review round. No finding had a prose-only fix, so
+none was repaired at close. The three minors and the nit stay open, listed under `## Followups`.
+Phase 7 (real receipts in production, `human`) stays owed. ADR-0018 is accepted. ADR-0019 stays
+`proposed` until Phase 7's real-photo evidence. No earlier round raised a finding that a fix round
+resolved.
+
+The round 1 review, in full:
+
+### Plan 0014 review, round 1 (tip 98b3614e0c52845bbb0a7c9401c3d8c8c2de150d)
+
+**Verdict:** Clean: every dev phase (1 to 6) meets its done-when with tests that assert the claimed values, the gate is green, no ADR is reversed, and the three minors below are followups that don't block the close.
+
+#### Gate (run in this session, at the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 56 files, 749 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 127 relative links resolve.
+- Not run: `docker build`. Plan Phase 3 assigns the first real image build to Phase 7 (human, does not block merge).
+
+#### Lens 1: alignment with the plan and ADRs
+
+The log maps every phase to its commit, discloses the files touched outside each phase's list, and
+stays shorter than the phases section. Each phase has exactly one in-vocabulary owner tag. Done-whens
+checked against the assertions:
+
+- **Phase 1.** `rsUrl.test.ts` asserts the exact decoded object (82912 RSD, fiscal id
+  `AAAA1111-AAAA1111-16898`, 2026-09-30T22:30Z, `rs:AAAA1111`). It also asserts typed refusals for
+  `8291250`, a flipped byte, truncation, invoice types 1 to 4 and a refund, and the same result for
+  `+`, `%2B` and a space. `recordReceipt.test.ts` and `bot.test.ts` assert `occurred_on` 2026-10-01
+  in Belgrade and 2026-09-30 in London, with the date named only on the London card. They also
+  assert one `pending` receipt, the duplicate leaving 1 expense and 1 receipt with «Уже записано.»
+  above the existing card, a second user's own ledger, the future-receipt refusal, `кофе <link>`
+  going to the parser, and log lines free of the amount, URL and fiscal id.
+- **Phase 2.** `meUrl.test.ts` asserts the full decoded object, `prc` 42 → 4200 and 42.5 → 4250,
+  the four refusals, and `crtd` read the same through a space, `%2B` and `%20`. `bot.test.ts`
+  asserts Podgorica → 2026-09-30, Moscow → 2026-10-01 and the case-folded iic as 1 expense.
+- **Phase 3.** `qr.test.ts` decodes `rs-receipt.jpg` to exactly `buildRsUrl()` with `fetch`
+  throwing, returns `none` for `no-qr.jpg`, and decodes `example.png` to `https://example.com`.
+  `bot.test.ts` asserts that a photo records 82912 RSD and that a photo then the link gives 1
+  expense. Over 20 MB there is no `getFile` and no download, and the user gets the hint. A PDF gets
+  no download and the help reply, and the token never appears in a log line. The decode time is in
+  the log (63 ms). The Dockerfile check matches the done-when's shape. That it passes in a real
+  build is Phase 7's to see.
+- **Phase 4.** `rsResponse.test.ts` asserts 79999, 2913 and exactly 29 for `0.29`, plus `'0.535'`
+  kept as text and `1.005` refused. `meResponse.test.ts` and `fetchDueReceipt.test.ts` together
+  assert two items in source order and the description becoming «Test Market». A changed category,
+  or an edited description, keeps every field. The backoff test steps a fake clock minute by minute
+  and asserts attempts at `[0, 1, 6, 36, 156, 876]`, then `failed`, `attempts` 6 and no seventh
+  call. The concurrent double fetch inserts the items once. The fetchers run on an injected `fetch`.
+- **Phase 5.** The 120 × 60-character paging test asserts every page at most 4096 and all 120
+  listed in order. The escaping test asserts `&lt;b&gt;Хлеб &amp; Co&lt;/b&gt;`. The foreign
+  [Позиции] tap answers with a toast only. The double-tap test is weaker than its claim: see
+  minor 2.
+- **Phase 6.** `messages.test.ts` asserts the receipts, past-date and card-button lines and a
+  length under 4096. The README names `suf.purs.gov.rs` and `mapr.tax.gov.me` as the only hosts
+  besides Telegram.
+
+ADR-0018 holds as implemented: offline record, `source_key` `rcpt:<country>:<fiscalId>:<ledgerId>`,
+the CAS on `pending`, the source-text numbers, and the QR total never overwritten. ADR-0019 also
+holds: the wasm loads from `node_modules` via `import.meta.resolve`.
+
+#### Lens 2: layering
+
+grammY is imported only under `src/bot/`. `src/domain/receipts/` imports only `node:crypto` and the
+money module. SQL lives only in `src/db/`. All copy is in `messages.ts`. `src/fiscal/*Fetcher.ts`
+imports the `ReceiptFetcher` port types from `services/fetchDueReceipt.ts`, an adapter implementing
+a service-owned port, which is acceptable.
+
+#### Lens 3: correctness
+
+Money is bigint for the QR total and digit strings for the JSON amounts (`minorFromDecimal`), and
+no float path exists. Time: the issue date is the local date in the user's resolved timezone, and
+the future check compares local dates. Idempotency: a redelivered text or photo update dedupes on
+the source key, [Повторить] is a CAS on `failed`, and the item insert sits behind a CAS on
+`pending`. Callback data stays within 51 and 48 bytes. Item and seller names go through `html`.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **What:** a SUF link followed by other words, or by a second line, is refused as a damaged link
+   instead of going to the expense parser.
+   **Where:** `src/domain/receipts/rsUrl.ts:15` (`[^#]*` matches spaces and newlines up to the end
+   of the text), then `vlParameter` (line 48) turns the spaces into `+` and the base64 check fails.
+   This session confirmed it with `tsx`: `decodeReceiptUrl(buildRsUrl() + ' кофе')` and
+   `buildRsUrl() + '\n450 кофе'` both return `{ kind: 'refused', reason: 'malformed' }`.
+   **Why it matters:** the Phase 1 done-when says text that contains a SUF link next to other
+   words is not a receipt and goes to the parser. Only the leading-words case (`кофе <link>`) is
+   tested. A user who pastes the link with a note after it gets «ссылка повреждена или обрезана»,
+   which is false. The ME pattern ends in `\S*` and doesn't have this problem.
+   **Fix:** match the query as `([^#\s]*)` and treat a whole-text form-decoded space separately.
+   Alternatively, require that the trimmed text contain no whitespace except inside `vl`, i.e.
+   reject whitespace followed by a non-base64 run. Add `link + ' кофе'` and `link + '\n450 кофе'`
+   to `rsUrl.test.ts` as `notReceipt`.
+
+2. **What:** the [Повторить] double-tap test can't fail on its "the worker fetches it once" half.
+   **Where:** `src/bot/bot.test.ts`, test "resets a failed receipt once on a double tap of
+   [Повторить], and the worker fetches it once" (the closing `fetchDueReceipt` pair).
+   **Why it matters:** the fake fetcher fails, so the first call reschedules the receipt to +1 min.
+   The second call at the same `now` is idle whatever the double tap did. The real defenses are
+   the `resetFailedReceipt` CAS (asserted by the row and the second toast) and the worker's
+   in-flight guard on `kick`, which no test exercises. The log discloses the substitution.
+   **Fix:** use a fetcher that succeeds and assert that a second `fetchDueReceipt` is `idle`.
+   Better, add a `receiptWorker` test that calls `kick()` twice while a gated fetch is in flight
+   and asserts one fetcher call.
+
+3. **What:** an exception thrown after the fetcher answers is caught per drain, not per receipt,
+   and the receipt is retried every tick with no backoff.
+   **Where:** `src/bot/receiptWorker.ts:62-68` catches around the whole `drain()`. In
+   `src/services/fetchDueReceipt.ts:85-90`, a throw inside the success transaction (e.g. from
+   `insertReceiptItems` or `enrichExpense`) rolls back and leaves the receipt `pending` with an
+   unchanged `next_fetch_at`. **Why it matters:** the plan's risk section says the worker catches
+   and logs per receipt. As written, such a receipt is refetched from the tax site every 5 s
+   (`TICK_MS`) indefinitely, which is the rate-limit exposure the backoff exists to prevent. The
+   likelihood is low because the parsers validate every column, but nothing bounds it.
+   **Fix:** in `fetchDueReceipt`, wrap the success transaction and on a throw call `failed(deps,
+   receipt, 'error', now)`, the way `runFetcher` already does for a fetcher throw. Add a service
+   test with a fetched outcome whose application throws, asserting that `attempts` becomes 1 and
+   the receipt is rescheduled.
+
+##### nit
+
+1. **What:** test-only code ships in the production image.
+   **Where:** `tsconfig.build.json` compiles `src/domain/receipts/testing/buildRsVl.ts` and
+   `src/fiscal/qr.fixtures/generate.ts` into `dist/`, which the runtime stage copies. The
+   Dockerfile check depends on the former. **Why it matters:** this is harmless dead code, but
+   `generate.js` shells out to `magick` and `rm` if anything ever imports it. The log already
+   records it as a followup. **Fix:** exclude `src/fiscal/qr.fixtures/**` from the build. For the
+   check, build the expected URL inline in the `RUN` (or keep the builder but delete
+   `dist/domain/receipts/testing` and `dist/fiscal/qr.fixtures` after the check).
+
+#### Bookkeeping owed at close
+
+- Plan `Status:` → `done` with the date and verdict, then `git mv` to `docs/plans/done/` and repair
+  the moved plan's `../adrs/` links and its inbound links. Run `node scripts/check-doc-links.mjs`.
+- Phase 7 (human, `Blocks merge: no`) stays owed. Record it as outstanding in the close.
+- ADR-0018: `proposed` → `accepted`. ADR-0019 stays `proposed`: its acceptance waits on Phase 7's
+  real-photo evidence, per the plan.
+- `docs/adrs/README.md` and `docs/plans/README.md` rows refreshed, and the next free plan number
+  confirmed.
+- Version: a minor bump (a feature plan with a new dependency, `zxing-wasm` 3.1.4, and migration
+  `0010_receipts.sql`). Add a `CHANGELOG.md` entry and a `versionAnnouncements` entry in
+  `messages.ts` (ADR-0013).
+- Followups for `tools/conductor/FOLLOWUPS.md` or a later plan: the three minors and the nit above,
+  plus the log's note that the test harness answers every Bot API call with `true`, so no bot test
+  sees a stored card message id or the worker's card edit.
+- Docs freshness: `CLAUDE.md` "Where things live" lists `src/fiscal/`, the README has the
+  Receipts section and the `fiscal/` tree line, and `/help` carries the three new lines. Nothing
+  else is owed. No new env var or config key.
+
 ## Followups
+
+- **A SUF link followed by other words is refused as damaged** instead of going to the expense
+  parser (review minor 1). Stop the query match at whitespace, and test `link + ' кофе'` and
+  `link + '\n450 кофе'` as not-a-receipt.
+- **The [Повторить] double-tap test can't fail on "the worker fetches it once"** (review minor 2).
+  Add a `receiptWorker` test that kicks twice during a gated fetch.
+- **A throw after the fetcher answers retries every tick with no backoff** (review minor 3).
+  Route a failed success transaction through `failed(...)` in `fetchDueReceipt`.
+- **Test-only code ships in `dist/`** (review nit 1): `qr.fixtures/generate.ts` and
+  `receipts/testing/buildRsVl.ts`.
+- **No bot test sees a stored card message id or the worker's card edit**, because the harness
+  answers every Bot API call with `true`.
+- **Phase 7 real-receipts check is owed** (`human`, does not block merge). ADR-0019's acceptance
+  waits on it.

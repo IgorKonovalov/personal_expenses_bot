@@ -12,13 +12,13 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
-| [0014](0014-fiscal-receipts-rs-me.md) | Fiscal receipts: a QR photo or link from Serbia or Montenegro becomes an expense with its line items | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0014](done/0014-fiscal-receipts-rs-me.md) | Fiscal receipts: a QR photo or link from Serbia or Montenegro becomes an expense with its line items | done (2026-10-01): built as planned, three minors and one nit open, Phase 7 real-receipts check owed, v0.9.0 |
 | [0011](done/0011-budgets.md) | Budgets: a payday-period limit, a daily allowance, essential categories and category caps | done (2026-10-01): built as planned, two minors and two nits open, Phase 6 live check owed, v0.8.0 |
 | [0009](done/0009-group-ledgers.md) | Group ledgers: the bot as a group's accountant, with personal books kept private | done (2026-10-01): built as planned, one minor open, Phase 5 live check owed, v0.7.0 |
 | [0010](done/0010-conductor-followups-readiness-at-queue-time.md) | Conductor followups: readiness at queue time, main before readiness, resume and idle fixes | done (2026-10-01): built as planned, two conductor followups logged, no version bump |

@@ -2,7 +2,7 @@
 
 > **Status:** proposed
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0014](../plans/0014-fiscal-receipts-rs-me.md)
+> **Related plan(s):** [Plan 0014](../plans/done/0014-fiscal-receipts-rs-me.md)
 
 ## Context
 

@@ -2,6 +2,20 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.9.0 (2026-10-01)
+
+From Plan 0014 (fiscal receipts from Serbia and Montenegro).
+
+- In DM, a photo or image file of a Serbian or Montenegrin fiscal receipt, or its pasted
+  verification link, records one expense with the receipt's total in RSD or EUR. It's dated the
+  receipt's day in the user's timezone. Sending the same receipt again answers «Уже записано.»
+  with the existing card.
+- A few seconds later the card gains the shop's name and the item count. [Позиции] lists the line
+  items, and [Повторить] retries when the tax site didn't answer.
+- The bot now calls `suf.purs.gov.rs` and `mapr.tax.gov.me` for receipt details. New dependency:
+  `zxing-wasm` for reading QR codes.
+- `/help` mentions receipts, past dates and the card's edit buttons.
+
 ## 0.8.0 (2026-10-01)
 
 From Plan 0011 (budgets).
