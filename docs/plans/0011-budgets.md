@@ -280,8 +280,8 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | done | committed with this row |
-| 2: Payday periods | dev | not started | |
+| 1: Walking skeleton | dev | done | e3c9052 |
+| 2: Payday periods | dev | done | committed with this row |
 | 3: Essential categories | dev | not started | |
 | 4: Per-category caps | dev | not started | |
 | 5: Group ledgers | dev | not started | |
@@ -300,6 +300,11 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 - Phase 1: `/budget` was added to `messages.commands` and to the help text, and
   `💰 Бюджет` to the menu bar. The pinned menu and command-list expectations in `bot.test.ts`
   were updated.
+- Phase 2: outside `Files touched`, `src/db/budgets.ts` gained `setBudgetStartDay`, because the
+  SQL can only live in `src/db/`. `src/bot/bot.test.ts` had its pinned budget-screen keyboard
+  updated and gained a start-day flow test.
+- Phase 2: the budget screen shows its period line whenever a budget row exists, including one
+  with a start day and no limit.
 
 ### Close triggers
 

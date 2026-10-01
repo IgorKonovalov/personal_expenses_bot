@@ -601,26 +601,24 @@ export const messages = {
   // currencies is listed as not counted.
   budgetScreen: ({ ledger, status }: BudgetScreenView): Html => {
     const title = html`<b>Бюджет «${ledgerName(ledger)}»</b>`;
-    const limit = status?.limit;
-    if (status === undefined || limit === undefined) {
-      return joinHtml(
-        [
-          title,
-          html`Лимит не задан. Задайте лимит на период, и после каждой траты я покажу, сколько осталось на сегодня.`,
-        ],
-        '\n',
-      );
-    }
-    const { currency, period } = status;
+    const noLimit = html`Лимит не задан. Задайте лимит на период, и после каждой траты я покажу, сколько осталось на сегодня.`;
+    if (status === undefined) return joinHtml([title, noLimit], '\n');
+    const { currency, period, limit } = status;
     const lines = [
       title,
       html`Период: ${weekRange(period, GENITIVE_MONTHS)}, день ${period.day} из ${period.days}`,
-      html`Лимит: ${formatMoney({ amountMinor: limit.limitMinor, currency })}, потрачено ${formatMoney({ amountMinor: limit.spentMinor, currency })}`,
-      html`${todayLeft(limit.todayLeftMinor, currency)}`,
-      limit.periodLeftMinor < 0
-        ? html`Перерасход за период: ${formatMoney({ amountMinor: -limit.periodLeftMinor, currency })}`
-        : html`Осталось до ${shortDate(period.to)}: ${formatMoney({ amountMinor: limit.periodLeftMinor, currency })}`,
     ];
+    if (limit === undefined) {
+      lines.push(noLimit);
+    } else {
+      lines.push(
+        html`Лимит: ${formatMoney({ amountMinor: limit.limitMinor, currency })}, потрачено ${formatMoney({ amountMinor: limit.spentMinor, currency })}`,
+        html`${todayLeft(limit.todayLeftMinor, currency)}`,
+        limit.periodLeftMinor < 0
+          ? html`Перерасход за период: ${formatMoney({ amountMinor: -limit.periodLeftMinor, currency })}`
+          : html`Осталось до ${shortDate(period.to)}: ${formatMoney({ amountMinor: limit.periodLeftMinor, currency })}`,
+      );
+    }
     if (status.notCounted.size > 0) {
       const amounts = [...status.notCounted].map(([code, amountMinor]) =>
         formatMoney({ amountMinor, currency: code }),
@@ -649,14 +647,23 @@ export const messages = {
       ? ask
       : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
   },
+  budgetStartDayButton: 'День начала периода',
+  // A month too short for the day starts its period on its last day (ADR-0017).
+  budgetStartDayPrompt: (current: number): Html =>
+    html`Сейчас период начинается ${current}-го числа. Отправьте день месяца от 1 до 31, например «10» — день зарплаты. Если в месяце нет такого дня, период начнётся в последний день месяца.`,
   // Asked above the prompt again when an answer is refused; the flow stays pending.
-  budgetLimitRefused: {
+  budgetRefused: {
     invalidAmount: html`Не удалось разобрать сумму.`,
     ambiguousAmount: (readings: readonly Money[]): Html =>
       html`Сумму можно понять по-разному: ${readings.map(formatMoney).join(' или ')}. Тысячи отделяйте пробелом («30 000»), копейки — запятой («1,20»).`,
     tooLarge: html`Слишком большая сумма.`,
+    invalidDay: html`Нужен день месяца от 1 до 31.`,
     // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
-    expenseShaped: html`Похоже на трату. Сейчас я жду лимит. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+    // Keyed by the flow the prompt belongs to.
+    expenseShaped: {
+      budgetLimit: html`Похоже на трату. Сейчас я жду лимит. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+      budgetStartDay: html`Похоже на трату. Сейчас я жду день месяца. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+    },
   },
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.

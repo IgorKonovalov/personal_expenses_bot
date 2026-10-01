@@ -1,4 +1,9 @@
-import { findLedgerBudget, setBudgetLimit, type LedgerBudget } from '../db/budgets.js';
+import {
+  findLedgerBudget,
+  setBudgetLimit,
+  setBudgetStartDay,
+  type LedgerBudget,
+} from '../db/budgets.js';
 import { listLedgerExpensesBetween } from '../db/expenses.js';
 import {
   findActiveLedger,
@@ -12,7 +17,7 @@ import { dayOfPeriod, isSafeLimit, remainders, splitByCurrency } from '../domain
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
-import { monthOf } from '../domain/periods.js';
+import { budgetPeriodOf } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import { cancelFlow, completeFlow, startFlow, type BudgetFlow } from './flowSessions.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
@@ -56,7 +61,7 @@ export function budgetStatus(
   const { ledger, today } = input;
   const budget = findLedgerBudget(db, ledger.id);
   if (budget === undefined) return undefined;
-  const { from, to } = monthOf(today);
+  const { from, to } = budgetPeriodOf(today, budget.periodStartDay);
   const period: BudgetPeriod = {
     from,
     to,
@@ -150,8 +155,8 @@ export function startBudgetFlow(
   return true;
 }
 
-export type LimitRefusal =
-  | { readonly reason: 'invalidAmount' | 'tooLarge' | 'expenseShaped' }
+export type BudgetRefusal =
+  | { readonly reason: 'invalidAmount' | 'tooLarge' | 'expenseShaped' | 'invalidDay' }
   | { readonly reason: 'ambiguousAmount'; readonly readings: readonly AmountReading[] };
 
 export type BudgetAnswerResult =
@@ -161,13 +166,42 @@ export type BudgetAnswerResult =
       readonly kind: 'invalid';
       readonly ledger: Ledger;
       readonly current?: LedgerBudget;
-    } & LimitRefusal)
+    } & BudgetRefusal)
   // The user no longer owns the ledger: the flow is cleared, nothing written.
   | { readonly kind: 'gone' };
 
-// A typed limit, in the ledger's default currency, which the budget adopts. The write and the
-// flow's completion commit together, keyed by `inputKey`, so a redelivered answer finds the flow
-// already answered.
+type LimitAnswer =
+  | { readonly kind: 'ok'; readonly amountMinor: number }
+  | { readonly kind: 'refused'; readonly refusal: BudgetRefusal };
+
+// An amount in the ledger's default currency, small enough for exact allowance arithmetic.
+function parseLimit(text: string, currency: CurrencyCode): LimitAnswer {
+  const parsed = parseAmount(text, currency);
+  switch (parsed.kind) {
+    case 'ambiguous':
+      return {
+        kind: 'refused',
+        refusal: { reason: 'ambiguousAmount', readings: parsed.readings },
+      };
+    case 'invalid':
+      return { kind: 'refused', refusal: { reason: 'invalidAmount' } };
+    case 'ok':
+      return isSafeLimit(parsed.amountMinor)
+        ? { kind: 'ok', amountMinor: parsed.amountMinor }
+        : { kind: 'refused', refusal: { reason: 'tooLarge' } };
+  }
+}
+
+// A day of the month, 1 to 31, as plain digits.
+function parseStartDay(text: string): number | undefined {
+  if (!/^\d{1,2}$/.test(text)) return undefined;
+  const day = Number(text);
+  return day >= 1 && day <= 31 ? day : undefined;
+}
+
+// A typed budget setting. A limit is read in the ledger's default currency, which the budget
+// adopts. The write and the flow's completion commit together, keyed by `inputKey`, so a
+// redelivered answer finds the flow already answered.
 export function answerBudgetFlow(
   deps: Deps,
   input: {
@@ -187,7 +221,7 @@ export function answerBudgetFlow(
       return { kind: 'gone' };
     }
     const current = findLedgerBudget(db, ledger.id);
-    const refuse = (refusal: LimitRefusal): BudgetAnswerResult =>
+    const refuse = (refusal: BudgetRefusal): BudgetAnswerResult =>
       current === undefined
         ? { kind: 'invalid', ledger, ...refusal }
         : { kind: 'invalid', ledger, current, ...refusal };
@@ -197,20 +231,35 @@ export function answerBudgetFlow(
     if (asExpense === 'expense' || asExpense === 'ambiguous') {
       return refuse({ reason: 'expenseShaped' });
     }
-    const parsed = parseAmount(text, ledger.defaultCurrency);
-    if (parsed.kind === 'ambiguous') {
-      return refuse({ reason: 'ambiguousAmount', readings: parsed.readings });
+    let changed: boolean;
+    switch (flow.kind) {
+      case 'budgetLimit': {
+        const limit = parseLimit(text, ledger.defaultCurrency);
+        if (limit.kind === 'refused') return refuse(limit.refusal);
+        changed = setBudgetLimit(
+          db,
+          ledger.id,
+          { limitMinor: limit.amountMinor, currency: ledger.defaultCurrency },
+          input.now,
+        );
+        break;
+      }
+      case 'budgetStartDay': {
+        const startDay = parseStartDay(text);
+        if (startDay === undefined) return refuse({ reason: 'invalidDay' });
+        changed = setBudgetStartDay(
+          db,
+          ledger.id,
+          { startDay, currency: current?.currency ?? ledger.defaultCurrency },
+          input.now,
+        );
+        break;
+      }
     }
-    if (parsed.kind === 'invalid') return refuse({ reason: 'invalidAmount' });
-    if (!isSafeLimit(parsed.amountMinor)) return refuse({ reason: 'tooLarge' });
-    const changed = setBudgetLimit(
-      db,
-      ledger.id,
-      { limitMinor: parsed.amountMinor, currency: ledger.defaultCurrency },
-      input.now,
-    );
     completeFlow(deps, user, input.inputKey);
-    if (changed) logger.info({ ledgerId: ledger.id, userId: user.id }, 'budget limit set');
+    if (changed) {
+      logger.info({ ledgerId: ledger.id, userId: user.id, field: flow.kind }, 'budget changed');
+    }
     return { kind: 'set', ledger };
   })();
 }

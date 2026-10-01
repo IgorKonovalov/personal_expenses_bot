@@ -152,9 +152,10 @@ export function summaryPageData(period: Period): string {
 
 // The /budget screen (ADR-0017). Only the current screen anchor accepts these, and they act on
 // the anchor's ledger, so none carries a ledger id. `bud:open` shows the screen in the anchor;
-// `bud:lim` asks for the limit.
+// `bud:lim` asks for the limit, `bud:day` for the period start day.
 export const BUDGET_OPEN = 'bud:open';
 export const BUDGET_LIMIT = 'bud:lim';
+export const BUDGET_START_DAY = 'bud:day';
 
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';

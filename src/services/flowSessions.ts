@@ -92,11 +92,14 @@ export interface TimezoneFlow {
 
 // A budget setting typed into the budget screen of `ledgerId`.
 export interface BudgetFlow {
-  readonly kind: 'budgetLimit';
+  readonly kind: 'budgetLimit' | 'budgetStartDay';
   readonly ledgerId: LedgerId;
 }
 
-const BUDGET_FLOW_KINDS: ReadonlySet<string> = new Set<BudgetFlow['kind']>(['budgetLimit']);
+const BUDGET_FLOW_KINDS: ReadonlySet<string> = new Set<BudgetFlow['kind']>([
+  'budgetLimit',
+  'budgetStartDay',
+]);
 
 export function isBudgetFlow(flow: Flow): flow is BudgetFlow {
   return BUDGET_FLOW_KINDS.has(flow.kind);
@@ -229,7 +232,9 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   }
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
-  if (kind === 'categoryAdd' || kind === 'budgetLimit') return { kind, ledgerId };
+  if (kind === 'categoryAdd' || kind === 'budgetLimit' || kind === 'budgetStartDay') {
+    return { kind, ledgerId };
+  }
   if (kind === 'categoryRename' && typeof parsed.categoryId === 'number') {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }

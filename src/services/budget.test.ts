@@ -106,6 +106,40 @@ describe('budgetStatus over a calendar month (ADR-0017)', () => {
   });
 });
 
+describe('payday periods', () => {
+  function setStartDay(text: string, now: Date) {
+    const flow = { kind: 'budgetStartDay', ledgerId: ledger.id } as const;
+    expect(startBudgetFlow(deps, { user, flow, now })).toBe(true);
+    return answerBudgetFlow(deps, { user, flow, text, inputKey: `tg:1:${++messageId}`, now });
+  }
+
+  it('leaves an expense dated the 9th out of a period starting on the 10th', () => {
+    // 2026-10-10 12:00 in Moscow: day 1 of the 31-day period 10 Oct - 9 Nov.
+    const OCT_10 = new Date('2026-10-10T09:00:00Z');
+    expect(setStartDay('10', OCT_10).kind).toBe('set');
+    setLimit('30000', OCT_10);
+
+    spend('500 такси вчера', OCT_10);
+
+    expect(status(OCT_10)).toMatchObject({
+      period: { from: '2026-10-10', to: '2026-11-09', day: 1, days: 31 },
+      limit: { todayLeftMinor: 96_774, periodLeftMinor: 3_000_000 },
+    });
+  });
+
+  it('refuses a day outside 1..31 and keeps the budget without a limit', () => {
+    expect(setStartDay('0', OCT_1)).toMatchObject({ kind: 'invalid', reason: 'invalidDay' });
+    expect(setStartDay('32', OCT_1)).toMatchObject({ kind: 'invalid', reason: 'invalidDay' });
+    expect(setStartDay('десятое', OCT_1)).toMatchObject({ kind: 'invalid', reason: 'invalidDay' });
+    expect(setStartDay('31', OCT_1).kind).toBe('set');
+    expect(status(OCT_1)).toMatchObject({
+      currency: 'RUB',
+      period: { from: '2026-09-30', to: '2026-10-30' },
+    });
+    expect(status(OCT_1)?.limit).toBeUndefined();
+  });
+});
+
 describe('the limit flow', () => {
   it('refuses an expense, an ambiguous amount and a limit beyond the safe range', () => {
     expect(setLimit('450 кофе')).toMatchObject({ kind: 'invalid', reason: 'expenseShaped' });

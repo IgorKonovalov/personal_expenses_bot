@@ -105,6 +105,14 @@ describe('routeText (ADR-0009)', () => {
     expect(route('tg:1:2', T)).toEqual({ kind: 'free', expiredFlow: true });
   });
 
+  it("carries the budget's ledger id in the start-day flow", () => {
+    startFlow({ db }, user, { kind: 'budgetStartDay', ledgerId }, T);
+    expect(route('tg:1:1', T)).toEqual({
+      kind: 'flow',
+      flow: { kind: 'budgetStartDay', ledgerId },
+    });
+  });
+
   it('is free text with no expired flow when nothing was ever pending', () => {
     expect(route('tg:1:1', T)).toEqual({ kind: 'free', expiredFlow: false });
   });

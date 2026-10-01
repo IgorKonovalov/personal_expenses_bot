@@ -1,8 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { monthOf, next, parsePeriod, periodKey, previous, weekOf } from './periods.js';
+import { dayOfPeriod } from './budget.js';
+import {
+  budgetPeriodOf,
+  monthOf,
+  next,
+  parsePeriod,
+  periodKey,
+  previous,
+  weekOf,
+} from './periods.js';
 import type { LocalDate } from './time.js';
 
 const d = (date: string) => date as LocalDate;
+
+describe('budgetPeriodOf (ADR-0017)', () => {
+  it.each([
+    [1, '2026-10-05', '2026-10-01', '2026-10-31', 31],
+    [10, '2026-10-05', '2026-09-10', '2026-10-09', 30],
+    [10, '2026-10-10', '2026-10-10', '2026-11-09', 31],
+    [31, '2027-02-15', '2027-01-31', '2027-02-27', 28],
+    [31, '2027-02-28', '2027-02-28', '2027-03-30', 31],
+    [30, '2028-02-29', '2028-02-29', '2028-03-29', 30],
+  ])('start %i, %s -> [%s, %s], %i days', (start, date, from, to, days) => {
+    const period = budgetPeriodOf(d(date), start);
+    expect([period.from, period.to]).toEqual([from, to]);
+    expect(dayOfPeriod(period.from, period.to)).toBe(days);
+  });
+
+  it('is monthOf for start day 1', () => {
+    const { from, to } = monthOf(d('2026-10-05'));
+    expect(budgetPeriodOf(d('2026-10-05'), 1)).toEqual({ from, to });
+  });
+
+  it('crosses a year end with start 15', () => {
+    expect(budgetPeriodOf(d('2027-01-03'), 15)).toEqual({ from: '2026-12-15', to: '2027-01-14' });
+  });
+});
 
 describe('weekOf', () => {
   it('runs Monday to Sunday', () => {

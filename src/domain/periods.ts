@@ -40,6 +40,45 @@ export function next(period: Period): Period {
   return periodOf(period.kind, addDays(period.to, 1));
 }
 
+// A budget period of local dates, both ends inclusive (ADR-0017).
+export interface DateRange {
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+}
+
+// The budget period holding `date` for a period starting on day `startDay` (1..31) of a month.
+// A month too short for `startDay` starts its period on its last day. The period runs to the day
+// before the next one starts. Start day 1 gives monthOf's calendar months.
+export function budgetPeriodOf(date: LocalDate, startDay: number): DateRange {
+  const [year = 0, month = 1, day = 1] = date.split('-').map(Number);
+  const thisStart = clampedDay(year, month, startDay);
+  const [fromYear, fromMonth] = day >= thisStart ? [year, month] : shiftMonth(year, month, -1);
+  const [nextYear, nextMonth] = shiftMonth(fromYear, fromMonth, 1);
+  const from = isoDate(fromYear, fromMonth, clampedDay(fromYear, fromMonth, startDay));
+  const nextFrom = isoDate(nextYear, nextMonth, clampedDay(nextYear, nextMonth, startDay));
+  return { from, to: addDays(nextFrom, -1) };
+}
+
+function lastDayOf(year: number, month: number): number {
+  // Day 0 of the next month is this month's last day.
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function clampedDay(year: number, month: number, startDay: number): number {
+  return Math.min(startDay, lastDayOf(year, month));
+}
+
+// `month` is 1-based; returns [year, month] moved by `delta` months.
+function shiftMonth(year: number, month: number, delta: number): [number, number] {
+  const index = year * 12 + (month - 1) + delta;
+  return [Math.floor(index / 12), (index % 12) + 1];
+}
+
+function isoDate(year: number, month: number, day: number): LocalDate {
+  const pad = (n: number, width: number) => String(n).padStart(width, '0');
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}` as LocalDate;
+}
+
 // A week by its Monday (`2026-09-28`) or a month by `YYYY-MM` (`2026-09`). Anything else,
 // including a week keyed by another weekday, is undefined.
 export function parsePeriod(kind: Period['kind'], key: string): Period | undefined {

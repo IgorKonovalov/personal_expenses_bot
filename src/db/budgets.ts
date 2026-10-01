@@ -64,3 +64,23 @@ export function setBudgetLimit(
     .run(ledgerId, limit.limitMinor, limit.currency, updatedAt.toISOString());
   return changes === 1;
 }
+
+// Sets the period start day. A ledger without a budget gets one with no limit, in `currency`.
+// Returns false when the day is already set: nothing is written.
+export function setBudgetStartDay(
+  db: Db,
+  ledgerId: LedgerId,
+  setting: { readonly startDay: number; readonly currency: CurrencyCode },
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, number, string]>(
+      `INSERT INTO ledger_budgets (ledger_id, currency, period_start_day, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (ledger_id) DO UPDATE
+          SET period_start_day = excluded.period_start_day, updated_at = excluded.updated_at
+        WHERE period_start_day IS NOT excluded.period_start_day`,
+    )
+    .run(ledgerId, setting.currency, setting.startDay, updatedAt.toISOString());
+  return changes === 1;
+}

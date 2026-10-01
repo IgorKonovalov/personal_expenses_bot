@@ -16,7 +16,7 @@ import {
 import { answerCategoryFlow } from '../services/manageCategories.js';
 import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
-import { budgetView, limitPromptView, limitRefusal } from './handlers/budget.js';
+import { budgetPromptView, budgetRefusal, budgetView } from './handlers/budget.js';
 import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { editPromptView } from './handlers/edit.js';
@@ -148,7 +148,7 @@ export async function answerFlow(
       case 'invalid': {
         const view = budgetScreen(deps, { user, ledgerId: flow.ledgerId, now: deps.now() });
         if (view !== undefined)
-          await show(ctx, anchor, limitPromptView(view, limitRefusal(result)));
+          await show(ctx, anchor, budgetPromptView(flow, view, budgetRefusal(flow, result)));
         return;
       }
       case 'gone':

@@ -1780,7 +1780,12 @@ describe('/budget and the card line (ADR-0017)', () => {
           text:
             '<b>Бюджет «Личные расходы»</b>\nЛимит не задан. Задайте лимит на период, и после ' +
             'каждой траты я покажу, сколько осталось на сегодня.',
-          reply_markup: { inline_keyboard: [[{ text: 'Задать лимит', callback_data: 'bud:lim' }]] },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Задать лимит', callback_data: 'bud:lim' }],
+              [{ text: 'День начала периода', callback_data: 'bud:day' }],
+            ],
+          },
           ...htmlParseMode,
         },
       },
@@ -1873,6 +1878,25 @@ describe('/budget and the card line (ADR-0017)', () => {
     expect(String(lastText(calls))).toContain(
       'Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD',
     );
+  });
+
+  it('moves the period to start on the 10th, and the card names its last day', async () => {
+    const { say, tap, calls, db } = await withLimit();
+    await say('/budget', 3);
+
+    await tap('bud:day', 102);
+    expect(lastText(calls)).toBe(
+      'Сейчас период начинается 1-го числа. Отправьте день месяца от 1 до 31, например «10» — ' +
+        'день зарплаты. Если в месяце нет такого дня, период начнётся в последний день месяца.',
+    );
+    await say('32', 4);
+    expect(String(lastText(calls))).toMatch(/^Нужен день месяца от 1 до 31\.\n/);
+    await say('10', 5);
+
+    expect(db.prepare('SELECT period_start_day FROM ledger_budgets').pluck().get()).toBe(10);
+    expect(String(lastText(calls))).toContain('Период: 10 сентября – 9 октября, день 22 из 30');
+    await say('450 кофе', 6);
+    expect(String(lastText(calls))).toContain('· до 9 окт: ');
   });
 
   it('lists an EUR expense as not counted on the screen', async () => {
