@@ -1,6 +1,6 @@
 # 0017: Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy
 
-> **Status:** draft
+> **Status:** approved (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0010, [ADR-0016](../adrs/0016-readiness-runs-before-a-plan-is-queued.md)
 
