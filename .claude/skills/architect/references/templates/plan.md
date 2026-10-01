@@ -40,7 +40,8 @@ Every phase carries exactly one `**Owner skill:**`: `dev` or `human`.
 - **What:** One sentence on what this phase produces.
 - **Files touched:** `src/domain/money.ts`, `src/domain/money.test.ts`, … A new screen, flow or
   menu entry also touches `src/services/flowSessions.ts`, `src/bot/flows.ts`,
-  `src/bot/handlers/menu.ts` and `src/bot/bot.ts`.
+  `src/bot/handlers/menu.ts` and `src/bot/bot.ts`. A change to what a flow answers, or to a
+  screen restored after one, touches `src/bot/flows.ts`.
 - **Done when:** A concrete behavioral acceptance. For tests, state the claim they defend
   ("`12,50 eur` parses to `{ amount_minor: 1250, currency: 'EUR' }`"), not "tests pass". Every
   numeric value is worked out, not guessed.

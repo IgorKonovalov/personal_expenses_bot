@@ -7,6 +7,25 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-01 midday: Plan 0016
+
+Queue `a: 0016`. Merged as v0.9.1, review round 1, three nits. Two `run --until-idle`
+invocations, 11:53 to 12:03 and 12:04 to 12:19 local. Spend was about $11 in all.
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H1 | 0016 | `plan_wrong` in Phase 4 | Files touched omitted `src/bot/flows.ts`, where `answerFlow` renders a flow's confirmation (and Phase 5's `restoreScreen`). Amended in `d726f30`, then `resume` and a second `run`. Readiness had passed the plan twice. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F19 | architect | **F14's template line covers a new screen or flow, but not a change to what an existing flow answers.** H1 changed a flow's confirmation, which `flows.ts` renders. Widen the line: any change to a flow's answer or a screen's rendering also touches `src/bot/flows.ts`. | done (this commit) |
+| F20 | - | `prune` 0016 from `queue.json`. | done (this commit) |
+| F21 | dev | **`scripts/check-doc-links.mjs` walks the filesystem, so it checks gitignored files.** In the main checkout it fails on `tools/conductor/state/reviews/0016-round-1.md`, whose review prose reads as a link. CI and lanes have no `state/`, so only the architect's close step sees it. List files with `git ls-files '*.md'` instead. | open |
+
 ## 2026-10-01 morning: Plans 0009, 0011 and 0014
 
 Queue `a: 0009, 0011, 0014`, chained with `after`. Three merged: 0009 as v0.7.0, 0011 as
