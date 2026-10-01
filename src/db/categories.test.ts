@@ -139,7 +139,8 @@ describe('migration 0009: essential categories', () => {
     }
     insert.run(LEDGER_A, 'Дача', 'дача', null, NOW.toISOString());
 
-    expect(runMigrations(old, NOW)).toEqual(['0009']);
+    // Later migrations apply after it; only the first one is this test's.
+    expect(runMigrations(old, NOW)[0]).toBe('0009');
 
     const essential = old
       .prepare('SELECT name FROM categories WHERE essential = 1 ORDER BY name')

@@ -13,6 +13,7 @@ import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
+import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
@@ -3351,5 +3352,175 @@ describe('/settings hub and the timezone picker', () => {
         db.prepare("SELECT default_currency FROM ledgers WHERE id = 'shared-x'").pluck().get(),
       ).toBe('RSD');
     });
+  });
+});
+
+describe('fiscal receipts', () => {
+  // 2026-10-01T08:00:00Z; the synthetic receipt was issued 2026-09-30T22:30:00Z.
+  const RECEIPT_SENT = new Date('2026-10-01T08:00:00Z');
+  const RS_LINK = buildRsUrl();
+  const RS_CARD = 'Записано в «Личные расходы»: <b>829.12 RSD</b> — Чек · Другое';
+
+  function receiptBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+    const harness = createTestBot({ now: RECEIPT_SENT, ...options });
+    let updateId = 0;
+    const send = (text: string, fromId = ALLOWED_ID) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, fromId, date: RECEIPT_SENT }),
+      );
+    const setTimezone = (timezone: string) =>
+      harness.db.prepare('UPDATE users SET timezone = ?').run(timezone);
+    return { ...harness, send, setTimezone };
+  }
+
+  function receiptKeyboard(expenseId: string) {
+    return {
+      inline_keyboard: [
+        [
+          { text: 'Категория', callback_data: `exp:cat:${expenseId}` },
+          { text: 'Изменить', callback_data: `exp:edit:${expenseId}` },
+        ],
+        [{ text: messages.undoButton, callback_data: `exp:undo:${expenseId}` }],
+      ],
+    };
+  }
+
+  function expenseIds(db: Db): unknown[] {
+    return db.prepare('SELECT id FROM expenses ORDER BY rowid').pluck().all();
+  }
+
+  it('records a pasted SUF link as 82912 RSD dated the Belgrade day, with a pending receipt', async () => {
+    const { send, calls, db } = receiptBot();
+    await send('/start');
+    calls.length = 0;
+
+    await send(RS_LINK);
+
+    const [expenseId] = expenseIds(db);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: RS_CARD,
+          reply_markup: receiptKeyboard(String(expenseId)),
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    expect(
+      db.prepare('SELECT amount_minor, currency, description, occurred_on FROM expenses').all(),
+    ).toEqual([
+      { amount_minor: 82912, currency: 'RSD', description: 'Чек', occurred_on: '2026-10-01' },
+    ]);
+    expect(db.prepare('SELECT fetch_state, fiscal_id FROM receipts').all()).toEqual([
+      { fetch_state: 'pending', fiscal_id: 'AAAA1111-AAAA1111-16898' },
+    ]);
+  });
+
+  it('dates the receipt the 30th for a London user, and the card names the date', async () => {
+    const { send, setTimezone, calls, db } = receiptBot();
+    await send('/start');
+    setTimezone('Europe/London');
+    calls.length = 0;
+
+    await send(RS_LINK);
+
+    expect(db.prepare('SELECT occurred_on FROM expenses').pluck().all()).toEqual(['2026-09-30']);
+    expect(sentTexts(calls)).toEqual([
+      'Записано в «Личные расходы» за 30 сентября: <b>829.12 RSD</b> — Чек · Другое',
+    ]);
+  });
+
+  it('answers the same link sent again with «уже записано» and the existing card', async () => {
+    const { send, calls, db } = receiptBot();
+    await send(RS_LINK);
+    calls.length = 0;
+
+    await send(RS_LINK);
+
+    const [expenseId] = expenseIds(db);
+    expect(expenseCount(db)).toEqual({ n: 1 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM receipts').get()).toEqual({ n: 1 });
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: `Уже записано.\n${RS_CARD}`,
+          reply_markup: receiptKeyboard(String(expenseId)),
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it("records the same link from a second user in that user's personal ledger", async () => {
+    const { send, db } = receiptBot();
+    await send(RS_LINK);
+
+    await send(RS_LINK, SECOND_ALLOWED_ID);
+
+    expect(expenseCount(db)).toEqual({ n: 2 });
+    expect(db.prepare('SELECT COUNT(DISTINCT ledger_id) AS n FROM expenses').get()).toEqual({
+      n: 2,
+    });
+  });
+
+  it('refuses a receipt issued after the local date of the message and records nothing', async () => {
+    const { send, calls, db } = receiptBot();
+
+    await send(buildRsUrl({ issuedMs: Date.parse('2026-10-02T09:00:00Z') }));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls)).toEqual([messages.futureReceipt]);
+  });
+
+  it.each([
+    ['a refund', { transactionType: 1 }, messages.receiptRefused.refund],
+    ['a copy', { invoiceType: 2 }, messages.receiptRefused.notSale],
+    ['a fractional total', { rawTotal: 8291250n }, messages.receiptRefused.fractionalTotal],
+  ] as const)('refuses %s and records nothing', async (_name, fields, reply) => {
+    const { send, calls, db } = receiptBot();
+
+    await send(buildRsUrl(fields));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls)).toEqual([reply]);
+  });
+
+  it('sends a SUF link next to other words to the expense parser', async () => {
+    const { send, db } = receiptBot();
+
+    await send(`кофе ${RS_LINK}`);
+
+    expect(db.prepare('SELECT COUNT(*) AS n FROM receipts').get()).toEqual({ n: 0 });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE source_key LIKE 'rcpt:%'").get(),
+    ).toEqual({ n: 0 });
+  });
+
+  it('logs the receipt and expense ids and the country, never the amount, URL or fiscal id', async () => {
+    const { send, logLines, db } = receiptBot({ logLevel: 'info' });
+
+    await send(RS_LINK);
+    await send(RS_LINK);
+
+    const receiptLines = logLines.filter((line) => line.includes('receipt'));
+    expect(receiptLines).toHaveLength(2);
+    const receiptId = db.prepare('SELECT id FROM receipts').pluck().get();
+    expect(JSON.parse(receiptLines[0] ?? '{}')).toMatchObject({
+      receiptId,
+      expenseId: expenseIds(db)[0],
+      country: 'RS',
+    });
+    for (const line of logLines) {
+      const content = logContent(line);
+      expect(content).not.toContain('AAAA1111');
+      expect(content).not.toContain('82912');
+      expect(content).not.toContain('829.12');
+      expect(content).not.toContain('suf.purs');
+      expect(content).not.toContain(RS_LINK.slice(40, 80));
+    }
   });
 });

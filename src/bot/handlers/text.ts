@@ -1,4 +1,5 @@
 import type { Composer, Context } from 'grammy';
+import { decodeRsUrl } from '../../domain/receipts/rsUrl.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
@@ -8,6 +9,7 @@ import { replyHtml } from '../render/html.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
 import { cardFor, cardView } from './card.js';
 import { sendHelp } from './help.js';
+import { answerReceipt } from './receipt.js';
 import { ensureUser } from './start.js';
 
 // Text that isn't a command or a menu tap, routed by ADR-0009: a redelivered flow answer is
@@ -33,12 +35,21 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
 
+    // Telegram dates are Unix seconds.
+    const occurredAt = new Date(ctx.message.date * 1000);
+
+    // A message that is a receipt verification link, and nothing else, records the receipt.
+    const receipt = decodeRsUrl(ctx.message.text);
+    if (receipt.kind !== 'notReceipt') {
+      await answerReceipt(ctx, deps, { user, decoded: receipt, occurredAt, now });
+      return;
+    }
+
     const result = recordExpense(deps, {
       user,
       text: ctx.message.text,
       sourceKey,
-      // Telegram dates are Unix seconds.
-      occurredAt: new Date(ctx.message.date * 1000),
+      occurredAt,
       now,
     });
 

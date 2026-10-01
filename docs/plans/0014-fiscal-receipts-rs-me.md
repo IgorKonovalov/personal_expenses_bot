@@ -1,6 +1,6 @@
 # 0014: Fiscal receipts: a QR photo or link from Serbia or Montenegro becomes an expense with its line items
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md),
 > [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md),
@@ -355,7 +355,7 @@ type DecodedReceipt = {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A pasted Serbian link records the receipt's total | dev | not started | |
+| 1: A pasted Serbian link records the receipt's total | dev | done | committed with this row |
 | 2: A pasted Montenegrin link | dev | not started | |
 | 3: Photos and image files | dev | not started | |
 | 4: The background fetch fills in the shop and the items | dev | not started | |
@@ -364,6 +364,11 @@ type DecodedReceipt = {
 | 7: Real receipts in production | human | not started | |
 
 ### Notes
+
+- Phase 1: the migration is `0010_receipts.sql` and creates `receipt_items` as well as
+  `receipts`. `src/db/categories.test.ts` (not in Files touched) pinned the full list of
+  migrations a pre-0009 DB applies, `['0009']`; it now asserts only that the first one is `0009`.
+- Phase 1: the «уже записано» reply reads «Уже записано.» on its own line above the card.
 
 ### Close triggers
 
