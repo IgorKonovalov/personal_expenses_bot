@@ -117,6 +117,21 @@ export function categoryActionPickData(action: CategoryAction, categoryId: Categ
   return assertCallbackData(`cat:${action}:${categoryId}`);
 }
 
+// The essential-category picker (ADR-0017): `cat:ess` opens page 1, `cat:essp:<page>` pages it,
+// and `cat:ess:<id>:<0|1>` sets the value it carries (at most 26 bytes). It is a set, not a
+// toggle, so a double tap converges.
+export const CATEGORY_ESSENTIAL_OPEN = 'cat:ess';
+export const CATEGORY_ESSENTIAL_PAGE = /^cat:ess(?:p:(\d{1,4}))?$/;
+export const SET_CATEGORY_ESSENTIAL = /^cat:ess:(\d{1,16}):([01])$/;
+
+export function categoryEssentialPageData(page: number): string {
+  return assertCallbackData(`cat:essp:${page}`);
+}
+
+export function setCategoryEssentialData(categoryId: CategoryId, essential: boolean): string {
+  return assertCallbackData(`cat:ess:${categoryId}:${essential ? 1 : 0}`);
+}
+
 // The /settings hub (ADR-0011). `set:open` shows the hub in the anchor, from any of its pickers
 // and from the categories screen it opened.
 export const SETTINGS_OPEN = 'set:open';
@@ -156,6 +171,12 @@ export function summaryPageData(period: Period): string {
 export const BUDGET_OPEN = 'bud:open';
 export const BUDGET_LIMIT = 'bud:lim';
 export const BUDGET_START_DAY = 'bud:day';
+// `bud:scope:a` counts every expense, `bud:scope:o` only optional ones: the scope it sets.
+export const BUDGET_SCOPE = /^bud:scope:([ao])$/;
+
+export function budgetScopeData(scope: 'all' | 'optional'): string {
+  return assertCallbackData(`bud:scope:${scope === 'all' ? 'a' : 'o'}`);
+}
 
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';

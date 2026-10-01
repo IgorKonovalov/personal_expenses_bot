@@ -1,15 +1,23 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { BudgetScope } from '../../db/budgets.js';
 import type { User } from '../../db/users.js';
 import {
   activeLedgerId,
   budgetScreen,
+  setScope,
   startBudgetFlow,
   type BudgetAnswerResult,
   type BudgetScreenView,
 } from '../../services/budget.js';
 import type { BudgetFlow, BudgetScreen } from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
-import { BUDGET_LIMIT, BUDGET_OPEN, BUDGET_START_DAY } from '../callbackData.js';
+import {
+  BUDGET_LIMIT,
+  BUDGET_OPEN,
+  BUDGET_SCOPE,
+  BUDGET_START_DAY,
+  budgetScopeData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { joinHtml, replyHtml, type Html } from '../render/html.js';
 import {
@@ -27,11 +35,20 @@ import { ensureUser } from './start.js';
 // the answers.
 
 function screenView(view: BudgetScreenView): ScreenView {
+  const current = view.status?.scope ?? 'all';
+  const scopeButton = (scope: BudgetScope) => {
+    const label = messages.budgetScopeButton(scope);
+    return InlineKeyboard.text(
+      scope === current ? messages.currentChoice(label) : label,
+      budgetScopeData(scope),
+    );
+  };
   return {
     text: messages.budgetScreen(view),
     markup: InlineKeyboard.from([
       [InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)],
       [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
+      [scopeButton('all'), scopeButton('optional')],
     ]),
   };
 }
@@ -136,6 +153,28 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, screenView(tap.view));
+  });
+
+  bot.callbackQuery(BUDGET_SCOPE, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    const scope: BudgetScope = ctx.match[1] === 'o' ? 'optional' : 'all';
+    const now = deps.now();
+    const result = setScope(deps, { user: tap.user, ledgerId: tap.screen.ledgerId, scope, now });
+    switch (result.kind) {
+      case 'forbidden':
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.budgetScopeUnchanged });
+        return;
+      case 'set': {
+        await ctx.answerCallbackQuery({ text: messages.budgetScopeChangedToast });
+        const view = budgetView(deps, tap.user, tap.screen);
+        if (view !== undefined) await renderAnchor(ctx, tap.anchor, view);
+        return;
+      }
+    }
   });
 
   // [Задать лимит] and [День начала периода] each ask through their own flow.

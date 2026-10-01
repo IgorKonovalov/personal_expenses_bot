@@ -281,8 +281,8 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | e3c9052 |
-| 2: Payday periods | dev | done | committed with this row |
-| 3: Essential categories | dev | not started | |
+| 2: Payday periods | dev | done | c1cfd43 |
+| 3: Essential categories | dev | done | committed with this row |
 | 4: Per-category caps | dev | not started | |
 | 5: Group ledgers | dev | not started | |
 | 6: Live check | human | not started | |
@@ -305,6 +305,15 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
   updated and gained a start-day flow test.
 - Phase 2: the budget screen shows its period line whenever a budget row exists, including one
   with a start day and no limit.
+- Phase 3: outside `Files touched`, `src/db/budgets.ts` gained `setBudgetScope`.
+  `src/bot/bot.test.ts` holds the `cat:ess:<id>:1` double-tap test and a `bud:scope:o`
+  double-tap test, and had its pinned categories and budget keyboards and budget screen text
+  updated.
+- Phase 3: the categories screen gets one [Обязательные] button. It opens a paged picker
+  (`cat:ess`, `cat:essp:<page>`) where each category's button shows its current value with ✓ and
+  carries the opposite one. The scope is two buttons, [Считать все] and [Только необязательные],
+  with the current one marked.
+- Phase 3: migration 0009 adds `CHECK (essential IN (0, 1))` to the column.
 
 ### Close triggers
 

@@ -46,6 +46,7 @@ interface BudgetScreenView {
   readonly status?:
     | {
         readonly currency: CurrencyCode;
+        readonly scope: 'all' | 'optional';
         readonly period: {
           readonly from: LocalDate;
           readonly to: LocalDate;
@@ -544,6 +545,13 @@ export const messages = {
   categoryRenamed: (name: string): Html => html`Категория переименована: «${name}».`,
   categoryArchived: (name: string): Html =>
     html`Категория «${name}» скрыта. Чтобы вернуть её, добавьте её снова.`,
+  // The essential-category picker (ADR-0017): a set, not a toggle, per button.
+  essentialCategoriesButton: 'Обязательные',
+  essentialPicker: html`Обязательные траты — то, без чего не обойтись: жильё, продукты, связь. Бюджет, который считает только необязательные траты, их не учитывает. Отмеченные ✓ — обязательные; нажмите категорию, чтобы изменить.`,
+  essentialChoice: (name: string, essential: boolean): string => (essential ? `✓ ${name}` : name),
+  essentialSetToast: (essential: boolean): string =>
+    essential ? 'Категория отмечена как обязательная' : 'Категория отмечена как необязательная',
+  essentialUnchanged: 'Уже отмечено',
   categoryLimitToast: 'Категорий уже 30. Скройте ненужную, чтобы добавить новую.',
   fallbackCategoryToast: '«Другое» нельзя скрыть',
   categoryGoneToast: 'Категория не найдена',
@@ -607,6 +615,9 @@ export const messages = {
     const lines = [
       title,
       html`Период: ${weekRange(period, GENITIVE_MONTHS)}, день ${period.day} из ${period.days}`,
+      status.scope === 'optional'
+        ? html`Считаются только необязательные траты.`
+        : html`Считаются все траты.`,
     ];
     if (limit === undefined) {
       lines.push(noLimit);
@@ -648,6 +659,11 @@ export const messages = {
       : joinHtml([html`Сейчас: ${formatMoney(current)}.`, ask], ' ');
   },
   budgetStartDayButton: 'День начала периода',
+  // The two scope buttons; the current one is marked with currentChoice.
+  budgetScopeButton: (scope: 'all' | 'optional'): string =>
+    scope === 'all' ? 'Считать все' : 'Только необязательные',
+  budgetScopeChangedToast: 'Готово',
+  budgetScopeUnchanged: 'Уже выбрано',
   // A month too short for the day starts its period on its last day (ADR-0017).
   budgetStartDayPrompt: (current: number): Html =>
     html`Сейчас период начинается ${current}-го числа. Отправьте день месяца от 1 до 31, например «10» — день зарплаты. Если в месяце нет такого дня, период начнётся в последний день месяца.`,

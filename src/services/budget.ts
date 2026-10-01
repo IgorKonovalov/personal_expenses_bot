@@ -1,9 +1,12 @@
 import {
   findLedgerBudget,
   setBudgetLimit,
+  setBudgetScope,
   setBudgetStartDay,
+  type BudgetScope,
   type LedgerBudget,
 } from '../db/budgets.js';
+import { listEssentialCategoryIds, type CategoryId } from '../db/categories.js';
 import { listLedgerExpensesBetween } from '../db/expenses.js';
 import {
   findActiveLedger,
@@ -47,6 +50,7 @@ export interface BudgetStatus {
   readonly budget: LedgerBudget;
   readonly period: BudgetPeriod;
   readonly currency: CurrencyCode;
+  readonly scope: BudgetScope;
   readonly limit?: BudgetLimitStatus;
   // Spend in the period in other currencies: listed, never converted (ADR-0003).
   readonly notCounted: ReadonlyMap<CurrencyCode, number>;
@@ -68,12 +72,16 @@ export function budgetStatus(
     day: dayOfPeriod(from, today),
     days: dayOfPeriod(from, to),
   };
-  const expenses = listLedgerExpensesBetween(db, {
+  const all = listLedgerExpensesBetween(db, {
     ledgerId: ledger.id,
     memberId: input.readerId,
     from,
     to,
   });
+  // Scope `optional` leaves out essential categories; an uncategorised expense is optional.
+  const essential =
+    budget.scope === 'optional' ? listEssentialCategoryIds(db, ledger.id) : new Set<CategoryId>();
+  const expenses = all.filter((e) => e.category === null || !essential.has(e.category.id));
   const inPeriod = splitByCurrency(expenses, budget.currency);
   const throughToday = splitByCurrency(
     expenses.filter((e) => e.occurredOn <= today),
@@ -84,6 +92,7 @@ export function budgetStatus(
     budget,
     period,
     currency: budget.currency,
+    scope: budget.scope,
     notCounted: inPeriod.notCounted,
   };
   if (budget.limitMinor === null) return base;
@@ -153,6 +162,32 @@ export function startBudgetFlow(
   if (ownedLedger(deps, input.user, input.flow.ledgerId) === undefined) return false;
   startFlow(deps, input.user, input.flow, input.now);
   return true;
+}
+
+export type ScopeResult = { readonly kind: 'set' | 'unchanged' | 'forbidden' };
+
+// Sets what the limit counts: every expense, or only those outside essential categories.
+// Absolute, so a double tap converges.
+export function setScope(
+  deps: Deps,
+  input: {
+    readonly user: User;
+    readonly ledgerId: LedgerId;
+    readonly scope: BudgetScope;
+    readonly now: Date;
+  },
+): ScopeResult {
+  const { db, logger } = deps;
+  return db.transaction((): ScopeResult => {
+    const ledger = ownedLedger(deps, input.user, input.ledgerId);
+    if (ledger === undefined) return { kind: 'forbidden' };
+    const currency = findLedgerBudget(db, ledger.id)?.currency ?? ledger.defaultCurrency;
+    if (!setBudgetScope(db, ledger.id, { scope: input.scope, currency }, input.now)) {
+      return { kind: 'unchanged' };
+    }
+    logger.info({ ledgerId: ledger.id, userId: input.user.id, field: 'scope' }, 'budget changed');
+    return { kind: 'set' };
+  })();
 }
 
 export type BudgetRefusal =

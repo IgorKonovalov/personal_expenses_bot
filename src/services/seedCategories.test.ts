@@ -98,9 +98,21 @@ describe('provisioning seeds the personal ledger', () => {
     provisionUser({ db, newId }, input);
 
     expect(presetKeys(ledger.id)).toEqual(ALL_PRESET_KEYS);
-    expect(db.prepare('SELECT preset_key, name FROM categories ORDER BY id').all()).toEqual(
-      CATEGORY_PRESETS.map((p) => ({ preset_key: p.key, name: p.name })),
+    expect(
+      db.prepare('SELECT preset_key, name, essential FROM categories ORDER BY id').all(),
+    ).toEqual(
+      CATEGORY_PRESETS.map((p) => ({
+        preset_key: p.key,
+        name: p.name,
+        essential: p.essential ? 1 : 0,
+      })),
     );
+    expect(
+      db
+        .prepare('SELECT preset_key FROM categories WHERE essential = 1 ORDER BY preset_key')
+        .pluck()
+        .all(),
+    ).toEqual(['groceries', 'health', 'housing', 'telecom', 'transport']);
     expect(seedLedgersWithoutCategories(db, BOOT)).toEqual([]);
   });
 });

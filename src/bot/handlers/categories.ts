@@ -7,6 +7,7 @@ import {
   archivableCategories,
   hideCategory,
   ledgerCategories,
+  setEssential,
   startAdd,
   startRename,
   type CategoriesView,
@@ -17,16 +18,21 @@ import {
   CATEGORY_ADD,
   CATEGORY_ARCHIVE,
   CATEGORY_ARCHIVE_PAGE,
+  CATEGORY_ESSENTIAL_OPEN,
+  CATEGORY_ESSENTIAL_PAGE,
   CATEGORY_RENAME,
   CATEGORY_RENAME_PAGE,
   categoryActionData,
   categoryActionPageData,
   categoryActionPickData,
+  categoryEssentialPageData,
+  SET_CATEGORY_ESSENTIAL,
+  setCategoryEssentialData,
   SETTINGS_OPEN,
   type CategoryAction,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
-import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
+import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { joinHtml, type Html } from '../render/html.js';
 import {
   backRow,
@@ -54,6 +60,7 @@ export function categoriesView(
       InlineKeyboard.text(messages.renameCategoryButton, categoryActionData('ren')),
       InlineKeyboard.text(messages.archiveCategoryButton, categoryActionData('arc')),
     ],
+    [InlineKeyboard.text(messages.essentialCategoriesButton, CATEGORY_ESSENTIAL_OPEN)],
     ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
   ]);
   return { text: messages.categoriesScreen({ ...view, header }), markup };
@@ -135,6 +142,24 @@ async function showPicker(
   });
 }
 
+// Every active category, each button marked by its current value and carrying the opposite one.
+function essentialPickerView(view: CategoriesView, page: number): ScreenView {
+  const shown = pageOf(view.categories, page);
+  return {
+    text: messages.essentialPicker,
+    markup: pickerKeyboard(
+      shown.items.map((c) =>
+        InlineKeyboard.text(
+          messages.essentialChoice(c.name, c.essential),
+          setCategoryEssentialData(c.id, !c.essential),
+        ),
+      ),
+      pagerRow(shown, categoryEssentialPageData),
+      CATEGORIES_OPEN,
+    ),
+  };
+}
+
 export function registerCategories(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('categories', (ctx) => sendCategories(ctx, deps));
 
@@ -171,6 +196,45 @@ export function registerCategories(bot: Composer<Context>, deps: HandlerDeps): v
     const tap = await categoriesTap(ctx, deps);
     if (tap === undefined) return;
     await showPicker(ctx, deps, tap, 'arc', Number(ctx.match[1] ?? 1));
+  });
+
+  bot.callbackQuery(CATEGORY_ESSENTIAL_PAGE, async (ctx) => {
+    const tap = await categoriesTap(ctx, deps);
+    if (tap === undefined) return;
+    const view = ledgerCategories(deps, { user: tap.user, ledgerId: tap.screen.ledgerId });
+    if (view === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, essentialPickerView(view, Number(ctx.match[1] ?? 1)));
+  });
+
+  // The value is in the data: a second tap of the same button finds it set and edits nothing.
+  bot.callbackQuery(SET_CATEGORY_ESSENTIAL, async (ctx) => {
+    const tap = await categoriesTap(ctx, deps);
+    if (tap === undefined) return;
+    const { ledgerId } = tap.screen;
+    const categoryId = Number(ctx.match[1]) as CategoryId;
+    const essential = ctx.match[2] === '1';
+    const result = setEssential(deps, { user: tap.user, ledgerId, categoryId, essential });
+    switch (result.kind) {
+      case 'notFound':
+        await ctx.answerCallbackQuery({ text: messages.categoryGoneToast });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.essentialUnchanged });
+        return;
+      case 'set': {
+        await ctx.answerCallbackQuery({ text: messages.essentialSetToast(essential) });
+        const view = ledgerCategories(deps, { user: tap.user, ledgerId });
+        if (view === undefined) return;
+        const index = view.categories.findIndex((c) => c.id === categoryId);
+        const page = Math.floor(Math.max(index, 0) / PAGE_SIZE) + 1;
+        await renderAnchor(ctx, tap.anchor, essentialPickerView(view, page));
+        return;
+      }
+    }
   });
 
   bot.callbackQuery(CATEGORY_RENAME, async (ctx) => {

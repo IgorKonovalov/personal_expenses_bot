@@ -9,6 +9,7 @@ import { routeText, setAnchor, type CategoryFlow as Flow } from './flowSessions.
 import {
   answerCategoryFlow,
   hideCategory,
+  setEssential,
   startAdd,
   startRename,
   MAX_ACTIVE_CATEGORIES,
@@ -156,6 +157,33 @@ describe('renaming a category', () => {
     expect(
       answer({ kind: 'categoryRename', ledgerId, categoryId: cafe }, 'продукты'),
     ).toMatchObject({ kind: 'invalid', reason: 'duplicate', current: { id: cafe } });
+  });
+});
+
+describe('marking a category essential', () => {
+  const essentialOf = (id: CategoryId) =>
+    db.prepare('SELECT essential FROM categories WHERE id = ?').pluck().get(id);
+
+  it('sets the value absolutely: the same value again is unchanged, not a toggle back', () => {
+    const cafe = idOf('Кафе и рестораны');
+    const set = (essential: boolean) =>
+      setEssential(deps, { user, ledgerId, categoryId: cafe, essential });
+
+    expect(set(true).kind).toBe('set');
+    expect(set(true).kind).toBe('unchanged');
+    expect(essentialOf(cafe)).toBe(1);
+    expect(set(false).kind).toBe('set');
+    expect(essentialOf(cafe)).toBe(0);
+  });
+
+  it('finds no archived category and writes nothing to it', () => {
+    const gifts = idOf('Подарки');
+    hideCategory(deps, { user, ledgerId, categoryId: gifts, now: NOW });
+
+    expect(setEssential(deps, { user, ledgerId, categoryId: gifts, essential: true })).toEqual({
+      kind: 'notFound',
+    });
+    expect(essentialOf(gifts)).toBe(0);
   });
 });
 

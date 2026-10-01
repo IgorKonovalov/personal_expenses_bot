@@ -14,6 +14,7 @@ export function seedLedgerCategories(db: Db, ledgerId: LedgerId, now: Date): num
       name: preset.name,
       nameKey: categoryNameKey(preset.name),
       presetKey: preset.key,
+      essential: preset.essential,
     })),
     now,
   );

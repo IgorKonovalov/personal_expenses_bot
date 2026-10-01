@@ -65,6 +65,26 @@ export function setBudgetLimit(
   return changes === 1;
 }
 
+// Sets what the limit counts. A ledger without a budget gets one with no limit, in `currency`.
+// Returns false when the scope is already set: nothing is written.
+export function setBudgetScope(
+  db: Db,
+  ledgerId: LedgerId,
+  setting: { readonly scope: BudgetScope; readonly currency: CurrencyCode },
+  updatedAt: Date,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, string, string]>(
+      `INSERT INTO ledger_budgets (ledger_id, currency, scope, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (ledger_id) DO UPDATE
+          SET scope = excluded.scope, updated_at = excluded.updated_at
+        WHERE scope IS NOT excluded.scope`,
+    )
+    .run(ledgerId, setting.currency, setting.scope, updatedAt.toISOString());
+  return changes === 1;
+}
+
 // Sets the period start day. A ledger without a budget gets one with no limit, in `currency`.
 // Returns false when the day is already set: nothing is written.
 export function setBudgetStartDay(

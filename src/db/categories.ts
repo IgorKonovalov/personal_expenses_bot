@@ -11,12 +11,16 @@ export interface Category {
   readonly nameKey: string;
   readonly presetKey: string | null;
   readonly archivedAt: Date | null;
+  // Left out of a budget scoped to optional spending (ADR-0017).
+  readonly essential: boolean;
 }
 
 export interface NewCategory {
   readonly name: string;
   readonly nameKey: string;
   readonly presetKey: string | null;
+  // Optional (false) when omitted.
+  readonly essential?: boolean;
 }
 
 interface CategoryRow {
@@ -26,9 +30,10 @@ interface CategoryRow {
   name_key: string;
   preset_key: string | null;
   archived_at: string | null;
+  essential: 0 | 1;
 }
 
-const COLUMNS = 'id, ledger_id, name, name_key, preset_key, archived_at';
+const COLUMNS = 'id, ledger_id, name, name_key, preset_key, archived_at, essential';
 
 // Inserts each category unless the ledger already has its name key or preset key, so seeding a
 // ledger twice adds nothing. Returns the number of rows inserted.
@@ -38,15 +43,22 @@ export function insertCategoriesOrIgnore(
   categories: readonly NewCategory[],
   createdAt: Date,
 ): number {
-  const insert = db.prepare<[string, string, string, string | null, string]>(
-    `INSERT OR IGNORE INTO categories (ledger_id, name, name_key, preset_key, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
+  const insert = db.prepare<[string, string, string, string | null, number, string]>(
+    `INSERT OR IGNORE INTO categories (ledger_id, name, name_key, preset_key, essential, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   return db.transaction(() =>
     categories.reduce(
       (inserted, c) =>
         inserted +
-        insert.run(ledgerId, c.name, c.nameKey, c.presetKey, createdAt.toISOString()).changes,
+        insert.run(
+          ledgerId,
+          c.name,
+          c.nameKey,
+          c.presetKey,
+          c.essential === true ? 1 : 0,
+          createdAt.toISOString(),
+        ).changes,
       0,
     ),
   )();
@@ -131,6 +143,29 @@ export function archiveCategory(db: Db, id: CategoryId, archivedAt: Date): boole
   return changes === 1;
 }
 
+// Sets whether the category is essential, an absolute set so a repeated tap converges. Returns
+// false when it already holds the value: nothing is written.
+export function setCategoryEssential(db: Db, id: CategoryId, essential: boolean): boolean {
+  const value = essential ? 1 : 0;
+  const { changes } = db
+    .prepare<[number, number, number]>(
+      'UPDATE categories SET essential = ? WHERE id = ? AND essential <> ?',
+    )
+    .run(value, id, value);
+  return changes === 1;
+}
+
+// The ids of the ledger's essential categories, archived ones included: past expenses keep them.
+export function listEssentialCategoryIds(db: Db, ledgerId: LedgerId): ReadonlySet<CategoryId> {
+  const ids = db
+    .prepare<[string], number>(
+      'SELECT id FROM categories WHERE ledger_id = ? AND essential = 1 ORDER BY id',
+    )
+    .pluck()
+    .all(ledgerId);
+  return new Set(ids as CategoryId[]);
+}
+
 // Ledgers with no category at all: created before categories existed.
 export function listLedgersWithoutCategories(db: Db): LedgerId[] {
   return db
@@ -151,5 +186,6 @@ function toCategory(row: CategoryRow): Category {
     nameKey: row.name_key,
     presetKey: row.preset_key,
     archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
+    essential: row.essential === 1,
   };
 }

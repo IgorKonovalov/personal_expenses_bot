@@ -6,6 +6,7 @@ import {
   listActiveCategories,
   renameCategory,
   restoreCategory,
+  setCategoryEssential,
   type Category,
   type CategoryId,
 } from '../db/categories.js';
@@ -107,6 +108,26 @@ export function hideCategory(
   if (!archiveCategory(deps.db, category.id, input.now)) return { kind: 'notFound' };
   deps.logger.info({ categoryId: category.id, userId: input.user.id }, 'category archived');
   return { kind: 'archived', category };
+}
+
+export type EssentialResult =
+  | { readonly kind: 'set' | 'unchanged'; readonly category: Category }
+  | { readonly kind: 'notFound' };
+
+// Marks an active category essential or optional. The value is absolute, never a toggle, so a
+// double tap or a redelivered callback leaves the same state (ADR-0017).
+export function setEssential(
+  deps: RecordDeps,
+  input: LedgerInput & { readonly categoryId: CategoryId; readonly essential: boolean },
+): EssentialResult {
+  const category = ledgerCategories(deps, input)?.categories.find((c) => c.id === input.categoryId);
+  if (category === undefined) return { kind: 'notFound' };
+  const updated = { ...category, essential: input.essential };
+  if (!setCategoryEssential(deps.db, category.id, input.essential)) {
+    return { kind: 'unchanged', category: updated };
+  }
+  deps.logger.info({ categoryId: category.id, userId: input.user.id }, 'category essential set');
+  return { kind: 'set', category: updated };
 }
 
 export type NameRefusal =

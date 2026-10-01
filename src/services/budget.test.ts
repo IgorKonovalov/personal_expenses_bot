@@ -5,7 +5,7 @@ import type { Ledger } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
-import { answerBudgetFlow, memberBudgetStatus, startBudgetFlow } from './budget.js';
+import { answerBudgetFlow, memberBudgetStatus, setScope, startBudgetFlow } from './budget.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
 
@@ -137,6 +137,36 @@ describe('payday periods', () => {
       period: { from: '2026-09-30', to: '2026-10-30' },
     });
     expect(status(OCT_1)?.limit).toBeUndefined();
+  });
+});
+
+describe('the optional-only scope', () => {
+  it('leaves groceries out of a 20000 limit with scope optional, and counts them with scope all', () => {
+    setLimit('20000');
+    expect(setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_1 })).toEqual({
+      kind: 'set',
+    });
+    spend('3000 продукты', OCT_1);
+    spend('450 кофе', OCT_1);
+
+    expect(status(OCT_1)?.limit).toMatchObject({ spentMinor: 45_000, periodLeftMinor: 1_955_000 });
+
+    expect(setScope(deps, { user, ledgerId: ledger.id, scope: 'all', now: OCT_1 }).kind).toBe(
+      'set',
+    );
+    expect(status(OCT_1)?.limit).toMatchObject({ spentMinor: 345_000, periodLeftMinor: 1_655_000 });
+  });
+
+  it('counts an uncategorised expense as optional, and a repeated scope is unchanged', () => {
+    setLimit('20000');
+    setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_1 });
+    const groceries = spend('3000 продукты', OCT_1);
+    db.prepare('UPDATE expenses SET category_id = NULL WHERE id = ?').run(groceries.id);
+
+    expect(status(OCT_1)?.limit?.spentMinor).toBe(300_000);
+    expect(setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_1 }).kind).toBe(
+      'unchanged',
+    );
   });
 });
 

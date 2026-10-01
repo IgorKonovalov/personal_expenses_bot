@@ -1784,6 +1784,10 @@ describe('/budget and the card line (ADR-0017)', () => {
             inline_keyboard: [
               [{ text: 'Задать лимит', callback_data: 'bud:lim' }],
               [{ text: 'День начала периода', callback_data: 'bud:day' }],
+              [
+                { text: '✓ Считать все', callback_data: 'bud:scope:a' },
+                { text: 'Только необязательные', callback_data: 'bud:scope:o' },
+              ],
             ],
           },
           ...htmlParseMode,
@@ -1812,6 +1816,7 @@ describe('/budget and the card line (ADR-0017)', () => {
         text: [
           '<b>Бюджет «Личные расходы»</b>',
           'Период: 1–31 октября, день 1 из 31',
+          'Считаются все траты.',
           'Лимит: 30 000.00 RSD, потрачено 0.00 RSD',
           'Осталось на сегодня: 967.74 RSD',
           'Осталось до 31 окт: 30 000.00 RSD',
@@ -1897,6 +1902,24 @@ describe('/budget and the card line (ADR-0017)', () => {
     expect(String(lastText(calls))).toContain('Период: 10 сентября – 9 октября, день 22 из 30');
     await say('450 кофе', 6);
     expect(String(lastText(calls))).toContain('· до 9 окт: ');
+  });
+
+  it('sets the optional-only scope once on a double tap', async () => {
+    const { say, tap, calls, db } = await withLimit();
+    await say('/budget', 3);
+    calls.length = 0;
+
+    await tap('bud:scope:o', 102);
+    await tap('bud:scope:o', 102);
+
+    expect(db.prepare('SELECT scope FROM ledger_budgets').pluck().get()).toBe('optional');
+    const edits = calls.filter((c) => c.method === 'editMessageText');
+    expect(edits).toHaveLength(1);
+    expect(String(sentTexts(edits)[0])).toContain('Считаются только необязательные траты.');
+    expect(calls.at(-1)).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: 'cb-6', text: 'Уже выбрано' },
+    });
   });
 
   it('lists an EUR expense as not counted on the screen', async () => {
@@ -2388,6 +2411,7 @@ describe('/categories screen and text flows', () => {
         { text: 'Переименовать', callback_data: 'cat:ren' },
         { text: 'Скрыть', callback_data: 'cat:arc' },
       ],
+      [{ text: 'Обязательные', callback_data: 'cat:ess' }],
     ],
   };
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
@@ -2499,6 +2523,35 @@ describe('/categories screen and text flows', () => {
     expect(db.prepare('SELECT archived_at FROM categories WHERE id = ?').pluck().get(gifts)).toBe(
       '2026-09-30T10:00:00.000Z',
     );
+  });
+
+  it('sets essential from the picker: cat:ess:<id>:1 twice leaves 1 and edits once', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    const cafe = db
+      .prepare("SELECT id FROM categories WHERE name = 'Кафе и рестораны'")
+      .pluck()
+      .get() as number;
+    await tap('cat:ess', 101);
+    const picker = calls.at(-1)?.payload as {
+      reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
+    };
+    // Each button carries the value it sets: the opposite of the one it shows.
+    expect(picker.reply_markup.inline_keyboard[0]).toEqual([
+      { text: '✓ Продукты', callback_data: `cat:ess:${String(cafe - 1)}:0` },
+      { text: 'Кафе и рестораны', callback_data: `cat:ess:${String(cafe)}:1` },
+    ]);
+    calls.length = 0;
+
+    await tap(`cat:ess:${String(cafe)}:1`, 101);
+    await tap(`cat:ess:${String(cafe)}:1`, 101);
+
+    expect(db.prepare('SELECT essential FROM categories WHERE id = ?').pluck().get(cafe)).toBe(1);
+    expect(calls.filter((c) => c.method === 'editMessageText')).toHaveLength(1);
+    expect(calls.at(-1)).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: 'cb-4', text: 'Уже отмечено' },
+    });
   });
 
   it('toasts staleScreen on the first of two /categories, and a card still works', async () => {
@@ -3052,6 +3105,7 @@ describe('/settings hub and the timezone picker', () => {
         { text: 'Переименовать', callback_data: 'cat:ren' },
         { text: 'Скрыть', callback_data: 'cat:arc' },
       ],
+      [{ text: 'Обязательные', callback_data: 'cat:ess' }],
     ];
     const withBack = {
       inline_keyboard: [...categoriesButtons, [{ text: '« Назад', callback_data: 'set:open' }]],
