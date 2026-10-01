@@ -1,10 +1,11 @@
 # 0011: Budgets: a payday-period limit, a daily allowance, essential categories and category caps
 
-> **Status:** in-progress (2026-10-01)
+> **Status:** done (2026-10-01): built as planned, README fixed at close, two minors and two
+> nits open as followups, Phase 6 live check owed, v0.8.0
 > **Created:** 2026-09-30
-> **Related ADRs:** [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
-> [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
-> [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md)
+> **Related ADRs:** [ADR-0017](../../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
+> [ADR-0015](../../adrs/0015-shared-ledgers-carry-a-timezone.md),
+> [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md)
 
 ## TL;DR
 
@@ -268,8 +269,8 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 - **FX conversion** of other-currency spending into the budget (the FX plan, ADR-0003).
 - **Income, balances, "free money" and 50/20/30.** The bot records expenses only.
 - **Budget history** (last period's result, rollover between periods). Each period starts fresh.
-- **Tags/projects and debts:** [Plan 0012](0012-tags-projects.md) and
-  [Plan 0013](0013-debts.md).
+- **Tags/projects and debts:** [Plan 0012](../0012-tags-projects.md) and
+  [Plan 0013](../0013-debts.md).
 
 ## Implementation log
 
@@ -359,4 +360,113 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
   exit 0, 45 files, 632 tests passed; `pnpm build` exit 0.
 - **Outstanding `human` phases:** Phase 6 (Live check, `Blocks merge: no`).
 
+## Close review
+
+Closed 2026-10-01 by the conductor, after one review round. Minor 1 (README) was fixed at close in
+0a3e93a. Minors 2 and 3 and both nits stay open, listed under `## Followups`. Phase 6 (Live
+check, `human`) stays owed. No earlier round raised a finding that a fix round resolved.
+
+The round 1 review, in full:
+
+### Plan 0011 review, round 1 (tip 885b5b6e51b31c2981c8117b77aef841a4e0f242)
+
+**Verdict:** All five dev phases are built as planned and every numeric done-when is defended by a test that asserts the number. No blocker or major is open. Three minors (stale README, caps that keep their number when the budget changes currency, and the group budget screen with no way back to its hub) and two nits stay open, so the plan can close once the README minor is fixed or accepted.
+
+#### Gate (run in this session, at the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 45 files, 632 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 125 relative links resolve.
+- `git status --short` was empty after the runs, so the tree is unchanged.
+
+#### Alignment (lens 1)
+
+The implementation log maps each phase to one commit (e3c9052, c1cfd43, db7b104, 111aeaf, 47dd3a2). Phase 6 (`human`, `Blocks merge: no`) is owed. Every phase carries one in-vocabulary owner tag. The log discloses each deviation and file-list overrun. The log is shorter than the phases section.
+
+The named done-whens and the assertions that defend them:
+
+- **Phase 1:** `src/domain/budget.test.ts:12-33` asserts 96_774, 193_548, 3_000_000, 33_333, 66_666 and 1_000_000, and checks monotonicity over every `d`. `src/services/budget.test.ts:78-116` asserts, in RUB/Moscow, 51_774 and 2_955_000 on 2026-10-01, then 118_548 and 2_925_000 on 2026-10-02. It also asserts −53_226 and then 43_548, and that an EUR expense and a soft-deleted expense leave both remainders unchanged, with EUR listed as 1_250. `src/bot/bot.test.ts` has these tests:
+  - overspend copy «Сегодня перерасход 532.26 RSD» with `not.toContain('-532')`;
+  - a redelivered update leaves one row and «29 550.00»;
+  - the deleted card has no line, and the line returns on restore;
+  - «Не учтено, другая валюта: 12.50 EUR».
+
+  The diff changes no existing card expectations. The pinned-menu and command-list edits are the disclosed additions.
+- **Phase 2:** `src/domain/periods.test.ts` asserts all six `[from, to]` pairs and their lengths. `src/services/budget.test.ts:126-138` asserts that `500 такси вчера` (dated 2026-10-09) on day 1 of the 10th-start period leaves 96_774 and 3_000_000. I traced `budgetPeriodOf` for start 31 in February and for the 2028 leap year. It matches ADR-0017's clamp rule.
+- **Phase 3:** `src/services/budget.test.ts:154-168` asserts 45_000 spent and 1_955_000 left under `optional`, and 345_000 under `all`. `src/db/categories.test.ts` runs migrations below 0009 into a temp dir, inserts preset and user rows, applies 0009 alone, and asserts the five essential keys and «Дача» = 0. It also pins `CATEGORY_PRESETS` to the same set. The `bot.test.ts` double tap asserts `essential = 1`, one `editMessageText` and the «Уже отмечено» toast.
+- **Phase 4:** `src/services/budget.test.ts:202-215` asserts spent 525_000 of cap 500_000, over by 25_000. `bot.test.ts` checks these on the card:
+  - the over-cap card line with «перерасход 250.00 RSD»;
+  - no ` из ` on the такси card;
+  - every `bud:*` builder at `Number.MAX_SAFE_INTEGER` (16 digits, the regex maximum) passes `assertCallbackData`;
+  - an archived category's cap is neither listed nor on a re-rendered card.
+- **Phase 5:** `src/services/budget.test.ts:258-281` asserts day 2 of 31 and 148_548 for `450 кафе` at 22:30Z in Belgrade. `src/bot/group/group.test.ts` checks the group side:
+  - the reaction stays quiet (`['setMessageReaction']` only);
+  - group `/budget` renders «Осталось на сегодня: 1 485.48 RSD»;
+  - a non-owner tapping `set:bud` gets only `budgetNotOwnerToast`, and their anchor stays on `settings`.
+
+No ADR is reversed. ADR-0017 (`proposed`) holds as built: the clamp rule, `floor(L*d/N)`, the budget currency and read-time computation.
+
+#### Layering, correctness, privacy (lenses 2 and 3)
+
+- grammY is imported only under `src/bot/`. The domain modules (`budget.ts`, `periods.ts`) import no db or bot types. All SQL is in `src/db/budgets.ts` and `src/db/categories.ts`.
+- **Money:** the only division is `Math.floor((L*d)/N)` in `src/domain/budget.ts:20`, guarded by `isSafeInteger(L*N)`. `isSafeLimit` rejects limits whose `L*31` is unsafe. No float parsing or `toFixed` appears.
+- **Time:** "today" is `localDateOf(now, effectiveTimezone(user, ledger))`, or the group binding's `today(now)`. The clock is injected. Periods are computed in local dates.
+- **Idempotency:** every write is an absolute upsert guarded by `WHERE … IS NOT excluded.…`. A flow answer and its completion commit in one transaction keyed by `inputKey`.
+- **Privacy:** the info logs carry only ids and field names, no amounts.
+- **Telegram:** copy lives in `messages.ts`, and user text goes through the `html` tag. callback_data is asserted.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **README not updated for the new user-visible surface.** (Fixed at close in 0a3e93a.)
+   - *Where:* `README.md:26-37` (the DM command table and the menu-bar paragraph) and `README.md:57-64` (the group table).
+   - *What:* README has no `/budget` row, no [💰 Бюджет] in the menu-bar sentence, no [Обязательные] in the `/categories` row and no budget line in the `450 кофе` reply row. The group table has no `/budget`, and the group `/settings` row doesn't mention [Бюджет].
+   - *Why:* Lens 4: the plan adds a DM command, a menu label, a group command and new card lines. The README is the user's reference, and it now describes a bot without budgets.
+   - *Fix:* Add a `/budget` row to the DM table (the screen and its four setup buttons) and add [💰 Бюджет] to the menu sentence. Mention [Обязательные] in the `/categories` row and the budget/cap lines under a recorded card. Add a `/budget` row to the group table (read-only, set from the ledger's settings hub) and add [Бюджет] to the group `/settings` row.
+2. **Category caps are stored without a currency, so a currency change re-reads them.**
+   - *Where:* `src/db/budgets.ts:50-67` (`setBudgetLimit` adopts the new currency) together with `category_caps` in `src/db/migrations/0008_budgets.sql:14-18`. The trigger is `src/services/budget.ts:364-369`.
+   - *What:* Take a ledger whose default moved from RUB to EUR. Re-setting the limit flips `ledger_budgets.currency` to EUR, and every existing cap's `cap_minor` is then shown and counted as EUR (5 000 RUB becomes 5 000 EUR). For a zero-exponent currency such as JPY, 500_000 minor goes from 5 000 to 500 000. Nothing warns the user.
+   - *Why:* The non-negotiable is "an integer in minor units **plus** an ISO-4217 code". The cap's code here is borrowed from a row that can change under it. The plan's illustrative schema has the same shape and ADR-0017 says "a budget's amounts are in one currency", so this is a gap the plan left open, not a deviation. That is why it's minor.
+   - *Fix:* The smallest fix is for `answerBudgetFlow`'s `budgetLimit` branch to delete the ledger's caps in the same transaction when the currency changes, with a line in the refusal/confirmation copy. The alternative is a `currency` column on `category_caps`, with a cap in another currency listed but not evaluated. If neither fits this plan, record it under the plan's `## Followups`.
+3. **The group ledger's budget screen is a navigation dead end.**
+   - *Where:* `src/bot/handlers/budget.ts:56-64` (no back row). `BudgetScreen` in `src/services/flowSessions.ts` has no `fromSettings`. This is disclosed in the log, Phase 5 note 2.
+   - *What:* Opened from the scoped hub's [Бюджет], the screen has no [« Назад] to the hub. The categories screen reached from the same hub does have one (`fromSettings`). The only way back is to run `/settings` in the group again.
+   - *Why:* It breaks ADR-0011's navigation consistency between sibling screens of the same hub. The log's reason ("flowSessions.ts is outside this phase's files") doesn't hold: the phase already overran its file list for `callbackData.ts`, and the file is in Phase 1's list.
+   - *Fix:* Add `fromSettings?: true` to `BudgetScreen`, carry it through `parseScreen` (like `CategoriesScreen`), and set it in the `SETTINGS_BUDGET` handler (`src/bot/handlers/settings.ts`). Append `backRow(SETTINGS_OPEN)` in `screenView` when it is set. Then pin the keyboard in `group.test.ts`.
+
+##### nit
+
+1. **The group `/budget` can tell the group to "set the limit again".** At `src/bot/messages.ts:675`, `groupBudget` reuses `budgetScreen`. When the budget's currency differs from the ledger default, the read-only group message says «Задайте лимит заново, чтобы перейти на …». No one in the group can act on it there. A fix is to pass a `readOnly` flag that drops that line, or to keep only its first sentence for the group.
+2. **The cap prompt has no way back to the cap list** (disclosed followup). At `src/bot/handlers/budget.ts:108-123`, [Отмена] restores the budget screen, not the paged list the user came from. A fix is to add a [« Назад] row to `BUDGET_CAPS_OPEN` above [Отмена], or to record it as a followup.
+
+#### Bookkeeping owed at close
+
+- Plan `Status:` is `in-progress`. Flip it to `done` with the date and the verdict, `git mv` it to `docs/plans/done/`, and repair its links in both directions (`../adrs/` becomes `../../adrs/`). Repair the inbound links from ADR-0017, `docs/plans/README.md` and any plan that links 0011 too, then run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0017 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`.
+- `docs/plans/README.md` still lists 0011 as `approved (2026-10-01)`. Move it to recently closed.
+- **Version bump: minor** (a feature plan). Update `package.json` and `CHANGELOG.md`, and add the `messages.versionAnnouncements` entry for budgets (the log's followup; the gate fails a bump without one).
+- Phase 6 (live check, `human`, does not block merge) stays owed. Name it in the close.
+- Record the open nits, and minor 2 if it isn't fixed, under the plan's `## Followups`.
+
 ## Followups
+
+- **Caps carry no currency of their own** (review minor 2). Re-setting the limit after a ledger
+  currency change re-reads every cap's `cap_minor` in the new currency. Either clear the caps in
+  the same transaction when the currency changes, or give `category_caps` a `currency` column.
+- **No [« Назад] from the group ledger's budget screen to its settings hub** (review minor 3).
+  Carry `fromSettings` on `BudgetScreen`, as `CategoriesScreen` does.
+- **The group `/budget` can say «Задайте лимит заново…»**, which nobody in the group can act on
+  (review nit 1).
+- **The cap prompt has no way back to the cap list** (review nit 2). [Отмена] restores the budget
+  screen.
+- **Phase 6 live check is owed** (`human`, does not block merge).

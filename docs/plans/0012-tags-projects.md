@@ -37,7 +37,7 @@ a behavioral **Done when** before this plan moves to `approved`.
 
 ## What this plan does NOT do
 
-- Budgets per tag (after [Plan 0011](0011-budgets.md), if wanted).
+- Budgets per tag (after [Plan 0011](done/0011-budgets.md), if wanted).
 
 ## Implementation log
 

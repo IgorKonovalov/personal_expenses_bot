@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.8.0 (2026-10-01)
+
+From Plan 0011 (budgets).
+
+- `/budget` and the menu's [💰 Бюджет] set a spending limit for a period. Once it's set, every
+  expense card says what's left for today and until the period's end. The daily figure is
+  cumulative, so yesterday's leftover or overspend carries into today.
+- The period can start on any day of the month (payday) with [День начала периода].
+- [Обязательные] on `/categories` marks the essential categories, and the budget can count only
+  optional spending. [Лимиты по категориям] caps single categories for the period, and a capped
+  category's card gets its own line.
+- Spending in another currency isn't counted, and the `/budget` screen lists it separately.
+- A group ledger's owner sets its budget from the group's `/settings` hub. `/budget` in the group
+  shows it, and group reactions stay quiet.
+
 ## 0.7.0 (2026-10-01)
 
 From Plan 0009 (group ledgers).

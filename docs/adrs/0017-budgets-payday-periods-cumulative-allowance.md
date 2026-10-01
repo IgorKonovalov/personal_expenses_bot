@@ -1,8 +1,8 @@
 # ADR-0017: Budgets run over payday periods, with a cumulative daily allowance in the budget's currency
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-09-30
-> **Related plan(s):** [Plan 0011](../plans/0011-budgets.md)
+> **Related plan(s):** [Plan 0011](../plans/done/0011-budgets.md)
 
 ## Context
 
