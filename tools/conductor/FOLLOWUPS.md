@@ -25,11 +25,11 @@ $46 in all ($4.86 + $41.13). Each plan's human live check merged as owed (`Block
 
 | # | Owner | Followup | Status |
 |---|---|---|---|
-| F14 | architect | **The Files touched gap recurs** for every new screen or flow (0004 H3, 0011 H1, 0009 Phase 4). `ready` now catches it, but each catch is a hand edit. Add a line to the plan template: a new screen, flow or menu entry also touches `flowSessions.ts`, `flows.ts`, `menu.ts` and `bot.ts`. | open |
-| F15 | conductor (dev) | **`plan.mjs` silently ignores a `Blocks merge:` line with trailing text** (`no (reason)` matched nothing, so the phase would have parked). Report it as a plan error, as a malformed owner tag is. | open |
-| F16 | architect | **Readiness passed 0009 twice and missed H2.** A done-when whose actor can't reach the handler (allowlist, owner-only, group vs DM) surfaced only mid-implementation. Add "can each done-when's actor reach this path?" to the readiness prompt's checks. | open |
+| F14 | architect | **The Files touched gap recurs** for every new screen or flow (0004 H3, 0011 H1, 0009 Phase 4). `ready` now catches it, but each catch is a hand edit. Add a line to the plan template: a new screen, flow or menu entry also touches `flowSessions.ts`, `flows.ts`, `menu.ts` and `bot.ts`. | done (this commit): the plan template's Files touched line |
+| F15 | conductor (dev) | **`plan.mjs` silently ignores a `Blocks merge:` line with trailing text** (`no (reason)` matched nothing, so the phase would have parked). Report it as a plan error, as a malformed owner tag is. | open: Plan 0017 Phase 1 |
+| F16 | architect | **Readiness passed 0009 twice and missed H2.** A done-when whose actor can't reach the handler (allowlist, owner-only, group vs DM) surfaced only mid-implementation. Add "can each done-when's actor reach this path?" to the readiness prompt's checks. | open: Plan 0017 Phase 4 |
 | F17 | - | `prune` the merged 0009, 0011 and 0014 from `queue.json`. | done (this commit) |
-| F18 | conductor (dev) | **`prune` drops a merged plan from its lane but leaves its `plans` entry** (`after` lists for 0011 and 0014 stayed). Cleared by hand in this commit. Drop the entry with the lane row. | open |
+| F18 | conductor (dev) | **`prune` drops a merged plan from its lane but leaves its `plans` entry** (`after` lists for 0011 and 0014 stayed). Cleared by hand in this commit. Drop the entry with the lane row. | open: Plan 0017 Phase 2 |
 
 ### Open product findings from the closes
 
@@ -70,8 +70,8 @@ two plans parked. Spend was $28.36 in all ($12.74 + $15.62). Usage went from 0.0
 | F9 | owner | `claude` 2.1.284 is still unverified (warning only). Verify the headless contract and add it to `VERIFIED_CLI`. | done: Ritmolux's probe verified it on this machine (Ritmolux `6738f781`), ported to `VERIFIED_CLI` |
 | F10 | owner | Read the hand-written 0.4.0 announcement in `src/bot/messages.ts` (H2). | done: the owner approved the copy |
 | F11 | - | `prune` the merged 0008, 0005 and 0004 from `queue.json`. | done (this commit) |
-| F12 | conductor (dev) | **A plan queued while a resident run is live skips the readiness gate.** `refreshQueue` reloads the queue without `readinessErrors`, and `ready` is refused during a live run, so only the lane's own readiness check covers it (Plan 0010 Followups). | open |
-| F13 | conductor (dev) | **`ready` reads `main`'s tip, `check` hashes the main checkout's working copy.** A `ready` before committing a plan edit passes the old text, then `check` refuses. Warn in `ready` when the two contracts differ (Plan 0010 Followups). | open |
+| F12 | conductor (dev) | **A plan queued while a resident run is live skips the readiness gate.** `refreshQueue` reloads the queue without `readinessErrors`, and `ready` is refused during a live run, so only the lane's own readiness check covers it (Plan 0010 Followups). | open: Plan 0017 Phase 3 |
+| F13 | conductor (dev) | **`ready` reads `main`'s tip, `check` hashes the main checkout's working copy.** A `ready` before committing a plan edit passes the old text, then `check` refuses. Warn in `ready` when the two contracts differ (Plan 0010 Followups). | open: Plan 0017 Phase 3 |
 
 ### Open product findings from the closes
 
