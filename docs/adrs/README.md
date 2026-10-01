@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0030`
+- **Next free number:** `0031`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -36,3 +36,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0027](0027-donations-only-funding.md) | The bot is funded by donations only: no paid tier, and a donation unlocks nothing | proposed (2026-10-01) |
 | [0028](0028-contextual-tips-registry.md) | Contextual tips are a registry of conditions, shown as one capped message, seen when sent | proposed (2026-10-01) |
 | [0029](0029-tags-on-the-expense-row.md) | Tags are `#words` stripped from the expense text and stored on the expense row | proposed (2026-10-01) |
+| [0030](0030-debts-as-operations-settle-up-per-currency.md) | Debts are signed operations balanced per person and currency; group settle-up splits equally per currency | proposed (2026-10-01) |
