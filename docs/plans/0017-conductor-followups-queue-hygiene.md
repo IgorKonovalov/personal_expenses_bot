@@ -137,7 +137,7 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 | 1: A malformed Blocks merge line is a plan error | dev | done | `c90a362` |
 | 2: prune removes a merged plan everywhere | dev | done | `a53f3cd` |
 | 3: ready warns about an uncommitted edit; mid-run queue notice | dev | done | `7c34987` |
-| 4: Readiness checks done-when reachability | dev | done | committed with this row |
+| 4: Readiness checks done-when reachability | dev | done | `d400d57` |
 
 ### Notes
 
@@ -155,9 +155,16 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `parsePlan` reports a `Blocks merge:` line whose value is not `no`/`yes`;
+  `pruneQueue` removes merged plans from `plans` and every `after` list; `ready` warns when the
+  working copy's contract differs from `main`'s; a live run logs one line per plan queued mid-run
+  without a matching readiness record; `prompts/readiness.md` item 7 (done-when reachability).
+- **User-visible surface changed:** none in the bot. Conductor CLI output: the `ready` warning, the
+  mid-run queue line, and `prune` rewriting `plans`. README Commands rows for `ready` and `run`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 57 files,
+  768 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236
+  tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
+  `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** none.
 
 ## Followups
