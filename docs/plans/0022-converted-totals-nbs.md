@@ -276,7 +276,8 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 |---|---|---|---|
 | 1: /week and /month show one converted total | dev | done | `27f13ec` |
 | 2: /today, groups and the per-person totals convert too | dev | done | `b811542` |
-| 3: Budgets count every currency; docs | dev | done | committed with this row |
+| 3: Budgets count every currency; docs | dev | done | `80e2cdd` |
+| 4: Check one converted expense on the deployed bot | human | pending | (no commit) |
 
 ### Notes
 
@@ -290,6 +291,9 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
   `Без курса НБС, не пересчитано: EUR.` line (no rates are stored there). The all-RSD ones are
   unchanged.
 - Phase 1: `earliestExpenseDay` (the worker's first owed day) lives in `src/db/fxRates.ts`.
+- Phase 1: the fixtures are trimmed from the live NBS pages for 2026-09-28, fetched on
+  2026-10-01. The XML keeps its BOM and CRLF line ends. The real page writes the XML link's `&`
+  unescaped.
 - Phase 2: `summarizeByAuthor` is replaced by `summarizeByAuthorConverted`, not kept beside it;
   its tests in `aggregate.test.ts` are replaced too.
 - Phase 2: `TodaySummary.totals` stays a `Map`, now the converted total first, then the
@@ -307,8 +311,34 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 - Phase 3: README also had its `/today`, `/week`/`/month`, `/budget` and group table rows and
   the Concepts "Original currency" bullet reworded to match. Its Roadmap paragraph still lists
   "currency conversion" as further out.
-- Phase 1: the fixtures are trimmed from the live NBS pages for 2026-09-28, fetched on
-  2026-10-01. The XML keeps its BOM and CRLF line ends. The real page writes the XML link's `&`
-  unescaped.
+- Followup noticed, not acted on: a tick fetches at most 31 days, two GETs each, so on the first
+  deploy a ledger whose earliest expense is N days old has rates for all of it after
+  ceil(N / 31) hourly ticks. Until then its older reports show per-currency blocks.
+
+### Close triggers
+
+- **What shipped:** migration `0011_fx_rates.sql` (`fx_lists`, `fx_rates`, `fx_days`);
+  `src/domain/fx.ts` (`parseRateE4`, `convert`); `src/db/fxRates.ts` (list and day upserts,
+  `rateLookupBetween` with the 4-day borrow, `earliestExpenseDay`); `src/services/fetchRates.ts`;
+  a new `src/fx/` with `nbsFetcher.ts` and `rateWorker.ts`, started in `src/index.ts` and stopped
+  before the DB closes; `summarizeConverted` and `summarizeByAuthorConverted` in `aggregate.ts`
+  (`summarizeByAuthor` removed); `countInto` in `budget.ts` (`splitByCurrency` removed). No new
+  dependency.
+- **User-visible surface changed:** /today, /week, /month (DM and group, with the pager) show one
+  total in the ledger's currency, `≈` when anything was converted, with the footnotes
+  `Включая … по курсу НБС на день траты.` and `Без курса НБС, не пересчитано: ….` Group members'
+  totals are converted and sorted by the converted total. Budgets count converted foreign
+  spending in the limit, today's figure and caps, so the card lines move. The budget screen says
+  `Не учтено, нет курса:` (was `Не учтено, другая валюта:`) and adds
+  `Траты в других валютах пересчитаны по курсу НБС на день траты.` `/help` has one new line.
+  README has a `### Currency conversion` section. The bot now makes outbound HTTPS requests to
+  `webappcenter.nbs.rs` at boot and hourly.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 64 files,
+  882 tests; `pnpm build` exit 0 (`dist/db/migrations` holds `0011_fx_rates.sql`);
+  `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236 tests;
+  `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests; `node scripts/check-doc-links.mjs`
+  exit 0.
+- **Outstanding `human` phases:** Phase 4 (check one converted expense on the deployed bot
+  against the NBS list; does not block merge).
 
 ## Followups
