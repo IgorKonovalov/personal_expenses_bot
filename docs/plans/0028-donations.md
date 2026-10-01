@@ -1,6 +1,6 @@
 # 0028: Donations: everything free, `/donate` via Telegram Stars and an external link
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0027](../adrs/0027-donations-only-funding.md) (donations only, no paid tier),
 > [ADR-0024](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md) (who is admitted)
