@@ -119,17 +119,23 @@ interface SettingsScreenView {
   readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
 }
 
-// A group report's per-person section: each member's totals, one per currency, never added
-// together. `name` is the member's Telegram first name (user text), null when never stored.
+// A group report's per-person section: each member's converted total, then each currency with
+// no rate, never added to it. `converted` marks a first total holding foreign spending
+// (ADR-0022). `name` is the member's Telegram first name (user text), null when never stored.
 type PeopleView = readonly {
   readonly name: string | null;
   readonly totals: readonly Money[];
+  readonly converted?: boolean | undefined;
 }[];
 
 interface TodayView {
   readonly ledger: LedgerRef;
   readonly date: LocalDate;
+  // The first total holds the converted spending when `convertedFrom` is non-empty.
   readonly totals: ReadonlyMap<CurrencyCode, number>;
+  // As in SummaryView. Absent is empty.
+  readonly convertedFrom?: readonly Money[] | undefined;
+  readonly unconverted?: readonly CurrencyCode[] | undefined;
   readonly people?: PeopleView | undefined;
 }
 
@@ -259,7 +265,7 @@ function conversionNotes(
   return notes.length === 0 ? [] : [joinHtml(notes, '\n')];
 }
 
-// `Анна: 1 650.00 RSD, 12.50 EUR` per member, under a heading. Empty when nobody spent.
+// `Анна: ≈ 1 650.00 RSD, 5 000.00 KZT` per member, under a heading. Empty when nobody spent.
 function peopleSection(people: PeopleView | undefined): Html[] {
   if (people === undefined || people.length === 0) return [];
   return [
@@ -268,7 +274,7 @@ function peopleSection(people: PeopleView | undefined): Html[] {
         html`<b>По участникам</b>`,
         ...people.map(
           (person) =>
-            html`${person.name ?? 'Без имени'}: ${person.totals.map(formatMoney).join(', ')}`,
+            html`${person.name ?? 'Без имени'}: ${person.converted === true ? '≈ ' : ''}${person.totals.map(formatMoney).join(', ')}`,
         ),
       ],
       '\n',
@@ -905,13 +911,29 @@ export const messages = {
   // The current value in a picker.
   currentChoice: (label: string): string => `✓ ${label}`,
 
-  today: ({ ledger, date, totals, people }: TodayView): Html => {
+  // The day's totals, the first `≈` when it holds converted spending, then the conversion notes.
+  today: ({
+    ledger,
+    date,
+    totals,
+    convertedFrom = [],
+    unconverted = [],
+    people,
+  }: TodayView): Html => {
     const header = html`<b>Сегодня, ${dayMonth.format(new Date(`${date}T00:00:00Z`))} — «${ledgerName(ledger)}»</b>`;
     if (totals.size === 0) return joinHtml([header, noExpenses], '\n');
     const lines = [...totals].map(
-      ([currency, amountMinor]) => html`${formatMoney({ amountMinor, currency })}`,
+      ([currency, amountMinor], index) =>
+        html`${index === 0 && convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor, currency })}`,
     );
-    return joinHtml([joinHtml([header, ...lines], '\n'), ...peopleSection(people)], '\n\n');
+    return joinHtml(
+      [
+        joinHtml([header, ...lines], '\n'),
+        ...peopleSection(people),
+        ...conversionNotes(convertedFrom, unconverted),
+      ],
+      '\n\n',
+    );
   },
 
   // /week and /month: per currency a bold total, then its categories by amount. The first block

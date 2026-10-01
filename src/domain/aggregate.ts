@@ -116,34 +116,56 @@ export interface AuthoredMoney extends Money {
   readonly createdBy: string;
 }
 
-export interface AuthorSummary {
+export interface ConvertedAuthorSummary {
   readonly authorId: string;
-  // One entry per currency the author spent in, `firstCurrency` first, then alphabetically.
-  // Each is that currency's sum alone: currencies are never added together (ADR-0003).
-  readonly totals: readonly Money[];
+  // Everything of theirs with a rate, in the target; undefined when nothing converts.
+  readonly converted: Money | undefined;
+  // True when `converted` holds any foreign expense.
+  readonly anyConverted: boolean;
+  // Their totals with no rate, per currency, alphabetically.
+  readonly unconverted: readonly Money[];
 }
 
-// Per author, the totals per currency. Authors are ordered by their `firstCurrency` total,
-// largest first, then by id; an author with none of it sorts after those who have some.
-export function summarizeByAuthor(
-  items: Iterable<AuthoredMoney>,
-  firstCurrency: CurrencyCode,
-): AuthorSummary[] {
-  const byAuthor = new Map<string, AuthoredMoney[]>();
+// Per author, one total in `target` at each expense's day rate (ADR-0022), each expense rounded
+// before the sum, plus the totals of what had no rate. Authors are ordered by the converted
+// total, largest first, then by id; an author with nothing converted sorts after the others.
+export function summarizeByAuthorConverted(
+  items: Iterable<AuthoredMoney & { readonly occurredOn: LocalDate }>,
+  target: CurrencyCode,
+  rateOf: RateOf,
+): ConvertedAuthorSummary[] {
+  const byAuthor = new Map<
+    string,
+    { converted: Money[]; foreign: boolean; unconverted: Money[] }
+  >();
   for (const item of items) {
-    const list = byAuthor.get(item.createdBy) ?? [];
-    list.push(item);
-    byAuthor.set(item.createdBy, list);
+    const author = byAuthor.get(item.createdBy) ?? {
+      converted: [],
+      foreign: false,
+      unconverted: [],
+    };
+    byAuthor.set(item.createdBy, author);
+    const converted = convert(item, target, (currency) => rateOf(currency, item.occurredOn));
+    if (converted === undefined) {
+      author.unconverted.push(item);
+      continue;
+    }
+    author.converted.push(converted);
+    if (item.currency !== target) author.foreign = true;
   }
-  const first = (author: AuthorSummary) =>
-    author.totals.find((t) => t.currency === firstCurrency)?.amountMinor ?? -1;
+  const first = (author: ConvertedAuthorSummary) => author.converted?.amountMinor ?? -1;
   return [...byAuthor]
-    .map(([authorId, list]) => ({
-      authorId,
-      totals: [...sumByCurrency(list)]
-        .map(([currency, amountMinor]) => ({ currency, amountMinor }))
-        .sort((a, b) => currencyOrder(a.currency, b.currency, firstCurrency)),
-    }))
+    .map(([authorId, { converted, foreign, unconverted }]) => {
+      const total = sumByCurrency(converted).get(target);
+      return {
+        authorId,
+        converted: total === undefined ? undefined : { currency: target, amountMinor: total },
+        anyConverted: foreign,
+        unconverted: [...sumByCurrency(unconverted)]
+          .map(([currency, amountMinor]) => ({ currency, amountMinor }))
+          .sort((a, b) => currencyOrder(a.currency, b.currency, target)),
+      };
+    })
     .sort((a, b) =>
       first(a) !== first(b)
         ? first(b) - first(a)

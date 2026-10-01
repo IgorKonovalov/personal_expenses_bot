@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   sumByCurrency,
-  summarizeByAuthor,
+  summarizeByAuthorConverted,
   summarizeByCurrencyAndCategory,
   summarizeConverted,
 } from './aggregate.js';
@@ -115,52 +115,76 @@ describe('summarizeByCurrencyAndCategory', () => {
   });
 });
 
-describe('summarizeByAuthor', () => {
-  it('sums each author per currency, the largest first-currency total first', () => {
-    expect(
-      summarizeByAuthor(
-        [
-          { amountMinor: 45000, currency: 'RSD', createdBy: 'a' },
-          { amountMinor: 30000, currency: 'RSD', createdBy: 'b' },
-          { amountMinor: 120000, currency: 'RSD', createdBy: 'a' },
-        ],
-        'RSD',
-      ),
-    ).toEqual([
-      { authorId: 'a', totals: [{ amountMinor: 165000, currency: 'RSD' }] },
-      { authorId: 'b', totals: [{ amountMinor: 30000, currency: 'RSD' }] },
-    ]);
-  });
+describe('summarizeByAuthorConverted', () => {
+  const SEPT_28 = '2026-09-28' as LocalDate;
+  const rates: RateOf = (currency, day) =>
+    day === SEPT_28 && currency === 'EUR' ? { unit: 1, middleE4: 1174993 } : undefined;
 
-  // Property: each total is the sum of that author's amounts in that one currency, so 1250 EUR
-  // minor units and 45000 RSD minor units stay two entries and are never added together.
-  it('lists each currency of an author separately and never adds across currencies', () => {
+  it('sorts by the converted total, though the original amount is the smaller number', () => {
     expect(
-      summarizeByAuthor(
+      summarizeByAuthorConverted(
         [
-          { amountMinor: 1250, currency: 'EUR', createdBy: 'a' },
-          { amountMinor: 45000, currency: 'RSD', createdBy: 'a' },
-          { amountMinor: 500, currency: 'USD', createdBy: 'a' },
-          { amountMinor: 250, currency: 'EUR', createdBy: 'a' },
-          { amountMinor: 999, currency: 'USD', createdBy: 'b' },
+          { amountMinor: 342000, currency: 'RSD', createdBy: 'b', occurredOn: SEPT_28 },
+          { amountMinor: 10740, currency: 'EUR', createdBy: 'a', occurredOn: SEPT_28 },
         ],
         'RSD',
+        rates,
       ),
     ).toEqual([
       {
         authorId: 'a',
-        totals: [
-          { amountMinor: 45000, currency: 'RSD' },
-          { amountMinor: 1500, currency: 'EUR' },
-          { amountMinor: 500, currency: 'USD' },
+        converted: { currency: 'RSD', amountMinor: 1261942 },
+        anyConverted: true,
+        unconverted: [],
+      },
+      {
+        authorId: 'b',
+        converted: { currency: 'RSD', amountMinor: 342000 },
+        anyConverted: false,
+        unconverted: [],
+      },
+    ]);
+  });
+
+  // Property: what has no rate stays in its own currency per author, never added to the target.
+  it('lists what has no rate per currency, after the authors with a converted total', () => {
+    expect(
+      summarizeByAuthorConverted(
+        [
+          { amountMinor: 500000, currency: 'KZT', createdBy: 'a', occurredOn: SEPT_28 },
+          { amountMinor: 45000, currency: 'RSD', createdBy: 'b', occurredOn: SEPT_28 },
+          { amountMinor: 999, currency: 'USD', createdBy: 'b', occurredOn: SEPT_28 },
+          {
+            amountMinor: 250,
+            currency: 'EUR',
+            createdBy: 'b',
+            occurredOn: '2026-09-20' as LocalDate,
+          },
+        ],
+        'RSD',
+        rates,
+      ),
+    ).toEqual([
+      {
+        authorId: 'b',
+        converted: { currency: 'RSD', amountMinor: 45000 },
+        anyConverted: false,
+        unconverted: [
+          { currency: 'EUR', amountMinor: 250 },
+          { currency: 'USD', amountMinor: 999 },
         ],
       },
-      { authorId: 'b', totals: [{ amountMinor: 999, currency: 'USD' }] },
+      {
+        authorId: 'a',
+        converted: undefined,
+        anyConverted: false,
+        unconverted: [{ currency: 'KZT', amountMinor: 500000 }],
+      },
     ]);
   });
 
   it('is empty for no items', () => {
-    expect(summarizeByAuthor([], 'RSD')).toEqual([]);
+    expect(summarizeByAuthorConverted([], 'RSD', rates)).toEqual([]);
   });
 });
 

@@ -274,7 +274,8 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: /week and /month show one converted total | dev | done | committed with this row |
+| 1: /week and /month show one converted total | dev | done | `27f13ec` |
+| 2: /today, groups and the per-person totals convert too | dev | done | committed with this row |
 
 ### Notes
 
@@ -288,6 +289,15 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
   `Без курса НБС, не пересчитано: EUR.` line (no rates are stored there). The all-RSD ones are
   unchanged.
 - Phase 1: `earliestExpenseDay` (the worker's first owed day) lives in `src/db/fxRates.ts`.
+- Phase 2: `summarizeByAuthor` is replaced by `summarizeByAuthorConverted`, not kept beside it;
+  its tests in `aggregate.test.ts` are replaced too.
+- Phase 2: `TodaySummary.totals` stays a `Map`, now the converted total first, then the
+  unconverted ones alphabetically, instead of first-seen order. `PersonTotals` gains
+  `converted?: true`, set only when it applies, so `periodSummary.test.ts` and `group.test.ts`
+  run unchanged.
+- Phase 2: two existing /today expectations in `bot.test.ts` with foreign amounts and no stored
+  rates gained the `Без курса НБС, не пересчитано:` line, and the EUR-ledger one now lists EUR
+  before RSD.
 - Phase 1: the fixtures are trimmed from the live NBS pages for 2026-09-28, fetched on
   2026-10-01. The XML keeps its BOM and CRLF line ends. The real page writes the XML link's `&`
   unescaped.

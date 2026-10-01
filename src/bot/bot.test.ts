@@ -51,11 +51,14 @@ import { messages } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
   ALLOWED_ID,
+  GROUP_ID,
   SECOND_ALLOWED_ID,
   STRANGER_ID,
   callbackUpdate,
   createTestBot,
+  groupTextUpdate,
   logContent,
+  myChatMemberUpdate,
   textUpdate,
   type ApiCall,
 } from './testHarness.js';
@@ -122,6 +125,26 @@ function expenseCount(db: Db): unknown {
 
 function sentTexts(calls: readonly ApiCall[]): unknown[] {
   return calls.map((call) => (call.payload as { text?: unknown }).text);
+}
+
+// The NBS middle rate list of 2026-09-28 (list 184), in force on the 28th.
+function storeSept28Rates(db: Db) {
+  const day = '2026-09-28' as LocalDate;
+  const fetchedAt = new Date('2026-09-28T08:00:00Z');
+  storeFxList(
+    db,
+    {
+      listDate: day,
+      listNumber: 184,
+      rates: [
+        { currency: 'EUR', unit: 1, middleE4: 1174993 },
+        { currency: 'USD', unit: 1, middleE4: 1031782 },
+        { currency: 'JPY', unit: 100, middleE4: 654009 },
+      ],
+    },
+    fetchedAt,
+  );
+  setFxDay(db, day, day, fetchedAt);
 }
 
 describe('menu and help', () => {
@@ -2121,10 +2144,33 @@ describe('/today', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n462.50 RSD\n12.50 EUR',
+          text:
+            '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n462.50 RSD\n12.50 EUR\n\n' +
+            'Без курса НБС, не пересчитано: EUR.',
           ...htmlParseMode,
         },
       },
+    ]);
+  });
+
+  it('converts the day into one RSD total at the NBS rate, with the note', async () => {
+    const sept28 = new Date('2026-09-28T08:00:00Z');
+    const { bot, calls, db } = createTestBot({ now: sept28 });
+    storeSept28Rates(db);
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: '450 кофе', date: sept28 }),
+    );
+    await bot.handleUpdate(
+      textUpdate({ updateId: 2, messageId: 11, text: '6 USD подписка', date: sept28 }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 12, text: '/today' }));
+
+    // 45 000 + 61 907 minor.
+    expect(sentTexts(calls)).toEqual([
+      '<b>Сегодня, 28 сентября — «Личные расходы»</b>\n≈ 1 069.07 RSD\n\n' +
+        'Включая 6.00 USD по курсу НБС на день траты.',
     ]);
   });
 
@@ -2242,25 +2288,6 @@ describe('/week and /month', () => {
     '<b>12.50 EUR</b>\nТранспорт: 12.50\n\n' +
     'Без курса НБС, не пересчитано: EUR.';
 
-  // The NBS middle rate list of 2026-09-28 (list 184), in force on the 28th.
-  function storeSept28Rates(db: Db) {
-    const day = '2026-09-28' as LocalDate;
-    storeFxList(
-      db,
-      {
-        listDate: day,
-        listNumber: 184,
-        rates: [
-          { currency: 'EUR', unit: 1, middleE4: 1174993 },
-          { currency: 'USD', unit: 1, middleE4: 1031782 },
-          { currency: 'JPY', unit: 100, middleE4: 654009 },
-        ],
-      },
-      NOW,
-    );
-    setFxDay(db, day, day, NOW);
-  }
-
   // 3 420.00 RSD Другое, 450.00 RSD Кафе, 107.40 EUR Связь and 6.00 USD Другое, all on the 28th.
   async function convertedWeekBot(opts: { rates: boolean; kzt?: boolean }) {
     const bot = await summaryBot({ fixture: false });
@@ -2363,6 +2390,44 @@ describe('/week and /month', () => {
         },
       },
     ]);
+  });
+
+  it('sorts a group week by converted total: Анна with 107.40 EUR before Борис with 3 420.00 RSD', async () => {
+    const sept28 = new Date('2026-09-28T08:00:00Z');
+    const { bot, calls, db } = createTestBot({ now: sept28 });
+    storeSept28Rates(db);
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 1,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    const say = (updateId: number, fromId: number, firstName: string, text: string) =>
+      bot.handleUpdate(
+        groupTextUpdate({
+          updateId,
+          fromId,
+          firstName,
+          text,
+          messageId: updateId + 10,
+          date: sept28,
+        }),
+      );
+    await say(2, ALLOWED_ID, 'Анна', '107,40 EUR интернет');
+    await say(3, SECOND_ALLOWED_ID, 'Борис', '3420 разное');
+    calls.length = 0;
+
+    await say(4, ALLOWED_ID, 'Анна', '/week');
+
+    const text = (calls[0]?.payload as { chat_id: number; text: string }).text;
+    expect((calls[0]?.payload as { chat_id: number }).chat_id).toBe(GROUP_ID);
+    expect(text).toContain('<b>≈ 16 039.42 RSD</b>');
+    expect(text).toContain(
+      '<b>По участникам</b>\nАнна: ≈ 12 619.42 RSD\nБорис: 3 420.00 RSD\n\n' +
+        'Включая 107.40 EUR по курсу НБС на день траты.',
+    );
   });
 
   it('pages the month in place to August, which names July and September', async () => {
@@ -2565,6 +2630,23 @@ describe('/week and /month', () => {
         'Категорий слишком много для одного сообщения, поэтому показаны только итоги.',
       );
       for (const currency of CURRENCY_CODES) expect(text).toContain(` ${currency}</b>`);
+    });
+
+    it('keeps the ≈ total and the conversion notes in the fallback', () => {
+      const text = messages.periodSummary({
+        ...view(30),
+        convertedFrom: [{ currency: 'USD', amountMinor: 600 }],
+        unconverted: ['KZT'],
+      });
+
+      expect(visible(text)).toBeLessThanOrEqual(4096);
+      expect(text).not.toContain('Категория с длинным именем');
+      // AMD comes first in the view: 30 * 123 456 789 minor.
+      expect(text).toContain('<b>≈ 37 037 036.70 AMD</b>\n');
+      expect(text).toContain(
+        'Включая 6.00 USD по курсу НБС на день траты.\nБез курса НБС, не пересчитано: KZT.\n\n' +
+          'Категорий слишком много для одного сообщения, поэтому показаны только итоги.',
+      );
     });
 
     it('keeps the categories when they fit', () => {
@@ -3443,7 +3525,8 @@ describe('/settings hub and the timezone picker', () => {
       ).toEqual({ amount_minor: 45000, currency: 'EUR' });
       expect(db.prepare("SELECT * FROM expenses WHERE description = 'чай'").all()).toEqual(rsdRows);
       expect(sentTexts(calls)).toEqual([
-        '<b>Сегодня, 29 сентября — «Личные расходы»</b>\n100.00 RSD\n450.00 EUR',
+        '<b>Сегодня, 29 сентября — «Личные расходы»</b>\n450.00 EUR\n100.00 RSD\n\n' +
+          'Без курса НБС, не пересчитано: RSD.',
       ]);
     });
 

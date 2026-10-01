@@ -11,21 +11,25 @@ import {
 } from '../db/ledgers.js';
 import type { User, UserId } from '../db/users.js';
 import {
-  summarizeByAuthor,
+  summarizeByAuthorConverted,
   summarizeConverted,
   type CurrencySummary,
 } from '../domain/aggregate.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { RateOf } from '../domain/fx.js';
 import type { Money } from '../domain/money.js';
 import { next, periodOf, previous, type Period } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import { effectiveTimezone, resolveLedgerTimezone, type RecordDeps } from './recordExpense.js';
 
-// One member's spending in a shared ledger: a total per currency, never added together.
+// One member's spending in a shared ledger: the total converted into the ledger's currency
+// first, then each currency with no rate, never added to it (ADR-0022).
 export interface PersonTotals {
   // The member's stored display name; null for one never seen in a group.
   readonly name: string | null;
   readonly totals: readonly Money[];
+  // Present when the first total holds converted foreign spending.
+  readonly converted?: true;
 }
 
 export interface PeriodSummary {
@@ -42,7 +46,7 @@ export interface PeriodSummary {
   readonly previous: Period;
   // Absent for the period holding the ledger's today: there is nothing after it yet.
   readonly next?: Period;
-  // A group report's per-person section, largest default-currency total first.
+  // A group report's per-person section, largest converted total first.
   readonly people?: readonly PersonTotals[];
 }
 
@@ -134,10 +138,11 @@ function summarize(
     to: period.to,
   });
   const following = next(period);
+  const rateOf = rateLookupBetween(db, period.from, period.to);
   const { converted, convertedFrom, unconverted } = summarizeConverted(
     expenses,
     ledger.defaultCurrency,
-    rateLookupBetween(db, period.from, period.to),
+    rateOf,
   );
   return {
     ledger,
@@ -147,18 +152,23 @@ function summarize(
     unconverted: unconverted.map((c) => c.currency),
     previous: previous(period),
     ...(following.from > today ? {} : { next: following }),
-    ...(withPeople ? { people: peopleOf(db, ledger, expenses) } : {}),
+    ...(withPeople ? { people: peopleOf(db, ledger, expenses, rateOf) } : {}),
   };
 }
 
+// Each member's totals in the ledger's currency, the largest converted total first.
 export function peopleOf(
   db: Deps['db'],
   ledger: Ledger,
   expenses: readonly Expense[],
+  rateOf: RateOf,
 ): PersonTotals[] {
   const names = listMemberNames(db, ledger.id);
-  return summarizeByAuthor(expenses, ledger.defaultCurrency).map(({ authorId, totals }) => ({
-    name: names.get(authorId as UserId) ?? null,
-    totals,
-  }));
+  return summarizeByAuthorConverted(expenses, ledger.defaultCurrency, rateOf).map(
+    ({ authorId, converted, anyConverted, unconverted }) => ({
+      name: names.get(authorId as UserId) ?? null,
+      totals: converted === undefined ? unconverted : [converted, ...unconverted],
+      ...(anyConverted ? { converted: true as const } : {}),
+    }),
+  );
 }
