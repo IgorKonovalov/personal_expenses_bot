@@ -1,6 +1,6 @@
 # 0030: A Mini App for charts and a live QR scan, static with no backend
 
-> **Status:** draft
+> **Status:** approved (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
 > [ADR-0011](../adrs/0011-navigation-model.md) (screens, persistent menu),
@@ -74,7 +74,7 @@ flowchart LR
   `webapp/src/main.ts`, `webapp/src/payload.ts`, `webapp/src/payload.test.ts`,
   `webapp/src/pie.ts`, `webapp/src/messages.ts`, `webapp/tsconfig.json`, `package.json`
   (`build:webapp` script; vitest and eslint cover `webapp/`), `.github/workflows/pages.yml`,
-  `README.md` (Mini App section, `WEBAPP_URL`), `CLAUDE.md` ("Where things live": `webapp/`).
+  `scripts/pages-workflow.test.mjs`, `README.md` (Mini App section, `WEBAPP_URL`), `CLAUDE.md` ("Where things live": `webapp/`).
 - **Done when:**
   - `encodeChartPayload` with lines Еда 120000 and Транспорт 30000 in RSD round-trips through
     the page's `decodeChartPayload` to the same lines, with `totalMinor` 150000, the integer sum.
@@ -90,14 +90,18 @@ flowchart LR
     that period's payload. In a group chat, or with `WEBAPP_URL` unset, there's no button, and the
     screen is otherwise byte-identical to today's.
   - A period with no expenses has no button.
-  - `pnpm build:webapp` emits `webapp/dist/index.html` and `webapp/dist/main.js`, and the Pages
-    workflow passes `actionlint`, with actions pinned to SHAs like `deploy.yml`.
+  - `pnpm build:webapp` emits `webapp/dist/index.html` and `webapp/dist/main.js`.
+  - A test (`scripts/pages-workflow.test.mjs`, run by the existing `node --test "scripts/*.test.mjs"`
+    CI step) asserts that every `uses:` in `.github/workflows/pages.yml` is pinned to a
+    40-character hex SHA, and that the workflow runs `pnpm build:webapp` before uploading
+    `webapp/dist`.
 
 ### Phase 2: Publish, point the bot at it, and measure the URL limit
 - **Owner skill:** human
 - **What:** Enable GitHub Pages (source: GitHub Actions), set `WEBAPP_URL` in the VPS `.env`,
   redeploy, and open a chart on the clients you use (Android, iOS and/or Desktop).
 - **Done when:**
+  - The first Pages run on `main` is green, and the page is reachable at `WEBAPP_URL`.
   - Tapping «📈 Диаграмма» on `/month` opens the pie on every client tried, in the Telegram theme
     colours. That confirms the `d` key survives Telegram adding its own launch parameters to the
     fragment (an ADR-0025 risk).
