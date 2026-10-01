@@ -243,8 +243,8 @@ type BankSmsResult =
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A pasted SMS records the purchase, once | dev | done | 925aeee |
-| 2: Refusals, /help and README | dev | done | committed with this row |
+| 1: A pasted SMS records the purchase, once | dev | done | `925aeee` |
+| 2: Refusals, /help and README | dev | done | `5929349` |
 | 3: Paste the real SMS into the deployed bot | human | not started | |
 
 ### Notes
@@ -257,5 +257,21 @@ type BankSmsResult =
   `messages.test.ts`, which is outside `Files touched`.
 
 ### Close triggers
+
+- **What shipped:** `src/domain/bankSms/` (`parseBankSms`, the `koriscenjeKartice` parser, its
+  types and a synthetic SMS builder), the `recordBankSms` service with source key
+  `sms:<template>:<fingerprint>:<ledgerId>`, and the text handler trying it after the receipt-link
+  decoder. `messages.receiptAlreadyRecorded` is renamed `alreadyRecorded` and used by the receipt
+  and bank SMS paths. No schema change, no new dependency.
+- **User-visible surface changed:** in DM, a pasted `Koriscenje kartice` SMS records an expense
+  and replies with the expense card. A re-paste replies «Уже записано.» plus the card. New
+  replies: `bankSmsRefused.malformed`, `bankSmsRefused.unsupportedCurrency(code)`,
+  `bankSmsFuture`. `/help` has one new line, and `README.md` has a `### Bank SMS` section.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 59 files,
+  829 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236
+  tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
+  `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 3 (paste the real SMS into the deployed bot, does not
+  block merge).
 
 ## Followups
