@@ -432,6 +432,7 @@ export const messages = {
       html``,
       html`/today — траты группы за сегодня`,
       html`/week и /month — по категориям и по участникам`,
+      html`/budget — бюджет группы: сколько осталось на сегодня и до конца периода`,
       html`/card — ответом на сообщение с тратой: показать её карточку`,
       html`/settings — часовой пояс и валюта группы (для того, кто добавил меня)`,
       html`/help — эта подсказка`,
@@ -445,6 +446,7 @@ export const messages = {
     { command: 'today', description: 'Траты группы за сегодня' },
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
+    { command: 'budget', description: 'Бюджет группы: сколько осталось' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
@@ -675,6 +677,23 @@ export const messages = {
     }
     return joinHtml(lines, '\n');
   },
+  // /budget in a bound group: the same figures, read-only. Without a budget, where to set one.
+  groupBudget: (view: BudgetScreenView): Html => {
+    const { status } = view;
+    if (status === undefined || (status.limit === undefined && status.caps.length === 0)) {
+      return joinHtml(
+        [
+          html`<b>Бюджет «${ledgerName(view.ledger)}»</b>`,
+          html`Бюджет не задан. Его настраивает в личной переписке со мной тот, кто добавил меня в группу: /settings в группе, затем «Бюджет».`,
+        ],
+        '\n',
+      );
+    }
+    return messages.budgetScreen(view);
+  },
+  // The group ledger's settings hub opens its budget screen (owner only).
+  settingsBudgetButton: 'Бюджет',
+  budgetNotOwnerToast: 'Бюджет группы может менять только тот, кто добавил меня в группу',
   budgetLimitButton: 'Задать лимит',
   budgetOwnerOnly: html`Бюджет этого учёта может настраивать только его владелец.`,
   // `current` is the limit in effect, if any.

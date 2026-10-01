@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 import type { CategoryId } from '../../db/categories.js';
 import type { Db } from '../../db/connection.js';
 import type { ExpenseId } from '../../db/expenses.js';
+import type { LedgerId } from '../../db/ledgers.js';
 import { findUserByIdentity, type User } from '../../db/users.js';
 import { monthOf } from '../../domain/periods.js';
 import type { LocalDate } from '../../domain/time.js';
 import { createLogger } from '../../logger.js';
 import { changeCategory } from '../../services/changeCategory.js';
 import { openEdit, startEdit } from '../../services/editExpense.js';
+import { setAnchor } from '../../services/flowSessions.js';
 import { undoExpense } from '../../services/recordExpense.js';
 import { assertCallbackData, groupDeleteData, groupRestoreData } from '../callbackData.js';
 import { messages } from '../messages.js';
@@ -1065,5 +1067,96 @@ describe('group lifecycle and ledger settings (Phase 4)', () => {
     expect(
       db.prepare("SELECT COUNT(*) FROM flow_sessions WHERE screen = 'settings'").pluck().get(),
     ).toBe(0);
+  });
+});
+
+describe('budgets on group ledgers (ADR-0017)', () => {
+  // 00:40 on 2 October in Belgrade.
+  const LATE = new Date('2026-10-01T22:40:00Z');
+
+  it('sets the limit from the ledger settings, keeps the reaction quiet, and /budget reads day 2', async () => {
+    const { bot, db, calls, say, dm, tap } = await bound({ now: LATE });
+    returnSentMessages(bot);
+    const ledgerId = groupLedgerId(db);
+    await dm(ALLOWED_ID, `/start gs_${ledgerId}`, 180);
+    expect(calls[0]?.payload).toMatchObject({
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Часовой пояс', callback_data: 'set:tz' },
+            { text: 'Валюта', callback_data: 'set:cur' },
+          ],
+          [{ text: 'Бюджет', callback_data: 'set:bud' }],
+        ],
+      },
+    });
+
+    await tap(ALLOWED_ID, 'set:bud', { messageId: SENT_ID });
+    expect(sentText(calls.at(-1))).toBe(
+      '<b>Бюджет «Семья»</b>\nЛимит не задан. Задайте лимит на период, и после каждой траты я ' +
+        'покажу, сколько осталось на сегодня.',
+    );
+    await tap(ALLOWED_ID, 'bud:lim', { messageId: SENT_ID });
+    await dm(ALLOWED_ID, '30000', 181);
+    expect(db.prepare('SELECT ledger_id, limit_minor FROM ledger_budgets').get()).toEqual({
+      ledger_id: ledgerId,
+      limit_minor: 3_000_000,
+    });
+    calls.length = 0;
+
+    await say(ALLOWED_ID, '450 кафе', 182, {
+      firstName: 'Анна',
+      date: new Date('2026-10-01T22:30:00Z'),
+    });
+    expect(calls.map((c) => c.method)).toEqual(['setMessageReaction']);
+
+    await say(STRANGER_ID, '/budget', 183, { firstName: 'Борис' });
+    expect(calls.at(-1)?.payload).toMatchObject({ chat_id: GROUP_ID });
+    expect(sentText(calls.at(-1))).toBe(
+      [
+        '<b>Бюджет «Семья»</b>',
+        'Период: 1–31 октября, день 2 из 31',
+        'Считаются все траты.',
+        'Лимит: 30 000.00 RSD, потрачено 450.00 RSD',
+        'Осталось на сегодня: 1 485.48 RSD',
+        'Осталось до 31 окт: 29 550.00 RSD',
+      ].join('\n'),
+    );
+  });
+
+  it("refuses the budget setup to a member who isn't the owner", async () => {
+    const { db, calls, say, tap } = await bound({ now: LATE });
+    await say(SECOND_ALLOWED_ID, '500 такси', 12, { firstName: 'Вера' });
+    const ledgerId = groupLedgerId(db) as LedgerId;
+    const vera = findUserByIdentity(db, 'telegram', String(SECOND_ALLOWED_ID)) as User;
+    // A hub scoped to the ledger in Вера's DM, as no /start gs_ would ever open for her.
+    setAnchor({ db }, vera, {
+      chatId: SECOND_ALLOWED_ID,
+      messageId: 70,
+      screen: { name: 'settings', ledgerId },
+    });
+    calls.length = 0;
+
+    await tap(SECOND_ALLOWED_ID, 'set:bud', { messageId: 70 });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'answerCallbackQuery',
+      payload: { text: messages.budgetNotOwnerToast },
+    });
+    expect(
+      db.prepare('SELECT screen FROM flow_sessions WHERE user_id = ?').pluck().get(vera.id),
+    ).toBe('settings');
+  });
+
+  it('answers /budget in a group without a budget with where to set one', async () => {
+    const { calls, say } = await bound({ now: LATE });
+
+    await say(ALLOWED_ID, '/budget', 20, { firstName: 'Анна' });
+
+    expect(sentText(calls.at(-1))).toBe(
+      '<b>Бюджет «Семья»</b>\nБюджет не задан. Его настраивает в личной переписке со мной тот, ' +
+        'кто добавил меня в группу: /settings в группе, затем «Бюджет».',
+    );
   });
 });

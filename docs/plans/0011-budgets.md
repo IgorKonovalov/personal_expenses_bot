@@ -283,8 +283,8 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 | 1: Walking skeleton | dev | done | e3c9052 |
 | 2: Payday periods | dev | done | c1cfd43 |
 | 3: Essential categories | dev | done | db7b104 |
-| 4: Per-category caps | dev | done | committed with this row |
-| 5: Group ledgers | dev | not started | |
+| 4: Per-category caps | dev | done | 111aeaf |
+| 5: Group ledgers | dev | done | committed with this row |
 | 6: Live check | human | not started | |
 
 ### Notes
@@ -326,6 +326,17 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
   flow for that category.
 - Phase 4: a cap counts every expense of its category in the budget currency, whatever the
   scope.
+- Phase 5: outside `Files touched`, `src/bot/callbackData.ts` gained `SETTINGS_BUDGET`
+  (`set:bud`), the scoped hub's [Бюджет] button. The bot tests are in
+  `src/bot/group/group.test.ts`.
+- Phase 5: the budget screen opened from the group ledger's hub has no [« Назад] to the hub.
+  `BudgetScreen` carries no `fromSettings`, because `src/services/flowSessions.ts` is outside
+  this phase's files.
+- Phase 5: the non-owner refusal is a new toast, `budgetNotOwnerToast`. The plan names the
+  "not-owner copy" and none existed for a callback. The bot test reaches it through a settings
+  anchor written directly for the member, because `/start gs_` never opens one for a non-owner.
+- Phase 5: `/budget` was added to `messages.groupCommands` and to the group help text. In a group
+  with no limit and no caps, `/budget` replies with where to set one.
 
 ### Close triggers
 

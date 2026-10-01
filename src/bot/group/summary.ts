@@ -1,5 +1,6 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import { parsePeriod, type Period } from '../../domain/periods.js';
+import { groupBudgetStatus } from '../../services/budget.js';
 import { groupPeriodSummary, type PeriodSummary } from '../../services/periodSummary.js';
 import { groupTodaySummary } from '../../services/todaySummary.js';
 import { SUMMARY_PAGE, summaryPageData } from '../callbackData.js';
@@ -8,7 +9,7 @@ import { editHtml, replyHtml, type Html } from '../render/html.js';
 import type { GroupHandlerDeps } from './index.js';
 import { fromPerson } from './text.js';
 
-// /today, /week and /month in a bound group: the group ledger in its timezone, with a section
+// /today, /week, /month and /budget in a bound group: the group ledger in its timezone, with a section
 // per person. The pager is stateless: the ledger comes from the chat's binding, so a tap writes
 // no ADR-0011 anchor and works for anyone in the group.
 
@@ -40,6 +41,13 @@ export function registerGroupSummary(group: Composer<Context>, deps: GroupHandle
     const summary = groupTodaySummary(deps, { chatId: ctx.chat.id, now: deps.now() });
     if (summary === undefined) return;
     await replyHtml(ctx, messages.today(summary));
+  });
+  // Read-only: the budget is set from the ledger's settings in the owner's DM.
+  group.command('budget', async (ctx) => {
+    if (ctx.message === undefined || !fromPerson(ctx.message)) return;
+    const view = groupBudgetStatus(deps, { chatId: ctx.chat.id, now: deps.now() });
+    if (view === undefined) return;
+    await replyHtml(ctx, messages.groupBudget(view));
   });
   group.command('week', (ctx) => sendGroupSummary(ctx, deps, 'week'));
   group.command('month', (ctx) => sendGroupSummary(ctx, deps, 'month'));

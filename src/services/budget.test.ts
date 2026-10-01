@@ -8,11 +8,14 @@ import { createLogger } from '../logger.js';
 import type { CategoryId } from '../db/categories.js';
 import {
   answerBudgetFlow,
+  budgetScreen,
   clearCap,
+  groupBudgetStatus,
   memberBudgetStatus,
   setScope,
   startBudgetFlow,
 } from './budget.js';
+import { bindGroup, recordGroupExpense } from './groupChats.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
 
@@ -223,6 +226,88 @@ describe('category caps', () => {
     setCap(cafeId(), '5000');
     db.prepare("UPDATE categories SET archived_at = 'x' WHERE id = ?").run(cafeId());
     expect(status(OCT_1)?.caps).toEqual([]);
+  });
+});
+
+describe('a group ledger (ADR-0015)', () => {
+  const CHAT = -100500;
+  const groupDeps = () => ({
+    ...deps,
+    defaultTimezone: 'Europe/Belgrade',
+    defaultCurrency: 'RSD' as const,
+  });
+  const sender = (telegramId: number, firstName: string) => ({ telegramId, firstName });
+
+  function bound() {
+    const { ledger: group } = bindGroup(groupDeps(), {
+      chatId: CHAT,
+      title: 'Семья',
+      adder: sender(3003, 'Анна'),
+      now: OCT_1,
+    });
+    const owner = provisionUser(deps, {
+      provider: 'telegram',
+      externalId: '3003',
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      now: OCT_1,
+    }).user;
+    return { group, owner };
+  }
+
+  it('counts 450 кафе sent at 00:30 Belgrade on 2 October on day 2, not day 1', () => {
+    const { group, owner } = bound();
+    expect(group).toMatchObject({ timezone: 'Europe/Belgrade', defaultCurrency: 'RSD' });
+    const flow = { kind: 'budgetLimit', ledgerId: group.id } as const;
+    expect(startBudgetFlow(deps, { user: owner, flow, now: OCT_1 })).toBe(true);
+    const text = '30000';
+    expect(
+      answerBudgetFlow(deps, { user: owner, flow, text, inputKey: 'tg:3003:1', now: OCT_1 }).kind,
+    ).toBe('set');
+
+    const sentAt = new Date('2026-10-01T22:30:00Z');
+    recordGroupExpense(groupDeps(), {
+      chatId: CHAT,
+      sender: sender(3003, 'Анна'),
+      text: '450 кафе',
+      sourceKey: 'tg:-100500:1',
+      occurredAt: sentAt,
+      now: sentAt,
+    });
+
+    const { status: s } = groupBudgetStatus(deps, { chatId: CHAT, now: sentAt }) ?? {};
+    expect(s?.period).toEqual({ from: '2026-10-01', to: '2026-10-31', day: 2, days: 31 });
+    expect(s?.limit?.todayLeftMinor).toBe(148_548);
+  });
+
+  it("refuses a member who isn't the owner the budget screen and its flows", () => {
+    const { group } = bound();
+    recordGroupExpense(groupDeps(), {
+      chatId: CHAT,
+      sender: sender(4004, 'Борис'),
+      text: '300 такси',
+      sourceKey: 'tg:-100500:2',
+      occurredAt: OCT_1,
+      now: OCT_1,
+    });
+    const member = provisionUser(deps, {
+      provider: 'telegram',
+      externalId: '4004',
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      now: OCT_1,
+    }).user;
+
+    expect(budgetScreen(deps, { user: member, ledgerId: group.id, now: OCT_1 })).toBeUndefined();
+    const flow = { kind: 'budgetLimit', ledgerId: group.id } as const;
+    expect(startBudgetFlow(deps, { user: member, flow, now: OCT_1 })).toBe(false);
+    expect(
+      setScope(deps, { user: member, ledgerId: group.id, scope: 'optional', now: OCT_1 }),
+    ).toEqual({ kind: 'forbidden' });
+  });
+
+  it('reads nothing for an unbound chat', () => {
+    expect(groupBudgetStatus(deps, { chatId: -1, now: OCT_1 })).toBeUndefined();
   });
 });
 

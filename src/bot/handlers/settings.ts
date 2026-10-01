@@ -6,6 +6,7 @@ import { CURRENCY_CODES, toCurrencyCode } from '../../domain/currencies.js';
 import { TIMEZONES, timezoneBySlug } from '../../domain/timezones.js';
 import {
   setAnchor,
+  type BudgetScreen,
   type CategoriesScreen,
   type SettingsScreen,
 } from '../../services/flowSessions.js';
@@ -23,6 +24,7 @@ import {
   CURRENCY_PICKER,
   SET_CURRENCY,
   SET_TIMEZONE,
+  SETTINGS_BUDGET,
   SETTINGS_CATEGORIES,
   SETTINGS_OPEN,
   TIMEZONE_OTHER,
@@ -44,6 +46,7 @@ import {
   type ScreenTap,
   type ScreenView,
 } from '../screens.js';
+import { budgetView } from './budget.js';
 import { categoriesView } from './categories.js';
 import { ensureUser } from './start.js';
 
@@ -73,7 +76,13 @@ export function settingsView(
           [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
         ]),
       }
-    : { text: messages.ledgerSettingsScreen(settings), markup: InlineKeyboard.from([pickers]) };
+    : {
+        text: messages.ledgerSettingsScreen(settings),
+        markup: InlineKeyboard.from([
+          pickers,
+          [InlineKeyboard.text(messages.settingsBudgetButton, SETTINGS_BUDGET)],
+        ]),
+      };
 }
 
 // Opens the hub scoped to a shared ledger the user owns. False when they don't own it.
@@ -201,6 +210,28 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     setAnchor(deps, tap.user, anchor);
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, anchor, categoriesView(view, screen));
+  });
+
+  // The scoped hub's [Бюджет]: the same budget screen, acting on the hub's ledger. Only its owner
+  // gets past budgetView; anyone else gets the not-owner toast.
+  bot.callbackQuery(SETTINGS_BUDGET, async (ctx) => {
+    const tap = await requireScreen(ctx, deps);
+    if (tap === undefined) return;
+    const { screen } = tap.anchor;
+    if (screen.name !== 'settings' || screen.ledgerId === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const budget: BudgetScreen = { name: 'budget', ledgerId: screen.ledgerId };
+    const view = budgetView(deps, tap.user, budget);
+    if (view === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.budgetNotOwnerToast });
+      return;
+    }
+    const anchor = { ...tap.anchor, screen: budget };
+    setAnchor(deps, tap.user, anchor);
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, anchor, view);
   });
 
   bot.callbackQuery(TIMEZONE_PAGE, async (ctx) => {

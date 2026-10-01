@@ -38,6 +38,7 @@ import {
   startFlow,
   type BudgetFlow,
 } from './flowSessions.js';
+import { boundGroupLedger } from './periodSummary.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 // Budgets (ADR-0017): computed at read time from `expenses`, in the ledger's effective timezone
@@ -157,6 +158,19 @@ export function memberBudgetStatus(
   if (findLedgerForMember(deps.db, ledger.id, user.id) === undefined) return undefined;
   const today = localDateOf(input.now, effectiveTimezone(deps, user, ledger));
   return budgetStatus(deps, { ledger, readerId: user.id, today });
+}
+
+// A bound group's budget, read through its binding (ADR-0014) and dated in the ledger's own
+// timezone (ADR-0015), for the read-only group /budget. Undefined for an unbound chat.
+export function groupBudgetStatus(
+  deps: Deps,
+  input: { readonly chatId: number; readonly now: Date },
+): { readonly ledger: Ledger; readonly status?: BudgetStatus } | undefined {
+  const bound = boundGroupLedger(deps, input.chatId);
+  if (bound === undefined) return undefined;
+  const { ledger, readerId } = bound;
+  const status = budgetStatus(deps, { ledger, readerId, today: bound.today(input.now) });
+  return status === undefined ? { ledger } : { ledger, status };
 }
 
 export interface BudgetScreenView {
