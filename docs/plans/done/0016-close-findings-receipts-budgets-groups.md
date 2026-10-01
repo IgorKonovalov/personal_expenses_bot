@@ -1,11 +1,11 @@
 # 0016: Close findings: receipt backoff, links with a note, group dates, caps currency, budget navigation
 
-> **Status:** in-progress (2026-10-01)
+> **Status:** done (2026-10-01): built as planned, three nits open as followups, v0.9.1
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md),
-> [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
-> [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
-> [ADR-0011](../adrs/0011-navigation-model.md)
+> **Related ADRs:** [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md),
+> [ADR-0015](../../adrs/0015-shared-ledgers-carry-a-timezone.md),
+> [ADR-0017](../../adrs/0017-budgets-payday-periods-cumulative-allowance.md),
+> [ADR-0011](../../adrs/0011-navigation-model.md)
 
 ## TL;DR
 
@@ -268,4 +268,148 @@ type SetLimitResult =
   The Docker image build was not run.
 - **Outstanding `human` phases:** none.
 
+## Close review
+
+# Plan 0016 review, round 1 (tip 14a9e8c)
+
+**Verdict:** clean. All five phases landed as planned, every named test asserts its done-when, and
+the gate is green. Three nits are recorded below as followups and none blocks the close.
+
+## Gate (run in this session at the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 57 files, 761 tests.
+- `node scripts/check-doc-links.mjs`: exit 0, 134 relative links resolve.
+- `pnpm build`: exit 0. `dist/domain/receipts/` has no `testing/`, and `dist/fiscal/` has no
+  `qr.fixtures/` (checked with `ls`). `dist/` is gitignored, so the tree stayed clean.
+- The Docker image build was not run. The plan expects that check to happen at deploy.
+
+## Alignment
+
+- Phase-to-commit map: 1aac740 (P1), b9b047c (P2), edfecc4 (P3), 1ebafe7 (P4), 63c4ac2 (P5),
+  plus 25534f6 (P4's park note) and d12826c (main merged in). Every phase has exactly one
+  `dev` owner tag. No phase was added or skipped.
+- **P1** `fetchDueReceipt.test.ts` "backs off a receipt whose fetched data fails to apply": a
+  `BEFORE INSERT` trigger on `receipt_items` makes the apply throw. The test asserts `pending`,
+  `attempts 1` and `next_fetch_at = T0 + 60 000 ms`, then 0 items, then that a second run is
+  `idle` with 1 fetcher call, then 2 calls at `T0 + 60 000`. Each matches the done-when. The new
+  log line carries `receiptId` and the error's name only.
+  `receiptWorker.test.ts` gates the fetcher and calls `kick()` twice while the fetch is in
+  flight. It asserts `fetcherCalls === 1` and `fetched`. The log says this fails with 3 calls
+  when the `inFlight` check is removed.
+  `bot.test.ts`, the [Повторить] test: the fetcher succeeds, and the test asserts `settled`, then `idle`,
+  then `fetches === 1`. See nit 3.
+- **P2** `rsUrl.test.ts` checks `' кофе'` and `'\n450 кофе'` → `notReceipt`. The `%2B` / `+` /
+  space case now asserts `82912` `RSD`, not only `kind`. The existing refusal tests are
+  unmodified. The Dockerfile check imports only `dist/fiscal/qr.js` and
+  `dist/domain/receipts/index.js`. It keeps `fetch` throwing and asserts `82912` / `RSD`.
+- **P3** `group.test.ts` covers New York / Belgrade at `2026-09-30T23:30:00Z` and asserts
+  `occurred_on '2026-10-01'`. The card asserts no ` за `. The first quick button is
+  `exp:dt:<id>:2026-10-01`. Typing `01.10` completes the flow, and the test asserts the date stays
+  `2026-10-01`. That assertion fails on the old zone, which read `01.10` as 2025. All three
+  `editExpense.ts` sites and `cardView` use `effectiveTimezone`.
+- **P4** `budget.test.ts` "a limit in a new currency" checks three cases:
+  - EUR `1000` gives `100_000` EUR, no caps and `droppedCapsCurrency: 'RUB'`.
+  - The same currency at `40000` gives `4_000_000` RUB and keeps the cap at `500_000`.
+  - An injected `BEFORE UPDATE` trigger leaves `3_000_000` RUB and the cap `500_000`.
+
+  `deleteLedgerCaps` runs inside `answerBudgetFlow`'s transaction. `db/budgets.test.ts` checks
+  that it covers archived categories and leaves the other ledger alone.
+- **P5** has four done-whens:
+  - `set:bud` → last row `« Назад` / `set:open` is asserted in `group.test.ts`. It survives a
+    typed limit through `flows.ts`.
+  - The exact `/budget` keyboard in `bot.test.ts:1792` has no back row.
+  - `flowSessions.test.ts` round-trips `fromSettings`.
+  - The cap prompt keyboard is asserted row by row, `[« Назад]` cancels the flow (`kind` null),
+    and a later `6000` leaves the cap at `500_000`. The group `/budget` lacks «Задайте лимит
+    заново», and the DM screen opened through `set:bud` has it (deviation disclosed: the DM
+    `/budget` opens the personal ledger). `/help` contains `/cancel — отменить ввод` and stays
+    under 4096 characters.
+- No ADR was reversed. ADR-0017's "one currency per budget" is kept by deleting the caps, as the
+  plan decided.
+
+## Layering and correctness
+
+- grammY stays in `src/bot/`. The new copy (`budgetCapsDropped`, the `/cancel` line, the
+  read-only split of `budgetScreen`) lives in `messages.ts`. No SQL outside `src/db/`.
+- Money stays integer. No new float or `toFixed`. Time uses the injected `now` and the ledger's
+  zone where ADR-0015 requires it.
+- The cap-list handler's `cancelFlowIf(... 'budgetCap')` is idempotent under a double tap.
+  Callback data is unchanged in size (`bud:caps`, `set:open`).
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+None.
+
+### nit
+
+1. **A Latin-only note after a SUF link is still refused as a broken link.**
+   - **Where:** `src/domain/receipts/rsUrl.ts:18-19`.
+   - **What:** the pattern `(?: +[A-Za-z0-9+/=%&]+)*` treats a space plus base64-alphabet text
+     as part of `vl`, so `<link> kafa` or `<link> lunch` reaches the decoder and is answered
+     «ссылка повреждена». Only a note that contains a non-base64 character (Cyrillic, `č`, a
+     digit-space mix with newline) goes to the parser.
+   - **Why it matters:** this follows the plan's wording ("non-base64 text") and the log
+     discloses it. Plan 0014 Phase 1's rule, that a link next to other words is not a receipt,
+     still fails for Latin words, and users in RS/ME type Latin.
+   - **Suggested fix (followup):** accept a space-split tail only when the rejoined `vl`
+     base64-decodes to a valid journal. Otherwise retry the match without the tail and route it
+     as `notReceipt`.
+2. **No bot-level test shows the «Лимиты по категориям сброшены» line.**
+   - **Where:** `src/bot/flows.ts:165` and `src/bot/handlers/budget.ts` `budgetView`'s header.
+   - **What:** the service test covers `droppedCapsCurrency`. Nothing asserts that the screen
+     after the typed limit starts with the line. The plan's done-when only named the service
+     result, and the log discloses the gap.
+   - **Why it matters:** dropping the `droppedCapsCurrency` argument in `flows.ts` would pass the
+     whole suite.
+   - **Suggested fix (followup):** one `bot.test.ts` case: RUB limit, then a cap, then the
+     currency set to EUR, then a new limit. Assert that the edited text starts with
+     `Лимиты по категориям сброшены: они были в RUB.`
+3. **The [Повторить] double-tap test's "fetches once" half still cannot fail.**
+   - **Where:** `src/bot/bot.test.ts` ~3820-3842.
+   - **What:** both taps land before the fetch, so `fetches === 1` holds even with the
+     `resetFailedReceipt` CAS made unconditional. The test does fail under that mutation, but on
+     its toast assertion. The log discloses this. The done-when ("makes the test fail") is met.
+   - **Why it matters:** the original 0014 finding named this half. The guard is now defended by
+     the toast assertion instead.
+   - **Suggested fix (followup):** none needed unless the toast assertion is ever relaxed. If it
+     is, run one `fetchDueReceipt` between the two taps and assert that the second tap neither
+     re-queues nor refetches.
+
+## Bookkeeping owed at close
+
+- Flip `Status:` to `done` (2026-10-01, this verdict), `git mv` the plan to `docs/plans/done/`,
+  repair links both ways, and run `node scripts/check-doc-links.mjs`.
+- No paired ADR to accept (the plan says no ADR).
+- Refresh `docs/plans/README.md`: move the row to recently closed.
+- Version: the patch bump to **v0.9.1** that the plan names. Add the `CHANGELOG.md` entry and a
+  `versionAnnouncements` entry in `messages.ts`. The user-visible surface is listed in the log's
+  close triggers.
+- Docs: `/help` already carries `/cancel`. No env var or config key changed. The README needs no
+  change.
+- Record nits 1 to 3 under the plan's `## Followups`.
+
+### Earlier rounds
+
+Round 1 was the only review round. No fix round ran, so no finding was resolved by a fix commit.
+
 ## Followups
+
+- Review nit 1: a Latin-only note after a SUF link (`<link> kafa`) is still refused as
+  «ссылка повреждена». Accept a space-split tail of `vl` only when the rejoined value decodes to
+  a valid journal; otherwise route the message as `notReceipt`.
+- Review nit 2: add a `bot.test.ts` case asserting the budget screen after a limit in a new
+  currency starts with «Лимиты по категориям сброшены: они были в RUB.»
+- Review nit 3: if the [Повторить] test's toast assertion is ever relaxed, run one
+  `fetchDueReceipt` between the two taps and assert the second tap neither re-queues nor refetches.

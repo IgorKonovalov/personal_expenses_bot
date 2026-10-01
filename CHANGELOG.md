@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.9.1 (2026-10-01)
+
+From Plan 0016 (close findings of Plans 0003, 0009, 0011 and 0014).
+
+- A receipt whose fetched details fail to save backs off like any other failed fetch, instead of
+  being refetched from the tax site every few seconds.
+- A receipt link with a note after it, such as `<link> кофе`, is read as an expense, not refused
+  as a broken link.
+- A group expense opened in DM shows and edits its date in the group's timezone.
+- Setting a budget limit after changing the ledger's currency drops the category caps, and the
+  budget screen says so.
+- The budget screen opened from settings has [« Назад], and the category cap prompt has
+  [« Назад] to the cap list. The group `/budget` no longer asks the group to re-set the limit.
+- `/help` mentions `/cancel`.
+
 ## 0.9.0 (2026-10-01)
 
 From Plan 0014 (fiscal receipts from Serbia and Montenegro).
