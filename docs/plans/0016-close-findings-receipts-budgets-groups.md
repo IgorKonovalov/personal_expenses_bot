@@ -137,7 +137,8 @@ here puts the external-load fix first.
   transaction as `setBudgetLimit`. The confirmation gains the line «Лимиты по категориям сброшены:
   они были в <old currency>.» from `messages`. A limit re-set in the same currency keeps the caps.
 - **Files touched:** `src/db/budgets.ts` (+ test), `src/services/budget.ts` (+ test),
-  `src/bot/handlers/budget.ts`, `src/bot/messages.ts`.
+  `src/bot/flows.ts` (`answerFlow`'s `'set'` case passes the dropped caps' currency to the
+  screen), `src/bot/handlers/budget.ts`, `src/bot/messages.ts`.
 - **Done when:** in `budget.test.ts`, a RUB ledger has a limit of `30000` and a cap of `5000` on
   «Кафе и рестораны» (`500_000` minor RUB).
   - Change the ledger default to EUR, then set the limit `1000`. The budget is `100_000` minor
@@ -156,8 +157,10 @@ here puts the external-load fix first.
   - The group `/budget` message drops the «Задайте лимит заново…» sentence. The DM screen keeps
     it.
   - `/help` gains a `/cancel — отменить ввод` line.
-- **Files touched:** `src/services/flowSessions.ts` (+ test), `src/bot/handlers/budget.ts`,
-  `src/bot/handlers/settings.ts`, `src/bot/callbackData.ts`, `src/bot/messages.ts` (+ test),
+- **Files touched:** `src/services/flowSessions.ts` (+ test), `src/bot/flows.ts`
+  (`restoreScreen` and `answerFlow` render the budget screen, and the cap flow's cancel),
+  `src/bot/handlers/budget.ts`, `src/bot/handlers/settings.ts`, `src/bot/callbackData.ts`,
+  `src/bot/messages.ts` (+ test),
   `src/bot/bot.test.ts`, `src/bot/group/group.test.ts`.
 - **Done when:**
   - The budget screen opened through `set:bud` has a last row [« Назад] whose data is
