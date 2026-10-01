@@ -355,8 +355,8 @@ type DecodedReceipt = {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A pasted Serbian link records the receipt's total | dev | done | committed with this row |
-| 2: A pasted Montenegrin link | dev | not started | |
+| 1: A pasted Serbian link records the receipt's total | dev | done | 7b2687f |
+| 2: A pasted Montenegrin link | dev | done | committed with this row |
 | 3: Photos and image files | dev | not started | |
 | 4: The background fetch fills in the shop and the items | dev | not started | |
 | 5: [Позиции] and [Повторить] on the card | dev | not started | |
@@ -369,6 +369,9 @@ type DecodedReceipt = {
   `receipts`. `src/db/categories.test.ts` (not in Files touched) pinned the full list of
   migrations a pre-0009 DB applies, `['0009']`; it now asserts only that the first one is `0009`.
 - Phase 1: the «уже записано» reply reads «Уже записано.» on its own line above the card.
+- Phase 2: `src/bot/handlers/text.ts` (not in Files touched) switched its import from
+  `decodeRsUrl` to `decodeReceiptUrl`, which is the wiring the phase names. `prc=42.505` is
+  refused as `fractionalTotal`, the other refused `prc` values as `malformed`.
 
 ### Close triggers
 

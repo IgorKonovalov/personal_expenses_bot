@@ -1,5 +1,5 @@
 import type { Composer, Context } from 'grammy';
-import { decodeRsUrl } from '../../domain/receipts/rsUrl.js';
+import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
@@ -39,7 +39,7 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     const occurredAt = new Date(ctx.message.date * 1000);
 
     // A message that is a receipt verification link, and nothing else, records the receipt.
-    const receipt = decodeRsUrl(ctx.message.text);
+    const receipt = decodeReceiptUrl(ctx.message.text);
     if (receipt.kind !== 'notReceipt') {
       await answerReceipt(ctx, deps, { user, decoded: receipt, occurredAt, now });
       return;

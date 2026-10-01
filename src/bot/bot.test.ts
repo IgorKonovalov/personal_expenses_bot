@@ -3500,6 +3500,43 @@ describe('fiscal receipts', () => {
     ).toEqual({ n: 0 });
   });
 
+  describe('Montenegro', () => {
+    const IIC = 'abcdef0123456789abcdef0123456789';
+    const meLink = (iic = IIC) =>
+      `https://mapr.tax.gov.me/ic/#/verify?iic=${iic}&tin=02000000&crtd=2026-09-30T23:15:00+02:00&prc=42.50&bu=ab123cd456&cr=xy987zz123`;
+
+    it.each([
+      ['Europe/Podgorica', '2026-09-30'],
+      ['Europe/Moscow', '2026-10-01'],
+    ])('records 4250 EUR for a user in %s dated %s', async (timezone, occurredOn) => {
+      const { send, setTimezone, db } = receiptBot();
+      await send('/start');
+      setTimezone(timezone);
+
+      await send(meLink());
+
+      expect(
+        db.prepare('SELECT amount_minor, currency, description, occurred_on FROM expenses').all(),
+      ).toEqual([
+        { amount_minor: 4250, currency: 'EUR', description: 'Чек', occurred_on: occurredOn },
+      ]);
+      expect(db.prepare('SELECT country, fiscal_id FROM receipts').all()).toEqual([
+        { country: 'ME', fiscal_id: IIC },
+      ]);
+    });
+
+    it('treats an iic that differs only in case as the same receipt', async () => {
+      const { send, calls, db } = receiptBot();
+      await send(meLink());
+      calls.length = 0;
+
+      await send(meLink(IIC.toUpperCase()));
+
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      expect(String(sentTexts(calls)[0])).toMatch(/^Уже записано\.\n/);
+    });
+  });
+
   it('logs the receipt and expense ids and the country, never the amount, URL or fiscal id', async () => {
     const { send, logLines, db } = receiptBot({ logLevel: 'info' });
 
