@@ -285,7 +285,7 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 | 3: Essential categories | dev | done | db7b104 |
 | 4: Per-category caps | dev | done | 111aeaf |
 | 5: Group ledgers | dev | done | 47dd3a2 |
-| 6: Live check | human | not started | |
+| 6: Live check | human | owed | |
 
 ### Notes
 
