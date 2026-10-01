@@ -7,6 +7,38 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-01 morning: Plans 0009, 0011 and 0014
+
+Queue `a: 0009, 0011, 0014`, chained with `after`. Three merged: 0009 as v0.7.0, 0011 as
+v0.8.0, 0014 as v0.9.0, each passing review in round 1. Two `run --until-idle` invocations:
+09:21 to 09:33 local (0009 parked, the run idled) and 09:55 to 11:44 local. Spend was about
+$46 in all ($4.86 + $41.13). Each plan's human live check merged as owed (`Blocks merge: no`).
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H1 | 0011, 0014 | `plan_wrong` at `ready` (queue time, before the run) | 0011 omitted the flow, menu and registration files for its new screen (`1b0d735`). 0014's dev-owned Phase 3 ran `docker`, which no session may; the check became a Dockerfile `RUN` step (`a38a34f`). Caught by F1's gate, so nothing ran. |
+| H2 | 0009 | `question` before Phase 2 | Phase 2 had a non-allowlisted member edit in DM, which ADR-0014's allowlist drops. Owner chose to keep DM closed; plan and ADR-0014 amended in `de0bc1e`, then `resume` and a second `run`. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F14 | architect | **The Files touched gap recurs** for every new screen or flow (0004 H3, 0011 H1, 0009 Phase 4). `ready` now catches it, but each catch is a hand edit. Add a line to the plan template: a new screen, flow or menu entry also touches `flowSessions.ts`, `flows.ts`, `menu.ts` and `bot.ts`. | open |
+| F15 | conductor (dev) | **`plan.mjs` silently ignores a `Blocks merge:` line with trailing text** (`no (reason)` matched nothing, so the phase would have parked). Report it as a plan error, as a malformed owner tag is. | open |
+| F16 | architect | **Readiness passed 0009 twice and missed H2.** A done-when whose actor can't reach the handler (allowlist, owner-only, group vs DM) surfaced only mid-implementation. Add "can each done-when's actor reach this path?" to the readiness prompt's checks. | open |
+| F17 | - | `prune` the merged 0009, 0011 and 0014 from `queue.json`. | done (this commit) |
+| F18 | conductor (dev) | **`prune` drops a merged plan from its lane but leaves its `plans` entry** (`after` lists for 0011 and 0014 stayed). Cleared by hand in this commit. Drop the entry with the lane row. | open |
+
+### Open product findings from the closes
+
+Listed by `conductor.mjs finding NNNN`. The one worth a fix plan first: 0014 minor
+`src/bot/receiptWorker.ts:62`, a throw after the fetcher answers refetches the receipt every tick
+with no backoff, which hammers the tax authority's endpoint. 0014's `rsUrl.ts:15` (a link plus
+words is refused) and 0009's `card.ts:47` (a group expense's "today" in the viewer's timezone)
+follow. `/help` is now owed findings from 0003 and 0004.
+
 ## 2026-09-30 evening: Plans 0008, 0005 and 0004
 
 Queue `a: 0008, 0005, 0004`. Three merged: 0005 as v0.4.0, 0008 as v0.5.0, 0004 as v0.6.0.
