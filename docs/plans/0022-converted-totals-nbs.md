@@ -1,6 +1,6 @@
 # 0022: Totals and budgets converted into one currency at the NBS rate
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
 > rate, ledger currency, rounding), [ADR-0023](../adrs/0023-budgets-count-converted-spending.md)
