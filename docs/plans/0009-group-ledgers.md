@@ -129,27 +129,33 @@ Phases 1 to 4 are dev work in one session, one commit each. Phase 5 is the user'
 - **What:** A recognised category gets an emoji reaction and no message. A fallback category
   («Другое») gets a reply card with [Удалить] and [Изменить в личке]. Replying `/card` to a
   recorded message shows its card. [Удалить]/[Вернуть] work for the author only. [Изменить в
-  личке] deep-links to the author's DM card. The service layer rejects edits to a shared-ledger
-  expense by anyone but its author, on every path.
+  личке] deep-links to the author's DM card, and the card shows it only when the author is
+  allowlisted: the DM allowlist stays closed (ADR-0014), so a member who isn't allowlisted
+  deletes and records again. The service layer rejects edits to a shared-ledger expense by
+  anyone but its author, on every path.
 - **Files touched:** `src/bot/group/text.ts`, `src/bot/group/card.ts` (+ test),
   `src/bot/callbackData.ts` (`grp:del:<id>`, `grp:res:<id>`), `src/bot/handlers/start.ts`
   (deep-link payload `e_<expenseId>`), `src/services/recordExpense.ts` (return whether the
   category was the fallback; author check in undo/restore/edit for shared ledgers),
-  `src/services/changeCategory.ts` (author check), `src/bot/messages.ts`,
-  `src/bot/group/group.test.ts`.
+  `src/services/changeCategory.ts` (author check), `src/bot/bot.ts` (hands the allowlist to the
+  group composer), `src/bot/messages.ts`, `src/bot/group/group.test.ts`.
 - **Done when:**
   - A's `450 кафе` in the group results in exactly one `setMessageReaction` on that message
     (the emoji comes from `messages`) and zero `sendMessage` calls.
   - B's `2 минуты буду` records 200 RSD under «Другое» and replies to that message with a card
-    showing `2.00 RSD`, the author's display name, [Удалить] and [Изменить в личке].
+    showing `2.00 RSD`, the author's display name and [Удалить], and no [Изменить в личке],
+    because B (`STRANGER_ID`) isn't allowlisted. A's `5 минут буду` gets a card with both
+    [Удалить] and [Изменить в личке].
   - When `setMessageReaction` rejects (reactions disabled in the chat), the bot sends the reply
     card instead, and the expense is recorded once.
   - A taps [Удалить] on B's card: the toast is `messages.groupNotAuthor`, and `deleted_at`
     stays `NULL`. B taps it: the row is soft-deleted and the card shows [Вернуть]. B's second
     tap on the stale [Удалить] leaves the same `deleted_at`.
   - The [Изменить в личке] URL is `https://t.me/<bot username>?start=e_<expenseId>` (payload
-    38 bytes, under Telegram's 64). In DM, B's `/start e_<id>` opens the ADR-0011 expense card
-    for that expense. A's `/start e_<B's expense id>` gets the plain welcome and no card.
+    38 bytes, under Telegram's 64). In DM, A's `/start e_<A's group expense id>` opens the
+    ADR-0011 expense card for that expense. A's `/start e_<B's expense id>` gets the plain
+    welcome and no card. B's `/start e_<B's expense id>` in DM is dropped by the allowlist and
+    makes no API call.
   - A direct service call `undoExpense` / category change / amount edit by A on B's group
     expense returns a not-author result and writes nothing. Personal-ledger behavior is
     unchanged (the existing tests still pass unmodified).
@@ -197,7 +203,9 @@ Phases 1 to 4 are dev work in one session, one commit each. Phase 5 is the user'
   Non-owners get a one-line refusal.
 - **Files touched:** `src/bot/group/activation.ts`, `src/services/groupChats.ts` (+ test),
   `src/db/ledgerChats.ts`, `src/bot/group/settings.ts`, `src/bot/handlers/settings.ts`
-  (ledger-scoped variant), `src/bot/handlers/start.ts` (payload `gs_<ledgerId>`),
+  (ledger-scoped variant), `src/services/flowSessions.ts` (+ test: the ledger id in the settings
+  screen and the timezone flow), `src/bot/callbackData.ts` (ledger-scoped `set:*` data),
+  `src/bot/flows.ts` ([Другой…] answers here), `src/bot/handlers/start.ts` (payload `gs_<ledgerId>`),
   `src/services/settings.ts` (+ test: set a ledger's timezone, owner only),
   `src/db/ledgers.ts`, `src/bot/messages.ts`, `src/bot/group/group.test.ts`.
 - **Done when:**
@@ -292,6 +300,8 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 - Settle-up / who owes whom.
 - Changing a group expense's category from inside the group (a stateless category picker can't
   fit a category UUID and an expense UUID in 64 bytes). It's done in DM via [Изменить в личке].
+- DM access for a group member who isn't allowlisted (ADR-0014). They delete and record again,
+  or the owner adds them to `ALLOWED_TELEGRAM_IDS`.
 
 ## Implementation log
 

@@ -40,7 +40,9 @@ it, and allowlisting every family member by hand defeats "anyone in the group ca
 - **The adapter splits by chat type.** Group updates go to their own composer. DM handlers,
   ADR-0009 flows, ADR-0011 anchors, the menu keyboard and the help fallbacks never see a group
   update. A group interaction is stateless: callbacks resolve their ledger through the chat
-  binding. Multi-step edits of a group expense happen in the author's DM, reached by a deep link.
+  binding. Multi-step edits of a group expense happen in the author's DM, reached by a deep link,
+  so they're open only to an allowlisted author. A member who isn't allowlisted deletes the
+  expense from the group card and records it again. Allowlisting them opens DM in full.
 - **Group expenses are edited only by their author**, in the group card and in DM alike.
 - **Privacy is enforced by routing:** output about a ledger goes only to chats bound to it and to
   its members' DMs. Output about a personal ledger goes only to its owner's DM. Future budgets,
