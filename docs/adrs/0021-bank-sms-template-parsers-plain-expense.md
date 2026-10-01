@@ -1,8 +1,8 @@
 # ADR-0021: A bank SMS is read by an exact per-template parser and recorded as a plain expense keyed by its content
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0021](../plans/0021-bank-sms-card-purchase.md)
+> **Related plan(s):** [Plan 0021](../plans/done/0021-bank-sms-card-purchase.md)
 
 ## Context
 

@@ -2,6 +2,15 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.10.0 (2026-10-01)
+
+From Plan 0021 (bank SMS card purchase).
+
+- A Serbian card-purchase SMS (`Koriscenje kartice`) pasted or forwarded into the private chat
+  records one expense in the charged currency, dated the purchase day, described by the merchant.
+  The same SMS sent again answers «Уже записано». An SMS the bot can't read, in an unknown
+  currency or dated in the future is refused, and nothing is recorded.
+
 ## 0.9.3 (2026-10-01)
 
 From Plan 0020 (receipt links with a wrapped vl or :443).

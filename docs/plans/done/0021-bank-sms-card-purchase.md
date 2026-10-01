@@ -1,10 +1,10 @@
 # 0021: A pasted Serbian card-purchase SMS records the purchase
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, no findings, Phase 3 real-SMS check owed, v0.10.0
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0021](../adrs/0021-bank-sms-template-parsers-plain-expense.md) (per-template
-> parser, plain expense keyed by content), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md)
-> (store the original currency), [ADR-0004](../adrs/0004-amount-parsing-rule.md) (structured
+> **Related ADRs:** [ADR-0021](../../adrs/0021-bank-sms-template-parsers-plain-expense.md) (per-template
+> parser, plain expense keyed by content), [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md)
+> (store the original currency), [ADR-0004](../../adrs/0004-amount-parsing-rule.md) (structured
 > sources parse exactly)
 
 ## TL;DR
