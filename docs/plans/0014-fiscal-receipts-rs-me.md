@@ -247,6 +247,7 @@ The receipt path writes only to the user's active ledger, never to a group ledge
 
 ### Phase 7: Real receipts in production
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** After deploy, scan real receipts: one Serbian and one Montenegrin as photos, one of
   each as a pasted link, and one long Serbian receipt photographed whole.
 - **Files touched:** none.

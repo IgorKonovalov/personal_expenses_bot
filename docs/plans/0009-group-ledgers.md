@@ -220,6 +220,7 @@ Phases 1 to 4 are dev work in one session, one commit each. Phase 5 is the user'
 ### Phase 5: Live check in the family group
 
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** Configure BotFather and run the flow in a real group.
 - **Files touched:** none.
 - **Done when:** In BotFather, `/setjoingroups` is Enabled and `/setprivacy` is Disabled, and the

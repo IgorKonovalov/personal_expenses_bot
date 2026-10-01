@@ -186,6 +186,7 @@ ledger default currency RUB, with a clock injected into tests.
 
 ### Phase 6: Live check
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** The user sets a real payday budget in DM and one in the family group, records for two
   days, and reads the lines.
 - **Files touched:** none.
