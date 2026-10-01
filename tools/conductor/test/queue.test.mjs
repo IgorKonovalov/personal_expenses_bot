@@ -81,17 +81,32 @@ test("a queued plan under done/ is a notice rather than a fatal error, whatever 
   assert.deepEqual(missing.notices, []);
 });
 
-test("prune drops every merged plan from its lane and touches nothing else", () => {
+test("prune drops every merged plan from its lane and its after lists, and touches nothing else", () => {
   const repo = scratchRepo();
   const queue = { lanes: { a: ["0090", "0101"], b: ["0102"], c: "not a list" }, plans: { "0101": { after: ["0090"] } } };
   const { queue: pruned, dropped } = pruneQueue(queue, repo);
   assert.deepEqual(dropped, [{ plan: "0090", lane: "a", file: "0090-fixture.md" }]);
-  assert.deepEqual(pruned, { lanes: { a: ["0101"], b: ["0102"], c: "not a list" }, plans: { "0101": { after: ["0090"] } } });
+  assert.deepEqual(pruned, { lanes: { a: ["0101"], b: ["0102"], c: "not a list" }, plans: {} });
 
   // Nothing merged: the same object back, and nothing dropped.
   const tidy = pruneQueue(pruned, repo);
   assert.deepEqual(tidy.dropped, []);
   assert.deepEqual(tidy.queue, pruned);
+});
+
+test("prune removes a merged plan's own plans entry and its name from every after list, then drops what is left empty", () => {
+  const repo = tmp();
+  writePlan(repo, { number: "0009", phases: [dev("1")], status: "done — closed" }, { done: true });
+  writePlan(repo, { number: "0011", phases: [dev("1")], status: "done — closed" }, { done: true });
+  writePlan(repo, { number: "0012", phases: [dev("1")] });
+  const queue = {
+    lanes: { a: ["0009", "0011"], b: ["0012"] },
+    plans: { "0011": { after: ["0009"] }, "0012": { after: ["0009"], add_dirs: ["../x"] } },
+  };
+  const { queue: pruned, dropped } = pruneQueue(queue, repo);
+  assert.deepEqual(pruned, { lanes: { a: [], b: ["0012"] }, plans: { "0012": { add_dirs: ["../x"] } } });
+  assert.deepEqual(dropped.map((d) => [d.plan, d.lane]), [["0009", "a"], ["0011", "a"]]);
+  assert.deepEqual(validateQueue(pruned, repo).errors, []);
 });
 
 test("local.json is required, and every step budget must be set by the owner", () => {

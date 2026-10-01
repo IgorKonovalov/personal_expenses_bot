@@ -533,8 +533,8 @@ test("a queue listing a merged plan starts with a notice, and prune drops exactl
   ]);
   assert.equal(
     readFileSync(p.queue, "utf8"),
-    JSON.stringify({ lanes: { a: ["0101"], b: [] }, plans: { "0101": { after: ["0090"] } } }, null, 2) + "\n",
-    "only the lane entry moved",
+    JSON.stringify({ lanes: { a: ["0101"], b: [] }, plans: {} }, null, 2) + "\n",
+    "the lane entry moved, and the after list naming it went with it",
   );
   assert.deepEqual((await cli("check")).out, ["conductor: preflight OK"]);
 

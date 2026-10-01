@@ -131,12 +131,13 @@ export function startedPlans(state) {
 }
 
 /**
- * A copy of `queue` with every merged plan dropped from its lane list, and what was dropped:
- * [{ plan, lane, file }] in lane order. Every other lane list and the whole `plans` map keep their
- * contents and their order — a `plans` entry for a dropped plan is inert once it is in no lane, and
- * removing it is a second judgement about a file the architect owns. The caller re-serializes the
- * result whole, so what lands on disk is the canonical two-space spelling rather than the
- * byte-for-byte file that was read.
+ * A copy of `queue` with every merged plan removed, and what was dropped from a lane:
+ * [{ plan, lane, file }] in lane order. A merged plan leaves its lane list, its own `plans` entry,
+ * and every other entry's `after` list; an `after` left empty is deleted, and so is an entry left
+ * with no keys. Everything else keeps its contents and its order. `dropped` names lane drops only,
+ * so a queue whose lanes are already clean reports nothing even when its `plans` map changed. The
+ * caller re-serializes the result whole, so what lands on disk is the canonical two-space spelling
+ * rather than the byte-for-byte file that was read.
  */
 export function pruneQueue(queue, repo) {
   const dropped = [];
@@ -154,7 +155,22 @@ export function pruneQueue(queue, repo) {
       return false;
     });
   }
-  return { queue: { ...queue, lanes }, dropped };
+  const merged = (plan) => PLAN.test(String(plan)) && Boolean(findPlan(repo, String(plan))?.done);
+  const extra = queue?.plans;
+  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return { queue: { ...queue, lanes }, dropped };
+  const plans = {};
+  for (const [plan, entry] of Object.entries(extra)) {
+    if (merged(plan)) continue;
+    if (!entry || typeof entry !== "object" || !Array.isArray(entry.after)) {
+      plans[plan] = entry;
+      continue;
+    }
+    const { after, ...rest } = entry;
+    const kept = after.filter((dep) => !merged(dep));
+    const next = kept.length ? { ...entry, after: kept } : rest;
+    if (Object.keys(next).length) plans[plan] = next;
+  }
+  return { queue: { ...queue, lanes, plans }, dropped };
 }
 
 /**

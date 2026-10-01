@@ -134,8 +134,8 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A malformed Blocks merge line is a plan error | dev | done | committed with this row |
-| 2: prune removes a merged plan everywhere | dev | not started | |
+| 1: A malformed Blocks merge line is a plan error | dev | done | `c90a362` |
+| 2: prune removes a merged plan everywhere | dev | done | committed with this row |
 | 3: ready warns about an uncommitted edit; mid-run queue notice | dev | not started | |
 | 4: Readiness checks done-when reachability | dev | not started | |
 
@@ -144,6 +144,12 @@ None new. `pruneQueue` returns the same `{ queue, dropped }`.
 - Phase 1: `check` validates only queued plans and the queue is empty, so every plan under
   `docs/plans/` was run through `readPlanFile` instead. None carries the new error. 0015 (a draft
   stub) reports `no ## Implementation phases section`, which predates this phase.
+- Phase 2, deviation: `test/cli.test.mjs` (outside Phase 2's Files touched) asserted the old
+  prune output, which kept `plans: { "0101": { after: ["0090"] } }`. Its expected file now reads
+  `plans: {}`. Same commit as the phase.
+- Phase 2, followup not acted on: `cmdPrune` rewrites only when a lane entry was dropped, so a
+  queue whose lanes are already clean but whose `plans` map names a merged plan reports "nothing
+  to prune" and keeps that map.
 
 ### Close triggers
 
