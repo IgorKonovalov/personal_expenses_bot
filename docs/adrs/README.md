@@ -9,7 +9,7 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 |---|---|---|
 | [0001](0001-tech-stack.md) | Tech stack: Node 24 + strict TypeScript, grammY long polling, better-sqlite3 | accepted (2026-09-29) |
 | [0002](0002-ledgers-and-identity.md) | Expenses belong to ledgers; users select an active ledger | accepted (2026-09-29) |
-| [0003](0003-currency-conversion-at-report-time.md) | Store original amounts; convert to the viewer's home currency at report time | accepted (2026-09-29) |
+| [0003](0003-currency-conversion-at-report-time.md) | Store original amounts; convert to the viewer's home currency at report time | accepted (2026-09-29), target currency superseded by 0022 |
 | [0004](0004-amount-parsing-rule.md) | Amount parsing: one decimal separator, space thousands, ask on ambiguity | accepted (2026-09-29) |
 | [0005](0005-ux-telegram-lane.md) | Add a ux-telegram lane that designs and reviews chat UX but writes no code | proposed (2026-09-29) |
 | [0006](0006-production-runs-compiled-js.md) | Production runs tsc-compiled JavaScript from dist/ | accepted (2026-09-30) |
@@ -28,5 +28,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0019](0019-qr-decoding-zxing-wasm.md) | Decode receipt QR codes with zxing-wasm, with its wasm binary loaded from node_modules | proposed (2026-10-01) |
 | [0020](0020-sealed-ledgers-write-open-read-locked.md) | An encrypted ledger is sealed to its own public key: recording stays open, reading needs the owner's passphrase | proposed (2026-10-01) |
 | [0021](0021-bank-sms-template-parsers-plain-expense.md) | A bank SMS is read by an exact per-template parser and recorded as a plain expense keyed by its content | accepted (2026-10-01) |
-| [0022](0022-fx-nbs-middle-rate-ledger-currency.md) | Reports convert into the ledger's default currency at the NBS middle rate of each expense's day | proposed (2026-10-01) |
-| [0023](0023-budgets-count-converted-spending.md) | Budgets count spending in every currency, converted into the budget's currency | proposed (2026-10-01) |
+| [0022](0022-fx-nbs-middle-rate-ledger-currency.md) | Reports convert into the ledger's default currency at the NBS middle rate of each expense's day | accepted (2026-10-01) |
+| [0023](0023-budgets-count-converted-spending.md) | Budgets count spending in every currency, converted into the budget's currency | accepted (2026-10-01) |

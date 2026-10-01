@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.11.0 (2026-10-01)
+
+From Plan 0022 (converted totals at the NBS rate).
+
+- /today, /week and /month, in the private chat and in groups, show one total in the ledger's
+  currency. A foreign expense converts at the National Bank of Serbia middle rate of its day, the
+  total is marked `≈`, and a note names what was converted. A currency NBS doesn't list (KZT,
+  among others) stays in its own block. Group members' totals are converted too.
+- Budgets count foreign spending converted into the budget's currency, so the figure under each
+  expense and the category caps include it. Spending with no rate is listed as `Не учтено, нет
+  курса`.
+
 ## 0.10.0 (2026-10-01)
 
 From Plan 0021 (bank SMS card purchase).

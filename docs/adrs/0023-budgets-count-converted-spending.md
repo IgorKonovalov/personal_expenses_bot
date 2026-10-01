@@ -1,8 +1,8 @@
 # ADR-0023: Budgets count spending in every currency, converted into the budget's currency
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0022](../plans/0022-converted-totals-nbs.md)
+> **Related plan(s):** [Plan 0022](../plans/done/0022-converted-totals-nbs.md)
 
 ## Context
 

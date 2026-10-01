@@ -1,8 +1,8 @@
 # ADR-0022: Reports convert into the ledger's default currency at the NBS middle rate of each expense's day
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-01)
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0022](../plans/0022-converted-totals-nbs.md)
+> **Related plan(s):** [Plan 0022](../plans/done/0022-converted-totals-nbs.md)
 
 ## Context
 

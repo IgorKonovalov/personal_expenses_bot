@@ -244,7 +244,7 @@ are stored per wrap, so they can change later without a migration.
   (`src/services/recordBankSms.ts`) next to `recordExpense` and `recordReceipt`. Whichever plan
   lands second routes it through the sealing seam. Its `sms:` source key is a hash of the
   purchase's time, amount and merchant, which is low-entropy (ADR-0021, Negative).
-- **Converted totals.** [Plan 0022](0022-converted-totals-nbs.md) adds a migration and edits
+- **Converted totals.** [Plan 0022](done/0022-converted-totals-nbs.md) adds a migration and edits
   `periodSummary.ts`, `todaySummary.ts` and `budget.ts`. Whichever plan lands second takes the next
   free migration number and rebases onto the other's service shape. Conversion runs on opened
   expenses, after decryption.

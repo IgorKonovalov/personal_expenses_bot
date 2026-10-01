@@ -1,11 +1,11 @@
 # 0022: Totals and budgets converted into one currency at the NBS rate
 
-> **Status:** in-progress
+> **Status:** done (2026-10-01): built as planned, three nits open, Phase 4 live check owed, v0.11.0
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
-> rate, ledger currency, rounding), [ADR-0023](../adrs/0023-budgets-count-converted-spending.md)
-> (budgets count converted spending), [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md)
-> (convert at report time), [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md)
+> **Related ADRs:** [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (NBS middle
+> rate, ledger currency, rounding), [ADR-0023](../../adrs/0023-budgets-count-converted-spending.md)
+> (budgets count converted spending), [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md)
+> (convert at report time), [ADR-0017](../../adrs/0017-budgets-payday-periods-cumulative-allowance.md)
 > (budgets)
 
 ## TL;DR
@@ -342,3 +342,13 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
   against the NBS list; does not block merge).
 
 ## Followups
+
+From the close review (2026-10-01), all nits:
+
+- `src/services/fetchRates.test.ts`, "logs a failed day": asserts the counts and stored rows but
+  not the `fx fetch failed` warn line Phase 1 names.
+- `src/bot/messages.ts`, the comment above `budgetScreen`: its second line runs past 100 columns.
+- `README.md`: the Status note and the Roadmap still list summaries, settings, currency
+  conversion and bank SMS parsing as planned or further out. The drift predates this plan.
+- A tick fetches at most 31 days, oldest first, so on a long backlog today's rate arrives on the
+  last tick. Harmless while history starts in late September 2026; revisit if history is imported.
