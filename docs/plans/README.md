@@ -13,7 +13,7 @@ status and date. What a plan did lives in the plan.
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | draft, stub (2026-09-30) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
-| [0016](0016-close-findings-receipts-budgets-groups.md) | Close findings: receipt backoff, links with a note, group dates, caps currency, budget navigation | draft (2026-10-01) |
+| [0016](0016-close-findings-receipts-budgets-groups.md) | Close findings: receipt backoff, links with a note, group dates, caps currency, budget navigation | approved (2026-10-01) |
 | [0017](0017-conductor-followups-queue-hygiene.md) | Conductor followups: a loud Blocks-merge parse, a clean prune, ready vs the working copy | draft (2026-10-01) |
 
 ## Recently closed

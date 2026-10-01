@@ -1,6 +1,6 @@
 # 0016: Close findings: receipt backoff, links with a note, group dates, caps currency, budget navigation
 
-> **Status:** draft
+> **Status:** approved (2026-10-01)
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md),
