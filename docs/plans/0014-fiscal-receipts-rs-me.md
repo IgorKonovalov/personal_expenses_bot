@@ -149,8 +149,9 @@ The receipt path writes only to the user's active ledger, never to a group ledge
 - **Files touched:** `package.json`, `pnpm-lock.yaml` (`zxing-wasm` exact), `src/fiscal/qr.ts`
   (+ test), `src/fiscal/qr.fixtures/` (synthetic QR images generated from synthetic URLs, never
   photos of real receipts), `src/bot/handlers/receipt.ts`, `src/bot/bot.ts`,
-  `src/bot/messages.ts`, `src/bot/bot.test.ts`, `Dockerfile` (only if the wasm doesn't arrive with
-  the prod install), `CLAUDE.md` ("Where things live": `src/fiscal/`).
+  `src/bot/messages.ts`, `src/bot/bot.test.ts`, `Dockerfile` (the build-time decode check, plus
+  any copy the wasm needs if it doesn't arrive with the prod install), `CLAUDE.md` ("Where things
+  live": `src/fiscal/`).
 - **Done when:**
   - `qr.ts` decodes the synthetic Serbian-URL fixture JPEG to exactly the source URL, with
     `globalThis.fetch` replaced by a function that throws. This proves the wasm loads from disk,
@@ -165,8 +166,12 @@ The receipt path writes only to the user's active ledger, never to a group ledge
   - The decode time for the largest fixture is recorded in the Implementation log, as the
     measurement ADR-0019 marks UNVERIFIED.
   - The download URL, which contains the bot token, is never logged.
-  - `docker compose build` succeeds, and in the built image `node -e` with `qr.ts`'s loader
-    decodes the fixture with the network disabled.
+  - The Dockerfile's builder stage, after the prod-only install, runs a `RUN node -e` check next
+    to the `better-sqlite3` one: it replaces `globalThis.fetch` with a function that throws, loads
+    `dist/fiscal/qr.js` against the prod `node_modules`, and decodes the Serbian fixture to its
+    URL, exiting non-zero otherwise. The image is built only by the deploy
+    (`docker compose up --build`), so a failing check aborts the deploy before the running
+    container is replaced. Phase 7 sees it pass on the first real deploy.
 
 ### Phase 4: The background fetch fills in the shop and the items
 - **Owner skill:** dev
@@ -251,8 +256,9 @@ The receipt path writes only to the user's active ledger, never to a group ledge
 - **What:** After deploy, scan real receipts: one Serbian and one Montenegrin as photos, one of
   each as a pasted link, and one long Serbian receipt photographed whole.
 - **Files touched:** none.
-- **Done when:** Each records the printed total, and the card gains the shop name and the right
-  item count within a minute. A rescan says «уже записано». The user notes in the Implementation
+- **Done when:** The deploy's image build ran Phase 3's decode check and passed. Each receipt
+  records the printed total, and the card gains the shop name and the right item count within a
+  minute. A rescan says «уже записано». The user notes in the Implementation
   log which photos failed to decode and whether "send as file" fixed them. This is the evidence
   ADR-0019's acceptance waits for.
 
