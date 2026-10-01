@@ -8,8 +8,9 @@ It's built for one household spread across countries and currencies (RSD, EUR, R
 money is exact integer minor units, every user has their own timezone, and nothing is guessed
 when an amount could be read two ways.
 
-> **Status:** early. The walking skeleton (Plan 0001) is implemented and runs locally. Deploy,
-> categories, summaries and settings are planned. See [Roadmap](#roadmap).
+> **Status:** in daily use by one household, deployed on a VPS. The running version is in
+> `package.json` and `/changelog` says what each one brought. See [Roadmap](#roadmap) for what's
+> next.
 
 ## Using the bot
 
@@ -157,8 +158,9 @@ Supported currencies and their minor units are listed in
 ### Concepts
 
 - **Ledger.** Every expense belongs to a ledger, never directly to a person. Each user starts
-  with a personal ledger, and shared family or trip ledgers are planned. Every confirmation names
-  the ledger it wrote to ([ADR-0002](docs/adrs/0002-ledgers-and-identity.md)).
+  with a personal ledger, and a group chat gets a shared one (see [In a group](#in-a-group)).
+  Every confirmation names the ledger it wrote to
+  ([ADR-0002](docs/adrs/0002-ledgers-and-identity.md)).
 - **Local date.** An expense is filed under the date in _your_ timezone when you sent it, so an
   expense sent at 00:30 counts for the new day.
 - **Original currency.** Amounts are stored as sent. Reports and budgets convert them at read
@@ -312,14 +314,17 @@ The pre-commit hook runs Prettier on staged files, then typecheck, lint and test
 
 ```
 src/
-├── domain/     pure: money, expense text, time windows, aggregation. No I/O, no framework
-├── db/         SQLite connection, forward-only migrations, repositories. The only place with SQL
-├── services/   use-cases orchestrating domain + db
-├── bot/        the Telegram adapter (grammY): handlers, middleware, the Russian messages module
-├── fiscal/     the receipts adapter: QR decoding and the tax-site fetchers
-├── config.ts   env -> typed config, validated at boot
-├── version.ts  the running version, read from package.json at boot
-└── index.ts    boot
+├── domain/      pure: money, expense text, time windows, aggregation. No I/O, no framework
+├── db/          SQLite connection, forward-only migrations, repositories. The only place with SQL
+├── services/    use-cases orchestrating domain + db
+├── bot/         the Telegram adapter (grammY): handlers, middleware, the Russian messages module
+├── fiscal/      the receipts adapter: QR decoding and the tax-site fetchers
+├── fx/          the rates adapter: the NBS middle-rate fetcher and its hourly worker
+├── config.ts    env -> typed config, validated at boot
+├── logger.ts    pino factory
+├── heartbeat.ts liveness file + the Docker health-check entry
+├── version.ts   the running version, read from package.json at boot
+└── index.ts     boot
 ```
 
 Lint rules enforce the boundaries: grammY only under `src/bot/`, and no I/O or wall-clock
@@ -342,16 +347,17 @@ release-age cooldown, and install scripts only for the native packages named in 
 Features are designed before they're built. The [plans index](docs/plans/README.md) holds
 phased implementation plans, and the [ADR index](docs/adrs/README.md) holds decisions and their
 rejected alternatives. [CLAUDE.md](CLAUDE.md) is the orientation map. It also describes the
-agent skills in `.claude/` that write plans (`architect`) and implement them (`dev`), and the
-git hooks that guard commits.
+agent skills in `.claude/` that write plans (`architect`), implement them (`dev`) and review chat
+UX (`ux-telegram`), and the git hooks that guard commits. Approved plans can also run unattended
+through the [conductor](tools/conductor/README.md)
+([ADR-0010](docs/adrs/0010-approved-plans-run-under-a-forked-conductor-on-trial.md)).
 
 ## Roadmap
 
-The approved and in-progress plans are listed in [docs/plans/README.md](docs/plans/README.md).
-Next come deploy to a VPS with daily backups, categories with learned suggestions, past dates,
-editing, weekly and monthly summaries, and per-user settings. Further out: shared ledgers,
-currency conversion, fiscal receipts from Russia and Kazakhstan, bank SMS parsing, CSV/XLSX export and optional
-encryption of personal ledgers.
+Active and drafted plans are listed in [docs/plans/README.md](docs/plans/README.md): currently
+an encrypted personal ledger, tags for projects and trips, debts between people, and onboarding.
+Further out: fiscal receipts from Russia and Kazakhstan, more bank SMS templates, and CSV/XLSX
+export.
 
 ## License
 
