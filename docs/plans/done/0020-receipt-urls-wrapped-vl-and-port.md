@@ -1,6 +1,6 @@
 # 0020: Receipt links with a line-wrapped vl or an explicit :443 port
 
-> **Status:** done (2026-10-01): built as planned, one nit open, Phase 2 real-receipts check owed, v0.9.3
+> **Status:** done (2026-10-01): built as planned, one nit open, Phase 2 real-receipts check passed, v0.9.3
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md) (the URL is
 > decoded offline), [ADR-0019](../../adrs/0019-qr-decoding-zxing-wasm.md) (QR decoding)
@@ -132,7 +132,7 @@ None. No schema, type or callback-data change.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: The decoders accept a wrapped vl and the :443 port | dev | done | `cabb005` |
-| 2: Re-send the two receipts to the deployed bot | human | not started | |
+| 2: Re-send the two receipts to the deployed bot | human | done | (no commit) |
 
 ### Notes
 
@@ -155,7 +155,8 @@ None. No schema, type or callback-data change.
   779 tests; `pnpm build` exit 0; `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236
   tests; `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests;
   `node scripts/check-doc-links.mjs` exit 0.
-- **Outstanding `human` phases:** Phase 2 (re-send the two real receipts after deploy).
+- **Outstanding `human` phases:** none. Phase 2 passed on 2026-10-01: the user reports the
+  smoke test on the deployed bot passed cleanly.
 
 ## Followups
 
