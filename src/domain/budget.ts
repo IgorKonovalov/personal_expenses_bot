@@ -1,8 +1,11 @@
 import type { CurrencyCode } from './currencies.js';
+import { convert, type RateOf } from './fx.js';
+import type { Money } from './money.js';
 import type { LocalDate } from './time.js';
 
 // The cumulative daily allowance of ADR-0017. All amounts are integer minor units in the
-// budget's currency; the only rounding is the floor in allowanceThrough.
+// budget's currency; besides the floor in allowanceThrough, the only rounding is each foreign
+// expense's conversion into it (ADR-0023).
 
 // What may be spent from day 1 through day `day` of an `days`-day period with limit `limitMinor`:
 // floor(L * d / N). Exactly L on the last day, and never above L * d / N before it.
@@ -51,27 +54,42 @@ export function remainders(input: {
 }
 
 export interface SpendSplit {
-  // The sum of the expenses in the budget's currency.
+  // The sum in the budget's currency: its own expenses as they are, every other one converted
+  // at its day's rate and rounded before the sum (ADR-0023).
   readonly countedMinor: number;
-  // Sums per other currency: listed, never converted (ADR-0003).
+  // True when any foreign expense was converted into `countedMinor`.
+  readonly converted: boolean;
+  // Sums per currency of the expenses with no rate: listed, never counted.
   readonly notCounted: ReadonlyMap<CurrencyCode, number>;
 }
 
-export function splitByCurrency(
-  expenses: readonly { readonly amountMinor: number; readonly currency: CurrencyCode }[],
+export function countInto(
+  expenses: readonly (Money & { readonly occurredOn: LocalDate })[],
   currency: CurrencyCode,
+  rateOf: RateOf,
 ): SpendSplit {
   let countedMinor = 0;
+  let converted = false;
   const notCounted = new Map<CurrencyCode, number>();
   for (const expense of expenses) {
-    if (expense.currency === currency) countedMinor += expense.amountMinor;
-    else
+    const counted = convert(expense, currency, (code) => rateOf(code, expense.occurredOn));
+    if (counted === undefined) {
       notCounted.set(
         expense.currency,
-        (notCounted.get(expense.currency) ?? 0) + expense.amountMinor,
+        safeAdd(notCounted.get(expense.currency) ?? 0, expense.amountMinor),
       );
+      continue;
+    }
+    countedMinor = safeAdd(countedMinor, counted.amountMinor);
+    if (expense.currency !== currency) converted = true;
   }
-  return { countedMinor, notCounted };
+  return { countedMinor, converted, notCounted };
+}
+
+function safeAdd(a: number, b: number): number {
+  const total = a + b;
+  if (!Number.isSafeInteger(total)) throw new RangeError('total exceeds the safe integer range');
+  return total;
 }
 
 // The 1-based day of `date` in a period starting on `from`: `from` itself is day 1.

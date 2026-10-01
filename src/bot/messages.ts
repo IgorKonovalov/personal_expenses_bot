@@ -90,6 +90,8 @@ interface BudgetScreenView {
             }
           | undefined;
         readonly caps: readonly CapView[];
+        // True when foreign spending was converted into the figures (ADR-0023).
+        readonly converted?: boolean | undefined;
         readonly notCounted: ReadonlyMap<CurrencyCode, number>;
       }
     | undefined;
@@ -498,6 +500,7 @@ export const messages = {
       html`Под подтверждением: [Категория] — сменить категорию, [Изменить] — сумму, описание или дату, [Удалить] — удалить трату.`,
       html`Чек из Сербии или Черногории: отправьте фото QR-кода с чека или ссылку из него. Я запишу сумму, а через несколько секунд добавлю магазин и кнопку [Позиции].`,
       html`СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».`,
+      html`Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.`,
       html``,
       html`${menu.today} — траты за сегодня`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
@@ -773,8 +776,8 @@ export const messages = {
   currencyForbidden: (ledger: LedgerRef): string =>
     `Валюту «${ledgerName(ledger)}» может изменить только владелец`,
 
-  // The /budget screen (ADR-0017). Amounts are in the budget's currency; spend in other
-  // currencies is listed as not counted. `readOnly` leaves out what only the owner can act on.
+  // The /budget screen (ADR-0017). Amounts are in the budget's currency, foreign spending
+  // converted into it (ADR-0023); spend with no rate is listed as not counted. `readOnly` leaves out what only the owner can act on.
   budgetScreen: ({ ledger, status }: BudgetScreenView, readOnly = false): Html => {
     const title = html`<b>Бюджет «${ledgerName(ledger)}»</b>`;
     const noLimit = html`Лимит не задан. Задайте лимит на период, и после каждой траты я покажу, сколько осталось на сегодня.`;
@@ -801,11 +804,14 @@ export const messages = {
     if (status.caps.length > 0) {
       lines.push(html`<b>По категориям</b>`, ...status.caps.map((cap) => capLine(cap, currency)));
     }
+    if (status.converted === true) {
+      lines.push(html`Траты в других валютах пересчитаны по курсу НБС на день траты.`);
+    }
     if (status.notCounted.size > 0) {
       const amounts = [...status.notCounted].map(([code, amountMinor]) =>
         formatMoney({ amountMinor, currency: code }),
       );
-      lines.push(html`Не учтено, другая валюта: ${amounts.join(', ')}`);
+      lines.push(html`Не учтено, нет курса: ${amounts.join(', ')}`);
     }
     if (currency !== ledger.defaultCurrency) {
       const mismatch = html`Бюджет в ${currency}, а новые траты — в ${ledger.defaultCurrency}.`;

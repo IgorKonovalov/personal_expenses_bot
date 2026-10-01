@@ -275,7 +275,8 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: /week and /month show one converted total | dev | done | `27f13ec` |
-| 2: /today, groups and the per-person totals convert too | dev | done | committed with this row |
+| 2: /today, groups and the per-person totals convert too | dev | done | `b811542` |
+| 3: Budgets count every currency; docs | dev | done | committed with this row |
 
 ### Notes
 
@@ -298,6 +299,14 @@ type RateOf = (currency: CurrencyCode, day: LocalDate) => Rate | undefined;
 - Phase 2: two existing /today expectations in `bot.test.ts` with foreign amounts and no stored
   rates gained the `Без курса НБС, не пересчитано:` line, and the EUR-ledger one now lists EUR
   before RSD.
+- Phase 3: `SpendSplit` gains `converted`, and `BudgetStatus` gains `converted`, computed over
+  every expense in the period whatever the scope, because caps count every category. The
+  conversion line sits after the caps, before `Не учтено, нет курса:`.
+- Phase 3: `src/services/budget.test.ts` is unchanged. The done-whens are asserted in
+  `bot.test.ts` and `budget.test.ts` (domain).
+- Phase 3: README also had its `/today`, `/week`/`/month`, `/budget` and group table rows and
+  the Concepts "Original currency" bullet reworded to match. Its Roadmap paragraph still lists
+  "currency conversion" as further out.
 - Phase 1: the fixtures are trimmed from the live NBS pages for 2026-09-28, fetched on
   2026-10-01. The XML keeps its BOM and CRLF line ends. The real page writes the XML link's `&`
   unescaped.

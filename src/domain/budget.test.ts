@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  allowanceThrough,
-  dayOfPeriod,
-  isSafeLimit,
-  remainders,
-  splitByCurrency,
-} from './budget.js';
+import { allowanceThrough, countInto, dayOfPeriod, isSafeLimit, remainders } from './budget.js';
+import type { CurrencyCode } from './currencies.js';
+import type { Rate, RateOf } from './fx.js';
 import type { LocalDate } from './time.js';
 
 describe('allowanceThrough (ADR-0017)', () => {
@@ -54,19 +50,62 @@ describe('remainders', () => {
   });
 });
 
-describe('splitByCurrency', () => {
-  it('sums the budget currency and lists the others apart', () => {
-    const split = splitByCurrency(
+describe('countInto (ADR-0023)', () => {
+  const SEPT_28 = '2026-09-28' as LocalDate;
+  // The NBS middle rate list of 2026-09-28, in force on the 28th only.
+  const RATES: Partial<Record<CurrencyCode, Rate>> = {
+    EUR: { unit: 1, middleE4: 1174993 },
+    USD: { unit: 1, middleE4: 1031782 },
+  };
+  const rateOf: RateOf = (currency, day) => (day === SEPT_28 ? RATES[currency] : undefined);
+
+  it('counts the budget currency as is and converts the rest, each rounded', () => {
+    const split = countInto(
       [
-        { amountMinor: 45_000, currency: 'RUB' },
-        { amountMinor: 1_250, currency: 'EUR' },
-        { amountMinor: 30_000, currency: 'RUB' },
-        { amountMinor: 250, currency: 'EUR' },
+        { amountMinor: 45_000, currency: 'RSD', occurredOn: SEPT_28 },
+        // 61 906.92 -> 61 907
+        { amountMinor: 600, currency: 'USD', occurredOn: SEPT_28 },
+        // 1 261 942.482 -> 1 261 942
+        { amountMinor: 10_740, currency: 'EUR', occurredOn: SEPT_28 },
       ],
-      'RUB',
+      'RSD',
+      rateOf,
     );
-    expect(split.countedMinor).toBe(75_000);
-    expect([...split.notCounted]).toEqual([['EUR', 1_500]]);
+    expect(split).toEqual({
+      countedMinor: 1_368_849,
+      converted: true,
+      notCounted: new Map(),
+    });
+  });
+
+  it('lists what has no rate apart and counts nothing of it', () => {
+    const split = countInto(
+      [
+        { amountMinor: 30_000, currency: 'RSD', occurredOn: SEPT_28 },
+        { amountMinor: 500_000, currency: 'KZT', occurredOn: SEPT_28 },
+        { amountMinor: 250, currency: 'EUR', occurredOn: '2026-09-20' as LocalDate },
+      ],
+      'RSD',
+      rateOf,
+    );
+    expect(split).toEqual({
+      countedMinor: 30_000,
+      converted: false,
+      notCounted: new Map([
+        ['KZT', 500_000],
+        ['EUR', 250],
+      ]),
+    });
+  });
+
+  it('converts RSD into a EUR budget: 450.00 RSD is 3.83 EUR', () => {
+    const split = countInto(
+      [{ amountMinor: 45_000, currency: 'RSD', occurredOn: SEPT_28 }],
+      'EUR',
+      rateOf,
+    );
+    expect(split.countedMinor).toBe(383);
+    expect(split.converted).toBe(true);
   });
 });
 

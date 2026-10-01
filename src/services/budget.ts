@@ -18,6 +18,7 @@ import {
   type CategoryId,
 } from '../db/categories.js';
 import { listLedgerExpensesBetween } from '../db/expenses.js';
+import { rateLookupBetween } from '../db/fxRates.js';
 import {
   findActiveLedger,
   findLedgerForMember,
@@ -26,7 +27,7 @@ import {
   type LedgerId,
 } from '../db/ledgers.js';
 import type { User, UserId } from '../db/users.js';
-import { dayOfPeriod, isSafeLimit, remainders, splitByCurrency } from '../domain/budget.js';
+import { countInto, dayOfPeriod, isSafeLimit, remainders } from '../domain/budget.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
@@ -43,7 +44,8 @@ import { boundGroupLedger } from './periodSummary.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 // Budgets (ADR-0017): computed at read time from `expenses`, in the ledger's effective timezone
-// (ADR-0015), over expenses in the budget's currency. Nothing is materialised.
+// (ADR-0015), over every expense converted into the budget's currency at its day's NBS rate
+// (ADR-0023). Nothing is materialised.
 
 type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'>;
 
@@ -72,7 +74,9 @@ export interface BudgetStatus {
   // Each active capped category's spend in the period, in the budget's currency, whatever the
   // scope. Empty when no category has a cap.
   readonly caps: readonly CapStatus[];
-  // Spend in the period in other currencies: listed, never converted (ADR-0003).
+  // True when any foreign expense in the period was converted into the figures.
+  readonly converted: boolean;
+  // Spend in the period with no rate, per currency: listed, never counted (ADR-0023).
   readonly notCounted: ReadonlyMap<CurrencyCode, number>;
 }
 
@@ -109,18 +113,21 @@ export function budgetStatus(
   const essential =
     budget.scope === 'optional' ? listEssentialCategoryIds(db, ledger.id) : new Set<CategoryId>();
   const expenses = all.filter((e) => e.category === null || !essential.has(e.category.id));
-  const inPeriod = splitByCurrency(expenses, budget.currency);
-  const throughToday = splitByCurrency(
+  const rateOf = rateLookupBetween(db, from, to);
+  const inPeriod = countInto(expenses, budget.currency, rateOf);
+  const throughToday = countInto(
     expenses.filter((e) => e.occurredOn <= today),
     budget.currency,
+    rateOf,
   );
   const caps = listLedgerCaps(db, ledger.id).map(({ categoryId, name, capMinor }) => ({
     categoryId,
     name,
     capMinor,
-    spentMinor: splitByCurrency(
+    spentMinor: countInto(
       all.filter((e) => e.category?.id === categoryId),
       budget.currency,
+      rateOf,
     ).countedMinor,
   }));
   const base = {
@@ -130,6 +137,8 @@ export function budgetStatus(
     currency: budget.currency,
     scope: budget.scope,
     caps,
+    // Caps count every category whatever the scope, so the whole period is asked.
+    converted: countInto(all, budget.currency, rateOf).converted,
     notCounted: inPeriod.notCounted,
   };
   if (budget.limitMinor === null) return base;

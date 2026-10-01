@@ -2102,13 +2102,108 @@ describe('/budget and the card line (ADR-0017)', () => {
     expect(budgetCapClearData(id)).toMatch(BUDGET_CAP_CLEAR);
   });
 
+  // A 30 000.00 RSD budget over September (start day 1), set on the 28th: day 28 of 30, with
+  // the 28th's NBS rates stored. /budget is message 101.
+  async function sept28Budget() {
+    const harness = budgetBot();
+    harness.clock.now = new Date('2026-09-28T08:00:00Z');
+    storeSept28Rates(harness.db);
+    await harness.say('/budget', 1);
+    await harness.tap('bud:lim', 101);
+    await harness.say('30000', 2);
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('counts a 6.00 USD expense converted on its card: 27 380.93 today, 29 380.93 to 30 сен', async () => {
+    const { say, calls } = await sept28Budget();
+
+    await say('6 USD подписка', 3);
+
+    // floor(3 000 000 * 28 / 30) = 2 800 000, minus 61 907.
+    expect(String(lastText(calls))).toContain(
+      '\nОсталось на сегодня: 27 380.93 RSD · до 30 сен: 29 380.93 RSD',
+    );
+
+    await say('/budget', 4);
+    const screen = String(lastText(calls));
+    expect(screen).toContain('Лимит: 30 000.00 RSD, потрачено 619.07 RSD');
+    expect(screen).toContain(
+      '\nОсталось до 30 сен: 29 380.93 RSD\nТраты в других валютах пересчитаны по курсу НБС на день траты.',
+    );
+  });
+
+  it('shows Другое: 619.07 из 1 000.00 RSD for a 6.00 USD expense under a 1 000.00 cap', async () => {
+    const { say, tap, calls, db } = await sept28Budget();
+    const other = db
+      .prepare("SELECT id FROM categories WHERE preset_key = 'other'")
+      .pluck()
+      .get() as number;
+    await say('/budget', 3);
+    await tap(`bud:cap:${String(other)}`, 102);
+    await say('1000', 4);
+    await say('6 USD подписка', 5);
+
+    expect(db.prepare('SELECT category_id FROM expenses').pluck().get()).toBe(other);
+    expect(String(lastText(calls))).toMatch(/\nДругое: 619\.07 из 1 000\.00 RSD$/);
+  });
+
+  it('lists 5 000.00 KZT as not counted, with no rate, and the figures stay put', async () => {
+    const { say, calls } = await sept28Budget();
+    await say('6 USD подписка', 3);
+    await say('5000 KZT сувенир', 4);
+
+    await say('/budget', 5);
+
+    const screen = String(lastText(calls));
+    expect(screen).toContain('Лимит: 30 000.00 RSD, потрачено 619.07 RSD');
+    expect(screen).toContain('Осталось на сегодня: 27 380.93 RSD');
+    expect(screen).toContain('\nНе учтено, нет курса: 5 000.00 KZT');
+  });
+
+  it('counts 450.00 RSD as 3.83 EUR in a EUR budget on an RSD ledger', async () => {
+    const { say, tap, calls, clock, db } = budgetBot();
+    clock.now = new Date('2026-09-28T08:00:00Z');
+    storeSept28Rates(db);
+    await say('/settings', 1);
+    await tap('set:cur:EUR', 101);
+    await say('/budget', 2);
+    await tap('bud:lim', 102);
+    await say('1000', 3);
+    await say('/settings', 4);
+    await tap('set:cur:RSD', 103);
+    await say('450 кофе', 5);
+
+    await say('/budget', 6);
+
+    expect(String(lastText(calls))).toContain('Лимит: 1 000.00 EUR, потрачено 3.83 EUR');
+  });
+
+  it('renders a budget with only RSD expenses as before, with no conversion line', async () => {
+    const { say, calls } = await withLimit();
+    await say('450 кофе', 3);
+
+    await say('/budget', 4);
+
+    expect(lastText(calls)).toBe(
+      [
+        '<b>Бюджет «Личные расходы»</b>',
+        'Период: 1–31 октября, день 1 из 31',
+        'Считаются все траты.',
+        'Лимит: 30 000.00 RSD, потрачено 450.00 RSD',
+        'Осталось на сегодня: 517.74 RSD',
+        'Осталось до 31 окт: 29 550.00 RSD',
+      ].join('\n'),
+    );
+  });
+
   it('lists an EUR expense as not counted on the screen', async () => {
     const { say, calls } = await withLimit();
     await say('12,50 EUR такси', 3);
 
     await say('/budget', 4);
 
-    expect(String(lastText(calls))).toContain('\nНе учтено, другая валюта: 12.50 EUR');
+    expect(String(lastText(calls))).toContain('\nНе учтено, нет курса: 12.50 EUR');
     expect(String(lastText(calls))).toContain('Осталось до 31 окт: 30 000.00 RSD');
   });
 });
@@ -4252,6 +4347,17 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
 
     expect(String(sentTexts(calls)[0])).toContain(
       'СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».',
+    );
+  });
+
+  it('says in /help that totals and budgets convert at the NBS rate', async () => {
+    const { send, calls } = smsBot();
+
+    await send('/help');
+
+    expect(String(sentTexts(calls)[0])).toContain(
+      'СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».\n' +
+        'Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.',
     );
   });
 
