@@ -14,7 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | draft, stub (2026-09-30) |
 | [0019](0019-encrypted-personal-ledger.md) | Encrypted personal ledger: recording stays open, reading needs the owner's passphrase | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | draft, stub (2026-10-01) |
-| [0020](0020-receipt-urls-wrapped-vl-and-port.md) | Receipt links with a line-wrapped vl or an explicit :443 port | draft (2026-10-01) |
+| [0020](0020-receipt-urls-wrapped-vl-and-port.md) | Receipt links with a line-wrapped vl or an explicit :443 port | approved (2026-10-01) |
 
 ## Recently closed
 

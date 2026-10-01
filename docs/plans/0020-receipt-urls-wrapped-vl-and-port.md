@@ -1,6 +1,6 @@
 # 0020: Receipt links with a line-wrapped vl or an explicit :443 port
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (the URL is
 > decoded offline), [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (QR decoding)
