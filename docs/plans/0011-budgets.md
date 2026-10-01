@@ -88,8 +88,11 @@ ledger default currency RUB, with a clock injected into tests.
   every time the card renders, so a category change or an edit shows current numbers.
 - **Files touched:** `src/db/migrations/0008_budgets.sql`, `src/db/budgets.ts` (+ test),
   `src/domain/budget.ts` (+ test), `src/services/budget.ts` (+ test), `src/bot/handlers/budget.ts`,
-  `src/bot/handlers/card.ts`, `src/bot/callbackData.ts`, `src/bot/keyboards.ts`,
-  `src/bot/messages.ts`, `src/bot/bot.test.ts`.
+  `src/bot/handlers/card.ts`, `src/bot/handlers/menu.ts` (the menu entry), `src/bot/bot.ts`
+  (registration), `src/services/flowSessions.ts` (+ test: the `budget` screen and the limit flow
+  in the `Screen`/`Flow` unions, `parseScreen`/`parseFlow`), `src/bot/flows.ts` (`answerFlow`,
+  `restoreScreen`), `src/bot/callbackData.ts`, `src/bot/keyboards.ts`, `src/bot/messages.ts`,
+  `src/bot/bot.test.ts`.
 - **Done when:**
   - `src/domain/budget.test.ts`: `allowanceThrough(L, N, d)` = `floor(L * d / N)`. For
     `L = 3_000_000`, `N = 31`: day 1 → `96_774`, day 2 → `193_548`, day 31 → `3_000_000`. For
@@ -117,6 +120,7 @@ ledger default currency RUB, with a clock injected into tests.
   and the budget service uses it instead of `monthOf`. The card line's "до <date>" names the
   period's last day.
 - **Files touched:** `src/domain/periods.ts` (+ test), `src/services/budget.ts` (+ test),
+  `src/services/flowSessions.ts` (+ test: the start-day flow), `src/bot/flows.ts`,
   `src/bot/handlers/budget.ts`, `src/bot/callbackData.ts`, `src/bot/messages.ts`.
 - **Done when:** `src/domain/periods.test.ts` asserts, as `[from, to]` inclusive with the length
   in days:
@@ -159,8 +163,9 @@ ledger default currency RUB, with a clock injected into tests.
   overall limit. The screen lists each capped category as "spent of cap". The DM card adds a
   second line only when the expense's category has a cap.
 - **Files touched:** `src/db/budgets.ts` (+ test), `src/services/budget.ts` (+ test),
+  `src/services/flowSessions.ts` (+ test: the cap flow), `src/bot/flows.ts`,
   `src/bot/handlers/budget.ts`, `src/bot/handlers/card.ts`, `src/bot/callbackData.ts`,
-  `src/bot/messages.ts`.
+  `src/bot/keyboards.ts` (the paged category list), `src/bot/messages.ts`.
 - **Done when:**
   - Cap `Кафе и рестораны` at `5000`, then record `450 кофе` and `4800 ресторан` in one period:
     category spent `525_000` of cap `500_000`, over by `25_000`. The card's category line uses the
