@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { archiveCategory, type CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { ExpenseId } from '../db/expenses.js';
+import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, restoreExpense, undoExpense, type RecordDeps } from './recordExpense.js';
+import { seedLedgerCategories } from './seedCategories.js';
 
 // Message sent 23:50 local (CEST) on the 29th, processed 00:10 local on the 30th.
 const SENT = new Date('2026-09-29T21:50:00Z');
@@ -171,6 +173,82 @@ describe('recordExpense', () => {
       expect(content).not.toContain('450');
       expect(content).not.toContain('coffee');
     }
+  });
+});
+
+describe('recordExpense into an explicit target ledger', () => {
+  // 01:30 on the 30th in Belgrade (CEST, UTC+2), 19:30 on the 29th in New York (EDT, UTC-4).
+  const LATE = new Date('2026-09-29T23:30:00Z');
+  const SHARED = 'shared-ledger' as LedgerId;
+
+  beforeEach(() => {
+    insertLedger(db, {
+      id: SHARED,
+      kind: 'shared',
+      name: 'Family',
+      defaultCurrency: 'EUR',
+      timezone: 'America/New_York',
+      ownerUserId: alice.id,
+      createdAt: PROCESSED,
+    });
+    insertMember(db, { ledgerId: SHARED, userId: alice.id, role: 'owner' });
+    seedLedgerCategories(db, SHARED, PROCESSED);
+  });
+
+  function recordAt(
+    user: User,
+    sourceKey: string,
+    target?: { kind: 'ledger'; ledgerId: LedgerId },
+  ) {
+    return recordExpense(deps, {
+      user,
+      text: '12 taxi',
+      sourceKey,
+      occurredAt: LATE,
+      now: LATE,
+      ...(target === undefined ? {} : { target }),
+    });
+  }
+
+  function rowOf(sourceKey: string): unknown {
+    return db
+      .prepare(
+        'SELECT ledger_id, amount_minor, currency, occurred_on FROM expenses WHERE source_key = ?',
+      )
+      .get(sourceKey);
+  }
+
+  it("records into the target ledger, in its currency, dated in the ledger's timezone", () => {
+    const result = recordAt(alice, 'tg:-1:1', { kind: 'ledger', ledgerId: SHARED });
+
+    expect(result).toMatchObject({ kind: 'recorded', ledger: { id: SHARED } });
+    expect(rowOf('tg:-1:1')).toEqual({
+      ledger_id: SHARED,
+      amount_minor: 1200,
+      currency: 'EUR',
+      occurred_on: '2026-09-29',
+    });
+    expect(
+      db.prepare('SELECT active_ledger_id FROM users WHERE id = ?').pluck().get(alice.id),
+    ).toBe(alice.activeLedgerId);
+  });
+
+  it("without a target records into the active ledger, dated in the user's timezone", () => {
+    recordAt(alice, 'tg:1001:1');
+
+    expect(rowOf('tg:1001:1')).toEqual({
+      ledger_id: alice.activeLedgerId,
+      amount_minor: 1200,
+      currency: 'RSD',
+      occurred_on: '2026-09-30',
+    });
+  });
+
+  it('refuses a target ledger the user is not a member of, writing nothing', () => {
+    expect(() => recordAt(bob, 'tg:-1:2', { kind: 'ledger', ledgerId: SHARED })).toThrow(
+      'not a member',
+    );
+    expect(rowOf('tg:-1:2')).toBeUndefined();
   });
 });
 

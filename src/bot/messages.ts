@@ -254,6 +254,16 @@ export const messages = {
       ],
       '\n\n',
     ),
+  // Sent to a group once, when it is bound to a new shared ledger (ADR-0014).
+  groupWelcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
+    joinHtml(
+      [
+        html`Здравствуйте! Я веду общие траты этой группы. Напишите сумму и описание, например «450 кафе», и я запишу трату на ваше имя.`,
+        html`Личные траты из переписки со мной сюда не попадают.`,
+        html`Часовой пояс: ${timezoneName(timezone)}. Валюта: ${currency}.`,
+      ],
+      '\n\n',
+    ),
   genericError: html`Что-то пошло не так. Проверьте /today и отправьте ещё раз, если трата не записалась.`,
   help: joinHtml(
     [

@@ -10,6 +10,8 @@ export interface Ledger {
   readonly kind: LedgerKind;
   readonly name: string;
   readonly defaultCurrency: CurrencyCode;
+  // An IANA zone for a shared ledger, null for a personal one (ADR-0015).
+  readonly timezone: string | null;
 }
 
 interface LedgerRow {
@@ -17,20 +19,32 @@ interface LedgerRow {
   kind: LedgerKind;
   name: string;
   default_currency: string;
+  timezone: string | null;
 }
 
-export function insertLedger(
-  db: Db,
-  ledger: Ledger & { ownerUserId: UserId; createdAt: Date },
-): void {
-  db.prepare<[string, string, string, string, string, string]>(
-    `INSERT INTO ledgers (id, kind, name, default_currency, owner_user_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+const COLUMNS = 'l.id, l.kind, l.name, l.default_currency, l.timezone';
+
+export type NewLedger = Omit<Ledger, 'timezone'> & {
+  readonly timezone?: string | null;
+  readonly ownerUserId: UserId;
+  readonly createdAt: Date;
+};
+
+// A shared ledger without a timezone throws: the schema can't hold that CHECK (ADR-0015).
+export function insertLedger(db: Db, ledger: NewLedger): void {
+  const timezone = ledger.timezone ?? null;
+  if (ledger.kind === 'shared' && timezone === null) {
+    throw new Error(`shared ledger ${ledger.id} needs a timezone`);
+  }
+  db.prepare<[string, string, string, string, string | null, string, string]>(
+    `INSERT INTO ledgers (id, kind, name, default_currency, timezone, owner_user_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     ledger.id,
     ledger.kind,
     ledger.name,
     ledger.defaultCurrency,
+    timezone,
     ledger.ownerUserId,
     ledger.createdAt.toISOString(),
   );
@@ -38,24 +52,74 @@ export function insertLedger(
 
 export function insertMember(
   db: Db,
-  member: { ledgerId: LedgerId; userId: UserId; role: LedgerRole },
+  member: { ledgerId: LedgerId; userId: UserId; role: LedgerRole; displayName?: string },
 ): void {
-  db.prepare<[string, string, string]>(
-    'INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)',
-  ).run(member.ledgerId, member.userId, member.role);
+  db.prepare<[string, string, string, string | null]>(
+    'INSERT INTO ledger_members (ledger_id, user_id, role, display_name) VALUES (?, ?, ?, ?)',
+  ).run(member.ledgerId, member.userId, member.role, member.displayName ?? null);
+}
+
+// Adds the user as a `member`, or, for an existing member of any role, only refreshes the
+// display name. Returns true when the membership is new.
+export function joinMember(
+  db: Db,
+  member: { ledgerId: LedgerId; userId: UserId; displayName: string },
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, string]>(
+      `INSERT INTO ledger_members (ledger_id, user_id, role, display_name)
+       VALUES (?, ?, 'member', ?)
+       ON CONFLICT (ledger_id, user_id) DO NOTHING`,
+    )
+    .run(member.ledgerId, member.userId, member.displayName);
+  if (changes === 0) {
+    db.prepare<[string, string, string, string]>(
+      `UPDATE ledger_members SET display_name = ?
+        WHERE ledger_id = ? AND user_id = ? AND display_name IS NOT ?`,
+    ).run(member.displayName, member.ledgerId, member.userId, member.displayName);
+  }
+  return changes === 1;
+}
+
+// Each member's stored display name; null for one never seen in a group.
+export function listMemberNames(db: Db, ledgerId: LedgerId): ReadonlyMap<UserId, string | null> {
+  const rows = db
+    .prepare<[string], { user_id: string; display_name: string | null }>(
+      'SELECT user_id, display_name FROM ledger_members WHERE ledger_id = ?',
+    )
+    .all(ledgerId);
+  return new Map(rows.map((row) => [row.user_id as UserId, row.display_name]));
 }
 
 // The user's active ledger, only while the user is still a member of it.
 export function findActiveLedger(db: Db, userId: UserId): Ledger | undefined {
   const row = db
     .prepare<[string], LedgerRow>(
-      `SELECT l.id, l.kind, l.name, l.default_currency
+      `SELECT ${COLUMNS}
          FROM users u
          JOIN ledgers l ON l.id = u.active_ledger_id
          JOIN ledger_members m ON m.ledger_id = l.id AND m.user_id = u.id
         WHERE u.id = ?`,
     )
     .get(userId);
+  return row === undefined ? undefined : toLedger(row);
+}
+
+// The ledger the user owns as their personal books.
+export function findPersonalLedger(db: Db, userId: UserId): Ledger | undefined {
+  const row = db
+    .prepare<[string], LedgerRow>(
+      `SELECT ${COLUMNS} FROM ledgers l WHERE l.owner_user_id = ? AND l.kind = 'personal'`,
+    )
+    .get(userId);
+  return row === undefined ? undefined : toLedger(row);
+}
+
+// Any ledger by id, with no membership check: for routing by a chat binding, not for a user.
+export function findLedgerById(db: Db, ledgerId: LedgerId): Ledger | undefined {
+  const row = db
+    .prepare<[string], LedgerRow>(`SELECT ${COLUMNS} FROM ledgers l WHERE l.id = ?`)
+    .get(ledgerId);
   return row === undefined ? undefined : toLedger(row);
 }
 
@@ -66,7 +130,7 @@ export function findLedgerForMember(
 ): Ledger | undefined {
   const row = db
     .prepare<[string, string], LedgerRow>(
-      `SELECT l.id, l.kind, l.name, l.default_currency
+      `SELECT ${COLUMNS}
          FROM ledgers l JOIN ledger_members m ON m.ledger_id = l.id
         WHERE l.id = ? AND m.user_id = ?`,
     )
@@ -102,5 +166,11 @@ function toLedger(row: LedgerRow): Ledger {
   if (defaultCurrency === undefined) {
     throw new Error(`ledger ${row.id} has an unknown default currency`);
   }
-  return { id: row.id as LedgerId, kind: row.kind, name: row.name, defaultCurrency };
+  return {
+    id: row.id as LedgerId,
+    kind: row.kind,
+    name: row.name,
+    defaultCurrency,
+    timezone: row.timezone,
+  };
 }

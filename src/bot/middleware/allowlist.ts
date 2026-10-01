@@ -1,7 +1,8 @@
 import type { MiddlewareFn } from 'grammy';
 import type { Logger } from '../../logger.js';
 
-// Drops every update whose sender is not allowlisted. Nothing downstream runs, nothing is replied.
+// Drops every non-group update whose sender is not allowlisted. Nothing downstream runs, nothing
+// is replied. Group updates never reach it: a group is gated by who added the bot (ADR-0014).
 export function allowlist(allowedIds: ReadonlySet<number>, logger: Logger): MiddlewareFn {
   return async (ctx, next) => {
     const fromId = ctx.from?.id;

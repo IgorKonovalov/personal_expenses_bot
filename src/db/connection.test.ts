@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './connection.js';
 import { runMigrations } from './migrate.js';
@@ -32,20 +33,22 @@ describe('runMigrations', () => {
   it('applies each migration once and records it; a second boot applies nothing', () => {
     const path = tempDbPath();
 
+    // Every migration file in the directory, in order: the list grows with each migration.
+    const versions = readdirSync(fileURLToPath(new URL('./migrations/', import.meta.url)))
+      .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+      .sort()
+      .map((file) => file.slice(0, 4));
+    expect(versions.slice(0, 2)).toEqual(['0001', '0002']);
+
     const first = openDatabase(path);
-    expect(runMigrations(first, BOOT)).toEqual(['0001', '0002', '0003', '0004', '0005', '0006']);
+    expect(runMigrations(first, BOOT)).toEqual(versions);
     first.close();
 
     const second = openDatabase(path);
     expect(runMigrations(second, BOOT)).toEqual([]);
-    expect(second.prepare('SELECT version, applied_at FROM schema_migrations').all()).toEqual([
-      { version: '0001', applied_at: '2026-09-29T10:00:00.000Z' },
-      { version: '0002', applied_at: '2026-09-29T10:00:00.000Z' },
-      { version: '0003', applied_at: '2026-09-29T10:00:00.000Z' },
-      { version: '0004', applied_at: '2026-09-29T10:00:00.000Z' },
-      { version: '0005', applied_at: '2026-09-29T10:00:00.000Z' },
-      { version: '0006', applied_at: '2026-09-29T10:00:00.000Z' },
-    ]);
+    expect(second.prepare('SELECT version, applied_at FROM schema_migrations').all()).toEqual(
+      versions.map((version) => ({ version, applied_at: '2026-09-29T10:00:00.000Z' })),
+    );
     second.close();
   });
 });

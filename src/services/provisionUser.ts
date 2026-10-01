@@ -20,6 +20,7 @@ import { seedLedgerCategories } from './seedCategories.js';
 export interface ProvisionInput {
   readonly provider: 'telegram';
   readonly externalId: string;
+  // A new user's timezone. A user first seen in a group takes the group ledger's (ADR-0015).
   readonly defaultTimezone: string;
   readonly defaultCurrency: CurrencyCode;
   readonly now: Date;
@@ -52,6 +53,7 @@ export function provisionUser(
       // The display name of a personal ledger comes from the messages module; this is a label.
       name: 'Personal',
       defaultCurrency: input.defaultCurrency,
+      timezone: null,
     };
     insertUser(db, { id: userId, timezone: input.defaultTimezone, createdAt: input.now });
     insertIdentity(db, { provider: input.provider, externalId: input.externalId, userId });

@@ -4,6 +4,8 @@ import {
   findMemberRole,
   insertLedger,
   insertMember,
+  joinMember,
+  listMemberNames,
   updateLedgerCurrency,
   type LedgerId,
 } from './ledgers.js';
@@ -31,6 +33,7 @@ beforeEach(() => {
       kind: 'shared',
       name: 'Family',
       defaultCurrency: 'RSD',
+      timezone: 'Europe/Belgrade',
       ownerUserId: OWNER,
       createdAt: NOW,
     });
@@ -42,6 +45,62 @@ beforeEach(() => {
 function currencyOf(id: LedgerId): unknown {
   return db.prepare('SELECT default_currency FROM ledgers WHERE id = ?').pluck().get(id);
 }
+
+describe('insertLedger', () => {
+  it('refuses a shared ledger without a timezone and stores nothing (ADR-0015)', () => {
+    const id = 'ledger-c' as LedgerId;
+    const shared = {
+      id,
+      kind: 'shared' as const,
+      name: 'Family',
+      defaultCurrency: 'RSD' as const,
+      ownerUserId: OWNER,
+      createdAt: NOW,
+    };
+
+    expect(() => {
+      insertLedger(db, shared);
+    }).toThrow('needs a timezone');
+    expect(() => {
+      insertLedger(db, { ...shared, timezone: null });
+    }).toThrow('needs a timezone');
+    expect(db.prepare('SELECT COUNT(*) FROM ledgers WHERE id = ?').pluck().get(id)).toBe(0);
+  });
+
+  it('stores a personal ledger with a NULL timezone', () => {
+    const id = 'ledger-p' as LedgerId;
+    insertLedger(db, {
+      id,
+      kind: 'personal',
+      name: 'Personal',
+      defaultCurrency: 'RSD',
+      ownerUserId: OWNER,
+      createdAt: NOW,
+    });
+
+    expect(db.prepare('SELECT timezone FROM ledgers WHERE id = ?').pluck().get(id)).toBeNull();
+  });
+});
+
+describe('joinMember', () => {
+  it('adds a member with a display name, then only refreshes the name, keeping the role', () => {
+    expect(joinMember(db, { ledgerId: LEDGER, userId: STRANGER, displayName: 'Ира' })).toBe(true);
+    expect(joinMember(db, { ledgerId: LEDGER, userId: STRANGER, displayName: 'Ирина' })).toBe(
+      false,
+    );
+    expect(joinMember(db, { ledgerId: LEDGER, userId: OWNER, displayName: 'Аня' })).toBe(false);
+
+    expect(findMemberRole(db, LEDGER, STRANGER)).toBe('member');
+    expect(findMemberRole(db, LEDGER, OWNER)).toBe('owner');
+    expect(listMemberNames(db, LEDGER)).toEqual(
+      new Map([
+        [OWNER, 'Аня'],
+        [MEMBER, null],
+        [STRANGER, 'Ирина'],
+      ]),
+    );
+  });
+});
 
 describe('findMemberRole', () => {
   it("reads the user's role, and undefined for a non-member", () => {

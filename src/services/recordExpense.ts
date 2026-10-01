@@ -9,13 +9,19 @@ import {
   type Expense,
   type ExpenseId,
 } from '../db/expenses.js';
-import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
+import {
+  findActiveLedger,
+  findLedgerForMember,
+  type Ledger,
+  type LedgerId,
+} from '../db/ledgers.js';
 import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
+import { resolveTimezone } from '../domain/timezones.js';
 import type { Logger } from '../logger.js';
 import type { ServiceDeps } from './provisionUser.js';
 import { resolveUserTimezone } from './settings.js';
@@ -26,8 +32,38 @@ export interface RecordDeps extends ServiceDeps {
   readonly defaultTimezone: string;
 }
 
+// Where an expense goes: the sender's active ledger in DM (ADR-0002), the chat's bound ledger in
+// a group (ADR-0014).
+export type RecordTarget =
+  { readonly kind: 'active' } | { readonly kind: 'ledger'; readonly ledgerId: LedgerId };
+
+// The zone a ledger's dates and periods are computed in: the ledger's own, else the user's
+// (ADR-0015). A stored zone Intl rejects falls back to the default with a warn log of ids only.
+export function effectiveTimezone(
+  deps: Pick<RecordDeps, 'logger' | 'defaultTimezone'>,
+  user: User,
+  ledger: Ledger,
+): string {
+  return ledger.timezone === null
+    ? resolveUserTimezone(deps, user)
+    : resolveLedgerTimezone(deps, { id: ledger.id, timezone: ledger.timezone });
+}
+
+// A shared ledger's own zone, with the same fallback as a user's.
+export function resolveLedgerTimezone(
+  { logger, defaultTimezone }: Pick<RecordDeps, 'logger' | 'defaultTimezone'>,
+  ledger: { readonly id: LedgerId; readonly timezone: string },
+): string {
+  const { tz, fellBack } = resolveTimezone(ledger.timezone, defaultTimezone);
+  if (fellBack)
+    logger.warn({ ledgerId: ledger.id }, 'stored ledger timezone is invalid, using the default');
+  return tz;
+}
+
 export interface RecordExpenseInput {
   readonly user: User;
+  // The active ledger when omitted. A `ledger` target must have the user as a member.
+  readonly target?: RecordTarget;
   readonly text: string;
   // Opaque dedupe key built by the adapter, e.g. `tg:<chat_id>:<message_id>`.
   readonly sourceKey: string;
@@ -59,10 +95,9 @@ export type RecordExpenseResult =
   // A reading was chosen, but the text no longer offers it.
   | { readonly kind: 'readingUnavailable' };
 
-// Records free text into the user's active ledger, in the category suggestCategory picks
-// (ADR-0008). A source key seen before returns the
-// stored expense unchanged, so a redelivered update, or a second tap on a reading, records
-// nothing new.
+// Records free text into the target ledger, in the category suggestCategory picks (ADR-0008),
+// dated in the ledger's effective timezone. A source key seen before returns the stored expense
+// unchanged, so a redelivered update, or a second tap on a reading, records nothing new.
 export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): RecordExpenseResult {
   const { db, logger } = deps;
   const { user } = input;
@@ -75,11 +110,10 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     return { kind: 'recorded', expense: seen, ledger, duplicate: true };
   }
 
-  const ledger = findActiveLedger(db, user.id);
-  if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  const ledger = targetLedger(deps, user, input.target ?? { kind: 'active' });
 
-  // "Today" is the user's local date when they sent the message; a date word counts back from it.
-  const sentOn = localDateOf(input.occurredAt, resolveUserTimezone(deps, user));
+  // "Today" is the ledger's local date when the message was sent; a date word counts back from it.
+  const sentOn = localDateOf(input.occurredAt, effectiveTimezone(deps, user, ledger));
   const parsed = resolveReading(
     parseExpenseText(input.text, ledger.defaultCurrency, sentOn),
     input.reading,
@@ -113,6 +147,18 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     'expense recorded',
   );
   return { kind: 'recorded', expense, ledger, duplicate: !created };
+}
+
+function targetLedger({ db }: Pick<RecordDeps, 'db'>, user: User, target: RecordTarget): Ledger {
+  if (target.kind === 'active') {
+    const ledger = findActiveLedger(db, user.id);
+    if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+    return ledger;
+  }
+  const ledger = findLedgerForMember(db, target.ledgerId, user.id);
+  if (ledger === undefined)
+    throw new Error(`user ${user.id} is not a member of ${target.ledgerId}`);
+  return ledger;
 }
 
 // Without a chosen reading the parse stands, so an ambiguous amount stays a question. With one,

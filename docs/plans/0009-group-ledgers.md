@@ -1,6 +1,6 @@
 # 0009: Group ledgers: the bot as a group's accountant, with personal books kept private
 
-> **Status:** approved (2026-09-30)
+> **Status:** in-progress
 > **Created:** 2026-09-30
 > **Related ADRs:** [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md)
@@ -302,13 +302,25 @@ type RecordTarget = { kind: 'active' } | { kind: 'ledger'; ledgerId: LedgerId };
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: bind a group, record into it | dev | not started | |
+| 1: Walking skeleton: bind a group, record into it | dev | done | committed with this row |
 | 2: Quiet confirmation and the author-only group card | dev | not started | |
 | 3: Group reports with a per-person breakdown | dev | not started | |
 | 4: Group lifecycle and ledger settings | dev | not started | |
 | 5: Live check in the family group | human | not started | |
 
 ### Notes
+
+- Phase 1: files changed outside `Files touched`: `src/db/ledgers.test.ts` and
+  `src/db/categories.test.ts` (their shared-ledger fixtures now carry a timezone, since
+  `insertLedger` refuses a shared ledger without one; the repository assertion for that refusal
+  is in `src/db/ledgers.test.ts`), and `src/db/connection.test.ts` (it pinned the migration list
+  `0001`..`0006`; it now derives the list from the migrations directory).
+- Phase 1: `src/services/provisionUser.ts` gained no parameter. A first-time group sender gets the
+  ledger's timezone through the existing `defaultTimezone` input, passed by `groupChats`.
+- Phase 1: the group confirmation reuses `messages.expenseRecorded`, as a reply to the message.
+  A redelivered group message is not confirmed again.
+- Phase 1: a group text that parses as ambiguous (`1.200 обед`), invalid or future-dated records
+  nothing and gets no reply, like chatter. Followup, not acted on.
 
 ### Close triggers
 

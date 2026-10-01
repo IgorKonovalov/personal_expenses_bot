@@ -31,6 +31,7 @@ beforeEach(() => {
       kind,
       name: 'Personal',
       defaultCurrency: 'RSD',
+      timezone: kind === 'shared' ? 'Europe/Belgrade' : null,
       ownerUserId: USER,
       createdAt: NOW,
     });

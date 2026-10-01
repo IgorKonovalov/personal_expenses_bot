@@ -33,6 +33,8 @@ export interface ApiCall {
 export interface TestBotOptions {
   readonly now?: Date;
   readonly logLevel?: 'info' | 'silent';
+  // Bot API methods the fake rejects with a 400, e.g. a chat with reactions disabled.
+  readonly failMethods?: readonly string[];
 }
 
 export function createTestBot(options: TestBotOptions = {}) {
@@ -56,8 +58,12 @@ export function createTestBot(options: TestBotOptions = {}) {
   });
 
   const calls: ApiCall[] = [];
+  const failing = new Set(options.failMethods ?? []);
   bot.api.config.use((_prev, method, payload) => {
     calls.push({ method, payload });
+    if (failing.has(method)) {
+      return Promise.resolve({ ok: false, error_code: 400, description: 'Bad Request: test' });
+    }
     // The fake answers every method alike; no code under test reads the result.
     return Promise.resolve({ ok: true, result: true as never });
   });
@@ -103,11 +109,103 @@ export function textUpdate(opts: {
   };
 }
 
+export const GROUP_ID = -100500;
+export const GROUP_TITLE = 'Семья';
+
+function commandEntities(text: string) {
+  return text.startsWith('/')
+    ? {
+        entities: [
+          { type: 'bot_command' as const, offset: 0, length: text.split(' ')[0]?.length ?? 0 },
+        ],
+      }
+    : {};
+}
+
+// A message in a supergroup. `content` is the message's own fields: `{ text }`, `{ sticker }`…
+export function groupMessageUpdate(opts: {
+  updateId: number;
+  content: Record<string, unknown>;
+  fromId?: number;
+  firstName?: string;
+  isBot?: boolean;
+  chatId?: number;
+  messageId?: number;
+  date?: Date;
+  senderChat?: { id: number; type: 'channel' | 'supergroup'; title: string };
+  replyTo?: number;
+}): Update {
+  const fromId = opts.fromId ?? ALLOWED_ID;
+  const chatId = opts.chatId ?? GROUP_ID;
+  return {
+    update_id: opts.updateId,
+    message: {
+      message_id: opts.messageId ?? 1,
+      date: Math.floor((opts.date ?? new Date('2026-09-29T21:50:00Z')).getTime() / 1000),
+      chat: { id: chatId, type: 'supergroup', title: GROUP_TITLE },
+      from: { id: fromId, is_bot: opts.isBot ?? false, first_name: opts.firstName ?? 'Test' },
+      ...(opts.senderChat === undefined ? {} : { sender_chat: opts.senderChat }),
+      ...(opts.replyTo === undefined
+        ? {}
+        : {
+            reply_to_message: {
+              message_id: opts.replyTo,
+              date: 0,
+              chat: { id: chatId, type: 'supergroup', title: GROUP_TITLE },
+            },
+          }),
+      ...opts.content,
+    } as Update['message'],
+  } as Update;
+}
+
+export function groupTextUpdate(opts: {
+  updateId: number;
+  text: string;
+  fromId?: number;
+  firstName?: string;
+  isBot?: boolean;
+  chatId?: number;
+  messageId?: number;
+  date?: Date;
+  senderChat?: { id: number; type: 'channel' | 'supergroup'; title: string };
+  replyTo?: number;
+}): Update {
+  const { text, ...rest } = opts;
+  return groupMessageUpdate({ ...rest, content: { text, ...commandEntities(text) } });
+}
+
+// The bot's own membership in a group changing, done by `fromId`.
+export function myChatMemberUpdate(opts: {
+  updateId: number;
+  fromId: number;
+  oldStatus: 'left' | 'kicked' | 'member' | 'administrator';
+  newStatus: 'left' | 'kicked' | 'member' | 'administrator';
+  chatId?: number;
+  title?: string;
+}): Update {
+  const bot = { id: botInfo.id, is_bot: true, first_name: botInfo.first_name };
+  const member = (status: string) =>
+    status === 'kicked' ? { status, user: bot, until_date: 0 } : { status, user: bot };
+  return {
+    update_id: opts.updateId,
+    my_chat_member: {
+      chat: { id: opts.chatId ?? GROUP_ID, type: 'supergroup', title: opts.title ?? GROUP_TITLE },
+      from: { id: opts.fromId, is_bot: false, first_name: 'Test' },
+      date: 1_790_000_000,
+      old_chat_member: member(opts.oldStatus),
+      new_chat_member: member(opts.newStatus),
+    },
+  } as Update;
+}
+
 export function callbackUpdate(opts: {
   updateId: number;
   data: string;
   fromId?: number;
   messageId?: number;
+  // A group's id puts the tapped message in that supergroup; the sender's DM otherwise.
+  chatId?: number;
 }): Update {
   const fromId = opts.fromId ?? ALLOWED_ID;
   return {
@@ -120,7 +218,10 @@ export function callbackUpdate(opts: {
       message: {
         message_id: opts.messageId ?? 2,
         date: 1_790_000_000,
-        chat: { id: fromId, type: 'private', first_name: 'Test' },
+        chat:
+          opts.chatId === undefined
+            ? { id: fromId, type: 'private', first_name: 'Test' }
+            : { id: opts.chatId, type: 'supergroup', title: GROUP_TITLE },
         text: 'confirmation',
       },
     },

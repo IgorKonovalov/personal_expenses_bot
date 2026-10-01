@@ -1,10 +1,11 @@
-import { Bot, type MiddlewareFn } from 'grammy';
+import { Bot, Composer, type Context, type MiddlewareFn } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { clearFlowOnCommand } from './flows.js';
+import { groupComposer, isGroupChat } from './group/index.js';
 import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
@@ -48,30 +49,36 @@ export function createBot(options: BotOptions): Bot {
   // Registered first so it wraps every later middleware, including handlers added after
   // createBot returns. bot.catch only sees errors under bot.start(), not handleUpdate().
   bot.use(errorBoundary(logger));
-  bot.use(allowlist(options.allowedTelegramIds, logger));
+
+  // Group updates and everything else take separate composers (ADR-0014): no DM handler, flow
+  // or anchor sees a group update, and the group side never falls through to the DM side.
+  const dm = new Composer<Context>();
+  bot.branch(isGroupChat, groupComposer(options), dm);
+
+  dm.use(allowlist(options.allowedTelegramIds, logger));
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
-  bot.use(callbackDispatcher());
+  dm.use(callbackDispatcher());
   // A command or menu tap clears a pending text flow (ADR-0009) before its handler runs.
-  bot.use(clearFlowOnCommand(options));
+  dm.use(clearFlowOnCommand(options));
 
   // Commands and exact menu labels first: the text handler treats any other text as a flow
   // answer or an expense attempt, and whatever isn't text gets the help reply.
-  registerStart(bot, options);
-  registerToday(bot, options);
-  registerSummary(bot, options);
-  registerCategories(bot, options);
-  registerSettings(bot, options);
-  registerCancel(bot, options);
-  registerHelp(bot);
-  registerChangelog(bot);
-  registerUnknownCommand(bot);
-  registerMenu(bot, options);
-  registerCard(bot, options);
-  registerCategory(bot, options);
-  registerText(bot, options);
-  registerNonText(bot);
-  registerEdited(bot, options);
+  registerStart(dm, options);
+  registerToday(dm, options);
+  registerSummary(dm, options);
+  registerCategories(dm, options);
+  registerSettings(dm, options);
+  registerCancel(dm, options);
+  registerHelp(dm);
+  registerChangelog(dm);
+  registerUnknownCommand(dm);
+  registerMenu(dm, options);
+  registerCard(dm, options);
+  registerCategory(dm, options);
+  registerText(dm, options);
+  registerNonText(dm);
+  registerEdited(dm, options);
 
   bot.catch((err) => {
     logger.error(
