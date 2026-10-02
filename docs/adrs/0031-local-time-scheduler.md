@@ -29,7 +29,9 @@ advances the job's next due date. A duplicate key means it already happened, so 
 Telegram messages are sent after the commit. A failed send is logged and not retried, so the
 recorded fact stands and only the notice is lost.
 
-Jobs store their next due occurrence as a **local date** (`next_due_on`), never as an instant.
+A job's next due occurrence is a **local date**, never an instant. A provider either stores it
+(`next_due_on`, as Plan 0025's rules do) or derives it each tick from state it already owns (Plan
+0026 derives it from the ledger's period rules, so a changed budget start day needs no rewrite).
 The due instant is computed on each tick as 09:00 on that date in the job's current timezone (the
 ledger's effective timezone, ADR-0015). So a DST change or a timezone change applies to the next
 occurrence without a migration. After downtime, a provider decides its own catch-up: Plan 0025
