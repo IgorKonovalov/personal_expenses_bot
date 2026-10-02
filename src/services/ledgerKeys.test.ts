@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { listLedgerExpensesOn } from '../db/expenses.js';
 import { findPersonalLedger, type Ledger } from '../db/ledgers.js';
@@ -24,7 +24,14 @@ import {
 } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
+import { scrubFreedPages } from './sealLedger.js';
 import { todaySummary } from './todaySummary.js';
+
+// The post-seal scrub, spied on and passed through, so a test can fail it.
+vi.mock('./sealLedger.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sealLedger.js')>();
+  return { ...actual, scrubFreedPages: vi.fn(actual.scrubFreedPages) };
+});
 
 const NOW = new Date('2026-09-30T10:00:00Z');
 const TODAY = '2026-09-30' as LocalDate;
@@ -139,6 +146,37 @@ describe('enableEncryption', () => {
     expect(startEnableFlow(deps, user, NOW)).toBe(false);
     expect(db.prepare('SELECT public_key FROM ledger_keys').pluck().get()).toEqual(publicKey);
     expect(db.prepare('SELECT COUNT(*) FROM ledger_key_wraps').pluck().get()).toBe(2);
+  });
+
+  it('still returns the recovery code when the scrub after the seal fails', async () => {
+    const lines: string[] = [];
+    deps = {
+      ...deps,
+      logger: createLogger('warn', { write: (line: string) => void lines.push(line) }),
+    };
+    vi.mocked(scrubFreedPages).mockImplementationOnce(() => {
+      throw new Error('SQLITE_FULL');
+    });
+
+    const result = await enable();
+
+    expect(result).toMatchObject({ kind: 'enabled' });
+    if (result.kind !== 'enabled') return;
+    expect(result.recoveryCode).toMatch(/^[A-Z2-7]{4}(-[A-Z2-7]{4}){7}$/);
+    // The code shown is the one the committed recovery wrap opens with.
+    expect(startRecoverFlow(deps, user, NOW)).toBe('asked');
+    expect(
+      recoverWithCode(deps, {
+        user,
+        ledgerId: ledger.id,
+        code: result.recoveryCode,
+        inputKey: `tg:1001:${String(++inputs)}`,
+        now: NOW,
+      }),
+    ).toEqual({ kind: 'recovered' });
+    expect(lines.map((line) => (JSON.parse(line) as { msg: string }).msg)).toEqual([
+      'scrub after sealing failed',
+    ]);
   });
 
   it('seals the expenses already recorded, which open once unlocked', async () => {

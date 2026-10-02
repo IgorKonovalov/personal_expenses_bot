@@ -206,8 +206,22 @@ export async function enableEncryption(
     logger.info({ ledgerId: ledger.id, userId: user.id, rows: sealed }, 'ledger sealed');
     return { kind: 'enabled', ledger, recoveryCode: formatRecoveryCode(code) };
   })();
-  if (result.kind === 'enabled') scrubFreedPages(db);
+  if (result.kind === 'enabled') scrubAfterSealing(deps, ledger.id);
   return result;
+}
+
+// The seal is committed by now, and the recovery code exists only in the result: a failing
+// scrub is logged, never thrown, or the code would be lost. The freed pages then keep their
+// plaintext until a later VACUUM.
+function scrubAfterSealing({ db, logger }: KeyDeps, ledgerId: LedgerId): void {
+  try {
+    scrubFreedPages(db);
+  } catch (error) {
+    logger.warn(
+      { ledgerId, err: error instanceof Error ? error.name : typeof error },
+      'scrub after sealing failed',
+    );
+  }
 }
 
 async function passphraseWrap(
