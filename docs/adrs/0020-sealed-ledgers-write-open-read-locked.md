@@ -40,6 +40,14 @@ What stays plaintext: `occurred_at`, `occurred_on`, `currency`, `created_by`, `s
 the timestamps. Periods are still filtered in SQL before decrypting. An observer at rest learns
 how many expenses there were, when, and in which currency, but not what they were or how much.
 
+A sealed row's `source_key` carries no content. A key derived from what the expense is, such as a
+bank SMS fingerprint (an unsalted hash of card, time, amount and merchant, ADR-0021) or a receipt's
+fiscal id, lets a file holder confirm a guessed purchase. A key the bot can compute while the ledger
+is locked, the file holder can compute too. So in a sealed ledger a bank SMS is keyed by its
+Telegram message (`tg:<chat>:<message>`), as typed text is. Sealing a ledger re-keys every
+existing `sms:` and `rcpt:` row to `sealed:<expenseId>`. Redelivery dedupe holds. The same SMS
+pasted again in a new message records a second expense.
+
 Encryption is opt-in per ledger and never silently reversed. The key hierarchy (wraps per member)
 admits shared ledgers, but Plan 0019 enables it for personal ledgers only.
 
@@ -66,6 +74,9 @@ admits shared ledgers, but Plan 0019 enables it for personal ledgers only.
   bot deletes the message at once. It still reaches Telegram's servers and briefly the user's
   devices.
 - **Metadata leaks:** expense count, timing and currency stay visible.
+- **No content dedupe while sealed.** Pasting the same bank SMS twice records it twice, which the
+  user undoes from the card. Rejected: keeping the fingerprint key, which leaks the amount to a
+  guess.
 - **Old plaintext lingers outside the live file.** Backups taken before the switch keep plaintext
   until rotation drops them. Inside the live file, freed pages need `secure_delete` and a
   `VACUUM` after migration.
