@@ -382,8 +382,14 @@ are stored per wrap, so they can change later without a migration.
   logs a scrub failure with ids and still returns the code. `811d2c1`.
 - Fix (review minor: a secret sent after its prompt expired): the first text within the
   24-hour reply window after an expired secret prompt routes as `expiredSecret`. It is deleted
-  unread, the prompt is dropped, and `secretPromptExpired` asks to resend an expense. Committed
-  with this line.
+  unread, the prompt is dropped, and `secretPromptExpired` asks to resend an expense. `9c630e2`.
+- Fix (review major: content-derived source keys on sealed rows): in a sealed ledger
+  `recordBankSms` keys the row by the Telegram message (`messageKey`, passed by the text
+  handler); `sealLedgerRows` re-keys the ledger's `sms:` and `rcpt:` rows to `sealed:<expenseId>`
+  inside the enable transaction (`rekeyContentSourceKeys` in `src/db/expenses.ts`). README states
+  the second-paste behavior. The sealed-ledger SMS done-whens are service tests in
+  `recordBankSms.test.ts`; the handler passes the key it builds for typed text. Committed with
+  this line.
 
 ### Close triggers
 

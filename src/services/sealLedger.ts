@@ -1,5 +1,10 @@
 import type { Db } from '../db/connection.js';
-import { listLedgerPlaintextExpenses, sealExpenseInPlace, type ExpenseId } from '../db/expenses.js';
+import {
+  listLedgerPlaintextExpenses,
+  rekeyContentSourceKeys,
+  sealExpenseInPlace,
+  type ExpenseId,
+} from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { listReceiptItems } from '../db/receiptItems.js';
 import { deleteLedgerReceipts, listLedgerReceipts } from '../db/receipts.js';
@@ -7,7 +12,9 @@ import type { SealedPayloadV1, SealedReceipt } from '../domain/sealing.js';
 
 // Sealing a ledger that has history (ADR-0020): every plaintext row, deleted ones included, is
 // sealed in place, and a receipt's seller, link and items fold into its row's payload before
-// the receipt rows are deleted. Afterwards the freed pages are scrubbed from the file and WAL.
+// the receipt rows are deleted. Source keys derived from content (a bank SMS fingerprint, a
+// receipt's fiscal id) become `sealed:<expenseId>`, since a guess could be checked against them.
+// Afterwards the freed pages are scrubbed from the file and WAL.
 
 // True while any receipt of the ledger is still being fetched: its items would arrive after
 // the row is sealed, so enabling waits.
@@ -15,7 +22,8 @@ export function hasPendingReceipts(db: Db, ledgerId: LedgerId): boolean {
   return listLedgerReceipts(db, ledgerId).some((r) => r.fetchState === 'pending');
 }
 
-// Seals every plaintext row of the ledger with `seal`. Run it inside the transaction that stores
+// Seals every plaintext row of the ledger with `seal` and re-keys its content-derived source
+// keys. Run it inside the transaction that stores
 // the ledger's key, so a failure leaves every row plaintext and no key. Returns the number of
 // rows sealed.
 export function sealLedgerRows(
@@ -49,6 +57,7 @@ export function sealLedgerRows(
     }
   }
   deleteLedgerReceipts(db, ledgerId);
+  rekeyContentSourceKeys(db, ledgerId);
   return rows.length;
 }
 

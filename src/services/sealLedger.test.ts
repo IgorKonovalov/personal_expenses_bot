@@ -7,6 +7,8 @@ import { sealExpenseInPlace } from '../db/expenses.js';
 import { findPersonalLedger, type Ledger } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
+import { parseBankSms } from '../domain/bankSms/index.js';
+import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { decodeMeUrl } from '../domain/receipts/meUrl.js';
 import type { FetchedReceipt } from '../domain/receipts/types.js';
 import { createLogger } from '../logger.js';
@@ -18,6 +20,7 @@ import {
   type LedgerKeyring,
 } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
+import { recordBankSms } from './recordBankSms.js';
 import { recordExpense } from './recordExpense.js';
 import { recordReceipt } from './recordReceipt.js';
 import { TEST_PASSPHRASE, unlockPersonalLedger } from './testing/sealLedger.js';
@@ -164,6 +167,53 @@ describe('enabling encryption on a ledger with history', () => {
     db.close();
     const after = fileBytes();
     for (const secret of SECRETS) {
+      expect(after.includes(Buffer.from(secret)), secret).toBe(false);
+    }
+  });
+
+  it('re-keys the bank SMS and receipt rows, so neither key survives in the file or WAL', async () => {
+    await fetchReceipt();
+    const sms = parseBankSms(buildKoriscenjeSms());
+    if (sms.kind !== 'purchase') throw new Error('setup: synthetic SMS did not parse');
+    const smsRecorded = recordBankSms(deps, {
+      user,
+      sms,
+      messageKey: `tg:1001:${String(++inputs)}`,
+      occurredAt: T0,
+      now: T0,
+    });
+    if (smsRecorded.kind !== 'recorded') throw new Error('setup: SMS not recorded');
+    const keys = () =>
+      db.prepare('SELECT id, source_key FROM expenses ORDER BY rowid').all() as {
+        id: string;
+        source_key: string;
+      }[];
+    const keysBefore = keys();
+    const rcpt = keysBefore.find((r) => r.source_key.startsWith('rcpt:'));
+    if (rcpt === undefined) throw new Error('setup: no receipt row');
+    const fiscalId = rcpt.source_key.split(':')[2] ?? '';
+    expect(fiscalId).toBe('abcdef0123456789abcdef0123456789');
+    const smsKey = `sms:koriscenje-kartice:${sms.fingerprint}:${ledger.id}`;
+    expect(keysBefore.map((r) => r.source_key)).toContain(smsKey);
+    const before = fileBytes();
+    for (const secret of [sms.fingerprint, fiscalId]) {
+      expect(before.includes(Buffer.from(secret)), secret).toBe(true);
+    }
+
+    expect(await enable()).toMatchObject({ kind: 'enabled' });
+
+    const [coffee, taxi] = keysBefore;
+    expect(keys()).toEqual([
+      { id: coffee?.id, source_key: 'tg:1001:1' },
+      { id: taxi?.id, source_key: 'tg:1001:2' },
+      { id: rcpt.id, source_key: `sealed:${rcpt.id}` },
+      { id: smsRecorded.expense.id, source_key: `sealed:${smsRecorded.expense.id}` },
+    ]);
+    for (const { source_key } of keys()) expect(source_key).toMatch(/^(tg:|sealed:)/);
+
+    db.close();
+    const after = fileBytes();
+    for (const secret of [sms.fingerprint, fiscalId]) {
       expect(after.includes(Buffer.from(secret)), secret).toBe(false);
     }
   });

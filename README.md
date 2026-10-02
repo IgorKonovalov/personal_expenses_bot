@@ -136,6 +136,8 @@ passphrase or the code is deleted as soon as it arrives.
   [Сменить пароль] changes it. Losing both the passphrase and the code loses the data.
 - A sealed ledger doesn't take receipt QR codes or links, and suggests categories from keywords
   only. The date, the currency and the number of expenses stay readable.
+- A sealed ledger can't recognise a bank SMS by its content: the same SMS pasted again in a new
+  message records a second expense, which [Удалить] on its card undoes.
 - It protects the database file and backups taken after the switch. It does not protect against
   whoever runs the bot changing its code, or against Telegram, which sees every message. Backups
   taken before the switch keep plaintext until `BACKUP_KEEP` rotation drops them.

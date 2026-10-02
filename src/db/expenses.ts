@@ -341,6 +341,20 @@ export function sealExpenseInPlace(db: Db, id: ExpenseId, sealed: Buffer): boole
   return changes === 1;
 }
 
+// Replaces every content-derived source key of the ledger (`sms:` fingerprints, `rcpt:` fiscal
+// ids) with `sealed:<expenseId>`, deleted rows included; `tg:` keys stay. Returns the number of
+// rows re-keyed.
+export function rekeyContentSourceKeys(db: Db, ledgerId: LedgerId): number {
+  return db
+    .prepare<[string]>(
+      `UPDATE expenses
+          SET source_key = 'sealed:' || id
+        WHERE ledger_id = ?
+          AND (substr(source_key, 1, 4) = 'sms:' OR substr(source_key, 1, 5) = 'rcpt:')`,
+    )
+    .run(ledgerId).changes;
+}
+
 // Non-deleted expenses of one ledger on one local date, visible only to members of that
 // ledger. Rows only: totals are computed in the domain (ADR-0002).
 export function listLedgerExpensesOn(

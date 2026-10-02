@@ -58,7 +58,7 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     // header matched but whose body didn't is refused, never read as free text.
     const sms = parseBankSms(ctx.message.text);
     if (sms.kind !== 'notBankSms') {
-      await answerBankSms(ctx, deps, { user, sms, occurredAt, now });
+      await answerBankSms(ctx, deps, { user, sms, messageKey: sourceKey, occurredAt, now });
       return;
     }
 
@@ -122,6 +122,7 @@ async function answerBankSms(
   input: {
     readonly user: User;
     readonly sms: Exclude<BankSmsResult, { kind: 'notBankSms' }>;
+    readonly messageKey: string;
     // The Telegram message date.
     readonly occurredAt: Date;
     readonly now: Date;
@@ -137,7 +138,13 @@ async function answerBankSms(
     );
     return;
   }
-  const result = recordBankSms(deps, { user, sms, occurredAt: input.occurredAt, now: input.now });
+  const result = recordBankSms(deps, {
+    user,
+    sms,
+    messageKey: input.messageKey,
+    occurredAt: input.occurredAt,
+    now: input.now,
+  });
   if (result.kind === 'futureSms') {
     await replyHtml(ctx, messages.bankSmsFuture);
     return;

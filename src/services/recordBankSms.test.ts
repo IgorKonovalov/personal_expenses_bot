@@ -13,6 +13,7 @@ import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordBankSms } from './recordBankSms.js';
 import type { RecordDeps } from './recordExpense.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 
 // The synthetic SMS's purchase is 2026-09-14T22:30:00Z, 00:30 on the 15th in Belgrade.
 const SENT = new Date('2026-09-15T08:00:00Z');
@@ -22,6 +23,7 @@ let deps: RecordDeps & { keys: LedgerKeyring };
 let logLines: string[];
 let alice: User;
 let bob: User;
+let messages: number;
 
 beforeEach(() => {
   db = openDatabase(':memory:');
@@ -45,6 +47,7 @@ beforeEach(() => {
     }).user;
   alice = provision('1001');
   bob = provision('1002');
+  messages = 0;
 });
 
 function sms(fields: KoriscenjeSmsFields = {}): BankSmsPurchase {
@@ -53,13 +56,19 @@ function sms(fields: KoriscenjeSmsFields = {}): BankSmsPurchase {
   return result;
 }
 
-function record(user: User, purchase = sms(), occurredAt = SENT) {
-  return recordBankSms(deps, { user, sms: purchase, occurredAt, now: occurredAt });
+// Each call is a new Telegram message unless `messageKey` names one.
+function record(
+  user: User,
+  purchase = sms(),
+  occurredAt = SENT,
+  messageKey = `tg:${user.id}:${String(++messages)}`,
+) {
+  return recordBankSms(deps, { user, sms: purchase, messageKey, occurredAt, now: occurredAt });
 }
 
 // A record expected to land: anything else fails the test.
-function recorded(user: User, purchase = sms(), occurredAt = SENT) {
-  const result = record(user, purchase, occurredAt);
+function recorded(user: User, purchase = sms(), occurredAt = SENT, messageKey?: string) {
+  const result = record(user, purchase, occurredAt, messageKey);
   if (result.kind !== 'recorded') throw new Error(`expected a record, got ${result.kind}`);
   return result;
 }
@@ -167,5 +176,35 @@ describe('recordBankSms', () => {
       expect(line).not.toContain('USD');
       expect(line).not.toContain(purchase.fingerprint);
     }
+  });
+
+  describe('in a sealed ledger', () => {
+    beforeEach(async () => {
+      await sealPersonalLedger(deps, alice, SENT);
+      await unlockPersonalLedger(deps, alice, SENT);
+    });
+
+    it('keys the row by the Telegram message, never by the fingerprint', () => {
+      const purchase = sms();
+      recorded(alice, purchase, SENT, 'tg:1001:77');
+
+      expect(rows('SELECT source_key FROM expenses')).toEqual([{ source_key: 'tg:1001:77' }]);
+      expect(JSON.stringify(rows('SELECT * FROM expenses'))).not.toContain(purchase.fingerprint);
+    });
+
+    it('a redelivered message records once; the same SMS in a new message records twice', () => {
+      const first = recorded(alice, sms(), SENT, 'tg:1001:77');
+      const redelivered = recorded(alice, sms(), SENT, 'tg:1001:77');
+      const pastedAgain = recorded(alice, sms(), SENT, 'tg:1001:78');
+
+      expect(redelivered).toMatchObject({ duplicate: true, expense: { id: first.expense.id } });
+      expect(pastedAgain.duplicate).toBe(false);
+      expect(pastedAgain.expense.id).not.toBe(first.expense.id);
+      expect(pastedAgain.expense).toMatchObject({ amountMinor: 600, currency: 'USD' });
+      expect(rows('SELECT source_key FROM expenses ORDER BY source_key')).toEqual([
+        { source_key: 'tg:1001:77' },
+        { source_key: 'tg:1001:78' },
+      ]);
+    });
   });
 });

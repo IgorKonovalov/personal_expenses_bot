@@ -5,7 +5,7 @@ import type { User } from '../db/users.js';
 import type { BankSmsPurchase } from '../domain/bankSms/types.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { localDateOf } from '../domain/time.js';
-import { isLocked, openExpense, type KeyDeps } from './ledgerKeys.js';
+import { isLocked, isSealedLedger, openExpense, type KeyDeps } from './ledgerKeys.js';
 import {
   effectiveTimezone,
   historyCategory,
@@ -16,6 +16,8 @@ import {
 export interface RecordBankSmsInput {
   readonly user: User;
   readonly sms: BankSmsPurchase;
+  // The Telegram message's key (`tg:<chat>:<message>`): a sealed ledger's source key.
+  readonly messageKey: string;
   // When the user sent it (the Telegram message date).
   readonly occurredAt: Date;
   readonly now: Date;
@@ -35,9 +37,11 @@ export type RecordBankSmsResult =
   | { readonly kind: 'sealedDuplicate' };
 
 // Records a bank SMS purchase into the user's active ledger as one ordinary expense in the
-// charged amount and currency, dated the purchase instant's local date (ADR-0021). The source key
-// carries the SMS's content fingerprint and the ledger, so the same SMS pasted again into the
-// same ledger returns the stored expense. A sealed ledger gets a sealed row (ADR-0020).
+// charged amount and currency, dated the purchase instant's local date (ADR-0021). In a plaintext
+// ledger the source key carries the SMS's content fingerprint and the ledger, so the same SMS
+// pasted again into the same ledger returns the stored expense. A sealed ledger gets a sealed row
+// keyed by the message, which carries no content (ADR-0020): a redelivered update returns the
+// stored expense, and the same SMS pasted in a new message records a second one.
 export function recordBankSms(
   deps: RecordDeps & Pick<KeyDeps, 'keys'>,
   input: RecordBankSmsInput,
@@ -47,7 +51,9 @@ export function recordBankSms(
 
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
-  const sourceKey = `sms:${sms.template}:${sms.fingerprint}:${ledger.id}`;
+  const sourceKey = isSealedLedger(deps, ledger.id)
+    ? input.messageKey
+    : `sms:${sms.template}:${sms.fingerprint}:${ledger.id}`;
 
   const seen = findExpenseBySourceKey(db, sourceKey);
   if (seen !== undefined) {
