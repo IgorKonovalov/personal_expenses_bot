@@ -109,20 +109,29 @@ export function isBudgetFlow(flow: Flow): flow is BudgetFlow {
 }
 
 // A secret typed for the sealed ledger `ledgerId` (ADR-0020): the passphrase that switches
-// encryption on, or the one that unlocks it. The payload never holds the secret: it is consumed
-// in the update that carries it.
+// encryption on or unlocks it, the recovery code, or a new passphrase, asked in the settings
+// anchor (`passphraseChange`) or after a recovery code (`recoverPassphrase`). The payload never
+// holds the secret: it is consumed in the update that carries it.
 export interface SecretFlow {
-  readonly kind: 'encryptionEnable' | 'unlock';
+  readonly kind:
+    'encryptionEnable' | 'unlock' | 'recoverCode' | 'recoverPassphrase' | 'passphraseChange';
   readonly ledgerId: LedgerId;
 }
 
 const SECRET_FLOW_KINDS: ReadonlySet<string> = new Set<SecretFlow['kind']>([
   'encryptionEnable',
   'unlock',
+  'recoverCode',
+  'recoverPassphrase',
+  'passphraseChange',
 ]);
 
+function isSecretKind(kind: string): kind is SecretFlow['kind'] {
+  return SECRET_FLOW_KINDS.has(kind);
+}
+
 export function isSecretFlow(flow: Flow): flow is SecretFlow {
-  return SECRET_FLOW_KINDS.has(flow.kind);
+  return isSecretKind(flow.kind);
 }
 
 export type Flow = CategoryFlow | EditFlow | TimezoneFlow | BudgetFlow | SecretFlow;
@@ -249,13 +258,8 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   }
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
-  if (
-    kind === 'categoryAdd' ||
-    kind === 'budgetLimit' ||
-    kind === 'budgetStartDay' ||
-    kind === 'encryptionEnable' ||
-    kind === 'unlock'
-  ) {
+  if (isSecretKind(kind)) return { kind, ledgerId };
+  if (kind === 'categoryAdd' || kind === 'budgetLimit' || kind === 'budgetStartDay') {
     return { kind, ledgerId };
   }
   if (

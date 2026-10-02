@@ -15,6 +15,7 @@ import {
   findLedgerPublicKey,
   insertKeyWrap,
   insertLedgerKeyOrIgnore,
+  replaceMemberWrap,
   type KeyWrap,
   type KeyWrapper,
 } from '../db/ledgerKeys.js';
@@ -30,6 +31,7 @@ import {
   newArgon2idParams,
   newRecoveryCode,
   open,
+  parseRecoveryCode,
   seal,
   unwrapPrivateKey,
   wrapPrivateKey,
@@ -287,6 +289,118 @@ export async function unlockLedger(
   keys.hold(ledgerId, privateKey);
   logger.info({ ledgerId, userId: user.id }, 'ledger unlocked');
   return { kind: 'unlocked' };
+}
+
+// Starts the /recover prompt for the personal ledger; `off` when it isn't sealed.
+export function startRecoverFlow(deps: KeyDeps, user: User, now: Date): 'asked' | 'off' {
+  const state = encryptionState(deps, user);
+  if (state.kind === 'off') return 'off';
+  startFlow(deps, user, { kind: 'recoverCode', ledgerId: state.ledger.id }, now);
+  return 'asked';
+}
+
+export type RecoverResult = { readonly kind: 'recovered' | 'wrongCode' | 'notSealed' };
+
+// The recovery code (case-insensitive, separators ignored) unwraps the private key: the ledger
+// is unlocked, and the new passphrase is asked next. A wrong code changes nothing. One attempt
+// per prompt, like /unlock.
+export function recoverWithCode(
+  deps: KeyDeps,
+  input: {
+    readonly user: User;
+    readonly ledgerId: LedgerId;
+    readonly code: string;
+    readonly inputKey: string;
+    readonly now: Date;
+  },
+): RecoverResult {
+  const { db, logger, keys } = deps;
+  const { user, ledgerId } = input;
+  return db.transaction((): RecoverResult => {
+    completeFlow(deps, user, input.inputKey);
+    const who: KeyWrapper = { wrapper: 'recovery' };
+    const wrap = findKeyWrap(db, ledgerId, who);
+    if (wrap === undefined || personalLedger(db, user).id !== ledgerId) {
+      return { kind: 'notSealed' };
+    }
+    const privateKey = unwrapWithCode(wrap, input.code, wrapAad(ledgerId, who));
+    if (privateKey === undefined) {
+      logger.info({ ledgerId, userId: user.id }, 'recovery refused');
+      return { kind: 'wrongCode' };
+    }
+    keys.hold(ledgerId, privateKey);
+    startFlow(deps, user, { kind: 'recoverPassphrase', ledgerId }, input.now);
+    logger.info({ ledgerId, userId: user.id }, 'ledger recovered');
+    return { kind: 'recovered' };
+  })();
+}
+
+function unwrapWithCode(wrap: KeyWrap, text: string, aad: string): KeyObject | undefined {
+  if (wrap.kdf !== 'hkdf-sha256') throw new Error('a recovery wrap is hkdf-sha256');
+  const code = parseRecoveryCode(text);
+  if (code === undefined) return undefined;
+  const params = JSON.parse(wrap.kdfParams) as Record<string, unknown>;
+  if (typeof params.salt !== 'string') throw new Error('recovery parameters are malformed');
+  try {
+    return unwrapPrivateKey(
+      deriveRecoveryKey(code, Buffer.from(params.salt, 'base64')),
+      wrap.wrappedPrivate,
+      aad,
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+// Starts the new-passphrase prompt from the settings screen; only while the ledger is unlocked,
+// since the new wrap needs the private key.
+export function startPassphraseChange(
+  deps: KeyDeps,
+  user: User,
+  now: Date,
+): 'asked' | 'locked' | 'off' {
+  const state = encryptionState(deps, user);
+  if (state.kind !== 'unlocked') return state.kind;
+  startFlow(deps, user, { kind: 'passphraseChange', ledgerId: state.ledger.id }, now);
+  return 'asked';
+}
+
+export type PassphraseChangeResult =
+  | { readonly kind: 'changed' }
+  // The flow stays pending and the prompt is asked again.
+  | { readonly kind: 'tooShort' }
+  // The ledger locked since the prompt: the flow is answered, nothing written.
+  | Locked;
+
+// Wraps the unlocked private key under a new passphrase, replacing the member's wrap. The
+// keypair and the recovery wrap stay, so every sealed row still opens.
+export async function changePassphrase(
+  deps: KeyDeps,
+  input: {
+    readonly user: User;
+    readonly ledgerId: LedgerId;
+    readonly passphrase: string;
+    readonly inputKey: string;
+  },
+): Promise<PassphraseChangeResult> {
+  const { db, logger, keys } = deps;
+  const { user, ledgerId } = input;
+  if (Array.from(input.passphrase).length < MIN_PASSPHRASE_LENGTH) return { kind: 'tooShort' };
+  const privateKey = keys.privateKey(ledgerId);
+  if (privateKey === undefined) {
+    completeFlow(deps, user, input.inputKey);
+    return LOCKED;
+  }
+  const member: KeyWrapper = { wrapper: 'member', userId: user.id };
+  const wrap = await passphraseWrap(input.passphrase, privateKey, wrapAad(ledgerId, member));
+  return db.transaction((): PassphraseChangeResult => {
+    completeFlow(deps, user, input.inputKey);
+    if (!replaceMemberWrap(db, ledgerId, user.id, wrap)) {
+      throw new Error(`ledger ${ledgerId} has no wrap for its member`);
+    }
+    logger.info({ ledgerId, userId: user.id }, 'passphrase changed');
+    return { kind: 'changed' };
+  })();
 }
 
 // A read of a sealed ledger while it is locked.

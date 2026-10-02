@@ -153,6 +153,8 @@ export const SETTINGS_CATEGORIES = 'set:cat';
 export const SETTINGS_BUDGET = 'set:bud';
 // The personal hub's [Шифрование] (ADR-0020): the enable prompt, or the sealed ledger's state.
 export const SETTINGS_ENCRYPTION = 'set:enc';
+// [Сменить пароль] on that screen, while the ledger is unlocked.
+export const SETTINGS_PASSPHRASE = 'set:encpw';
 // [Сохранил] under the recovery code message deletes that message.
 export const RECOVERY_SAVED = 'enc:saved';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).

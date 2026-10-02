@@ -285,8 +285,8 @@ are stored per wrap, so they can change later without a migration.
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | `75f84e2` |
 | 2: Every read path honors the lock | dev | done | `c1b5093` |
-| 3: Enable on a ledger with history | dev | done | committed with this row |
-| 4: Recovery code and passphrase change | dev | not started | |
+| 3: Enable on a ledger with history | dev | done | `4cf2062` |
+| 4: Recovery code and passphrase change | dev | done | committed with this row |
 | 5: Lock lifecycle, log hygiene, docs | dev | not started | |
 | 6: Live check in Telegram | human | not started | |
 
@@ -351,6 +351,14 @@ are stored per wrap, so they can change later without a migration.
 - Phase 3: the backup sentence is in the recovery code message, which only enabling sends.
 - Phase 3: `scrubFreedPages` checkpoints with TRUNCATE before and after `VACUUM`. With the scrub
   and `secure_delete` taken out, the file-bytes test fails.
+- Phase 4: a right recovery code unlocks the ledger and starts a second prompt
+  (`recoverPassphrase`) for the new passphrase, so no flow payload carries the code. Leaving
+  after the code leaves the ledger unlocked and every wrap unchanged. `/recover` takes one
+  attempt per prompt, like `/unlock`.
+- Phase 4: files outside `Files touched`: `src/bot/callbackData.ts` gains `set:encpw`
+  ([Сменить пароль]). `src/bot/bot.ts` and `src/bot/flows.ts` are unchanged: `/recover` is
+  registered in `registerUnlock`, and the new secret flows reach `answerSecretFlow` through
+  `isSecretFlow`.
 
 ### Close triggers
 

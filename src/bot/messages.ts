@@ -842,6 +842,12 @@ export const messages = {
   alreadyUnlocked: html`Учёт уже открыт.`,
   unlocked: html`Учёт открыт. Итоги за сегодня: /today.`,
   wrongPassphrase: html`Неверный пароль. Учёт по-прежнему закрыт. Попробовать ещё раз: /unlock.`,
+  recoverPrompt: html`Отправьте код восстановления. Регистр и дефисы не важны. Я сразу удалю сообщение с ним.`,
+  wrongRecoveryCode: html`Код не подошёл. Ничего не изменено. Попробовать ещё раз: /recover.`,
+  recoveredPrompt: html`Код подошёл, учёт открыт. Отправьте новый пароль не короче 10 символов. Я сразу удалю сообщение с ним.`,
+  changePassphraseButton: 'Сменить пароль',
+  changePassphrasePrompt: html`Отправьте новый пароль не короче 10 символов. Я сразу удалю сообщение с ним. Код восстановления останется прежним.`,
+  passphraseChanged: html`Пароль изменён. Код восстановления прежний.`,
 
   // The /budget screen (ADR-0017). Amounts are in the budget's currency, foreign spending
   // converted into it (ADR-0023); spend with no rate is listed as not counted. `readOnly` leaves out what only the owner can act on.

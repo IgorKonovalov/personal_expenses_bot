@@ -76,3 +76,20 @@ export function findKeyWrap(db: Db, ledgerId: LedgerId, who: KeyWrapper): KeyWra
     ? undefined
     : { kdf: row.kdf, kdfParams: row.kdf_params, wrappedPrivate: row.wrapped_private };
 }
+
+// Replaces a member's passphrase wrap; the recovery wrap and the keypair stay. Returns false
+// when the member has no wrap.
+export function replaceMemberWrap(
+  db: Db,
+  ledgerId: LedgerId,
+  userId: UserId,
+  wrap: KeyWrap,
+): boolean {
+  const { changes } = db
+    .prepare<[string, string, Buffer, string, string]>(
+      `UPDATE ledger_key_wraps SET kdf = ?, kdf_params = ?, wrapped_private = ?
+        WHERE ledger_id = ? AND wrapper = 'member' AND user_id = ?`,
+    )
+    .run(wrap.kdf, wrap.kdfParams, wrap.wrappedPrivate, ledgerId, userId);
+  return changes === 1;
+}

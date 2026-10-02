@@ -1,16 +1,23 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import type { ScreenAnchor, SecretFlow } from '../../services/flowSessions.js';
-import { enableEncryption, startUnlockFlow, unlockLedger } from '../../services/ledgerKeys.js';
+import {
+  changePassphrase,
+  enableEncryption,
+  recoverWithCode,
+  startRecoverFlow,
+  startUnlockFlow,
+  unlockLedger,
+} from '../../services/ledgerKeys.js';
 import type { HandlerDeps } from '../bot.js';
 import { RECOVERY_SAVED } from '../callbackData.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { joinHtml, replyHtml } from '../render/html.js';
 import { renderAnchor, type ScreenView } from '../screens.js';
-import { encryptionPromptView, encryptionView } from './settings.js';
+import { encryptionPromptView, encryptionView, passphrasePromptView } from './settings.js';
 import { ensureUser } from './start.js';
 
-// Sealed ledgers (ADR-0020): /unlock, and the answers to the secret prompts. A message that
+// Sealed ledgers (ADR-0020): /unlock, /recover, and the answers to the secret prompts. A message that
 // carries a secret is deleted in the update that brings it, before anything else; the secret is
 // never logged, stored in a flow or repeated back.
 
@@ -34,8 +41,8 @@ async function show(ctx: Context, anchor: ScreenAnchor | undefined, view: Screen
   await renderAnchor(ctx, anchor, view);
 }
 
-// The typed answer to a secret prompt. The enable prompt lives in the settings anchor; the
-// /unlock prompt is a plain reply, so its answer is too.
+// The typed answer to a secret prompt. The enable and passphrase-change prompts live in the
+// settings anchor; the /unlock and /recover prompts are plain replies, so their answers are too.
 export async function answerSecretFlow(
   ctx: Context,
   deps: HandlerDeps,
@@ -55,6 +62,54 @@ export async function answerSecretFlow(
     passphrase: input.text,
     inputKey: input.inputKey,
   };
+
+  if (flow.kind === 'recoverCode') {
+    const result = recoverWithCode(deps, {
+      user,
+      ledgerId: flow.ledgerId,
+      code: input.text,
+      inputKey: input.inputKey,
+      now: deps.now(),
+    });
+    switch (result.kind) {
+      case 'recovered':
+        await replyHtml(ctx, messages.recoveredPrompt);
+        return;
+      case 'wrongCode':
+        await replyHtml(ctx, messages.wrongRecoveryCode);
+        return;
+      case 'notSealed':
+        await replyHtml(ctx, messages.unlockNotSealed);
+        return;
+    }
+  }
+
+  if (flow.kind === 'recoverPassphrase' || flow.kind === 'passphraseChange') {
+    // The settings prompt answers in its anchor; the /recover one in plain replies.
+    const inAnchor = flow.kind === 'passphraseChange' ? anchor : undefined;
+    const result = await changePassphrase(deps, secret);
+    switch (result.kind) {
+      case 'tooShort':
+        if (inAnchor === undefined) {
+          await replyHtml(
+            ctx,
+            joinHtml([messages.passphraseTooShort, messages.recoveredPrompt], '\n\n'),
+          );
+        } else {
+          await renderAnchor(ctx, inAnchor, passphrasePromptView(messages.passphraseTooShort));
+        }
+        return;
+      case 'locked':
+        await replyHtml(ctx, messages.ledgerLocked);
+        return;
+      case 'changed': {
+        await replyHtml(ctx, messages.passphraseChanged);
+        const view = encryptionView(deps, user);
+        if (inAnchor !== undefined && view !== undefined) await renderAnchor(ctx, inAnchor, view);
+        return;
+      }
+    }
+  }
 
   if (flow.kind === 'unlock') {
     const result = await unlockLedger(deps, secret);
@@ -109,6 +164,18 @@ export function registerUnlock(bot: Composer<Context>, deps: HandlerDeps): void 
         await replyHtml(ctx, messages.alreadyUnlocked);
         return;
     }
+  });
+
+  bot.command('recover', async (ctx) => {
+    if (ctx.from === undefined) return;
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    await replyHtml(
+      ctx,
+      startRecoverFlow(deps, user, now) === 'asked'
+        ? messages.recoverPrompt
+        : messages.unlockNotSealed,
+    );
   });
 
   // [Сохранил] deletes the recovery code message it sits under.

@@ -10,6 +10,7 @@ import { createBot } from '../bot.js';
 import {
   RECOVERY_SAVED,
   SETTINGS_ENCRYPTION,
+  SETTINGS_PASSPHRASE,
   categoryPickerData,
   editExpenseData,
   showExpenseData,
@@ -240,5 +241,86 @@ describe('every read path of a locked sealed ledger', () => {
 
     expect(sent()).toEqual([messages.receiptSealedLedger]);
     expect(counts()).toEqual(before);
+  });
+});
+
+describe('/recover and the passphrase change in the bot', () => {
+  async function enabled() {
+    const harness = sealedBot();
+    await harness.say('/settings', 1);
+    await harness.tap(SETTINGS_ENCRYPTION, 101);
+    harness.calls.length = 0;
+    await harness.say(PASSPHRASE, 2);
+    const [codeText] = harness.sent();
+    const code = /<code>([A-Z2-7-]+)<\/code>/.exec(codeText ?? '')?.[1];
+    if (code === undefined) throw new Error('setup: no recovery code shown');
+    harness.calls.length = 0;
+    return { ...harness, code };
+  }
+
+  it('deletes the code and the new passphrase, and leaves the ledger open', async () => {
+    const { calls, say, sent, deleted, code } = await enabled();
+
+    await say('/recover', 10);
+    await say(code, 11);
+    await say('new passphrase Y', 12);
+    expect(deleted()).toEqual([11, 12]);
+    expect(sent()).toEqual([
+      messages.recoverPrompt,
+      messages.recoveredPrompt,
+      messages.passphraseChanged,
+    ]);
+
+    // The code unlocked the ledger. Which passphrase opens it next: ledgerKeys.test.ts.
+    calls.length = 0;
+    await say('/unlock', 13);
+    expect(sent()).toEqual([messages.alreadyUnlocked]);
+  });
+
+  it('changes the passphrase from the unlocked encryption screen, deleting it', async () => {
+    const { calls, say, tap, deleted, sent } = await enabled();
+    await say('/unlock', 10);
+    await say(PASSPHRASE, 11);
+
+    await say('/settings', 12);
+    await tap(SETTINGS_ENCRYPTION, 105);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        message_id: 105,
+        text: messages.encryptionScreen('unlocked'),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Сменить пароль', callback_data: SETTINGS_PASSPHRASE }],
+            [{ text: messages.backButton, callback_data: 'set:open' }],
+          ],
+        },
+      },
+    });
+    await tap(SETTINGS_PASSPHRASE, 105);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: { message_id: 105, text: messages.changePassphrasePrompt },
+    });
+
+    calls.length = 0;
+    await say('another passphrase', 13);
+    expect(deleted()).toEqual([13]);
+    expect(sent()).toEqual([messages.passphraseChanged]);
+  });
+
+  it('a wrong code is deleted and refused, and the ledger stays locked', async () => {
+    const { say, sent, deleted } = await enabled();
+
+    await say('/recover', 10);
+    await say('AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA', 11);
+    await say('/today', 12);
+
+    expect(deleted()).toEqual([11]);
+    expect(sent()).toEqual([
+      messages.recoverPrompt,
+      messages.wrongRecoveryCode,
+      messages.ledgerLocked,
+    ]);
   });
 });

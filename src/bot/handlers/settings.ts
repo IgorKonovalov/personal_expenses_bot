@@ -10,7 +10,11 @@ import {
   type CategoriesScreen,
   type SettingsScreen,
 } from '../../services/flowSessions.js';
-import { encryptionState, startEnableFlow } from '../../services/ledgerKeys.js';
+import {
+  encryptionState,
+  startEnableFlow,
+  startPassphraseChange,
+} from '../../services/ledgerKeys.js';
 import { activeLedgerCategories } from '../../services/manageCategories.js';
 import {
   screenSettings,
@@ -29,6 +33,7 @@ import {
   SETTINGS_CATEGORIES,
   SETTINGS_ENCRYPTION,
   SETTINGS_OPEN,
+  SETTINGS_PASSPHRASE,
   TIMEZONE_OTHER,
   TIMEZONE_PAGE,
   TIMEZONE_PICKER,
@@ -154,13 +159,30 @@ export function encryptionPromptView(refusal?: Html): ScreenView {
   };
 }
 
-// The sealed personal ledger's state; undefined while encryption is off.
+// The sealed personal ledger's state, with [Сменить пароль] while unlocked; undefined while
+// encryption is off.
 export function encryptionView(deps: HandlerDeps, user: User): ScreenView | undefined {
   const state = encryptionState(deps, user);
   if (state.kind === 'off') return undefined;
   return {
     text: messages.encryptionScreen(state.kind),
-    markup: InlineKeyboard.from([backRow(SETTINGS_OPEN)]),
+    markup: InlineKeyboard.from([
+      ...(state.kind === 'unlocked'
+        ? [[InlineKeyboard.text(messages.changePassphraseButton, SETTINGS_PASSPHRASE)]]
+        : []),
+      backRow(SETTINGS_OPEN),
+    ]),
+  };
+}
+
+// The new-passphrase prompt, with a refusal line above it when an answer failed.
+export function passphrasePromptView(refusal?: Html): ScreenView {
+  return {
+    text:
+      refusal === undefined
+        ? messages.changePassphrasePrompt
+        : joinHtml([refusal, messages.changePassphrasePrompt], '\n\n'),
+    markup: InlineKeyboard.from([cancelRow()]),
   };
 }
 
@@ -257,6 +279,24 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     }
     startEnableFlow(deps, tap.user, deps.now());
     await renderAnchor(ctx, tap.anchor, encryptionPromptView());
+  });
+
+  // [Сменить пароль] on the unlocked ledger's encryption screen.
+  bot.callbackQuery(SETTINGS_PASSPHRASE, async (ctx) => {
+    const tap = await settingsTap(ctx, deps);
+    if (tap === undefined) return;
+    switch (startPassphraseChange(deps, tap.user, deps.now())) {
+      case 'asked':
+        await ctx.answerCallbackQuery();
+        await renderAnchor(ctx, tap.anchor, passphrasePromptView());
+        return;
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
+      case 'off':
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+    }
   });
 
   // The scoped hub's [Бюджет]: the same budget screen, acting on the hub's ledger. Only its owner

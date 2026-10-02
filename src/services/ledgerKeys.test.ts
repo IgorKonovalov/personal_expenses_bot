@@ -8,11 +8,15 @@ import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { routeText } from './flowSessions.js';
 import {
+  changePassphrase,
   createLedgerKeyring,
   enableEncryption,
   encryptionState,
   openExpenses,
+  recoverWithCode,
   startEnableFlow,
+  startPassphraseChange,
+  startRecoverFlow,
   startUnlockFlow,
   unlockLedger,
   type LedgerKeyring,
@@ -215,5 +219,98 @@ describe('a sealed ledger', () => {
     expect(first.kind).toBe('recorded');
     expect(again).toEqual({ kind: 'sealedDuplicate' });
     expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+  });
+});
+
+describe('recovery and passphrase change', () => {
+  async function enabledCode(): Promise<string> {
+    const result = await enable();
+    if (result.kind !== 'enabled') throw new Error('setup: not enabled');
+    return result.recoveryCode;
+  }
+
+  function recover(code: string) {
+    expect(startRecoverFlow(deps, user, NOW)).toBe('asked');
+    return recoverWithCode(deps, {
+      user,
+      ledgerId: ledger.id,
+      code,
+      inputKey: `tg:1001:${String(++inputs)}`,
+      now: NOW,
+    });
+  }
+
+  function newPassphrase(passphrase: string) {
+    return changePassphrase(deps, {
+      user,
+      ledgerId: ledger.id,
+      passphrase,
+      inputKey: `tg:1001:${String(++inputs)}`,
+    });
+  }
+
+  const wraps = () =>
+    db.prepare('SELECT wrapper, kdf_params, wrapped_private FROM ledger_key_wraps').all();
+
+  it('/recover with the code, then a new passphrase Y: Y unlocks and the old one is refused', async () => {
+    const code = await enabledCode();
+    const recoveryWrap = db
+      .prepare("SELECT wrapped_private FROM ledger_key_wraps WHERE wrapper = 'recovery'")
+      .pluck()
+      .get();
+
+    // Typed in lower case with spaces instead of dashes.
+    expect(recover(code.toLowerCase().replaceAll('-', ' '))).toEqual({ kind: 'recovered' });
+    expect(routeText(deps, { user, inputKey: 'tg:1001:900', now: NOW })).toEqual({
+      kind: 'flow',
+      flow: { kind: 'recoverPassphrase', ledgerId: ledger.id },
+    });
+    expect(await newPassphrase('new passphrase Y')).toEqual({ kind: 'changed' });
+    deps.keys.lock(ledger.id);
+
+    expect(await unlock(PASSPHRASE)).toEqual({ kind: 'wrongPassphrase' });
+    expect(await unlock('new passphrase Y')).toEqual({ kind: 'unlocked' });
+    expect(
+      db
+        .prepare("SELECT wrapped_private FROM ledger_key_wraps WHERE wrapper = 'recovery'")
+        .pluck()
+        .get(),
+    ).toEqual(recoveryWrap);
+  });
+
+  it('a wrong recovery code changes nothing and leaves the ledger locked', async () => {
+    const code = await enabledCode();
+    const before = wraps();
+    // The right length and alphabet, one character off.
+    const wrong = `${code.startsWith('A') ? 'B' : 'A'}${code.slice(1)}`;
+
+    expect(recover(wrong)).toEqual({ kind: 'wrongCode' });
+    expect(recover('not a code')).toEqual({ kind: 'wrongCode' });
+
+    expect(wraps()).toEqual(before);
+    expect(encryptionState(deps, user).kind).toBe('locked');
+    expect(routeText(deps, { user, inputKey: 'tg:1001:900', now: NOW }).kind).toBe('free');
+  });
+
+  it('after a passphrase change the sealed rows still open: the keypair is unchanged', async () => {
+    await enabledCode();
+    record('450 кофе');
+    const publicKey: unknown = db.prepare('SELECT public_key FROM ledger_keys').pluck().get();
+    await unlock(PASSPHRASE);
+
+    expect(startPassphraseChange(deps, user, NOW)).toBe('asked');
+    expect(await newPassphrase('short')).toEqual({ kind: 'tooShort' });
+    expect(await newPassphrase('another passphrase')).toEqual({ kind: 'changed' });
+    deps.keys.lock(ledger.id);
+    expect(await unlock('another passphrase')).toEqual({ kind: 'unlocked' });
+
+    expect(db.prepare('SELECT public_key FROM ledger_keys').pluck().get()).toEqual(publicKey);
+    const opened = openExpenses(deps, ledger.id, todayRows());
+    expect(opened.kind === 'open' && opened.expenses.map((e) => e.description)).toEqual(['кофе']);
+  });
+
+  it('a passphrase change is not offered while locked', async () => {
+    await enabledCode();
+    expect(startPassphraseChange(deps, user, NOW)).toBe('locked');
   });
 });
