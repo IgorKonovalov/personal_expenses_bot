@@ -287,8 +287,8 @@ are stored per wrap, so they can change later without a migration.
 | 2: Every read path honors the lock | dev | done | `c1b5093` |
 | 3: Enable on a ledger with history | dev | done | `4cf2062` |
 | 4: Recovery code and passphrase change | dev | done | `1f38257` |
-| 5: Lock lifecycle, log hygiene, docs | dev | done | committed with this row |
-| 6: Live check in Telegram | human | not started | |
+| 5: Lock lifecycle, log hygiene, docs | dev | done | `c88efce` |
+| 6: Live check in Telegram | human | pending | (no commit) |
 
 ### Notes
 
@@ -373,7 +373,38 @@ are stored per wrap, so they can change later without a migration.
   is updated), and the `/settings` description names encryption. `/recover` is in `/help` only.
   `src/bot/handlers/help.ts` is unchanged: the copy lives in `messages.help`. `CLAUDE.md`'s
   `src/domain/` line gains "sealing".
+- Followup (not acted on): a tap on an ambiguous-amount reading whose expense is already in a
+  locked sealed ledger answers `ambiguousSourceUnavailable`, since `recordExpense` returns
+  `sealedDuplicate` and `src/bot/handlers/ambiguous.ts` treats any non-`recorded` result alike.
+- Followup (not acted on): README's Roadmap still names an encrypted personal ledger among the
+  active plans.
 
 ### Close triggers
+
+- **What shipped:** migration `0012_sealed_ledgers.sql` (`ledger_keys`, `ledger_key_wraps`, the
+  rebuilt `expenses` with a nullable plaintext and a `sealed` BLOB); `src/domain/sealing.ts`
+  (X25519 + HKDF-SHA256 + AES-256-GCM seal and open, Argon2id and HKDF wraps, the base32 recovery
+  code, the v1 payload codec); `src/db/ledgerKeys.ts`; `src/services/ledgerKeys.ts` (the keyring
+  with its idle expiry, enable, unlock, recover, passphrase change, lock, `openExpenses` /
+  `openExpense`, `resealed`, `foldedReceipt`); `src/services/sealLedger.ts` (sealing a ledger's
+  history, `scrubFreedPages`); `src/bot/handlers/unlock.ts`; `StoredExpense = Expense |
+  SealedExpense` from every expense reader in `src/db/expenses.ts`; `storeExpense` and
+  `historyCategory` in `src/services/recordExpense.ts`; `secure_delete = ON` at connection open;
+  `HandlerDeps.keys`, one keyring per process created in `src/index.ts`. No new dependency
+  (`node:crypto` only).
+- **User-visible surface changed:** `/settings` gains [Шифрование] (the enable prompt with its
+  limits, then the state, with [Сменить пароль] while unlocked). New commands `/unlock`, `/lock`
+  (both in the command list) and `/recover`. The recovery code message with [Сохранил]. In a
+  sealed ledger: `/today`, `/week`, `/month`, `/budget` and card taps answer locked until
+  `/unlock`; receipts are refused; categories come from keywords only; passphrase and code
+  messages are deleted. `/help` has one new line, its menu line names encryption. README has an
+  `### Encrypted ledger` section. Existing databases go through the `expenses` rebuild at boot.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 69 files,
+  941 tests; `pnpm build` exit 0 (`dist/db/migrations` holds `0012_sealed_ledgers.sql`);
+  `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236 tests;
+  `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests; `node scripts/check-doc-links.mjs`
+  exit 0, 240 links.
+- **Outstanding `human` phases:** Phase 6 (the live check in Telegram with a throwaway personal
+  ledger).
 
 ## Followups
