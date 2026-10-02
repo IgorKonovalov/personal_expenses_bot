@@ -8,6 +8,7 @@ import {
   currentAnchor,
   isBudgetFlow,
   isEditFlow,
+  isSecretFlow,
   type BudgetScreen,
   type CategoriesScreen,
   type EditFlow,
@@ -23,6 +24,7 @@ import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { editPromptView } from './handlers/edit.js';
 import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
+import { answerSecretFlow } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { replyHtml } from './render/html.js';
 import { renderAnchor, type ScreenView } from './screens.js';
@@ -137,6 +139,11 @@ export async function answerFlow(
 ): Promise<void> {
   const { user, flow } = input;
   const anchor = currentAnchor(deps, user);
+
+  if (isSecretFlow(flow)) {
+    await answerSecretFlow(ctx, deps, anchor, { ...input, flow });
+    return;
+  }
 
   if (isEditFlow(flow)) {
     await answerEdit(ctx, deps, anchor, { ...input, flow });

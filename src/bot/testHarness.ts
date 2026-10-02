@@ -3,6 +3,7 @@ import type { Update, UserFromGetMe } from 'grammy/types';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import { createBot } from './bot.js';
 
 export const ALLOWED_ID = 1001;
@@ -43,6 +44,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   runMigrations(db, now);
   const logLines: string[] = [];
   let n = 0;
+  const keys = createLedgerKeyring();
   const bot = createBot({
     token: '123456:test-token',
     allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
@@ -54,6 +56,7 @@ export function createTestBot(options: TestBotOptions = {}) {
     now: () => now,
     defaultTimezone: 'Europe/Belgrade',
     defaultCurrency: 'RSD',
+    keys,
     botInfo,
   });
 
@@ -68,7 +71,7 @@ export function createTestBot(options: TestBotOptions = {}) {
     return Promise.resolve({ ok: true, result: true as never });
   });
 
-  return { bot, db, calls, logLines };
+  return { bot, db, calls, logLines, keys };
 }
 
 // Log fields that can contain arbitrary digits unrelated to expense content.

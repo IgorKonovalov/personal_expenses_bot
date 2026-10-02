@@ -5,6 +5,7 @@ import { findActiveLedger, type Ledger } from '../db/ledgers.js';
 import type { User } from '../db/users.js';
 import { summarizeConverted } from '../domain/aggregate.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { openExpenses, type KeyDeps } from './ledgerKeys.js';
 import type { Money } from '../domain/money.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import { boundGroupLedger, peopleOf, type PersonTotals } from './periodSummary.js';
@@ -26,25 +27,26 @@ export interface TodaySummary {
   readonly people?: readonly PersonTotals[];
 }
 
-type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'>;
+type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> & Pick<KeyDeps, 'keys'>;
 
 // Totals of the active ledger's non-deleted expenses whose occurred_on is the ledger's local
 // today, in its effective timezone (ADR-0015). Converted and summed in the domain, not SQL
-// (ADR-0002, ADR-0022).
+// (ADR-0002, ADR-0022). A locked sealed ledger (ADR-0020) reads as `locked`.
 export function todaySummary(
   deps: Deps,
   input: { readonly user: User; readonly now: Date },
-): TodaySummary {
+): TodaySummary | { readonly kind: 'locked' } {
   const { db } = deps;
   const ledger = findActiveLedger(db, input.user.id);
   if (ledger === undefined) throw new Error(`user ${input.user.id} has no active ledger`);
   const date = localDateOf(input.now, effectiveTimezone(deps, input.user, ledger));
-  const expenses = listLedgerExpensesOn(db, {
-    ledgerId: ledger.id,
-    memberId: input.user.id,
-    occurredOn: date,
-  });
-  return { ledger, date, ...convertedTotals(db, ledger, date, expenses) };
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesOn(db, { ledgerId: ledger.id, memberId: input.user.id, occurredOn: date }),
+  );
+  if (opened.kind === 'locked') return opened;
+  return { ledger, date, ...convertedTotals(db, ledger, date, opened.expenses) };
 }
 
 // A bound group's today in the ledger's timezone, with the per-person section. Undefined for an
@@ -57,11 +59,18 @@ export function groupTodaySummary(
   if (bound === undefined) return undefined;
   const { ledger } = bound;
   const date = bound.today(input.now);
-  const expenses = listLedgerExpensesOn(deps.db, {
-    ledgerId: ledger.id,
-    memberId: bound.readerId,
-    occurredOn: date,
-  });
+  // A shared ledger is never sealed: openExpenses only passes its rows through.
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesOn(deps.db, {
+      ledgerId: ledger.id,
+      memberId: bound.readerId,
+      occurredOn: date,
+    }),
+  );
+  if (opened.kind === 'locked') throw new Error(`group ledger ${ledger.id} is sealed`);
+  const expenses = opened.expenses;
   const rateOf = rateLookupBetween(deps.db, date, date);
   return {
     ledger,

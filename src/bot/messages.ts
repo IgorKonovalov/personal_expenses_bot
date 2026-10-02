@@ -793,6 +793,53 @@ export const messages = {
   currencyForbidden: (ledger: LedgerRef): string =>
     `Валюту «${ledgerName(ledger)}» может изменить только владелец`,
 
+  // Sealed personal ledgers (ADR-0020). A secret the user types is deleted at once; the bot
+  // never repeats it.
+  settingsEncryptionButton: 'Шифрование',
+  encryptionEnablePrompt: joinHtml(
+    [
+      html`<b>Шифрование личного учёта</b>`,
+      html`Суммы, описания и категории трат будут храниться зашифрованными. Записывать траты можно как обычно. Чтобы увидеть итоги, бюджет или карточку траты, учёт нужно открыть паролем: /unlock.`,
+      html`Шифрование защищает базу данных и резервные копии. Оно не защищает от того, кто управляет ботом и может изменить его код, и от Telegram: траты и пароль проходят через Telegram.`,
+      html`Если забыть и пароль, и код восстановления, траты не вернуть. Выключить шифрование нельзя.`,
+      html`Отправьте пароль не короче 10 символов. Я сразу удалю сообщение с ним.`,
+    ],
+    '\n\n',
+  ),
+  // Asked above the prompt again; the flow stays pending.
+  passphraseTooShort: html`Пароль слишком короткий: нужно не меньше 10 символов.`,
+  encryptionHasExpenses: html`В учёте уже есть траты. Шифрование пока можно включить только в учёте без трат.`,
+  encryptionScreen: (state: 'locked' | 'unlocked'): Html =>
+    joinHtml(
+      [
+        html`<b>Шифрование личного учёта</b>`,
+        state === 'locked'
+          ? html`Включено. Учёт закрыт, открыть: /unlock.`
+          : html`Включено. Учёт открыт.`,
+      ],
+      '\n',
+    ),
+  // Sent as its own message, deleted when the user taps the button under it.
+  recoveryCode: (code: string): Html =>
+    joinHtml(
+      [
+        html`<b>Код восстановления</b>`,
+        html`<code>${code}</code>`,
+        html`Если забудете пароль, этот код вернёт доступ к учёту. Сохраните его в надёжном месте, например в менеджере паролей. Я больше не покажу этот код.`,
+        html`Нажмите «Сохранил», и я удалю это сообщение.`,
+      ],
+      '\n\n',
+    ),
+  recoverySavedButton: 'Сохранил',
+  ledgerLocked: html`Учёт зашифрован и закрыт. Откройте его паролем: /unlock.`,
+  // A redelivered expense in a locked ledger: it stays recorded, and nothing about it is shown.
+  sealedDuplicate: html`Уже записано. Учёт зашифрован и закрыт, открыть: /unlock.`,
+  unlockPrompt: html`Отправьте пароль учёта. Я сразу удалю сообщение с ним.`,
+  unlockNotSealed: html`Личный учёт не зашифрован. Включить шифрование: /settings, затем «Шифрование».`,
+  alreadyUnlocked: html`Учёт уже открыт.`,
+  unlocked: html`Учёт открыт. Итоги за сегодня: /today.`,
+  wrongPassphrase: html`Неверный пароль. Учёт по-прежнему закрыт. Попробовать ещё раз: /unlock.`,
+
   // The /budget screen (ADR-0017). Amounts are in the budget's currency, foreign spending
   // converted into it (ADR-0023); spend with no rate is listed as not counted. `readOnly` leaves out what only the owner can act on.
   budgetScreen: ({ ledger, status }: BudgetScreenView, readOnly = false): Html => {

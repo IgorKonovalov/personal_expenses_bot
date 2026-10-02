@@ -10,7 +10,8 @@ export async function sendToday(ctx: Context, deps: HandlerDeps): Promise<void> 
   if (ctx.from === undefined) return;
   const now = deps.now();
   const user = ensureUser(deps, ctx.from.id, now);
-  await replyHtml(ctx, messages.today(todaySummary(deps, { user, now })));
+  const summary = todaySummary(deps, { user, now });
+  await replyHtml(ctx, 'kind' in summary ? messages.ledgerLocked : messages.today(summary));
 }
 
 export function registerToday(bot: Composer<Context>, deps: HandlerDeps): void {

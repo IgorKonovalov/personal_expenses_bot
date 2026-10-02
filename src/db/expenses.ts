@@ -22,6 +22,26 @@ export interface Expense {
   readonly category: ExpenseCategory | null;
 }
 
+// A row of a sealed ledger (ADR-0020): amount, description and category live only inside
+// `sealed`, which the ledger-keys service opens. The compiler sends every reader through it.
+export interface SealedExpense {
+  readonly id: ExpenseId;
+  readonly ledgerId: LedgerId;
+  readonly createdBy: UserId;
+  readonly currency: CurrencyCode;
+  readonly occurredAt: Date;
+  readonly occurredOn: LocalDate;
+  readonly sourceKey: string;
+  readonly deletedAt: Date | null;
+  readonly sealed: Buffer;
+}
+
+export type StoredExpense = Expense | SealedExpense;
+
+export function isSealed(expense: StoredExpense): expense is SealedExpense {
+  return 'sealed' in expense;
+}
+
 export interface ExpenseCategory {
   readonly id: CategoryId;
   readonly name: string;
@@ -34,24 +54,28 @@ export type NewExpense = Omit<Expense, 'deletedAt' | 'category'> & {
   readonly descriptionKey?: string;
 };
 
+export type NewSealedExpense = Omit<SealedExpense, 'deletedAt'> & { readonly createdAt: Date };
+
 interface ExpenseRow {
   id: string;
   ledger_id: string;
   created_by: string;
-  amount_minor: number;
+  // NULL exactly when `sealed` is set.
+  amount_minor: number | null;
   currency: string;
-  description: string;
+  description: string | null;
   occurred_at: string;
   occurred_on: string;
   source_key: string;
   deleted_at: string | null;
   category_id: number | null;
   category_name: string | null;
+  sealed: Buffer | null;
 }
 
 const COLUMNS = `e.id, e.ledger_id, e.created_by, e.amount_minor, e.currency, e.description,
   e.occurred_at, e.occurred_on, e.source_key, e.deleted_at,
-  e.category_id, c.name AS category_name`;
+  e.category_id, c.name AS category_name, e.sealed`;
 const FROM = 'expenses e LEFT JOIN categories c ON c.id = e.category_id';
 
 // Inserts unless an expense with the same source_key exists; either way returns the stored row.
@@ -102,6 +126,41 @@ export function insertExpenseOrGetExisting(
   const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
   return { expense: stored, created: changes === 1 };
+}
+
+// The sealed twin of insertExpenseOrGetExisting: the plaintext columns stay NULL.
+export function insertSealedExpenseOrGetExisting(
+  db: Db,
+  expense: NewSealedExpense,
+): { expense: StoredExpense; created: boolean } {
+  const { changes } = db
+    .prepare<[string, string, string, string, string, string, string, string, Buffer]>(
+      `INSERT INTO expenses (id, ledger_id, created_by, currency, occurred_at, occurred_on,
+                             source_key, created_at, sealed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (source_key) DO NOTHING`,
+    )
+    .run(
+      expense.id,
+      expense.ledgerId,
+      expense.createdBy,
+      expense.currency,
+      expense.occurredAt.toISOString(),
+      expense.occurredOn,
+      expense.sourceKey,
+      expense.createdAt.toISOString(),
+      expense.sealed,
+    );
+  const stored = findStoredExpenseBySourceKey(db, expense.sourceKey);
+  if (stored === undefined) throw new Error('expense vanished after insert');
+  return { expense: stored, created: changes === 1 };
+}
+
+export function findStoredExpenseBySourceKey(db: Db, sourceKey: string): StoredExpense | undefined {
+  const row = db
+    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.source_key = ?`)
+    .get(sourceKey);
+  return row === undefined ? undefined : toStoredExpense(row);
 }
 
 export function findExpenseBySourceKey(db: Db, sourceKey: string): Expense | undefined {
@@ -235,12 +294,22 @@ export function setExpenseDate(
   return changes === 1;
 }
 
+// Every row of the ledger, deleted or not.
+export function countLedgerExpenses(db: Db, ledgerId: LedgerId): number {
+  return (
+    db
+      .prepare<[string], number>('SELECT COUNT(*) FROM expenses WHERE ledger_id = ?')
+      .pluck()
+      .get(ledgerId) ?? 0
+  );
+}
+
 // Non-deleted expenses of one ledger on one local date, visible only to members of that
 // ledger. Rows only: totals are computed in the domain (ADR-0002).
 export function listLedgerExpensesOn(
   db: Db,
   query: { ledgerId: LedgerId; memberId: UserId; occurredOn: LocalDate },
-): Expense[] {
+): StoredExpense[] {
   return db
     .prepare<[string, string, string], ExpenseRow>(
       `SELECT ${COLUMNS}
@@ -250,7 +319,7 @@ export function listLedgerExpensesOn(
         ORDER BY e.occurred_at, e.id`,
     )
     .all(query.memberId, query.ledgerId, query.occurredOn)
-    .map(toExpense);
+    .map(toStoredExpense);
 }
 
 // Non-deleted expenses of one ledger with occurred_on in [from, to], both inclusive, visible only
@@ -271,9 +340,30 @@ export function listLedgerExpensesBetween(
     .map(toExpense);
 }
 
+function toStoredExpense(row: ExpenseRow): StoredExpense {
+  if (row.sealed === null) return toExpense(row);
+  const currency = toCurrencyCode(row.currency);
+  if (currency === undefined) throw new Error(`expense ${row.id} has an unknown currency`);
+  return {
+    id: row.id as ExpenseId,
+    ledgerId: row.ledger_id as LedgerId,
+    createdBy: row.created_by as UserId,
+    currency,
+    occurredAt: new Date(row.occurred_at),
+    occurredOn: row.occurred_on as LocalDate,
+    sourceKey: row.source_key,
+    deletedAt: row.deleted_at === null ? null : new Date(row.deleted_at),
+    sealed: row.sealed,
+  };
+}
+
+// A plaintext row. A sealed row read here is a reader that skipped the decrypting seam.
 function toExpense(row: ExpenseRow): Expense {
   const currency = toCurrencyCode(row.currency);
   if (currency === undefined) throw new Error(`expense ${row.id} has an unknown currency`);
+  if (row.amount_minor === null || row.description === null) {
+    throw new Error(`expense ${row.id} is sealed`);
+  }
   return {
     id: row.id as ExpenseId,
     ledgerId: row.ledger_id as LedgerId,

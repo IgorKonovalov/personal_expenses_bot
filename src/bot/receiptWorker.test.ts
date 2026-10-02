@@ -8,6 +8,7 @@ import type { FetchOutcome, ReceiptFetcher } from '../services/fetchDueReceipt.j
 import { provisionUser } from '../services/provisionUser.js';
 import { recordReceipt } from '../services/recordReceipt.js';
 import { startReceiptWorker, type ReceiptWorkerDeps } from './receiptWorker.js';
+import { createLedgerKeyring } from '../services/ledgerKeys.js';
 
 const T0 = new Date('2026-10-01T08:00:00Z');
 const ME_LINK =
@@ -38,6 +39,7 @@ describe('startReceiptWorker', () => {
       now: () => T0,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'EUR',
+      keys: createLedgerKeyring(),
       fetchers: { RS: fetcher, ME: fetcher },
     };
     const user = provisionUser(deps, {

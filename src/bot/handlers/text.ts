@@ -72,6 +72,9 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
         await replyHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
+      case 'sealedDuplicate':
+        await replyHtml(ctx, messages.sealedDuplicate);
+        return;
       case 'futureDate':
         await replyHtml(ctx, messages.futureDate);
         return;

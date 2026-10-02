@@ -14,6 +14,7 @@ import { startRateWorker } from './fx/rateWorker.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
 import { createLogger } from './logger.js';
 import { announceVersion } from './services/announceVersion.js';
+import { createLedgerKeyring } from './services/ledgerKeys.js';
 import { seedLedgersWithoutCategories } from './services/seedCategories.js';
 import { readAppVersion } from './version.js';
 
@@ -40,6 +41,9 @@ const backups: BackupSchedule | undefined =
       });
 if (backups === undefined) logger.info('backups off: BACKUP_DIR unset');
 
+// Unlocked sealed-ledger keys live only in this process: a restart locks every ledger.
+const keys = createLedgerKeyring();
+
 const bot = createBot({
   token: config.botToken,
   allowedTelegramIds: config.allowedTelegramIds,
@@ -49,6 +53,7 @@ const bot = createBot({
   now: () => new Date(),
   defaultTimezone: config.defaultTimezone,
   defaultCurrency: config.defaultCurrency,
+  keys,
 });
 
 await registerCommands(bot, logger);
@@ -62,6 +67,7 @@ const receiptWorker = startReceiptWorker(
     now: () => new Date(),
     defaultTimezone: config.defaultTimezone,
     defaultCurrency: config.defaultCurrency,
+    keys,
     fetchers: { RS: createRsFetcher(), ME: createMeFetcher() },
   },
   bot.api,

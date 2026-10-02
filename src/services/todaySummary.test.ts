@@ -3,6 +3,7 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js';
 import { todaySummary } from './todaySummary.js';
@@ -11,7 +12,7 @@ import { todaySummary } from './todaySummary.js';
 const NOW = new Date('2026-09-30T10:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let user: User;
 let messageId: number;
 
@@ -24,6 +25,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   user = provisionUser(deps, {
     provider: 'telegram',
@@ -47,6 +49,13 @@ function record(text: string, sentAt: string) {
   return result.expense;
 }
 
+// A plaintext ledger never reads as locked.
+function today() {
+  const summary = todaySummary(deps, { user, now: NOW });
+  if ('kind' in summary) throw new Error('a plaintext ledger read as locked');
+  return summary;
+}
+
 describe('todaySummary', () => {
   it("sums the user's local today per currency, excluding yesterday and undone", () => {
     record('450 coffee', '2026-09-29T22:30:00Z'); // 00:30 local on the 30th
@@ -56,7 +65,7 @@ describe('todaySummary', () => {
     const undone = record('50 mistake', '2026-09-30T09:30:00Z');
     expect(undoExpense(deps, { user, expenseId: undone.id, now: NOW }).kind).toBe('undone');
 
-    const summary = todaySummary(deps, { user, now: NOW });
+    const summary = today();
 
     expect(summary.date).toBe('2026-09-30');
     expect(Object.fromEntries(summary.totals)).toEqual({ RSD: 46250, EUR: 1250 });
@@ -66,6 +75,6 @@ describe('todaySummary', () => {
   it('is empty on a day with nothing recorded', () => {
     record('100 late snack', '2026-09-29T21:30:00Z');
 
-    expect(todaySummary(deps, { user, now: NOW }).totals.size).toBe(0);
+    expect(today().totals.size).toBe(0);
   });
 });

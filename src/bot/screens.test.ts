@@ -5,6 +5,7 @@ import { createLogger } from '../logger.js';
 import type { HandlerDeps } from './bot.js';
 import { setAnchor } from '../services/flowSessions.js';
 import { backRow, cancelRow, requireScreen } from './screens.js';
+import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import {
   ALLOWED_ID,
   SECOND_ALLOWED_ID,
@@ -53,6 +54,7 @@ describe('requireScreen', () => {
       now: () => new Date('2026-09-30T10:00:00Z'),
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD' as const,
+      keys: createLedgerKeyring(),
     };
   }
 

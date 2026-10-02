@@ -1,6 +1,6 @@
 # 0019: Encrypted personal ledger: recording stays open, reading needs the owner's passphrase
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0020 ([0020-sealed-ledgers-write-open-read-locked.md](../adrs/0020-sealed-ledgers-write-open-read-locked.md))
 
@@ -283,7 +283,7 @@ are stored per wrap, so they can change later without a migration.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | not started | |
+| 1: Walking skeleton | dev | done | committed with this row |
 | 2: Every read path honors the lock | dev | not started | |
 | 3: Enable on a ledger with history | dev | not started | |
 | 4: Recovery code and passphrase change | dev | not started | |
@@ -291,6 +291,30 @@ are stored per wrap, so they can change later without a migration.
 | 6: Live check in Telegram | human | not started | |
 
 ### Notes
+
+- Phase 1: the migration is `0012_sealed_ledgers.sql`; `0011` is `fx_rates` (Plan 0022). The
+  rebuild runs with `foreign_keys` ON inside the runner's transaction, so `receipts` and
+  `receipt_items` are copied to temp tables, deleted, and put back after the swap. `migrate.ts`
+  is unchanged. Two partial unique indexes keep one member wrap per user and one recovery wrap
+  per ledger, since `UNIQUE (ledger_id, wrapper, user_id)` treats NULL user ids as distinct.
+- Phase 1: files outside `Files touched`: `src/index.ts` and `src/bot/testHarness.ts` create the
+  one keyring and pass it to `createBot` and the receipt worker (`HandlerDeps.keys`);
+  `src/bot/callbackData.ts` gains `set:enc` and `enc:saved`; `src/bot/handlers/text.ts` replies
+  to the new `sealedDuplicate` result; `bot.test.ts`, `receiptWorker.test.ts`,
+  `screens.test.ts` and `todaySummary.test.ts` pass a keyring, and the settings hub keyboard in
+  `bot.test.ts` gains the «Шифрование» row. The bot-harness test is a new
+  `src/bot/handlers/unlock.test.ts`.
+- Phase 1: done ahead of its phase: the history step is skipped for a sealed ledger (Phase 2),
+  and the recovery code's generation and base32 format (Phase 4), since enable shows it.
+- Phase 1: `recordExpense` takes the keyring as optional; without one a sealed row reads as
+  locked. A redelivered expense of a locked sealed ledger returns `sealedDuplicate` and gets its
+  own reply.
+- Phase 1: enabling leaves the ledger locked. `/unlock` takes one attempt per prompt: a wrong
+  passphrase answers the flow, so the next text is never taken as a passphrase. The passphrase
+  prompts take any text, including expense-shaped text, since `correct horse 42` parses as an
+  expense.
+- Phase 1: `/unlock` is not in the `setMyCommands` list yet; `bot.test.ts` pins that list, and
+  Phase 5 owns the help and command copy.
 
 ### Close triggers
 

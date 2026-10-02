@@ -3,6 +3,7 @@ import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { Logger } from '../logger.js';
+import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { clearFlowOnCommand } from './flows.js';
 import { groupComposer, isGroupChat } from './group/index.js';
@@ -21,6 +22,7 @@ import { registerStart } from './handlers/start.js';
 import { registerSummary } from './handlers/summary.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
+import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
 import { replyHtml } from './render/html.js';
@@ -32,6 +34,8 @@ export interface HandlerDeps {
   readonly now: () => Date;
   readonly defaultTimezone: string;
   readonly defaultCurrency: CurrencyCode;
+  // The process's unlocked sealed-ledger keys (ADR-0020), shared with every worker.
+  readonly keys: LedgerKeyring;
 }
 
 export interface BotOptions extends HandlerDeps {
@@ -73,6 +77,7 @@ export function createBot(options: BotOptions): Bot {
   registerCategories(dm, options);
   registerBudget(dm, options);
   registerSettings(dm, options);
+  registerUnlock(dm, options);
   registerCancel(dm, options);
   registerHelp(dm);
   registerChangelog(dm);

@@ -151,6 +151,10 @@ export const SETTINGS_OPEN = 'set:open';
 export const SETTINGS_CATEGORIES = 'set:cat';
 // The hub scoped to a shared ledger opens that ledger's /budget screen in the anchor.
 export const SETTINGS_BUDGET = 'set:bud';
+// The personal hub's [Шифрование] (ADR-0020): the enable prompt, or the sealed ledger's state.
+export const SETTINGS_ENCRYPTION = 'set:enc';
+// [Сохранил] under the recovery code message deletes that message.
+export const RECOVERY_SAVED = 'enc:saved';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
 export const CURRENCY_PICKER = 'set:cur';
 export const SET_CURRENCY = /^set:cur:([A-Z]{3})$/;

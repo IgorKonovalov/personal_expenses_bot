@@ -3,11 +3,15 @@ import {
   findExpenseById,
   findExpenseBySourceKey,
   findHistoryCategory,
+  findStoredExpenseBySourceKey,
   insertExpenseOrGetExisting,
+  insertSealedExpenseOrGetExisting,
+  isSealed,
   restoreDeletedExpense,
   softDeleteExpense,
   type Expense,
   type ExpenseId,
+  type StoredExpense,
 } from '../db/expenses.js';
 import {
   findActiveLedger,
@@ -24,6 +28,7 @@ import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
 import { resolveTimezone } from '../domain/timezones.js';
 import type { Logger } from '../logger.js';
+import { openExpenses, sealPayload, sealingKey, type KeyDeps } from './ledgerKeys.js';
 import type { ServiceDeps } from './provisionUser.js';
 import { resolveUserTimezone } from './settings.js';
 
@@ -91,6 +96,9 @@ export type RecordExpenseResult =
       readonly description: string;
       readonly ledger: Ledger;
     }
+  // A redelivery of an expense in a sealed ledger that is locked (ADR-0020): it stays recorded,
+  // and nothing about it can be shown.
+  | { readonly kind: 'sealedDuplicate' }
   | { readonly kind: 'invalid' }
   // The text names a date after today; nothing is recorded.
   | { readonly kind: 'futureDate' }
@@ -101,22 +109,22 @@ export type RecordExpenseResult =
 // Records free text into the target ledger, in the category suggestCategory picks (ADR-0008),
 // dated in the ledger's effective timezone. A source key seen before returns the stored expense
 // unchanged, so a redelivered update, or a second tap on a reading, records nothing new.
-export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): RecordExpenseResult {
+// In a sealed ledger (ADR-0020) the amount, description and category are sealed to the ledger's
+// public key, so recording needs no unlock; the suggestion skips the history step, whose key
+// sealed rows don't store. Without a keyring every sealed ledger reads as locked.
+export function recordExpense(
+  deps: RecordDeps & Partial<Pick<KeyDeps, 'keys'>>,
+  input: RecordExpenseInput,
+): RecordExpenseResult {
   const { db, logger } = deps;
   const { user } = input;
 
-  const seen = findExpenseBySourceKey(db, input.sourceKey);
+  const seen = findStoredExpenseBySourceKey(db, input.sourceKey);
   if (seen !== undefined) {
     const ledger = findLedgerForMember(db, seen.ledgerId, user.id);
     if (ledger === undefined) throw new Error(`source key reused across users (${seen.id})`);
     logger.info({ expenseId: seen.id, userId: user.id }, 'duplicate expense delivery');
-    return {
-      kind: 'recorded',
-      expense: seen,
-      ledger,
-      duplicate: true,
-      fallbackCategory: inFallbackCategory(deps, seen),
-    };
+    return storedResult(deps, seen, ledger, true);
   }
 
   const ledger = targetLedger(deps, user, input.target ?? { kind: 'active' });
@@ -131,12 +139,67 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
   if (parsed.kind === 'futureDate') return { kind: 'futureDate' };
   if (parsed.kind !== 'expense') return parsed;
 
+  const publicKey = sealingKey(deps, ledger.id);
   const key = descriptionKey(parsed.description);
   const category = suggestCategory({
     description: parsed.description,
     categories: listActiveCategories(db, ledger.id),
-    historyCategoryId: findHistoryCategory(db, ledger.id, key),
+    historyCategoryId:
+      publicKey === undefined ? findHistoryCategory(db, ledger.id, key) : undefined,
   });
+  const occurredOn = parsed.date ?? sentOn;
+
+  if (publicKey !== undefined) {
+    const id = newExpenseId(deps);
+    const sealed = sealPayload(
+      publicKey,
+      { ledgerId: ledger.id, expenseId: id },
+      {
+        v: 1,
+        amountMinor: parsed.amountMinor,
+        description: parsed.description,
+        categoryId: category.id,
+      },
+    );
+    const { expense: stored, created } = insertSealedExpenseOrGetExisting(db, {
+      id,
+      ledgerId: ledger.id,
+      createdBy: user.id,
+      currency: parsed.currency,
+      occurredAt: input.occurredAt,
+      occurredOn,
+      sourceKey: input.sourceKey,
+      createdAt: input.now,
+      sealed,
+    });
+    logger.info(
+      { expenseId: stored.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },
+      'expense recorded',
+    );
+    if (!created) return storedResult(deps, stored, ledger, true);
+    // What was just sealed, shown on the card without opening it.
+    const expense: Expense = {
+      id,
+      ledgerId: ledger.id,
+      createdBy: user.id,
+      amountMinor: parsed.amountMinor,
+      currency: parsed.currency,
+      description: parsed.description,
+      occurredAt: input.occurredAt,
+      occurredOn,
+      sourceKey: input.sourceKey,
+      deletedAt: null,
+      category: { id: category.id, name: category.name },
+    };
+    return {
+      kind: 'recorded',
+      expense,
+      ledger,
+      duplicate: false,
+      fallbackCategory: inFallbackCategory(deps, expense),
+    };
+  }
+
   const { expense, created } = insertExpenseOrGetExisting(db, {
     id: newExpenseId(deps),
     ledgerId: ledger.id,
@@ -145,7 +208,7 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     currency: parsed.currency,
     description: parsed.description,
     occurredAt: input.occurredAt,
-    occurredOn: parsed.date ?? sentOn,
+    occurredOn,
     sourceKey: input.sourceKey,
     createdAt: input.now,
     categoryId: category.id,
@@ -162,6 +225,36 @@ export function recordExpense(deps: RecordDeps, input: RecordExpenseInput): Reco
     duplicate: !created,
     fallbackCategory: inFallbackCategory(deps, expense),
   };
+}
+
+// A stored row as a recorded result: a sealed one opens while its ledger is unlocked.
+function storedResult(
+  deps: RecordDeps & Partial<Pick<KeyDeps, 'keys'>>,
+  stored: StoredExpense,
+  ledger: Ledger,
+  duplicate: boolean,
+): RecordExpenseResult {
+  const expense = openStored(deps, stored, ledger.id);
+  if (expense === undefined) return { kind: 'sealedDuplicate' };
+  return {
+    kind: 'recorded',
+    expense,
+    ledger,
+    duplicate,
+    fallbackCategory: inFallbackCategory(deps, expense),
+  };
+}
+
+// A sealed row opens only while its ledger is unlocked; undefined otherwise.
+function openStored(
+  deps: RecordDeps & Partial<Pick<KeyDeps, 'keys'>>,
+  stored: StoredExpense,
+  ledgerId: LedgerId,
+): Expense | undefined {
+  if (!isSealed(stored)) return stored;
+  if (deps.keys === undefined) return undefined;
+  const opened = openExpenses({ db: deps.db, keys: deps.keys }, ledgerId, [stored]);
+  return opened.kind === 'open' ? opened.expenses[0] : undefined;
 }
 
 // A stored expense without a category is not in the fallback either.

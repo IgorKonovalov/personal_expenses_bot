@@ -21,6 +21,7 @@ import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
 import { createLogger } from '../logger.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
+import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import { createBot, registerCommands } from './bot.js';
 import {
   BUDGET_CAP,
@@ -1814,6 +1815,7 @@ describe('/budget and the card line (ADR-0017)', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
+      keys: createLedgerKeyring(),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -2344,6 +2346,7 @@ describe('/week and /month', () => {
       now: () => NOW,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
+      keys: createLedgerKeyring(),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -2827,6 +2830,7 @@ describe('/categories screen and text flows', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
+      keys: createLedgerKeyring(),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -3272,6 +3276,7 @@ describe('/settings hub and the timezone picker', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
+      keys: createLedgerKeyring(),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -3305,6 +3310,7 @@ describe('/settings hub and the timezone picker', () => {
         { text: 'Валюта', callback_data: 'set:cur' },
       ],
       [{ text: 'Категории', callback_data: 'set:cat' }],
+      [{ text: 'Шифрование', callback_data: 'set:enc' }],
     ],
   };
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };

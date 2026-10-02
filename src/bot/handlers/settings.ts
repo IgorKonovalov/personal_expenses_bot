@@ -10,6 +10,7 @@ import {
   type CategoriesScreen,
   type SettingsScreen,
 } from '../../services/flowSessions.js';
+import { encryptionState, startEnableFlow } from '../../services/ledgerKeys.js';
 import { activeLedgerCategories } from '../../services/manageCategories.js';
 import {
   screenSettings,
@@ -26,6 +27,7 @@ import {
   SET_TIMEZONE,
   SETTINGS_BUDGET,
   SETTINGS_CATEGORIES,
+  SETTINGS_ENCRYPTION,
   SETTINGS_OPEN,
   TIMEZONE_OTHER,
   TIMEZONE_PAGE,
@@ -74,6 +76,7 @@ export function settingsView(
         markup: InlineKeyboard.from([
           pickers,
           [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
+          [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
         ]),
       }
     : {
@@ -137,6 +140,27 @@ export function timezonePromptView(timezone: string, refusal?: Html): ScreenView
   return {
     text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
     markup: InlineKeyboard.from([cancelRow()]),
+  };
+}
+
+// The enable prompt (ADR-0020), with a refusal line above it when an answer failed.
+export function encryptionPromptView(refusal?: Html): ScreenView {
+  return {
+    text:
+      refusal === undefined
+        ? messages.encryptionEnablePrompt
+        : joinHtml([refusal, messages.encryptionEnablePrompt], '\n\n'),
+    markup: InlineKeyboard.from([cancelRow()]),
+  };
+}
+
+// The sealed personal ledger's state; undefined while encryption is off.
+export function encryptionView(deps: HandlerDeps, user: User): ScreenView | undefined {
+  const state = encryptionState(deps, user);
+  if (state.kind === 'off') return undefined;
+  return {
+    text: messages.encryptionScreen(state.kind),
+    markup: InlineKeyboard.from([backRow(SETTINGS_OPEN)]),
   };
 }
 
@@ -215,6 +239,24 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     setAnchor(deps, tap.user, anchor);
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, anchor, categoriesView(view, screen));
+  });
+
+  // The personal hub's [Шифрование]: the sealed ledger's state, or the enable prompt.
+  bot.callbackQuery(SETTINGS_ENCRYPTION, async (ctx) => {
+    const tap = await settingsTap(ctx, deps);
+    if (tap === undefined) return;
+    if (tap.ledgerId !== undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const sealed = encryptionView(deps, tap.user);
+    await ctx.answerCallbackQuery();
+    if (sealed !== undefined) {
+      await renderAnchor(ctx, tap.anchor, sealed);
+      return;
+    }
+    startEnableFlow(deps, tap.user, deps.now());
+    await renderAnchor(ctx, tap.anchor, encryptionPromptView());
   });
 
   // The scoped hub's [Бюджет]: the same budget screen, acting on the hub's ledger. Only its owner
