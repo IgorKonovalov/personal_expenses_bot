@@ -1,6 +1,6 @@
 # 0026: Monthly summary push: last period's report arrives on its own
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0025](0025-recurring-expenses-and-reminders.md) (the scheduler),
 > [Plan 0019](0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](0028-donations.md) (`/donate`)
