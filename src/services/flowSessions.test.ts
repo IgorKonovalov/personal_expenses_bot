@@ -152,6 +152,23 @@ describe('routeText (ADR-0009)', () => {
     expect(route('tg:1:1', at(25 * 60 * MIN))).toEqual({ kind: 'free', expiredFlow: false });
   });
 
+  it.each([
+    'encryptionEnable',
+    'unlock',
+    'recoverCode',
+    'recoverPassphrase',
+    'passphraseChange',
+  ] as const)(
+    'routes the first text after an expired %s prompt as a possible secret, for 24 hours',
+    (kind) => {
+      startFlow({ db }, user, { kind, ledgerId }, T);
+
+      expect(route('tg:1:1', at(9 * MIN))).toEqual({ kind: 'flow', flow: { kind, ledgerId } });
+      expect(route('tg:1:1', at(10 * MIN + 1000))).toEqual({ kind: 'expiredSecret' });
+      expect(route('tg:1:1', at(25 * 60 * MIN))).toEqual({ kind: 'free', expiredFlow: false });
+    },
+  );
+
   it('ignores a redelivery of the answer that completed the flow', () => {
     startFlow({ db }, user, { kind: 'categoryAdd', ledgerId }, T);
     completeFlow({ db }, user, 'tg:1:9');

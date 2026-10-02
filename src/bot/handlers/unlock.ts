@@ -1,6 +1,6 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { User } from '../../db/users.js';
-import type { ScreenAnchor, SecretFlow } from '../../services/flowSessions.js';
+import { cancelFlow, type ScreenAnchor, type SecretFlow } from '../../services/flowSessions.js';
 import {
   changePassphrase,
   enableEncryption,
@@ -32,6 +32,18 @@ async function deleteSecretMessage(ctx: Context, deps: HandlerDeps): Promise<voi
       'secret message delete failed',
     );
   }
+}
+
+// The first text after a secret prompt expired (ADR-0020): deleted unread, since it may be the
+// secret, and the prompt is dropped, so the next text is free again.
+export async function answerExpiredSecret(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+): Promise<void> {
+  await deleteSecretMessage(ctx, deps);
+  cancelFlow(deps, user);
+  await replyHtml(ctx, messages.secretPromptExpired);
 }
 
 async function show(ctx: Context, anchor: ScreenAnchor | undefined, view: ScreenView) {

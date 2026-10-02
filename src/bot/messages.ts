@@ -853,6 +853,8 @@ export const messages = {
   changePassphraseButton: 'Сменить пароль',
   changePassphrasePrompt: html`Отправьте новый пароль не короче 10 символов. Я сразу удалю сообщение с ним. Код восстановления останется прежним.`,
   passphraseChanged: html`Пароль изменён. Код восстановления прежний.`,
+  // The first text after a secret prompt expired: deleted unread, since it may be the secret.
+  secretPromptExpired: html`Время ответа истекло, и я удалил это сообщение: в нём мог быть пароль или код. Если это была трата, отправьте её ещё раз.`,
 
   // The /budget screen (ADR-0017). Amounts are in the budget's currency, foreign spending
   // converted into it (ADR-0023); spend with no rate is listed as not counted. `readOnly` leaves out what only the owner can act on.

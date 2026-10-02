@@ -198,6 +198,9 @@ export type TextRoute =
   // The answer that last completed a flow, delivered again: record nothing, reply nothing.
   | { readonly kind: 'redelivered' }
   | { readonly kind: 'flow'; readonly flow: Flow }
+  // The first text after a secret prompt (ADR-0020) expired, within the reply window: it may
+  // carry the passphrase or the code, so it is never read as an expense.
+  | { readonly kind: 'expiredSecret' }
   // Free text: an expense attempt. `expiredFlow` when a flow expired within the reply window.
   | { readonly kind: 'free'; readonly expiredFlow: boolean };
 
@@ -217,7 +220,9 @@ export function routeText(
     const flow = parseFlow(pending.kind, pending.payload);
     if (flow !== undefined) return { kind: 'flow', flow };
   }
-  return { kind: 'free', expiredFlow: now < expiresAt + EXPIRED_REPLY_WINDOW_MS };
+  const inWindow = now < expiresAt + EXPIRED_REPLY_WINDOW_MS;
+  if (inWindow && isSecretKind(pending.kind)) return { kind: 'expiredSecret' };
+  return { kind: 'free', expiredFlow: inWindow };
 }
 
 // A row written by a later version, or damaged, reads as no screen rather than failing.

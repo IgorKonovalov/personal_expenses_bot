@@ -378,6 +378,12 @@ are stored per wrap, so they can change later without a migration.
   `sealedDuplicate` and `src/bot/handlers/ambiguous.ts` treats any non-`recorded` result alike.
 - Followup (not acted on): README's Roadmap still names an encrypted personal ledger among the
   active plans.
+- Fix (review minor: a failing post-seal scrub lost the recovery code): `enableEncryption`
+  logs a scrub failure with ids and still returns the code. `811d2c1`.
+- Fix (review minor: a secret sent after its prompt expired): the first text within the
+  24-hour reply window after an expired secret prompt routes as `expiredSecret`. It is deleted
+  unread, the prompt is dropped, and `secretPromptExpired` asks to resend an expense. Committed
+  with this line.
 
 ### Close triggers
 
@@ -400,7 +406,7 @@ are stored per wrap, so they can change later without a migration.
   messages are deleted. `/help` has one new line, its menu line names encryption. README has an
   `### Encrypted ledger` section. Existing databases go through the `expenses` rebuild at boot.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 69 files,
-  941 tests; `pnpm build` exit 0 (`dist/db/migrations` holds `0012_sealed_ledgers.sql`);
+  948 tests (after the fix pass); `pnpm build` exit 0 (`dist/db/migrations` holds `0012_sealed_ledgers.sql`);
   `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236 tests;
   `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests; `node scripts/check-doc-links.mjs`
   exit 0, 240 links.

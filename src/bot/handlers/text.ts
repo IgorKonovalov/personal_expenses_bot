@@ -15,6 +15,7 @@ import { cardFor, cardView } from './card.js';
 import { sendHelp } from './help.js';
 import { answerReceipt } from './receipt.js';
 import { ensureUser } from './start.js';
+import { answerExpiredSecret } from './unlock.js';
 
 // Text that isn't a command or a menu tap, routed by ADR-0009: a redelivered flow answer is
 // ignored, a pending flow takes the text as its answer, and anything else is an expense attempt.
@@ -29,6 +30,10 @@ export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
     const sourceKey = `tg:${ctx.chat.id}:${ctx.message.message_id}`;
     const route = routeText(deps, { user, inputKey: sourceKey, now });
     if (route.kind === 'redelivered') return;
+    if (route.kind === 'expiredSecret') {
+      await answerExpiredSecret(ctx, deps, user);
+      return;
+    }
     if (route.kind === 'flow') {
       await answerFlow(ctx, deps, {
         user,

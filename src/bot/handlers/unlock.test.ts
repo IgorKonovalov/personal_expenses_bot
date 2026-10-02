@@ -30,6 +30,8 @@ const PASSPHRASE = 'correct horse 42';
 
 // The harness bot, but sendMessage answers with a real message, so screens get an anchor.
 function sealedBot() {
+  // Movable, for the prompt expiry.
+  const clock = { now: NOW };
   const db = openDatabase(':memory:');
   runMigrations(db, NOW);
   const logLines: string[] = [];
@@ -41,10 +43,10 @@ function sealedBot() {
     logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
     db,
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
-    now: () => NOW,
+    now: () => clock.now,
     defaultTimezone: 'Europe/Belgrade',
     defaultCurrency: 'RSD',
-    keys: createLedgerKeyring(() => NOW),
+    keys: createLedgerKeyring(() => clock.now),
     botInfo: createTestBot().bot.botInfo,
   });
   const calls: ApiCall[] = [];
@@ -57,7 +59,7 @@ function sealedBot() {
   });
   let updateId = 0;
   const say = (text: string, id: number) =>
-    bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: id, text, date: NOW }));
+    bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: id, text, date: clock.now }));
   const tap = (data: string, id: number) =>
     bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: id }));
   const sent = () =>
@@ -68,7 +70,7 @@ function sealedBot() {
     calls
       .filter((call) => call.method === 'deleteMessage')
       .map((call) => (call.payload as { message_id: number }).message_id);
-  return { db, calls, logLines, say, tap, sent, deleted };
+  return { db, clock, calls, logLines, say, tap, sent, deleted };
 }
 
 describe('a sealed personal ledger in the bot', () => {
@@ -307,6 +309,23 @@ describe('/recover and the passphrase change in the bot', () => {
     await say('another passphrase', 13);
     expect(deleted()).toEqual([13]);
     expect(sent()).toEqual([messages.passphraseChanged]);
+  });
+
+  it('deletes the first text after an expired prompt unread, and records the next one', async () => {
+    const { db, clock, calls, say, sent, deleted } = await enabled();
+    await say('/unlock', 10);
+
+    // Past the 10-minute prompt, an expense-shaped secret.
+    clock.now = new Date(NOW.getTime() + 11 * 60_000);
+    calls.length = 0;
+    await say('2024 моя кошка', 11);
+    expect(deleted()).toEqual([11]);
+    expect(sent()).toEqual([messages.secretPromptExpired]);
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+
+    await say('450 кофе', 12);
+    expect(deleted()).toEqual([11]);
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
   });
 
   it('a wrong code is deleted and refused, and the ledger stays locked', async () => {
