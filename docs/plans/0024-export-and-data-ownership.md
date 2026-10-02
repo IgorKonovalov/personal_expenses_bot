@@ -1,6 +1,6 @@
 # 0024: Export and data ownership: every expense out as CSV or XLSX, free
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
 > **Related ADRs:** [ADR-0026](../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
@@ -294,13 +294,26 @@ for an XLSX `<v>`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | not started | |
+| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | committed with this row |
 | 2: Every column, the items file, and a formula-safe CSV | dev | not started | |
 | 3: The XLSX writer and the [Excel] button | dev | not started | |
 | 4: Groups, sealed ledgers, help and docs | dev | not started | |
 | 5: Open the files in real apps | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/domain/periods.ts` is unchanged. The ranges and file keys are `exportSpan` in
+  `src/domain/export/rows.ts`, built on `monthOf` and `previous`.
+- Phase 1: the Belgrade 00:30 done-when is asserted in `src/services/exportLedger.test.ts` (the
+  service the handler calls) and `rows.test.ts`, not through the bot harness, whose clock is fixed
+  at 2026-09-29T22:10Z.
+- Phase 1: the double-tap guard is `createTapGuard` in `src/bot/callbacks.ts`. The dropped tap is
+  answered silently by the dispatcher.
+- Phase 1: the column headers, sheet name and file stem live in `messages` and are passed to
+  `expensesTable`, so the domain holds no copy. `/export` sits after `/categories` in
+  `messages.commands`; the pinned `registerCommands` test is updated.
+- Phase 1: a format tap on a locked sealed ledger already answers `ledgerLockedToast` and sends
+  nothing, since the read goes through `openExpenses`.
 
 ### Close triggers
 

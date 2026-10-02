@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot } from 'grammy';
+import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
@@ -373,7 +373,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help and /changelog from messages', async () => {
+  it('registers /today, /week, /month, /budget, /categories, /export, /settings, /unlock, /lock, /help and /changelog from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -388,11 +388,12 @@ describe('command registration at boot', () => {
             { command: 'month', description: messages.commands[2].description },
             { command: 'budget', description: messages.commands[3].description },
             { command: 'categories', description: messages.commands[4].description },
-            { command: 'settings', description: messages.commands[5].description },
-            { command: 'unlock', description: messages.commands[6].description },
-            { command: 'lock', description: messages.commands[7].description },
-            { command: 'help', description: messages.commands[8].description },
-            { command: 'changelog', description: messages.commands[9].description },
+            { command: 'export', description: messages.commands[5].description },
+            { command: 'settings', description: messages.commands[6].description },
+            { command: 'unlock', description: messages.commands[7].description },
+            { command: 'lock', description: messages.commands[8].description },
+            { command: 'help', description: messages.commands[9].description },
+            { command: 'changelog', description: messages.commands[10].description },
           ],
         },
       },
@@ -4525,5 +4526,197 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     for (const line of logLines) {
       for (const secret of secrets) expect(line, secret).not.toContain(secret);
     }
+  });
+});
+
+interface SentDocument {
+  readonly chatId: unknown;
+  readonly filename: string | undefined;
+  readonly bytes: Buffer;
+}
+
+// The documents the bot sent, with the bytes each InputFile holds.
+async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]> {
+  return Promise.all(
+    calls
+      .filter((call) => call.method === 'sendDocument')
+      .map(async (call) => {
+        const payload = call.payload as { chat_id: unknown; document: InputFile };
+        const raw = await payload.document.toRaw();
+        if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
+        return {
+          chatId: payload.chat_id,
+          filename: payload.document.filename,
+          bytes: Buffer.from(raw),
+        };
+      }),
+  );
+}
+
+// A CSV's lines after the BOM, without the final CRLF.
+function csvLines(bytes: Buffer): string[] {
+  return bytes.subarray(3).toString('utf8').split('\r\n').slice(0, -1);
+}
+
+describe('/export (ADR-0026)', () => {
+  const rangeKeyboard = {
+    inline_keyboard: [
+      [
+        { text: 'Этот месяц', callback_data: 'xp:r:tm' },
+        { text: 'Прошлый месяц', callback_data: 'xp:r:pm' },
+      ],
+      [
+        { text: 'Этот год', callback_data: 'xp:r:ty' },
+        { text: 'Всё время', callback_data: 'xp:r:all' },
+      ],
+    ],
+  };
+  const formatKeyboard = (range: string) => ({
+    inline_keyboard: [
+      [
+        { text: 'CSV', callback_data: `xp:f:${range}:csv` },
+        { text: 'Excel', callback_data: `xp:f:${range}:xlsx` },
+      ],
+      [{ text: '← Назад', callback_data: 'xp:back' }],
+    ],
+  });
+
+  async function withTwoExpenses() {
+    const harness = createTestBot();
+    await harness.bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '450 кофе' }));
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 2, messageId: 2, text: '12,50 EUR такси' }),
+    );
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('asks for the range, then the format in place, and [← Назад] goes back', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:r:pm', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:back', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'sendMessage',
+      'answerCallbackQuery',
+      'editMessageText',
+      'answerCallbackQuery',
+      'editMessageText',
+    ]);
+    expect(calls[0]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+    expect(calls[2]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Формат файла?',
+      reply_markup: formatKeyboard('pm'),
+    });
+    expect(calls[4]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+  });
+
+  it('sends a CSV of 450 кофе and 12,50 EUR такси for all time, then closes the picker', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:r:all', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 5, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents).toHaveLength(1);
+    const [csv] = documents;
+    expect(csv?.chatId).toBe(ALLOWED_ID);
+    expect(csv?.filename).toBe('expenses-all.csv');
+    expect([...(csv?.bytes.subarray(0, 3) ?? [])]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = csvLines(csv?.bytes ?? Buffer.alloc(0));
+    expect(lines[0]).toBe('Дата;Сумма;Валюта;Категория;Описание');
+    expect(lines.slice(1)).toEqual([
+      '2026-09-29;450,00;RSD;Кафе и рестораны;кофе',
+      expect.stringMatching(/^2026-09-29;12,50;EUR;[^;]*;такси$/),
+    ]);
+    const edits = calls.filter((call) => call.method === 'editMessageText');
+    expect(edits.at(-1)?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Готово: 2 расхода за всё время',
+    });
+    expect(edits.at(-1)?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('answers [Excel] with «Скоро» and sends nothing', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: messages.exportSoon },
+      },
+    ]);
+  });
+
+  it('leaves a soft-deleted expense out of every range', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const id = db.prepare("SELECT id FROM expenses WHERE description = 'такси'").pluck().get();
+    softDeleteExpense(db, id as ExpenseId, new Date('2026-09-29T22:00:00Z'));
+
+    for (const [i, range] of ['tm', 'ty', 'all'].entries()) {
+      calls.length = 0;
+      await bot.handleUpdate(
+        callbackUpdate({ updateId: 10 + i, data: `xp:f:${range}:csv`, messageId: 20 + i }),
+      );
+      const [csv] = await sentDocuments(calls);
+      expect(csvLines(csv?.bytes ?? Buffer.alloc(0))).toEqual([
+        'Дата;Сумма;Валюта;Категория;Описание',
+        '2026-09-29;450,00;RSD;Кафе и рестораны;кофе',
+      ]);
+    }
+  });
+
+  it('answers a range with no expenses with the empty text and sends no document', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    // Last month is August: both expenses are on 29 September.
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:pm:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(calls[1]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'За этот период расходов нет',
+    });
+    expect(calls[1]?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('sends one document for two format taps when the second arrives while the first builds', async () => {
+    const { bot, calls } = await withTwoExpenses();
+    const gate = Promise.withResolvers<undefined>();
+    const sending = Promise.withResolvers<undefined>();
+    bot.api.config.use(async (prev, method, payload, signal) => {
+      if (method === 'sendDocument') {
+        sending.resolve(undefined);
+        await gate.promise;
+      }
+      return prev(method, payload, signal);
+    });
+
+    const first = bot.handleUpdate(
+      callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }),
+    );
+    await sending.promise;
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+    gate.resolve(undefined);
+    await first;
+
+    expect((await sentDocuments(calls)).map((doc) => doc.filename)).toEqual(['expenses-all.csv']);
+    expect(calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(2);
+  });
+
+  it('is in the command menu', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('export');
   });
 });

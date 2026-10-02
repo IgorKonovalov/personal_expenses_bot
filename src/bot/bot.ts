@@ -13,6 +13,7 @@ import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import { registerExport } from './handlers/export.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
@@ -76,6 +77,7 @@ export function createBot(options: BotOptions): Bot {
   registerSummary(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);
+  registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);
   registerCancel(dm, options);

@@ -12,6 +12,26 @@ export function callbackAnswered(ctx: Context): boolean {
   return answered.has(ctx);
 }
 
+// Runs `work` for a tap unless an earlier tap on the same message is still running it: the
+// double-tap guard for a tap that sends something. Held in memory only, so a redelivery after a
+// restart runs again. Returns false for a dropped tap, and for a tap with no message to key by.
+export function createTapGuard(): (ctx: Context, work: () => Promise<void>) => Promise<boolean> {
+  const busy = new Set<string>();
+  return async (ctx, work) => {
+    const message = ctx.callbackQuery?.message;
+    if (message === undefined) return false;
+    const key = `${message.chat.id}:${message.message_id}`;
+    if (busy.has(key)) return false;
+    busy.add(key);
+    try {
+      await work();
+    } finally {
+      busy.delete(key);
+    }
+    return true;
+  };
+}
+
 export function callbackDispatcher(): MiddlewareFn {
   return async (ctx, next) => {
     if (ctx.callbackQuery === undefined) {

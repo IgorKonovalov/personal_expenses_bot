@@ -1,5 +1,6 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { ExportRange } from '../domain/export/rows.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
@@ -332,6 +333,24 @@ function itemCount(n: number): string {
   return `${n} позиций`;
 }
 
+// `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
+function expenseCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} расходов`;
+  if (ones === 1) return `${n} расход`;
+  if (ones >= 2 && ones <= 4) return `${n} расхода`;
+  return `${n} расходов`;
+}
+
+// An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
+function exportPeriodName(key: string): string {
+  if (key === 'all') return 'всё время';
+  if (/^\d{4}$/.test(key)) return `${key} год`;
+  const month = MONTHS[Number(key.slice(5, 7)) - 1] ?? '';
+  return `${month.toLowerCase()} ${key.slice(0, 4)}`;
+}
+
 // `Test Market · 12 позиций` once fetched, a note once the fetch gave up, nothing while pending.
 function receiptLine({ state, sellerName, itemCount: n }: ReceiptLineView): Html[] {
   if (state === 'fetched' && sellerName !== null) {
@@ -468,6 +487,7 @@ export const messages = {
     { command: 'month', description: 'Траты за месяц по категориям' },
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
+    { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
     { command: 'unlock', description: 'Открыть зашифрованный учёт' },
     { command: 'lock', description: 'Закрыть зашифрованный учёт' },
@@ -989,6 +1009,34 @@ export const messages = {
       budgetCap: html`Похоже на трату. Сейчас я жду лимит категории. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
     },
   },
+
+  // /export (ADR-0026): the range step, then the format step, edited in place.
+  exportRangePrompt: html`Что выгрузить?`,
+  exportRangeButtons: {
+    tm: 'Этот месяц',
+    pm: 'Прошлый месяц',
+    ty: 'Этот год',
+    all: 'Всё время',
+  } satisfies Record<ExportRange, string>,
+  exportFormatPrompt: html`Формат файла?`,
+  exportCsvButton: 'CSV',
+  exportXlsxButton: 'Excel',
+  exportBackButton: '← Назад',
+  exportSoon: 'Скоро',
+  exportEmpty: html`За этот период расходов нет`,
+  // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
+  exportDone: (count: number, key: string): Html =>
+    html`Готово: ${expenseCountWords(count)} за ${exportPeriodName(key)}`,
+  // The file stem and the column headers; a file is `<stem>-<key>.csv`.
+  exportExpensesStem: 'expenses',
+  exportColumns: {
+    date: 'Дата',
+    amount: 'Сумма',
+    currency: 'Валюта',
+    category: 'Категория',
+    description: 'Описание',
+  },
+  exportExpensesSheet: 'Расходы',
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',
