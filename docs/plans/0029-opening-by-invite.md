@@ -153,10 +153,13 @@ between phases. The architect reviews once at the end, in a fresh session. All n
     It allows 30 updates per Telegram id in any rolling 60 s window and silently drops the rest.
     Dropped updates don't count toward the window. It logs the drop at info with the update id only, at most once per id per minute. The admin
     is exempt.
-  - A receipt cap: before decoding, a private-chat receipt (photo, file or link) from a user who
-    already has 20 receipts created on their local today gets «Лимит чеков на сегодня
-    исчерпан, попробуйте завтра» and records nothing. A duplicate receipt («Уже записано»)
-    doesn't count toward the cap. The admin is exempt.
+  - A receipt cap: a private-chat receipt (photo, file or link) from a user who already has 20
+    receipts created on their local today gets «Лимит чеков на сегодня исчерпан, попробуйте
+    завтра» and records nothing. The check sits in `recordReceipt`, after decoding and after the
+    source-key duplicate lookup, and before any insert: the repeat check needs the decoded fiscal
+    id, so a receipt already recorded answers «Уже записано» even past the cap, and doesn't count
+    toward it. Decoding is local; the tax-site fetch the cap protects runs only for a recorded
+    receipt, in the worker (ADR-0018). The admin is exempt.
 - **Files touched:** `src/bot/middleware/rateLimit.ts` (+ test), `src/bot/handlers/receipt.ts`,
   `src/services/recordReceipt.ts`, `src/db/receipts.ts` (+ test), `src/bot/bot.ts`,
   `src/bot/messages.ts`.
