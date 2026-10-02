@@ -1,17 +1,17 @@
 import { listActiveCategories } from '../db/categories.js';
-import {
-  findExpenseBySourceKey,
-  findHistoryCategory,
-  insertExpenseOrGetExisting,
-  type Expense,
-  type ExpenseId,
-} from '../db/expenses.js';
+import { findExpenseBySourceKey, type Expense, type ExpenseId } from '../db/expenses.js';
 import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
 import type { User } from '../db/users.js';
 import type { BankSmsPurchase } from '../domain/bankSms/types.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { localDateOf } from '../domain/time.js';
-import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
+import { isLocked, openExpense, type KeyDeps } from './ledgerKeys.js';
+import {
+  effectiveTimezone,
+  historyCategory,
+  storeExpense,
+  type RecordDeps,
+} from './recordExpense.js';
 
 export interface RecordBankSmsInput {
   readonly user: User;
@@ -30,13 +30,18 @@ export type RecordBankSmsResult =
       readonly duplicate: boolean;
     }
   // The SMS's local purchase date is after the local date the message was sent.
-  | { readonly kind: 'futureSms' };
+  | { readonly kind: 'futureSms' }
+  // Already recorded into a sealed ledger that is locked (ADR-0020): nothing can be shown.
+  | { readonly kind: 'sealedDuplicate' };
 
 // Records a bank SMS purchase into the user's active ledger as one ordinary expense in the
 // charged amount and currency, dated the purchase instant's local date (ADR-0021). The source key
 // carries the SMS's content fingerprint and the ledger, so the same SMS pasted again into the
-// same ledger returns the stored expense.
-export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): RecordBankSmsResult {
+// same ledger returns the stored expense. A sealed ledger gets a sealed row (ADR-0020).
+export function recordBankSms(
+  deps: RecordDeps & Pick<KeyDeps, 'keys'>,
+  input: RecordBankSmsInput,
+): RecordBankSmsResult {
   const { db, logger } = deps;
   const { user, sms } = input;
 
@@ -45,7 +50,11 @@ export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): Reco
   const sourceKey = `sms:${sms.template}:${sms.fingerprint}:${ledger.id}`;
 
   const seen = findExpenseBySourceKey(db, sourceKey);
-  if (seen !== undefined) return duplicate(deps, user, seen, sms);
+  if (seen !== undefined) {
+    const expense = openExpense(deps, seen);
+    if (isLocked(expense)) return { kind: 'sealedDuplicate' };
+    return duplicate(deps, user, expense, sms);
+  }
 
   const timezone = effectiveTimezone(deps, user, ledger);
   const purchasedOn = localDateOf(sms.issuedAt, timezone);
@@ -55,9 +64,9 @@ export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): Reco
   const category = suggestCategory({
     description: sms.description,
     categories: listActiveCategories(db, ledger.id),
-    historyCategoryId: findHistoryCategory(db, ledger.id, key),
+    historyCategoryId: historyCategory(deps, ledger.id, key),
   });
-  const { expense, created } = insertExpenseOrGetExisting(db, {
+  const stored = storeExpense(deps, {
     id: deps.newId() as ExpenseId,
     ledgerId: ledger.id,
     createdBy: user.id,
@@ -68,9 +77,11 @@ export function recordBankSms(deps: RecordDeps, input: RecordBankSmsInput): Reco
     occurredOn: purchasedOn,
     sourceKey,
     createdAt: input.now,
-    categoryId: category.id,
+    category: { id: category.id, name: category.name },
     descriptionKey: key,
   });
+  if (stored.kind === 'sealedDuplicate') return stored;
+  const { expense, created } = stored;
   if (!created) return duplicate(deps, user, expense, sms);
 
   logger.info(

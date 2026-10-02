@@ -50,6 +50,10 @@ export async function answerReceipt(
     await replyHtml(ctx, messages.futureReceipt);
     return;
   }
+  if (result.kind === 'sealedLedger') {
+    await replyHtml(ctx, messages.receiptSealedLedger);
+    return;
+  }
 
   const card = cardFor(cardView(deps, user, result));
   const sent = await replyHtml(

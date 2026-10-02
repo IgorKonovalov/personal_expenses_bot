@@ -26,6 +26,7 @@ import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { FetchedItem, FetchedReceipt, ReceiptCountry } from '../domain/receipts/types.js';
+import { plaintext } from './ledgerKeys.js';
 import type { RecordDeps } from './recordExpense.js';
 
 // Why a fetch failed. `error` is a fetcher that threw instead of answering.
@@ -129,7 +130,7 @@ function enrichExpense(deps: FetchDeps, receipt: Receipt, sellerName: string): v
   const key = descriptionKey(sellerName);
   // Suggested before the description moves: the history step would otherwise find this very
   // expense under the seller's key, still in the fallback.
-  const expense = findExpenseById(db, receipt.expenseId);
+  const expense = findPlaintextExpense(db, receipt.expenseId);
   if (expense !== undefined && state.categoryPresetKey === FALLBACK_PRESET) {
     const category = suggestCategory({
       description: sellerName,
@@ -188,7 +189,7 @@ function failed(
 function settled(deps: FetchDeps, receiptId: ReceiptId): FetchDueResult {
   const { db } = deps;
   const receipt = findReceiptById(db, receiptId);
-  const expense = receipt === undefined ? undefined : findExpenseById(db, receipt.expenseId);
+  const expense = receipt === undefined ? undefined : findPlaintextExpense(db, receipt.expenseId);
   const author = expense === undefined ? undefined : findReceiptAuthor(db, expense.id);
   const ledger =
     expense === undefined || author === undefined
@@ -200,6 +201,13 @@ function settled(deps: FetchDeps, receiptId: ReceiptId): FetchDueResult {
   // An author who left a shared ledger: nothing to show them.
   if (ledger === undefined) return { kind: 'pending' };
   return { kind: 'settled', receipt, expense, ledger, author };
+}
+
+// Receipts exist only in plaintext ledgers: a sealed ledger takes none, and sealing one folds
+// its receipts into the sealed rows (ADR-0020).
+function findPlaintextExpense(db: FetchDeps['db'], id: ExpenseId): Expense | undefined {
+  const stored = findExpenseById(db, id);
+  return stored === undefined ? undefined : plaintext(stored);
 }
 
 // What a receipt expense's card shows about its receipt.
@@ -238,7 +246,7 @@ export function receiptItems(
   { db }: Pick<FetchDeps, 'db'>,
   input: { readonly user: User; readonly expenseId: ExpenseId },
 ): ReceiptItemsResult {
-  const expense = findExpenseById(db, input.expenseId);
+  const expense = findPlaintextExpense(db, input.expenseId);
   if (expense === undefined) return { kind: 'notFound' };
   if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
   const receipt = findReceiptByExpense(db, expense.id);
@@ -268,7 +276,7 @@ export function retryReceipt(
   input: { readonly user: User; readonly expenseId: ExpenseId; readonly now: Date },
 ): RetryReceiptResult {
   const { db } = deps;
-  const expense = findExpenseById(db, input.expenseId);
+  const expense = findPlaintextExpense(db, input.expenseId);
   if (expense === undefined) return { kind: 'notFound' };
   if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
   const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);

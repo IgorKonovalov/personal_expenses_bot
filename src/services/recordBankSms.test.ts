@@ -9,6 +9,7 @@ import {
 } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import type { BankSmsPurchase } from '../domain/bankSms/types.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordBankSms } from './recordBankSms.js';
 import type { RecordDeps } from './recordExpense.js';
@@ -17,7 +18,7 @@ import type { RecordDeps } from './recordExpense.js';
 const SENT = new Date('2026-09-15T08:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let logLines: string[];
 let alice: User;
 let bob: User;
@@ -32,6 +33,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {

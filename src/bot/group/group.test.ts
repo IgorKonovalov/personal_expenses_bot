@@ -9,6 +9,7 @@ import { findUserByIdentity, type User } from '../../db/users.js';
 import { monthOf } from '../../domain/periods.js';
 import type { LocalDate } from '../../domain/time.js';
 import { createLogger } from '../../logger.js';
+import { createLedgerKeyring } from '../../services/ledgerKeys.js';
 import { changeCategory } from '../../services/changeCategory.js';
 import { openEdit, startEdit } from '../../services/editExpense.js';
 import { setAnchor } from '../../services/flowSessions.js';
@@ -630,6 +631,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
       logger: createLogger('silent'),
       newId: () => 'unused',
       defaultTimezone: 'Europe/Belgrade',
+      keys: createLedgerKeyring(),
     };
     const a = findUserByIdentity(db, 'telegram', String(ALLOWED_ID)) as User;
     const cafe = db

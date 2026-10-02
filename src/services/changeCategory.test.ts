@@ -6,6 +6,7 @@ import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { changeCategory, openCategoryPicker } from './changeCategory.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js';
@@ -13,7 +14,7 @@ import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js'
 const NOW = new Date('2026-09-30T10:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let alice: User;
 let bob: User;
 let message: number;
@@ -28,6 +29,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {

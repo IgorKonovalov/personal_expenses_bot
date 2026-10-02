@@ -5,6 +5,7 @@ import type { User } from '../../db/users.js';
 import { localDateOf } from '../../domain/time.js';
 import { showExpense } from '../../services/changeCategory.js';
 import { boundLedger } from '../../services/groupChats.js';
+import { plaintext } from '../../services/ledgerKeys.js';
 import {
   findExpenseForSource,
   findTelegramUser,
@@ -107,8 +108,10 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
     if (replied?.from === undefined) return;
     const ledger = boundLedger(deps, ctx.chat.id);
     if (ledger === undefined) return;
-    const expense = findExpenseForSource(deps, `tg:${ctx.chat.id}:${replied.message_id}`);
-    if (expense?.ledgerId !== ledger.id) return;
+    const stored = findExpenseForSource(deps, `tg:${ctx.chat.id}:${replied.message_id}`);
+    if (stored?.ledgerId !== ledger.id) return;
+    // A group's ledger is shared, and a shared ledger is never sealed.
+    const expense = plaintext(stored);
     await replyGroupCard(deps, ctx, {
       expense,
       author: replied.from.first_name,

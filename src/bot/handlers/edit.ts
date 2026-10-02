@@ -35,6 +35,7 @@ const refusalToast: Record<EditRefusal['kind'], string> = {
   notFound: messages.expenseNotFound,
   forbidden: messages.editForbidden,
   deleted: messages.expenseDeletedToast,
+  locked: messages.ledgerLockedToast,
 };
 
 const FIELD_FLOWS: Record<EditField, EditFlow['kind']> = {

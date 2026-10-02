@@ -832,6 +832,8 @@ export const messages = {
     ),
   recoverySavedButton: 'Сохранил',
   ledgerLocked: html`Учёт зашифрован и закрыт. Откройте его паролем: /unlock.`,
+  ledgerLockedToast: 'Учёт зашифрован и закрыт. Откройте его: /unlock',
+  receiptSealedLedger: html`Учёт зашифрован, а чеки в зашифрованный учёт пока не записываются. Ничего не записано. Запишите сумму текстом, например «450 продукты».`,
   // A redelivered expense in a locked ledger: it stays recorded, and nothing about it is shown.
   sealedDuplicate: html`Уже записано. Учёт зашифрован и закрыт, открыть: /unlock.`,
   unlockPrompt: html`Отправьте пароль учёта. Я сразу удалю сообщение с ним.`,

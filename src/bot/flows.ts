@@ -15,6 +15,7 @@ import {
   type Flow,
   type ScreenAnchor,
 } from '../services/flowSessions.js';
+import { isLocked } from '../services/ledgerKeys.js';
 import { answerCategoryFlow } from '../services/manageCategories.js';
 import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
@@ -155,7 +156,7 @@ export async function answerFlow(
     switch (result.kind) {
       case 'invalid': {
         const view = budgetScreen(deps, { user, ledgerId: flow.ledgerId, now: deps.now() });
-        if (view !== undefined)
+        if (view !== undefined && !isLocked(view))
           await show(ctx, anchor, budgetPromptView(flow, view, budgetRefusal(flow, result)));
         return;
       }

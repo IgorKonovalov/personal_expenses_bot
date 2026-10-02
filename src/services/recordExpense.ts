@@ -1,16 +1,17 @@
-import { findCategory, listActiveCategories } from '../db/categories.js';
+import { findCategory, listActiveCategories, type CategoryId } from '../db/categories.js';
 import {
   findExpenseById,
   findExpenseBySourceKey,
   findHistoryCategory,
-  findStoredExpenseBySourceKey,
   insertExpenseOrGetExisting,
   insertSealedExpenseOrGetExisting,
   isSealed,
   restoreDeletedExpense,
   softDeleteExpense,
   type Expense,
+  type ExpenseCategory,
   type ExpenseId,
+  type NewExpense,
   type StoredExpense,
 } from '../db/expenses.js';
 import {
@@ -28,7 +29,16 @@ import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
 import { resolveTimezone } from '../domain/timezones.js';
 import type { Logger } from '../logger.js';
-import { openExpenses, sealPayload, sealingKey, type KeyDeps } from './ledgerKeys.js';
+import {
+  isSealedLedger,
+  openExpenses,
+  isLocked,
+  openExpense,
+  sealPayload,
+  sealingKey,
+  type KeyDeps,
+  type Locked,
+} from './ledgerKeys.js';
 import type { ServiceDeps } from './provisionUser.js';
 import { resolveUserTimezone } from './settings.js';
 
@@ -119,7 +129,7 @@ export function recordExpense(
   const { db, logger } = deps;
   const { user } = input;
 
-  const seen = findStoredExpenseBySourceKey(db, input.sourceKey);
+  const seen = findExpenseBySourceKey(db, input.sourceKey);
   if (seen !== undefined) {
     const ledger = findLedgerForMember(db, seen.ledgerId, user.id);
     if (ledger === undefined) throw new Error(`source key reused across users (${seen.id})`);
@@ -139,68 +149,13 @@ export function recordExpense(
   if (parsed.kind === 'futureDate') return { kind: 'futureDate' };
   if (parsed.kind !== 'expense') return parsed;
 
-  const publicKey = sealingKey(deps, ledger.id);
   const key = descriptionKey(parsed.description);
   const category = suggestCategory({
     description: parsed.description,
     categories: listActiveCategories(db, ledger.id),
-    historyCategoryId:
-      publicKey === undefined ? findHistoryCategory(db, ledger.id, key) : undefined,
+    historyCategoryId: historyCategory(deps, ledger.id, key),
   });
-  const occurredOn = parsed.date ?? sentOn;
-
-  if (publicKey !== undefined) {
-    const id = newExpenseId(deps);
-    const sealed = sealPayload(
-      publicKey,
-      { ledgerId: ledger.id, expenseId: id },
-      {
-        v: 1,
-        amountMinor: parsed.amountMinor,
-        description: parsed.description,
-        categoryId: category.id,
-      },
-    );
-    const { expense: stored, created } = insertSealedExpenseOrGetExisting(db, {
-      id,
-      ledgerId: ledger.id,
-      createdBy: user.id,
-      currency: parsed.currency,
-      occurredAt: input.occurredAt,
-      occurredOn,
-      sourceKey: input.sourceKey,
-      createdAt: input.now,
-      sealed,
-    });
-    logger.info(
-      { expenseId: stored.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },
-      'expense recorded',
-    );
-    if (!created) return storedResult(deps, stored, ledger, true);
-    // What was just sealed, shown on the card without opening it.
-    const expense: Expense = {
-      id,
-      ledgerId: ledger.id,
-      createdBy: user.id,
-      amountMinor: parsed.amountMinor,
-      currency: parsed.currency,
-      description: parsed.description,
-      occurredAt: input.occurredAt,
-      occurredOn,
-      sourceKey: input.sourceKey,
-      deletedAt: null,
-      category: { id: category.id, name: category.name },
-    };
-    return {
-      kind: 'recorded',
-      expense,
-      ledger,
-      duplicate: false,
-      fallbackCategory: inFallbackCategory(deps, expense),
-    };
-  }
-
-  const { expense, created } = insertExpenseOrGetExisting(db, {
+  const stored = storeExpense(deps, {
     id: newExpenseId(deps),
     ledgerId: ledger.id,
     createdBy: user.id,
@@ -208,12 +163,14 @@ export function recordExpense(
     currency: parsed.currency,
     description: parsed.description,
     occurredAt: input.occurredAt,
-    occurredOn,
+    occurredOn: parsed.date ?? sentOn,
     sourceKey: input.sourceKey,
     createdAt: input.now,
-    categoryId: category.id,
+    category: { id: category.id, name: category.name },
     descriptionKey: key,
   });
+  if (stored.kind === 'sealedDuplicate') return stored;
+  const { expense, created } = stored;
   logger.info(
     { expenseId: expense.id, ledgerId: ledger.id, userId: user.id, duplicate: !created },
     'expense recorded',
@@ -225,6 +182,80 @@ export function recordExpense(
     duplicate: !created,
     fallbackCategory: inFallbackCategory(deps, expense),
   };
+}
+
+// The ADR-0008 history step's category, skipped in a sealed ledger, whose rows store no
+// description key (ADR-0020): the suggestion falls back to keyword rules.
+export function historyCategory(
+  { db }: Pick<RecordDeps, 'db'>,
+  ledgerId: LedgerId,
+  key: string,
+): CategoryId | undefined {
+  return isSealedLedger({ db }, ledgerId) ? undefined : findHistoryCategory(db, ledgerId, key);
+}
+
+export type StoreExpenseResult =
+  | { readonly kind: 'stored'; readonly expense: Expense; readonly created: boolean }
+  // The source key is taken by an expense of a sealed ledger that is locked.
+  | { readonly kind: 'sealedDuplicate' };
+
+// Inserts unless the source key exists, like insertExpenseOrGetExisting. In a sealed ledger
+// (ADR-0020) the amount, description and category are sealed to its public key instead, and the
+// plaintext columns stay NULL; the expense returned is what was sealed, so showing it needs no
+// unlock. An existing row is returned opened, or `sealedDuplicate` while its ledger is locked.
+export function storeExpense(
+  deps: RecordDeps & Partial<Pick<KeyDeps, 'keys'>>,
+  expense: Omit<NewExpense, 'categoryId'> & {
+    readonly category: ExpenseCategory;
+    readonly descriptionKey: string;
+  },
+): StoreExpenseResult {
+  const { db } = deps;
+  const { category, descriptionKey: key, ...fields } = expense;
+  const publicKey = sealingKey(deps, expense.ledgerId);
+  const inserted =
+    publicKey === undefined
+      ? insertExpenseOrGetExisting(db, { ...fields, categoryId: category.id, descriptionKey: key })
+      : insertSealedExpenseOrGetExisting(db, {
+          id: fields.id,
+          ledgerId: fields.ledgerId,
+          createdBy: fields.createdBy,
+          currency: fields.currency,
+          occurredAt: fields.occurredAt,
+          occurredOn: fields.occurredOn,
+          sourceKey: fields.sourceKey,
+          createdAt: fields.createdAt,
+          sealed: sealPayload(
+            publicKey,
+            { ledgerId: fields.ledgerId, expenseId: fields.id },
+            {
+              v: 1,
+              amountMinor: fields.amountMinor,
+              description: fields.description,
+              categoryId: category.id,
+            },
+          ),
+        });
+  if (inserted.created) {
+    const shown: Expense = {
+      id: fields.id,
+      ledgerId: fields.ledgerId,
+      createdBy: fields.createdBy,
+      amountMinor: fields.amountMinor,
+      currency: fields.currency,
+      description: fields.description,
+      occurredAt: fields.occurredAt,
+      occurredOn: fields.occurredOn,
+      sourceKey: fields.sourceKey,
+      deletedAt: null,
+      category,
+    };
+    return { kind: 'stored', expense: shown, created: true };
+  }
+  const existing = openStored(deps, inserted.expense, inserted.expense.ledgerId);
+  return existing === undefined
+    ? { kind: 'sealedDuplicate' }
+    : { kind: 'stored', expense: existing, created: false };
 }
 
 // A stored row as a recorded result: a sealed one opens while its ledger is unlocked.
@@ -298,19 +329,23 @@ export type UndoExpenseResult =
   | { readonly kind: 'undone'; readonly expense: Expense; readonly ledger: Ledger }
   | { readonly kind: 'alreadyUndone' }
   | { readonly kind: 'forbidden' }
-  | { readonly kind: 'notFound' };
+  | { readonly kind: 'notFound' }
+  // A sealed ledger that is locked: nothing is deleted (ADR-0020).
+  | Locked;
 
 // Soft-deletes an expense. Only its creator may undo it; a repeat leaves deleted_at unchanged.
 export function undoExpense(
-  deps: RecordDeps,
+  deps: RecordDeps & Pick<KeyDeps, 'keys'>,
   input: { readonly user: User; readonly expenseId: ExpenseId; readonly now: Date },
 ): UndoExpenseResult {
   const { db, logger } = deps;
-  const expense = findExpenseById(db, input.expenseId);
-  if (expense === undefined) return { kind: 'notFound' };
-  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
-  const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
+  const stored = findExpenseById(db, input.expenseId);
+  if (stored === undefined) return { kind: 'notFound' };
+  if (stored.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const ledger = findLedgerForMember(db, stored.ledgerId, input.user.id);
   if (ledger === undefined) return { kind: 'forbidden' };
+  const expense = openExpense(deps, stored);
+  if (isLocked(expense)) return expense;
   if (!softDeleteExpense(db, expense.id, input.now)) return { kind: 'alreadyUndone' };
   logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense undone');
   return { kind: 'undone', expense, ledger };
@@ -320,20 +355,23 @@ export type RestoreExpenseResult =
   | { readonly kind: 'restored'; readonly expense: Expense; readonly ledger: Ledger }
   | { readonly kind: 'alreadyRestored' }
   | { readonly kind: 'forbidden' }
-  | { readonly kind: 'notFound' };
+  | { readonly kind: 'notFound' }
+  | Locked;
 
 // Clears deleted_at. Only the creator may restore; compare-and-set on deleted_at IS NOT NULL,
 // so a repeat changes nothing.
 export function restoreExpense(
-  deps: RecordDeps,
+  deps: RecordDeps & Pick<KeyDeps, 'keys'>,
   input: { readonly user: User; readonly expenseId: ExpenseId },
 ): RestoreExpenseResult {
   const { db, logger } = deps;
-  const expense = findExpenseById(db, input.expenseId);
-  if (expense === undefined) return { kind: 'notFound' };
-  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
-  const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
+  const stored = findExpenseById(db, input.expenseId);
+  if (stored === undefined) return { kind: 'notFound' };
+  if (stored.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const ledger = findLedgerForMember(db, stored.ledgerId, input.user.id);
   if (ledger === undefined) return { kind: 'forbidden' };
+  const expense = openExpense(deps, stored);
+  if (isLocked(expense)) return expense;
   if (!restoreDeletedExpense(db, expense.id)) return { kind: 'alreadyRestored' };
   logger.info({ expenseId: expense.id, userId: input.user.id }, 'expense restored');
   return { kind: 'restored', expense: { ...expense, deletedAt: null }, ledger };
@@ -348,11 +386,11 @@ export function findTelegramUser(
   return findUserByIdentity(db, 'telegram', String(telegramId));
 }
 
-// The expense a source message recorded, deleted or not. Read-only.
+// The expense a source message recorded, deleted or not, sealed or not. Read-only.
 export function findExpenseForSource(
   { db }: Pick<ServiceDeps, 'db'>,
   sourceKey: string,
-): Expense | undefined {
+): StoredExpense | undefined {
   return findExpenseBySourceKey(db, sourceKey);
 }
 

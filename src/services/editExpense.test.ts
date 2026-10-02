@@ -1,21 +1,23 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { CategoryId } from '../db/categories.js';
-import type { ExpenseId } from '../db/expenses.js';
+import { findExpenseById, isSealed, type ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { answerEditFlow, openEdit, setDateFromButton, startEdit } from './editExpense.js';
 import { routeText, startFlow, type EditFlow, type Flow } from './flowSessions.js';
+import { createLedgerKeyring, openExpense, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, undoExpense, type RecordDeps } from './recordExpense.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 
 // Wednesday 30 September, 12:00 local (CEST).
 const NOW = new Date('2026-09-30T10:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let logLines: string[];
 let alice: User;
 let bob: User;
@@ -32,6 +34,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {
@@ -276,5 +279,95 @@ describe('openEdit and setDateFromButton', () => {
       kind: 'unavailable',
     });
     expect(row()).toEqual(expect.objectContaining(ORIGINAL));
+  });
+});
+
+describe('a sealed ledger (ADR-0020)', () => {
+  async function recordSealed(text: string): Promise<ExpenseId> {
+    await sealPersonalLedger(deps, bob, NOW);
+    const recorded = recordExpense(deps, {
+      user: bob,
+      text,
+      sourceKey: `tg:1002:${++inputs}`,
+      occurredAt: NOW,
+      now: NOW,
+    });
+    if (recorded.kind !== 'recorded') throw new Error('setup failed');
+    return recorded.expense.id;
+  }
+
+  function sealedRow(id: ExpenseId) {
+    const stored = findExpenseById(db, id);
+    if (stored === undefined || !isSealed(stored)) throw new Error('not a sealed row');
+    return stored;
+  }
+
+  it('edits 450 кофе to 500 by sealing the payload again, amount_minor staying NULL', async () => {
+    const id = await recordSealed('450 кофе');
+    await unlockPersonalLedger(deps, bob, NOW);
+    const before = sealedRow(id).sealed;
+
+    startEdit(deps, { user: bob, expenseId: id, kind: 'editAmount', now: NOW });
+    const result = answerEditFlow(deps, {
+      user: bob,
+      flow: { kind: 'editAmount', expenseId: id },
+      text: '500',
+      inputKey: `tg:1002:${++inputs}`,
+      now: NOW,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'editable',
+      changed: true,
+      expense: { amountMinor: 50000 },
+    });
+    expect(
+      db.prepare('SELECT amount_minor, description, updated_at FROM expenses WHERE id = ?').get(id),
+    ).toEqual({ amount_minor: null, description: null, updated_at: '2026-09-30T10:00:00.000Z' });
+    const after = sealedRow(id);
+    expect(after.sealed.equals(before)).toBe(false);
+    expect(openExpense(deps, after)).toMatchObject({
+      amountMinor: 50000,
+      currency: 'RSD',
+      description: 'кофе',
+      category: { name: 'Кафе и рестораны' },
+    });
+  });
+
+  it('a description edit reseals too, keeping the amount and category', async () => {
+    const id = await recordSealed('450 кофе');
+    await unlockPersonalLedger(deps, bob, NOW);
+
+    startEdit(deps, { user: bob, expenseId: id, kind: 'editDescription', now: NOW });
+    answerEditFlow(deps, {
+      user: bob,
+      flow: { kind: 'editDescription', expenseId: id },
+      text: 'капучино',
+      inputKey: `tg:1002:${++inputs}`,
+      now: NOW,
+    });
+
+    expect(openExpense(deps, sealedRow(id))).toMatchObject({
+      amountMinor: 45000,
+      description: 'капучино',
+      category: { name: 'Кафе и рестораны' },
+    });
+    expect(db.prepare('SELECT description_key FROM expenses WHERE id = ?').pluck().get(id)).toBe(
+      null,
+    );
+  });
+
+  it('refuses every edit while locked, writing nothing', async () => {
+    const id = await recordSealed('450 кофе');
+    const before = sealedRow(id).sealed;
+
+    expect(openEdit(deps, { user: bob, expenseId: id })).toEqual({ kind: 'locked' });
+    expect(startEdit(deps, { user: bob, expenseId: id, kind: 'editAmount', now: NOW })).toEqual({
+      kind: 'locked',
+    });
+    expect(
+      setDateFromButton(deps, { user: bob, expenseId: id, date: '2026-09-29', now: NOW }),
+    ).toEqual({ kind: 'locked' });
+    expect(sealedRow(id).sealed.equals(before)).toBe(true);
   });
 });

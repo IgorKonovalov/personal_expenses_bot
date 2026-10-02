@@ -283,8 +283,8 @@ are stored per wrap, so they can change later without a migration.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | done | committed with this row |
-| 2: Every read path honors the lock | dev | not started | |
+| 1: Walking skeleton | dev | done | `75f84e2` |
+| 2: Every read path honors the lock | dev | done | committed with this row |
 | 3: Enable on a ledger with history | dev | not started | |
 | 4: Recovery code and passphrase change | dev | not started | |
 | 5: Lock lifecycle, log hygiene, docs | dev | not started | |
@@ -315,6 +315,27 @@ are stored per wrap, so they can change later without a migration.
   expense.
 - Phase 1: `/unlock` is not in the `setMyCommands` list yet; `bot.test.ts` pins that list, and
   Phase 5 owns the help and command copy.
+- Phase 2: the decrypting seam is `openExpenses` / `openExpense` in `src/services/ledgerKeys.ts`;
+  services check ownership and membership on the stored row before opening it. A locked read
+  returns `{ kind: 'locked' }`. While locked, card taps (category, edit, delete, restore, back)
+  answer with the `ledgerLockedToast` toast; `/week`, `/month` and `/budget` reply with
+  `ledgerLocked`, and the budget screen, opened from the hub or redrawn after a flow, shows that
+  message alone.
+- Phase 2: files outside `Files touched`: `src/services/recordBankSms.ts` records through the
+  shared `storeExpense` (Risks: a third record path); `src/services/fetchDueReceipt.ts` and
+  `src/bot/group/card.ts` take rows through `plaintext()`, which throws on a sealed row (receipts
+  and shared ledgers are never sealed); `src/bot/handlers/text.ts` replies to a sealed duplicate
+  bank SMS; `src/bot/flows.ts` skips a locked budget redraw. The keyring is added to the deps
+  of `budget`, `changeCategory`, `editExpense`, `periodSummary`, `recordBankSms` and
+  `recordExpense` tests and of `group.test.ts`. A test helper `src/services/testing/sealLedger.ts`
+  seals and unlocks a personal ledger through the real flows.
+- Phase 2: `src/db/receipts.ts` and `src/bot/screens.ts` are unchanged: no receipt reader runs on
+  a sealed ledger's expenses.
+- Phase 2: the done-when's `кофе 300` is not an expense to the parser (the amount comes first);
+  the test records `300 кофе`. The history-step assertion spies on `findHistoryCategory` with
+  `vi.mock` and checks it is called in a plaintext ledger and not in a sealed one.
+- Phase 2: a receipt in a sealed ledger is refused before the duplicate lookup, with
+  `receiptSealedLedger`.
 
 ### Close triggers
 

@@ -13,6 +13,7 @@ import {
   type BudgetScreenView,
 } from '../../services/budget.js';
 import { cancelFlowIf, type BudgetFlow, type BudgetScreen } from '../../services/flowSessions.js';
+import { isLocked } from '../../services/ledgerKeys.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   BUDGET_CAP,
@@ -70,8 +71,9 @@ function screenView(view: BudgetScreenView, screen: BudgetScreen, header?: Html)
   };
 }
 
-// The screen for the ledger an anchor names; undefined once the user no longer owns it.
-// `droppedCapsCurrency` puts the line about deleted category caps above it.
+// The screen for the ledger an anchor names; undefined once the user no longer owns it, and the
+// locked message alone while its sealed ledger is locked (ADR-0020). `droppedCapsCurrency` puts
+// the line about deleted category caps above it.
 export function budgetView(
   deps: HandlerDeps,
   user: User,
@@ -80,6 +82,12 @@ export function budgetView(
 ): ScreenView | undefined {
   const view = budgetScreen(deps, { user, ledgerId: screen.ledgerId, now: deps.now() });
   if (view === undefined) return undefined;
+  if (isLocked(view)) {
+    return {
+      text: messages.ledgerLocked,
+      markup: InlineKeyboard.from(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
+    };
+  }
   return screenView(
     view,
     screen,
@@ -201,7 +209,7 @@ interface BudgetTap extends ScreenTap {
 }
 
 // A budget callback on an anchor that shows another screen, or on a ledger the user no longer
-// owns, is stale.
+// owns, is stale. One on a sealed ledger that is locked gets the locked toast.
 async function budgetTap(ctx: Context, deps: HandlerDeps): Promise<BudgetTap | undefined> {
   const tap = await requireScreen(ctx, deps);
   if (tap === undefined) return undefined;
@@ -212,6 +220,10 @@ async function budgetTap(ctx: Context, deps: HandlerDeps): Promise<BudgetTap | u
       : undefined;
   if (screen.name !== 'budget' || view === undefined) {
     await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    return undefined;
+  }
+  if (isLocked(view)) {
+    await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
     return undefined;
   }
   return { ...tap, screen, view };
@@ -288,7 +300,7 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
       case 'cleared': {
         await ctx.answerCallbackQuery({ text: messages.capClearedToast });
         const view = budgetScreen(deps, { user: tap.user, ledgerId, now: deps.now() });
-        if (view === undefined) return;
+        if (view === undefined || isLocked(view)) return;
         const index = view.categories.findIndex((c) => c.id === categoryId);
         const page = Math.floor(Math.max(index, 0) / PAGE_SIZE) + 1;
         await renderAnchor(ctx, tap.anchor, capsPickerView(view, page));

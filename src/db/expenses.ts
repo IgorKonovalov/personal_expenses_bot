@@ -83,7 +83,7 @@ const FROM = 'expenses e LEFT JOIN categories c ON c.id = e.category_id';
 export function insertExpenseOrGetExisting(
   db: Db,
   expense: NewExpense,
-): { expense: Expense; created: boolean } {
+): { expense: StoredExpense; created: boolean } {
   const { changes } = db
     .prepare<
       [
@@ -151,30 +151,23 @@ export function insertSealedExpenseOrGetExisting(
       expense.createdAt.toISOString(),
       expense.sealed,
     );
-  const stored = findStoredExpenseBySourceKey(db, expense.sourceKey);
+  const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
   return { expense: stored, created: changes === 1 };
 }
 
-export function findStoredExpenseBySourceKey(db: Db, sourceKey: string): StoredExpense | undefined {
+export function findExpenseBySourceKey(db: Db, sourceKey: string): StoredExpense | undefined {
   const row = db
     .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.source_key = ?`)
     .get(sourceKey);
   return row === undefined ? undefined : toStoredExpense(row);
 }
 
-export function findExpenseBySourceKey(db: Db, sourceKey: string): Expense | undefined {
-  const row = db
-    .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.source_key = ?`)
-    .get(sourceKey);
-  return row === undefined ? undefined : toExpense(row);
-}
-
-export function findExpenseById(db: Db, id: ExpenseId): Expense | undefined {
+export function findExpenseById(db: Db, id: ExpenseId): StoredExpense | undefined {
   const row = db
     .prepare<[string], ExpenseRow>(`SELECT ${COLUMNS} FROM ${FROM} WHERE e.id = ?`)
     .get(id);
-  return row === undefined ? undefined : toExpense(row);
+  return row === undefined ? undefined : toStoredExpense(row);
 }
 
 // Returns false when the expense was already deleted, leaving deleted_at unchanged.
@@ -278,6 +271,36 @@ export function setExpenseDescription(
   return changes === 1;
 }
 
+// A sealed row's edit or category change (ADR-0020): the whole payload is sealed again by the
+// caller, so the blob is replaced, with the currency (plaintext) and the stamp the change
+// carries. Returns false when the expense is deleted.
+export function resealExpense(
+  db: Db,
+  id: ExpenseId,
+  change: {
+    readonly sealed: Buffer;
+    readonly currency: CurrencyCode;
+    readonly updatedAt?: Date;
+    readonly categorySetAt?: Date;
+  },
+): boolean {
+  const { changes } = db
+    .prepare<[Buffer, string, string | null, string | null, string]>(
+      `UPDATE expenses
+          SET sealed = ?, currency = ?, updated_at = COALESCE(?, updated_at),
+              category_set_at = COALESCE(?, category_set_at)
+        WHERE id = ? AND deleted_at IS NULL AND sealed IS NOT NULL`,
+    )
+    .run(
+      change.sealed,
+      change.currency,
+      change.updatedAt?.toISOString() ?? null,
+      change.categorySetAt?.toISOString() ?? null,
+      id,
+    );
+  return changes === 1;
+}
+
 // occurred_on only: occurred_at stays the instant the user told us.
 export function setExpenseDate(
   db: Db,
@@ -327,7 +350,7 @@ export function listLedgerExpensesOn(
 export function listLedgerExpensesBetween(
   db: Db,
   query: { ledgerId: LedgerId; memberId: UserId; from: LocalDate; to: LocalDate },
-): Expense[] {
+): StoredExpense[] {
   return db
     .prepare<[string, string, string, string], ExpenseRow>(
       `SELECT ${COLUMNS}
@@ -337,7 +360,7 @@ export function listLedgerExpensesBetween(
         ORDER BY e.occurred_on, e.occurred_at, e.id`,
     )
     .all(query.memberId, query.ledgerId, query.from, query.to)
-    .map(toExpense);
+    .map(toStoredExpense);
 }
 
 function toStoredExpense(row: ExpenseRow): StoredExpense {
@@ -357,12 +380,11 @@ function toStoredExpense(row: ExpenseRow): StoredExpense {
   };
 }
 
-// A plaintext row. A sealed row read here is a reader that skipped the decrypting seam.
 function toExpense(row: ExpenseRow): Expense {
   const currency = toCurrencyCode(row.currency);
   if (currency === undefined) throw new Error(`expense ${row.id} has an unknown currency`);
   if (row.amount_minor === null || row.description === null) {
-    throw new Error(`expense ${row.id} is sealed`);
+    throw new Error(`plaintext expense ${row.id} has no amount or description`);
   }
   return {
     id: row.id as ExpenseId,

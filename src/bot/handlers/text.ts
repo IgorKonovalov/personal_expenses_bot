@@ -137,6 +137,10 @@ async function answerBankSms(
     await replyHtml(ctx, messages.bankSmsFuture);
     return;
   }
+  if (result.kind === 'sealedDuplicate') {
+    await replyHtml(ctx, messages.sealedDuplicate);
+    return;
+  }
   const card = cardFor(cardView(deps, user, result));
   await replyHtml(ctx, result.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
     reply_markup: card.markup,

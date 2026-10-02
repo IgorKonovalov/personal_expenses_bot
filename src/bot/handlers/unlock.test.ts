@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from '../../db/connection.js';
+import type { ExpenseId } from '../../db/expenses.js';
 import { runMigrations } from '../../db/migrate.js';
 import { formatMoney } from '../../domain/money.js';
+import { buildRsUrl } from '../../domain/receipts/testing/buildRsVl.js';
 import { createLogger } from '../../logger.js';
 import { createLedgerKeyring } from '../../services/ledgerKeys.js';
 import { createBot } from '../bot.js';
-import { RECOVERY_SAVED, SETTINGS_ENCRYPTION } from '../callbackData.js';
+import {
+  RECOVERY_SAVED,
+  SETTINGS_ENCRYPTION,
+  categoryPickerData,
+  editExpenseData,
+  showExpenseData,
+  undoExpenseData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import {
   ALLOWED_ID,
@@ -163,5 +172,69 @@ describe('a sealed personal ledger in the bot', () => {
       },
     });
     expect(db.prepare('SELECT COUNT(*) FROM ledger_keys').pluck().get()).toBe(0);
+  });
+});
+
+describe('every read path of a locked sealed ledger', () => {
+  async function lockedLedgerWithCoffee() {
+    const harness = sealedBot();
+    await harness.say('/settings', 1);
+    await harness.tap(SETTINGS_ENCRYPTION, 101);
+    await harness.say(PASSPHRASE, 2);
+    await harness.say('450 кофе', 3);
+    const expenseId = harness.db.prepare('SELECT id FROM expenses').pluck().get() as ExpenseId;
+    harness.calls.length = 0;
+    return { ...harness, expenseId };
+  }
+
+  const toasts = (calls: readonly ApiCall[]) =>
+    calls
+      .filter((call) => call.method === 'answerCallbackQuery')
+      .map((call) => (call.payload as { text?: string }).text);
+
+  it('answers /week, /month and /budget with the locked message', async () => {
+    const { calls, say, sent } = await lockedLedgerWithCoffee();
+
+    await say('/week', 10);
+    await say('/month', 11);
+    await say('/budget', 12);
+
+    expect(sent()).toEqual([messages.ledgerLocked, messages.ledgerLocked, messages.ledgerLocked]);
+    expect(sent()).not.toContain(messages.genericError);
+    expect(calls.filter((call) => call.method === 'editMessageText')).toEqual([]);
+  });
+
+  it('answers every tap on an existing card with the locked toast, changing nothing', async () => {
+    const { db, calls, tap, expenseId } = await lockedLedgerWithCoffee();
+    const before = db.prepare('SELECT * FROM expenses').get();
+
+    for (const data of [
+      categoryPickerData(expenseId),
+      editExpenseData(expenseId),
+      undoExpenseData(expenseId),
+      showExpenseData(expenseId),
+    ]) {
+      await tap(data, 102);
+    }
+
+    expect(toasts(calls)).toEqual(Array<string>(4).fill(messages.ledgerLockedToast));
+    expect(calls.filter((call) => call.method !== 'answerCallbackQuery')).toEqual([]);
+    expect(db.prepare('SELECT * FROM expenses').get()).toEqual(before);
+  });
+
+  it('refuses a receipt link with its own message, recording nothing', async () => {
+    const { db, say, sent } = await lockedLedgerWithCoffee();
+    const counts = () =>
+      db
+        .prepare(
+          'SELECT (SELECT COUNT(*) FROM expenses) AS expenses, (SELECT COUNT(*) FROM receipts) AS receipts',
+        )
+        .get();
+    const before = counts();
+
+    await say(buildRsUrl(), 13);
+
+    expect(sent()).toEqual([messages.receiptSealedLedger]);
+    expect(counts()).toEqual(before);
   });
 });

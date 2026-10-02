@@ -6,6 +6,7 @@ import type { CurrencyCode } from '../../domain/currencies.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { memberBudgetStatus } from '../../services/budget.js';
 import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
+import { isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -79,7 +80,8 @@ export function cardView(
   const receipt = receiptSummary(deps, expense.id);
   const withReceipt = receipt === undefined ? view : { ...view, receipt };
   const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
-  if (status === undefined) return withReceipt;
+  // A sealed ledger's card right after recording, while locked, shows no budget line.
+  if (status === undefined || isLocked(status)) return withReceipt;
   const { currency, limit } = status;
   const cap = status.caps.find((c) => c.categoryId === expense.category?.id);
   return {
@@ -156,6 +158,9 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
       case 'alreadyUndone':
         await ctx.answerCallbackQuery({ text: messages.alreadyUndone });
         return;
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
       case 'forbidden':
         await ctx.answerCallbackQuery({ text: messages.undoForbidden });
         return;
@@ -180,6 +185,9 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
       }
       case 'alreadyRestored':
         await ctx.answerCallbackQuery({ text: messages.alreadyRestored });
+        return;
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
         return;
       case 'forbidden':
         await ctx.answerCallbackQuery({ text: messages.restoreForbidden });

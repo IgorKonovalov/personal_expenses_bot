@@ -1,4 +1,5 @@
 import { listLedgerExpensesBetween, type Expense } from '../db/expenses.js';
+import { isLocked, openExpenses, type KeyDeps, type Locked } from './ledgerKeys.js';
 import { rateLookupBetween } from '../db/fxRates.js';
 import { findLedgerChat } from '../db/ledgerChats.js';
 import {
@@ -50,13 +51,14 @@ export interface PeriodSummary {
   readonly people?: readonly PersonTotals[];
 }
 
-type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'>;
+type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> & Pick<KeyDeps, 'keys'>;
 
-// The active ledger's current week or month, in the ledger's effective timezone (ADR-0015).
+// The active ledger's current week or month, in the ledger's effective timezone (ADR-0015). A
+// sealed ledger that is locked reads as `locked` (ADR-0020).
 export function currentPeriodSummary(
   deps: Deps,
   input: { readonly user: User; readonly kind: Period['kind']; readonly now: Date },
-): PeriodSummary {
+): PeriodSummary | Locked {
   const ledger = findActiveLedger(deps.db, input.user.id);
   if (ledger === undefined) throw new Error(`user ${input.user.id} has no active ledger`);
   const today = localDateOf(input.now, effectiveTimezone(deps, input.user, ledger));
@@ -74,7 +76,7 @@ export function ledgerPeriodSummary(
     readonly period: Period;
     readonly now: Date;
   },
-): PeriodSummary | undefined {
+): PeriodSummary | Locked | undefined {
   const ledger = findLedgerForMember(deps.db, input.ledgerId, input.user.id);
   if (ledger === undefined) return undefined;
   const today = localDateOf(input.now, effectiveTimezone(deps, input.user, ledger));
@@ -86,7 +88,7 @@ export function ledgerPeriodSummary(
 // the chat sees the group's report, so reads go through the binder's membership, not the
 // viewer's. Undefined for an unbound or inactive chat.
 export function boundGroupLedger(
-  deps: Deps,
+  deps: Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'>,
   chatId: number,
 ):
   | { readonly ledger: Ledger; readonly readerId: UserId; readonly today: (now: Date) => LocalDate }
@@ -119,24 +121,34 @@ export function groupPeriodSummary(
   const today = bound.today(input.now);
   const period = input.period ?? periodOf(input.kind, today);
   if (period.from > today) return undefined;
-  return summarize(deps, bound.readerId, bound.ledger, period, today, true);
+  const summary = summarize(deps, bound.readerId, bound.ledger, period, today, true);
+  // A shared ledger is never sealed.
+  if (isLocked(summary)) throw new Error(`group ledger ${bound.ledger.id} is sealed`);
+  return summary;
 }
 
 // Rows by occurred_on in the period; converts and sums in the domain (ADR-0002, ADR-0022).
 function summarize(
-  { db }: Deps,
+  deps: Deps,
   readerId: UserId,
   ledger: Ledger,
   period: Period,
   today: LocalDate,
   withPeople = false,
-): PeriodSummary {
-  const expenses = listLedgerExpensesBetween(db, {
-    ledgerId: ledger.id,
-    memberId: readerId,
-    from: period.from,
-    to: period.to,
-  });
+): PeriodSummary | Locked {
+  const { db } = deps;
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesBetween(db, {
+      ledgerId: ledger.id,
+      memberId: readerId,
+      from: period.from,
+      to: period.to,
+    }),
+  );
+  if (opened.kind === 'locked') return opened;
+  const { expenses } = opened;
   const following = next(period);
   const rateOf = rateLookupBetween(db, period.from, period.to);
   const { converted, convertedFrom, unconverted } = summarizeConverted(

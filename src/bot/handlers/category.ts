@@ -33,6 +33,7 @@ const refusalToast: Record<Refused['kind'], string> = {
   notFound: messages.expenseNotFound,
   forbidden: messages.categoryForbidden,
   deleted: messages.expenseDeletedToast,
+  locked: messages.ledgerLockedToast,
 };
 
 async function showPicker(ctx: Context, deps: HandlerDeps, expenseId: ExpenseId, page: number) {
@@ -109,7 +110,9 @@ export function registerCategory(bot: Composer<Context>, deps: HandlerDeps): voi
     const user = ensureUser(deps, ctx.from.id, deps.now());
     const result = showExpense(deps, { user, expenseId });
     if (result.kind !== 'card') {
-      await ctx.answerCallbackQuery({ text: messages.expenseNotFound });
+      await ctx.answerCallbackQuery({
+        text: result.kind === 'locked' ? messages.ledgerLockedToast : messages.expenseNotFound,
+      });
       return;
     }
     cancelFlowIf(deps, user, isEditOf(expenseId));

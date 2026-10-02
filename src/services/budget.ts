@@ -40,14 +40,23 @@ import {
   startFlow,
   type BudgetFlow,
 } from './flowSessions.js';
+import {
+  isLocked,
+  ledgerIsLocked,
+  LOCKED,
+  openExpenses,
+  type KeyDeps,
+  type Locked,
+} from './ledgerKeys.js';
 import { boundGroupLedger } from './periodSummary.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 // Budgets (ADR-0017): computed at read time from `expenses`, in the ledger's effective timezone
 // (ADR-0015), over every expense converted into the budget's currency at its day's NBS rate
-// (ADR-0023). Nothing is materialised.
+// (ADR-0023). Nothing is materialised. A sealed ledger's budget is read only while it is
+// unlocked (ADR-0020).
 
-type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'>;
+type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> & Pick<KeyDeps, 'keys'>;
 
 export interface BudgetPeriod {
   readonly from: LocalDate;
@@ -90,9 +99,10 @@ export interface CapStatus {
 // The ledger's budget as of the local date `today`, reading expenses through `readerId`'s
 // membership. Undefined when the ledger has no budget.
 export function budgetStatus(
-  { db }: Deps,
+  deps: Deps,
   input: { readonly ledger: Ledger; readonly readerId: UserId; readonly today: LocalDate },
-): BudgetStatus | undefined {
+): BudgetStatus | Locked | undefined {
+  const { db } = deps;
   const { ledger, today } = input;
   const budget = findLedgerBudget(db, ledger.id);
   if (budget === undefined) return undefined;
@@ -103,12 +113,13 @@ export function budgetStatus(
     day: dayOfPeriod(from, today),
     days: dayOfPeriod(from, to),
   };
-  const all = listLedgerExpensesBetween(db, {
-    ledgerId: ledger.id,
-    memberId: input.readerId,
-    from,
-    to,
-  });
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesBetween(db, { ledgerId: ledger.id, memberId: input.readerId, from, to }),
+  );
+  if (opened.kind === 'locked') return opened;
+  const all = opened.expenses;
   // Scope `optional` leaves out essential categories; an uncategorised expense is optional.
   const essential =
     budget.scope === 'optional' ? listEssentialCategoryIds(db, ledger.id) : new Set<CategoryId>();
@@ -163,7 +174,7 @@ export function budgetStatus(
 export function memberBudgetStatus(
   deps: Deps,
   input: { readonly user: User; readonly ledger: Ledger; readonly now: Date },
-): BudgetStatus | undefined {
+): BudgetStatus | Locked | undefined {
   const { user, ledger } = input;
   if (findLedgerForMember(deps.db, ledger.id, user.id) === undefined) return undefined;
   const today = localDateOf(input.now, effectiveTimezone(deps, user, ledger));
@@ -180,6 +191,8 @@ export function groupBudgetStatus(
   if (bound === undefined) return undefined;
   const { ledger, readerId } = bound;
   const status = budgetStatus(deps, { ledger, readerId, today: bound.today(input.now) });
+  // A shared ledger is never sealed.
+  if (isLocked(status)) throw new Error(`group ledger ${ledger.id} is sealed`);
   return status === undefined ? { ledger } : { ledger, status };
 }
 
@@ -195,14 +208,17 @@ export interface BudgetScreenView {
 }
 
 // What the /budget screen shows for a ledger the user may set the budget of: its owner.
-// Undefined for anyone else, or once the user is no longer a member.
+// Undefined for anyone else, or once the user is no longer a member. A sealed ledger that is
+// locked reads as `locked`, with a budget or without.
 export function budgetScreen(
   deps: Deps,
   input: { readonly user: User; readonly ledgerId: LedgerId; readonly now: Date },
-): BudgetScreenView | undefined {
+): BudgetScreenView | Locked | undefined {
   const ledger = ownedLedger(deps, input.user, input.ledgerId);
   if (ledger === undefined) return undefined;
+  if (ledgerIsLocked(deps, ledger.id)) return LOCKED;
   const status = memberBudgetStatus(deps, { user: input.user, ledger, now: input.now });
+  if (isLocked(status)) return status;
   const capOf = new Map(listLedgerCaps(deps.db, ledger.id).map((c) => [c.categoryId, c.capMinor]));
   const categories = listActiveCategories(deps.db, ledger.id).map((c) => ({
     id: c.id,

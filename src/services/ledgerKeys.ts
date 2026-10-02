@@ -6,6 +6,7 @@ import {
   isSealed,
   type Expense,
   type ExpenseCategory,
+  type SealedExpense,
   type StoredExpense,
 } from '../db/expenses.js';
 import {
@@ -276,8 +277,23 @@ export async function unlockLedger(
   return { kind: 'unlocked' };
 }
 
-export type Opened =
-  { readonly kind: 'open'; readonly expenses: Expense[] } | { readonly kind: 'locked' };
+// A read of a sealed ledger while it is locked.
+export interface Locked {
+  readonly kind: 'locked';
+}
+
+export const LOCKED: Locked = { kind: 'locked' };
+
+export function isLocked(value: object | undefined): value is Locked {
+  return value !== undefined && 'kind' in value && value.kind === 'locked';
+}
+
+// The ledger is sealed and this process holds no key for it.
+export function ledgerIsLocked(deps: Pick<KeyDeps, 'db' | 'keys'>, ledgerId: LedgerId): boolean {
+  return isSealedLedger(deps, ledgerId) && deps.keys.privateKey(ledgerId) === undefined;
+}
+
+export type Opened = { readonly kind: 'open'; readonly expenses: Expense[] } | Locked;
 
 // The one decrypting seam: a sealed ledger's rows open with its unlocked key, else the whole
 // read is `locked`, whether or not it has rows. A plaintext ledger's rows pass through.
@@ -288,7 +304,7 @@ export function openExpenses(
 ): Opened {
   if (!isSealedLedger(deps, ledgerId)) return { kind: 'open', expenses: rows.map(plaintext) };
   const privateKey = deps.keys.privateKey(ledgerId);
-  if (privateKey === undefined) return { kind: 'locked' };
+  if (privateKey === undefined) return LOCKED;
   const categoryOf = categoryLookup(deps.db, ledgerId);
   return {
     kind: 'open',
@@ -296,9 +312,47 @@ export function openExpenses(
   };
 }
 
-function plaintext(row: StoredExpense): Expense {
-  if (isSealed(row)) throw new Error(`sealed expense ${row.id} in a plaintext ledger`);
+// For the paths a sealed row never reaches (receipts, which a sealed ledger has none of, and
+// shared ledgers, which are never sealed): reaching one is a bug, not a lock.
+export function plaintext(row: StoredExpense): Expense {
+  if (isSealed(row)) throw new Error(`sealed expense ${row.id} on a plaintext-only path`);
   return row;
+}
+
+// One stored expense, opened when its ledger is sealed and unlocked. Check who may see it on
+// the stored row first: `locked` tells the caller the ledger is sealed.
+export function openExpense(
+  deps: Pick<KeyDeps, 'db' | 'keys'>,
+  stored: StoredExpense,
+): Expense | Locked {
+  const opened = openExpenses(deps, stored.ledgerId, [stored]);
+  if (opened.kind === 'locked') return opened;
+  const [expense] = opened.expenses;
+  if (expense === undefined) throw new Error(`expense ${stored.id} did not open`);
+  return expense;
+}
+
+// The row's payload with `change` applied, sealed again to the ledger's public key. The
+// receipt part, if any, is carried over. The ledger must be unlocked.
+export function resealed(
+  deps: Pick<KeyDeps, 'db' | 'keys'>,
+  row: SealedExpense,
+  change: Partial<Pick<SealedPayloadV1, 'amountMinor' | 'description' | 'categoryId'>>,
+): Buffer {
+  const privateKey = deps.keys.privateKey(row.ledgerId);
+  const publicKey = sealingKey(deps, row.ledgerId);
+  if (privateKey === undefined || publicKey === undefined) {
+    throw new Error(`ledger ${row.ledgerId} is locked or plaintext`);
+  }
+  const current = decodePayload(open(row.sealed, privateKey, rowAad(row.ledgerId, row.id)));
+  return sealPayload(
+    publicKey,
+    { ledgerId: row.ledgerId, expenseId: row.id },
+    {
+      ...current,
+      ...change,
+    },
+  );
 }
 
 function categoryLookup(db: Db, ledgerId: LedgerId): (id: number | null) => ExpenseCategory | null {
@@ -314,7 +368,7 @@ function categoryLookup(db: Db, ledgerId: LedgerId): (id: number | null) => Expe
 }
 
 function openRow(
-  row: Extract<StoredExpense, { sealed: Buffer }>,
+  row: SealedExpense,
   privateKey: KeyObject,
   categoryOf: (id: number | null) => ExpenseCategory | null,
 ): Expense {

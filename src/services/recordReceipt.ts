@@ -17,6 +17,7 @@ import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import type { DecodedReceipt } from '../domain/receipts/types.js';
 import { localDateOf } from '../domain/time.js';
+import { isSealedLedger, plaintext } from './ledgerKeys.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
 export interface RecordReceiptInput {
@@ -39,7 +40,9 @@ export type RecordReceiptResult =
       readonly duplicate: boolean;
     }
   // The receipt's local issue date is after the local date the message was sent.
-  | { readonly kind: 'futureReceipt' };
+  | { readonly kind: 'futureReceipt' }
+  // The active ledger is sealed (ADR-0020): receipts aren't taken there, nothing is recorded.
+  | { readonly kind: 'sealedLedger' };
 
 // Records a decoded receipt into the user's active ledger as one expense with the receipt's total
 // and currency, dated the issue instant's local date, plus a `pending` receipt row the worker
@@ -51,10 +54,11 @@ export function recordReceipt(deps: RecordDeps, input: RecordReceiptInput): Reco
 
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  if (isSealedLedger(deps, ledger.id)) return { kind: 'sealedLedger' };
   const sourceKey = `rcpt:${receipt.country}:${receipt.fiscalId}:${ledger.id}`;
 
   const seen = findExpenseBySourceKey(db, sourceKey);
-  if (seen !== undefined) return duplicate(deps, user, seen);
+  if (seen !== undefined) return duplicate(deps, user, plaintext(seen));
 
   const timezone = effectiveTimezone(deps, user, ledger);
   const sentOn = localDateOf(input.occurredAt, timezone);
@@ -96,7 +100,7 @@ export function recordReceipt(deps: RecordDeps, input: RecordReceiptInput): Reco
     }
     return stored;
   })();
-  if (!created) return duplicate(deps, user, expense);
+  if (!created) return duplicate(deps, user, plaintext(expense));
 
   const stored = findReceiptByExpense(db, expense.id);
   if (stored === undefined) throw new Error(`receipt of ${expense.id} vanished after insert`);
@@ -104,7 +108,13 @@ export function recordReceipt(deps: RecordDeps, input: RecordReceiptInput): Reco
     { receiptId: stored.id, expenseId: expense.id, country: receipt.country, userId: user.id },
     'receipt recorded',
   );
-  return { kind: 'recorded', expense, ledger, receipt: stored, duplicate: false };
+  return {
+    kind: 'recorded',
+    expense: plaintext(expense),
+    ledger,
+    receipt: stored,
+    duplicate: false,
+  };
 }
 
 function duplicate(deps: RecordDeps, user: User, expense: Expense): RecordReceiptResult {

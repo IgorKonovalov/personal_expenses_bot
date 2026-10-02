@@ -6,6 +6,7 @@ import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import type { CategoryId } from '../db/categories.js';
+import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import {
   answerBudgetFlow,
   budgetScreen,
@@ -24,7 +25,7 @@ const OCT_1 = new Date('2026-10-01T09:00:00Z');
 const OCT_2 = new Date('2026-10-02T09:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let user: User;
 let ledger: Ledger;
 let messageId = 0;
@@ -38,6 +39,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Moscow',
+    keys: createLedgerKeyring(),
   };
   const provisioned = provisionUser(deps, {
     provider: 'telegram',
@@ -68,7 +70,13 @@ function spend(text: string, at: Date) {
   return result.expense;
 }
 
-const status = (now: Date) => memberBudgetStatus(deps, { user, ledger, now });
+// A plaintext ledger never reads as locked.
+function plain<T extends object>(value: T | Locked | undefined): T | undefined {
+  if (isLocked(value)) throw new Error('a plaintext ledger read as locked');
+  return value;
+}
+
+const status = (now: Date) => plain(memberBudgetStatus(deps, { user, ledger, now }));
 
 describe('budgetStatus over a calendar month (ADR-0017)', () => {
   it('has no budget before a limit is set', () => {
@@ -293,6 +301,7 @@ describe('a group ledger (ADR-0015)', () => {
   const groupDeps = () => ({
     ...deps,
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
     defaultCurrency: 'RSD' as const,
   });
   const sender = (telegramId: number, firstName: string) => ({ telegramId, firstName });
@@ -384,7 +393,9 @@ describe('the limit flow', () => {
     setLimit('30000');
     db.prepare("UPDATE ledgers SET default_currency = 'EUR'").run();
     const eurLedger = { ...ledger, defaultCurrency: 'EUR' as const };
-    expect(memberBudgetStatus(deps, { user, ledger: eurLedger, now: OCT_1 })?.currency).toBe('RUB');
+    expect(plain(memberBudgetStatus(deps, { user, ledger: eurLedger, now: OCT_1 }))?.currency).toBe(
+      'RUB',
+    );
 
     ledger = eurLedger;
     setLimit('1000');

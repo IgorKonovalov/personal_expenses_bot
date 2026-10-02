@@ -1,21 +1,30 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { archiveCategory, type CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
-import type { ExpenseId } from '../db/expenses.js';
+import { findHistoryCategory, type ExpenseId } from '../db/expenses.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, restoreExpense, undoExpense, type RecordDeps } from './recordExpense.js';
+import { sealPersonalLedger } from './testing/sealLedger.js';
 import { seedLedgerCategories } from './seedCategories.js';
+
+// The history step's repository call, spied on and passed through, so a test can assert it never
+// runs for a sealed ledger.
+vi.mock('../db/expenses.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/expenses.js')>();
+  return { ...actual, findHistoryCategory: vi.fn(actual.findHistoryCategory) };
+});
 
 // Message sent 23:50 local (CEST) on the 29th, processed 00:10 local on the 30th.
 const SENT = new Date('2026-09-29T21:50:00Z');
 const PROCESSED = new Date('2026-09-29T22:10:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let logLines: string[];
 let alice: User;
 let bob: User;
@@ -30,6 +39,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {
@@ -507,5 +517,27 @@ describe('restoreExpense', () => {
         now: PROCESSED,
       }),
     ).toEqual({ kind: 'notFound' });
+  });
+});
+
+describe('recordExpense in a sealed ledger (ADR-0020)', () => {
+  it('reads description_key in a plaintext ledger, and never in a sealed one', async () => {
+    const history = vi.mocked(findHistoryCategory);
+    history.mockClear();
+    expect(record(alice, '300 кофе', 'tg:1001:1').kind).toBe('recorded');
+    expect(history).toHaveBeenCalledWith(db, alice.activeLedgerId, 'кофе');
+
+    await sealPersonalLedger(deps, bob, PROCESSED);
+    history.mockClear();
+    expect(record(bob, '300 кофе', 'tg:1002:1').kind).toBe('recorded');
+    expect(record(bob, '300 кофе', 'tg:1002:2').kind).toBe('recorded');
+
+    expect(history).not.toHaveBeenCalled();
+    expect(
+      db
+        .prepare('SELECT description_key FROM expenses WHERE ledger_id = ?')
+        .pluck()
+        .all(bob.activeLedgerId),
+    ).toEqual([null, null]);
   });
 });

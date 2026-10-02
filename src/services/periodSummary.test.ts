@@ -10,15 +10,17 @@ import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { bindGroup, recordGroupExpense } from './groupChats.js';
+import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import { currentPeriodSummary, groupPeriodSummary, ledgerPeriodSummary } from './periodSummary.js';
 import { provisionUser } from './provisionUser.js';
-import type { RecordDeps } from './recordExpense.js';
+import { recordExpense, type RecordDeps } from './recordExpense.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 
 // Wednesday 30 September, 12:00 local (CEST).
 const NOW = new Date('2026-09-30T10:00:00Z');
 
 let db: Db;
-let deps: RecordDeps;
+let deps: RecordDeps & { keys: LedgerKeyring };
 let user: User;
 let other: User;
 let ledgerId: LedgerId;
@@ -32,6 +34,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Belgrade',
+    keys: createLedgerKeyring(),
   };
   const provision = (externalId: string) =>
     provisionUser(deps, {
@@ -90,9 +93,17 @@ function add(
 const lines = (s: { lines: readonly { name: string | null; amountMinor: number }[] }) =>
   s.lines.map((line) => [line.name, line.amountMinor]);
 
+// A plaintext ledger never reads as locked.
+function plain<T extends object>(value: T | Locked): T;
+function plain<T extends object>(value: T | Locked | undefined): T | undefined;
+function plain<T extends object>(value: T | Locked | undefined): T | undefined {
+  if (isLocked(value)) throw new Error('a plaintext ledger read as locked');
+  return value;
+}
+
 describe('currentPeriodSummary', () => {
   it('splits the month per currency and category, the ledger default first', () => {
-    const summary = currentPeriodSummary(deps, { user, kind: 'month', now: NOW });
+    const summary = plain(currentPeriodSummary(deps, { user, kind: 'month', now: NOW }));
 
     expect(summary.period).toEqual(monthOf('2026-09-30' as LocalDate));
     expect(summary.currencies.map((c) => [c.currency, c.totalMinor])).toEqual([
@@ -114,7 +125,7 @@ describe('currentPeriodSummary', () => {
   });
 
   it('covers Monday to Sunday for the week, without Sunday the 27th or undone', () => {
-    const summary = currentPeriodSummary(deps, { user, kind: 'week', now: NOW });
+    const summary = plain(currentPeriodSummary(deps, { user, kind: 'week', now: NOW }));
 
     expect(summary.period).toEqual(weekOf('2026-09-28' as LocalDate));
     const [rsd, eur] = summary.currencies;
@@ -130,12 +141,14 @@ describe('currentPeriodSummary', () => {
 
 describe('ledgerPeriodSummary', () => {
   it('pages to August with September as its next', () => {
-    const summary = ledgerPeriodSummary(deps, {
-      user,
-      ledgerId,
-      period: monthOf('2026-08-01' as LocalDate),
-      now: NOW,
-    });
+    const summary = plain(
+      ledgerPeriodSummary(deps, {
+        user,
+        ledgerId,
+        period: monthOf('2026-08-01' as LocalDate),
+        now: NOW,
+      }),
+    );
 
     expect(summary?.currencies.map((c) => [c.currency, c.totalMinor, lines(c)])).toEqual([
       ['RSD', 10000, [['Продукты', 10000]]],
@@ -220,7 +233,7 @@ describe('groupPeriodSummary', () => {
     expect(groupPeriodSummary(deps, { chatId: CHAT, kind: 'month', now: late })?.period).toEqual(
       monthOf('2026-09-01' as LocalDate),
     );
-    expect(currentPeriodSummary(deps, { user, kind: 'month', now: late }).period).toEqual(
+    expect(plain(currentPeriodSummary(deps, { user, kind: 'month', now: late })).period).toEqual(
       monthOf('2026-09-01' as LocalDate),
     );
   });
@@ -235,5 +248,30 @@ describe('groupPeriodSummary', () => {
         now: NOW,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('a sealed ledger (ADR-0020)', () => {
+  it('totals 450 + 1200 + 300 as 1950 once unlocked, and reads as locked before', async () => {
+    await sealPersonalLedger(deps, other, NOW);
+    let messageId = 0;
+    for (const text of ['450 кофе', '1200 такси', '300 хлеб']) {
+      const result = recordExpense(deps, {
+        user: other,
+        text,
+        sourceKey: `tg:1002:${String(++messageId)}`,
+        occurredAt: NOW,
+        now: NOW,
+      });
+      expect(result.kind).toBe('recorded');
+    }
+
+    expect(currentPeriodSummary(deps, { user: other, kind: 'month', now: NOW })).toEqual({
+      kind: 'locked',
+    });
+
+    await unlockPersonalLedger(deps, other, NOW);
+    const summary = plain(currentPeriodSummary(deps, { user: other, kind: 'month', now: NOW }));
+    expect(summary.currencies.map((c) => [c.currency, c.totalMinor])).toEqual([['RSD', 195000]]);
   });
 });
