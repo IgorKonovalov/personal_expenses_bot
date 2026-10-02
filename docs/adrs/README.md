@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0032`
+- **Next free number:** `0034`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -38,3 +38,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0029](0029-tags-on-the-expense-row.md) | Tags are `#words` stripped from the expense text and stored on the expense row | proposed (2026-10-01) |
 | [0030](0030-debts-as-operations-settle-up-per-currency.md) | Debts are signed operations balanced per person and currency; group settle-up splits equally per currency | proposed (2026-10-01) |
 | [0031](0031-local-time-scheduler.md) | One minute-tick scheduler fires per-ledger jobs at a local time, keyed by occurrence date | proposed (2026-10-02) |
+| [0032](0032-statement-rows-match-recorded-expenses.md) | A statement row counts as already recorded when a live expense matches its amount and currency within one day | proposed (2026-10-02) |
+| [0033](0033-pdf-statements-via-pdfjs-dist.md) | PDF statements are read with `pdfjs-dist`, imported lazily and only by the statements adapter | proposed (2026-10-02) |
