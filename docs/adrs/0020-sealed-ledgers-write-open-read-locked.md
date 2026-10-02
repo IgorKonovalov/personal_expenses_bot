@@ -1,8 +1,8 @@
 # ADR-0020: An encrypted ledger is sealed to its own public key: recording stays open, reading needs the owner's passphrase
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-02)
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0019 ([0019-encrypted-personal-ledger.md](../plans/0019-encrypted-personal-ledger.md))
+> **Related plan(s):** Plan 0019 ([0019-encrypted-personal-ledger.md](../plans/done/0019-encrypted-personal-ledger.md))
 
 ## Context
 

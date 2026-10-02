@@ -379,7 +379,7 @@ through the [conductor](tools/conductor/README.md)
 ## Roadmap
 
 Active and drafted plans are listed in [docs/plans/README.md](docs/plans/README.md): currently
-an encrypted personal ledger, tags for projects and trips, debts between people, and onboarding.
+tags for projects and trips, debts between people, and onboarding.
 Further out: fiscal receipts from Russia and Kazakhstan, more bank SMS templates, and CSV/XLSX
 export.
 

@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed ledgers in Phase 4)
+> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed ledgers in Phase 4)
 > **Related ADRs:** [ADR-0032](../adrs/0032-statement-rows-match-recorded-expenses.md) (matching rows to recorded expenses),
 > [ADR-0033](../adrs/0033-pdf-statements-via-pdfjs-dist.md) (PDF via `pdfjs-dist`),
 > [ADR-0021](../adrs/0021-bank-sms-template-parsers-plain-expense.md) (bank SMS: original amount, plain expense),

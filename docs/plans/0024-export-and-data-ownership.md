@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
+> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
 > **Related ADRs:** [ADR-0026](../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
 > [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted amounts),
 > [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),

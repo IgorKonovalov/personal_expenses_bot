@@ -1,8 +1,8 @@
 # 0019: Encrypted personal ledger: recording stays open, reading needs the owner's passphrase
 
-> **Status:** in-progress
+> **Status:** done (2026-10-02): built as planned after three fix passes, one minor open, Phase 6 live check owed
 > **Created:** 2026-10-01
-> **Related ADRs:** ADR-0020 ([0020-sealed-ledgers-write-open-read-locked.md](../adrs/0020-sealed-ledgers-write-open-read-locked.md))
+> **Related ADRs:** ADR-0020 ([0020-sealed-ledgers-write-open-read-locked.md](../../adrs/0020-sealed-ledgers-write-open-read-locked.md))
 
 ## TL;DR
 
@@ -240,11 +240,11 @@ are stored per wrap, so they can change later without a migration.
 
 ## Risks & open questions
 
-- **A third record path.** [Plan 0021](done/0021-bank-sms-card-purchase.md) adds `recordBankSms`
+- **A third record path.** [Plan 0021](0021-bank-sms-card-purchase.md) adds `recordBankSms`
   (`src/services/recordBankSms.ts`) next to `recordExpense` and `recordReceipt`. Whichever plan
   lands second routes it through the sealing seam. Its `sms:` source key is a hash of the
   purchase's time, amount and merchant, which is low-entropy (ADR-0021, Negative).
-- **Converted totals.** [Plan 0022](done/0022-converted-totals-nbs.md) adds a migration and edits
+- **Converted totals.** [Plan 0022](0022-converted-totals-nbs.md) adds a migration and edits
   `periodSummary.ts`, `todaySummary.ts` and `budget.ts`. Whichever plan lands second takes the next
   free migration number and rebases onto the other's service shape. Conversion runs on opened
   expenses, after decryption.
@@ -428,3 +428,15 @@ are stored per wrap, so they can change later without a migration.
   ledger).
 
 ## Followups
+
+- **minor (open):** a tap on an ambiguous-amount reading whose expense is already recorded in a
+  locked sealed ledger answers `ambiguousSourceUnavailable`, because
+  `src/bot/handlers/ambiguous.ts` treats a `sealedDuplicate` result like any other non-`recorded`
+  one. It needs its own reply.
+- New receipts in a sealed ledger, with line items fetched while unlocked (What this plan does
+  NOT do).
+- Category suggestion from sealed history while unlocked: an in-memory index built at unlock.
+- Shared and group ledgers sealed with a wrap per member.
+- The `/changelog` reply is at its `CHANGELOG_BUDGET` at v0.12.0, and the `bot.test.ts` case "has
+  no truncation line when everything fits" will fail at the next version's announcement. The
+  test should pin the truncation behavior, not the current roster fitting.

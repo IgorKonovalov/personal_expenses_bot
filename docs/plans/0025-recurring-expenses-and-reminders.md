@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
+> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
 > **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md) (ledger time),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),

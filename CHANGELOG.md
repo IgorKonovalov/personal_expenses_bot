@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.12.0 (2026-10-02)
+
+From Plan 0019 (encrypted personal ledger).
+
+- /settings -> [Шифрование] encrypts the personal ledger under a passphrase and shows a one-time
+  recovery code. Expenses still record as before, but /today, /week, /month, /budget and the
+  expense cards need /unlock and the passphrase. The ledger relocks after 30 minutes without a
+  read, on /lock and on every restart. /recover takes the code and sets a new passphrase.
+- Messages carrying the passphrase or the code are deleted from the chat. A sealed ledger takes
+  no receipt QR codes and suggests categories from keywords only.
+- Existing databases rebuild the expenses table once at boot.
+
 ## 0.11.1 (2026-10-01)
 
 From Plan 0023 (fx fetch of expense days, newest first).

@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-09-30
-> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
+> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
 > [Plan 0024](0024-export-and-data-ownership.md) (export gains a tags column)
 > **Related ADRs:** [ADR-0029](../adrs/0029-tags-on-the-expense-row.md) (tag syntax and storage),
 > [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),

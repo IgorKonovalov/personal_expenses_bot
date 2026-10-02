@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-09-30
-> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
+> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
 > **Related ADRs:** [ADR-0030](../adrs/0030-debts-as-operations-settle-up-per-currency.md) (the debt and settle-up model),
 > [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md) (original amounts),
 > [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (flows),
