@@ -39,7 +39,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Moscow',
-    keys: createLedgerKeyring(),
+    keys: createLedgerKeyring(() => OCT_1),
   };
   const provisioned = provisionUser(deps, {
     provider: 'telegram',
@@ -301,7 +301,7 @@ describe('a group ledger (ADR-0015)', () => {
   const groupDeps = () => ({
     ...deps,
     defaultTimezone: 'Europe/Belgrade',
-    keys: createLedgerKeyring(),
+    keys: createLedgerKeyring(() => OCT_1),
     defaultCurrency: 'RSD' as const,
   });
   const sender = (telegramId: number, firstName: string) => ({ telegramId, firstName });

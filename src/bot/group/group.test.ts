@@ -631,7 +631,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
       logger: createLogger('silent'),
       newId: () => 'unused',
       defaultTimezone: 'Europe/Belgrade',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => NOW),
     };
     const a = findUserByIdentity(db, 'telegram', String(ALLOWED_ID)) as User;
     const cafe = db

@@ -30,6 +30,8 @@ import {
   BUDGET_LIMIT,
   BUDGET_OPEN,
   BUDGET_START_DAY,
+  RECOVERY_SAVED,
+  SETTINGS_ENCRYPTION,
   assertCallbackData,
   budgetCapClearData,
   budgetCapData,
@@ -371,7 +373,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /categories, /settings, /help and /changelog from messages', async () => {
+  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help and /changelog from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -387,8 +389,10 @@ describe('command registration at boot', () => {
             { command: 'budget', description: messages.commands[3].description },
             { command: 'categories', description: messages.commands[4].description },
             { command: 'settings', description: messages.commands[5].description },
-            { command: 'help', description: messages.commands[6].description },
-            { command: 'changelog', description: messages.commands[7].description },
+            { command: 'unlock', description: messages.commands[6].description },
+            { command: 'lock', description: messages.commands[7].description },
+            { command: 'help', description: messages.commands[8].description },
+            { command: 'changelog', description: messages.commands[9].description },
           ],
         },
       },
@@ -1815,7 +1819,7 @@ describe('/budget and the card line (ADR-0017)', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => clock.now),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -2346,7 +2350,7 @@ describe('/week and /month', () => {
       now: () => NOW,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => NOW),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -2830,7 +2834,7 @@ describe('/categories screen and text flows', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => clock.now),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -3276,7 +3280,7 @@ describe('/settings hub and the timezone picker', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => clock.now),
       botInfo,
     });
     const calls: ApiCall[] = [];
@@ -4425,5 +4429,101 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
       { amount_minor: 600, name: 'Продукты' },
       { amount_minor: 900, name: 'Продукты' },
     ]);
+  });
+});
+
+describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
+  const PASSPHRASE = 'synthetic passphrase 42';
+  const NEW_PASSPHRASE = 'another synthetic one 7';
+
+  // A trace-level logger and real message ids from sendMessage, so screens get an anchor.
+  function traceBot() {
+    const now = new Date('2026-09-30T10:00:00Z');
+    const db = openDatabase(':memory:');
+    runMigrations(db, now);
+    const logLines: string[] = [];
+    let ids = 0;
+    let messageId = 100;
+    const bot = createBot({
+      token: '123456:test-token',
+      allowedTelegramIds: new Set([ALLOWED_ID]),
+      logger: createLogger('trace', { write: (line: string) => void logLines.push(line) }),
+      db,
+      newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+      now: () => now,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      keys: createLedgerKeyring(() => now),
+      botInfo: createTestBot().bot.botInfo,
+    });
+    const calls: ApiCall[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      calls.push({ method, payload });
+      const chat = { id: (payload as { chat_id?: number }).chat_id, type: 'private' };
+      const result =
+        method === 'sendMessage' ? { message_id: ++messageId, date: 0, chat, text: '' } : true;
+      return Promise.resolve({ ok: true, result: result as never });
+    });
+    let updateId = 0;
+    const say = (text: string, id: number) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: id, text, date: now }));
+    const tap = (data: string, id: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: id }));
+    const sent = () =>
+      calls
+        .filter((call) => call.method === 'sendMessage')
+        .map((call) => (call.payload as { text: string }).text);
+    return { calls, logLines, say, tap, sent };
+  }
+
+  it('/lock locks now, and /today then answers locked', async () => {
+    const { calls, say, tap, sent } = traceBot();
+    await say('/settings', 1);
+    await tap(SETTINGS_ENCRYPTION, 101);
+    await say(PASSPHRASE, 2);
+    await say('/unlock', 3);
+    await say(PASSPHRASE, 4);
+
+    calls.length = 0;
+    await say('/lock', 5);
+    await say('/today', 6);
+    await say('/lock', 7);
+    expect(sent()).toEqual([
+      messages.ledgerLockedNow,
+      messages.ledgerLocked,
+      messages.alreadyLocked,
+    ]);
+  });
+
+  it('no log line at trace level carries the passphrase or the recovery code', async () => {
+    const { logLines, say, tap, sent } = traceBot();
+    await say('/settings', 1);
+    await tap(SETTINGS_ENCRYPTION, 101);
+    await say(PASSPHRASE, 2);
+    const code = /<code>([A-Z2-7-]+)<\/code>/.exec(sent().join('\n'))?.[1];
+    if (code === undefined) throw new Error('no recovery code shown');
+    await tap(RECOVERY_SAVED, 102);
+    await say('450 кофе', 3);
+    await say('/unlock', 4);
+    await say(PASSPHRASE, 5);
+    await say('/today', 6);
+    await say('/lock', 7);
+    await say('/recover', 8);
+    await say(code.toLowerCase(), 9);
+    await say(NEW_PASSPHRASE, 10);
+
+    expect(sent()).toContain(messages.passphraseChanged);
+    // The run logged at all, so an empty log can't pass for a clean one.
+    expect(logLines.some((line) => line.includes('ledger recovered'))).toBe(true);
+    const secrets = [
+      PASSPHRASE,
+      NEW_PASSPHRASE,
+      code,
+      code.replaceAll('-', ''),
+      code.toLowerCase(),
+    ];
+    for (const line of logLines) {
+      for (const secret of secrets) expect(line, secret).not.toContain(secret);
+    }
   });
 });

@@ -42,7 +42,7 @@ const backups: BackupSchedule | undefined =
 if (backups === undefined) logger.info('backups off: BACKUP_DIR unset');
 
 // Unlocked sealed-ledger keys live only in this process: a restart locks every ledger.
-const keys = createLedgerKeyring();
+const keys = createLedgerKeyring(() => new Date());
 
 const bot = createBot({
   token: config.botToken,

@@ -12,6 +12,7 @@ import {
   createLedgerKeyring,
   enableEncryption,
   encryptionState,
+  lockLedger,
   openExpenses,
   recoverWithCode,
   startEnableFlow,
@@ -23,6 +24,7 @@ import {
 } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
+import { todaySummary } from './todaySummary.js';
 
 const NOW = new Date('2026-09-30T10:00:00Z');
 const TODAY = '2026-09-30' as LocalDate;
@@ -43,7 +45,7 @@ beforeEach(() => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Belgrade',
-    keys: createLedgerKeyring(),
+    keys: createLedgerKeyring(() => NOW),
   };
   user = provisionUser(deps, {
     provider: 'telegram',
@@ -195,7 +197,9 @@ describe('a sealed ledger', () => {
     await unlock(PASSPHRASE);
     expect(encryptionState(deps, user).kind).toBe('unlocked');
 
-    expect(encryptionState({ ...deps, keys: createLedgerKeyring() }, user).kind).toBe('locked');
+    expect(encryptionState({ ...deps, keys: createLedgerKeyring(() => NOW) }, user).kind).toBe(
+      'locked',
+    );
   });
 
   it('a redelivered expense in a locked ledger records nothing new and shows nothing', async () => {
@@ -312,5 +316,50 @@ describe('recovery and passphrase change', () => {
   it('a passphrase change is not offered while locked', async () => {
     await enabledCode();
     expect(startPassphraseChange(deps, user, NOW)).toBe('locked');
+  });
+});
+
+describe('the idle lock', () => {
+  // 12:00 local (CEST) on the 30th, and minutes after it.
+  const at = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
+  let clock: { now: Date };
+
+  async function unlockedAtNoon() {
+    clock = { now: at(0) };
+    deps = { ...deps, keys: createLedgerKeyring(() => clock.now) };
+    await enable();
+    await unlock(PASSPHRASE);
+  }
+
+  function today(minutes: number) {
+    clock.now = at(minutes);
+    return 'kind' in todaySummary(deps, { user, now: clock.now }) ? 'locked' : 'open';
+  }
+
+  it('a read at 12:10 slides the expiry to 12:40, so a read at 12:39 opens', async () => {
+    await unlockedAtNoon();
+    expect(today(10)).toBe('open');
+    expect(today(39)).toBe('open');
+  });
+
+  it('without the 12:39 read, a read at 12:41 is locked', async () => {
+    await unlockedAtNoon();
+    expect(today(10)).toBe('open');
+    expect(today(41)).toBe('locked');
+    expect(encryptionState(deps, user).kind).toBe('locked');
+  });
+
+  it('a status check is no read: it slides nothing', async () => {
+    await unlockedAtNoon();
+    clock.now = at(29);
+    expect(encryptionState(deps, user).kind).toBe('unlocked');
+    expect(today(30)).toBe('locked');
+  });
+
+  it('/lock locks at once; a second /lock finds it locked', async () => {
+    await unlockedAtNoon();
+    expect(lockLedger(deps, user)).toBe('locked');
+    expect(today(1)).toBe('locked');
+    expect(lockLedger(deps, user)).toBe('alreadyLocked');
   });
 });

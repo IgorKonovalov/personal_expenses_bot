@@ -286,8 +286,8 @@ are stored per wrap, so they can change later without a migration.
 | 1: Walking skeleton | dev | done | `75f84e2` |
 | 2: Every read path honors the lock | dev | done | `c1b5093` |
 | 3: Enable on a ledger with history | dev | done | `4cf2062` |
-| 4: Recovery code and passphrase change | dev | done | committed with this row |
-| 5: Lock lifecycle, log hygiene, docs | dev | not started | |
+| 4: Recovery code and passphrase change | dev | done | `1f38257` |
+| 5: Lock lifecycle, log hygiene, docs | dev | done | committed with this row |
 | 6: Live check in Telegram | human | not started | |
 
 ### Notes
@@ -359,6 +359,20 @@ are stored per wrap, so they can change later without a migration.
   ([Сменить пароль]). `src/bot/bot.ts` and `src/bot/flows.ts` are unchanged: `/recover` is
   registered in `registerUnlock`, and the new secret flows reach `answerSecretFlow` through
   `isSecretFlow`.
+- Phase 5: `createLedgerKeyring` takes the clock the idle expiry runs on, so `src/index.ts`,
+  `src/bot/testHarness.ts` and every test fixture with a keyring pass one (outside `Files
+  touched`). `privateKey` slides the expiry; a new `isUnlocked` answers status checks (the
+  settings screen, `/unlock`, the budget screen's lock check) without sliding it. An expiry is
+  reached at exactly 30 minutes.
+- Phase 5: the 12:00 / 12:10 / 12:39 / 12:41 runs are service tests on `todaySummary` (what
+  `/today` calls) with a movable clock, in `ledgerKeys.test.ts`. `/lock` and the log test are
+  bot-level in `bot.test.ts`. The log test also records, reads and locks, and checks the code in
+  its shown, dash-less and lower-case forms. With a trace log of the passphrase added to
+  `unlockLedger`, it fails.
+- Phase 5: `/unlock` and `/lock` join the `setMyCommands` list (its pinned test in `bot.test.ts`
+  is updated), and the `/settings` description names encryption. `/recover` is in `/help` only.
+  `src/bot/handlers/help.ts` is unchanged: the copy lives in `messages.help`. `CLAUDE.md`'s
+  `src/domain/` line gains "sealing".
 
 ### Close triggers
 

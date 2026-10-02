@@ -4,6 +4,7 @@ import type { ScreenAnchor, SecretFlow } from '../../services/flowSessions.js';
 import {
   changePassphrase,
   enableEncryption,
+  lockLedger,
   recoverWithCode,
   startRecoverFlow,
   startUnlockFlow,
@@ -17,7 +18,7 @@ import { renderAnchor, type ScreenView } from '../screens.js';
 import { encryptionPromptView, encryptionView, passphrasePromptView } from './settings.js';
 import { ensureUser } from './start.js';
 
-// Sealed ledgers (ADR-0020): /unlock, /recover, and the answers to the secret prompts. A message that
+// Sealed ledgers (ADR-0020): /unlock, /lock, /recover, and the answers to the secret prompts. A message that
 // carries a secret is deleted in the update that brings it, before anything else; the secret is
 // never logged, stored in a flow or repeated back.
 
@@ -164,6 +165,20 @@ export function registerUnlock(bot: Composer<Context>, deps: HandlerDeps): void 
         await replyHtml(ctx, messages.alreadyUnlocked);
         return;
     }
+  });
+
+  bot.command('lock', async (ctx) => {
+    if (ctx.from === undefined) return;
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const result = lockLedger(deps, user);
+    await replyHtml(
+      ctx,
+      result === 'locked'
+        ? messages.ledgerLockedNow
+        : result === 'alreadyLocked'
+          ? messages.alreadyLocked
+          : messages.unlockNotSealed,
+    );
   });
 
   bot.command('recover', async (ctx) => {

@@ -54,7 +54,7 @@ describe('requireScreen', () => {
       now: () => new Date('2026-09-30T10:00:00Z'),
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD' as const,
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => new Date('2026-09-30T10:00:00Z')),
     };
   }
 

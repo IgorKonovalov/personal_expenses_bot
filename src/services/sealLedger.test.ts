@@ -62,7 +62,7 @@ beforeEach(async () => {
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     logger: createLogger('silent'),
     defaultTimezone: 'Europe/Belgrade',
-    keys: createLedgerKeyring(),
+    keys: createLedgerKeyring(() => T0),
     fetchers: {
       RS: () => Promise.resolve({ kind: 'fetched', receipt: FETCHED }),
       ME: () => Promise.resolve({ kind: 'fetched', receipt: FETCHED }),

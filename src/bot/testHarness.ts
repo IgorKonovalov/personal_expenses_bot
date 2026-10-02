@@ -44,7 +44,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   runMigrations(db, now);
   const logLines: string[] = [];
   let n = 0;
-  const keys = createLedgerKeyring();
+  const keys = createLedgerKeyring(() => now);
   const bot = createBot({
     token: '123456:test-token',
     allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),

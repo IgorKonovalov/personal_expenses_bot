@@ -39,7 +39,7 @@ describe('startReceiptWorker', () => {
       now: () => T0,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'EUR',
-      keys: createLedgerKeyring(),
+      keys: createLedgerKeyring(() => T0),
       fetchers: { RS: fetcher, ME: fetcher },
     };
     const user = provisionUser(deps, {

@@ -30,7 +30,7 @@ when an amount could be read two ways.
 | [Вернуть]                            | Restores the expense, and `/today` counts it again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `/categories`                        | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back. [Обязательные] marks which categories are essential (rent, groceries)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/budget`                            | The ledger's budget: the limit, the period with its day number, what's left for today and for the period, with spending in other currencies converted into the budget's currency, and any spending with no rate listed as not counted. [Задать лимит] sets the limit for a period, [День начала периода] moves the period start to your payday (1 to 31), [Считать все] / [Только необязательные] picks whether essential categories count, and [Лимиты по категориям] caps single categories. Once set, every expense card gains `Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD`, and a capped category's line `Кафе и рестораны: 450.00 из 5 000.00 RSD`. Yesterday's leftover or overspend carries into today |
-| `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта] and [Категории]. The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта], [Категории] and [Шифрование] (see [Encrypted ledger](#encrypted-ledger)). The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `/changelog`                         | What's new: one entry per version, newest first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -117,6 +117,28 @@ far: the Serbian `Koriscenje kartice` / `Korišćenje kartice` SMS, with its `Da
   know, is refused, and nothing is recorded.
 
 Groups ignore bank SMS.
+
+### Encrypted ledger
+
+Your personal ledger can be sealed so that only you can read it
+([ADR-0020](docs/adrs/0020-sealed-ledgers-write-open-read-locked.md)). `/settings` →
+[Шифрование] asks for a passphrase of at least 10 characters and shows a one-time recovery code
+(8 groups of 4 characters) with [Сохранил], which deletes it. Every message carrying the
+passphrase or the code is deleted as soon as it arrives.
+
+- Amounts, descriptions and categories are sealed to the ledger's public key, so `450 кофе`
+  records as before without the passphrase. Expenses recorded before the switch are sealed then,
+  receipts with their items included.
+- `/today`, `/week`, `/month`, `/budget` and taps on an expense card answer «Учёт зашифрован и
+  закрыт» until `/unlock` and the passphrase. The ledger closes again after 30 minutes without a
+  read, on `/lock`, and on every restart of the bot.
+- `/recover` takes the recovery code and then a new passphrase. While unlocked, [Шифрование] →
+  [Сменить пароль] changes it. Losing both the passphrase and the code loses the data.
+- A sealed ledger doesn't take receipt QR codes or links, and suggests categories from keywords
+  only. The date, the currency and the number of expenses stay readable.
+- It protects the database file and backups taken after the switch. It does not protect against
+  whoever runs the bot changing its code, or against Telegram, which sees every message. Backups
+  taken before the switch keep plaintext until `BACKUP_KEEP` rotation drops them.
 
 ### Currency conversion
 
@@ -314,7 +336,7 @@ The pre-commit hook runs Prettier on staged files, then typecheck, lint and test
 
 ```
 src/
-├── domain/      pure: money, expense text, time windows, aggregation. No I/O, no framework
+├── domain/      pure: money, expense text, time windows, aggregation, sealing. No I/O, no framework
 ├── db/          SQLite connection, forward-only migrations, repositories. The only place with SQL
 ├── services/    use-cases orchestrating domain + db
 ├── bot/         the Telegram adapter (grammY): handlers, middleware, the Russian messages module

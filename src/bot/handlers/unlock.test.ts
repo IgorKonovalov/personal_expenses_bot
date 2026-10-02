@@ -44,7 +44,7 @@ function sealedBot() {
     now: () => NOW,
     defaultTimezone: 'Europe/Belgrade',
     defaultCurrency: 'RSD',
-    keys: createLedgerKeyring(),
+    keys: createLedgerKeyring(() => NOW),
     botInfo: createTestBot().bot.botInfo,
   });
   const calls: ApiCall[] = [];

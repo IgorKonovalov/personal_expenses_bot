@@ -50,23 +50,45 @@ import { hasPendingReceipts, scrubFreedPages, sealLedgerRows } from './sealLedge
 
 export const MIN_PASSPHRASE_LENGTH = 10;
 
+// An unlocked key expires after this long without a read of its ledger.
+export const IDLE_LOCK_MS = 30 * 60 * 1000;
+
 // The unlocked private keys of this process. A new keyring, like a restart, holds none.
 export interface LedgerKeyring {
-  // The ledger's private key while unlocked; undefined while locked.
+  // The ledger's private key while unlocked, for a read: the read slides the idle expiry.
+  // Undefined while locked, or once IDLE_LOCK_MS passed since the last read.
   readonly privateKey: (ledgerId: LedgerId) => KeyObject | undefined;
+  // Whether a key is held, without counting as a read.
+  readonly isUnlocked: (ledgerId: LedgerId) => boolean;
   readonly hold: (ledgerId: LedgerId, privateKey: KeyObject) => void;
   // Returns false when the ledger was not unlocked.
   readonly lock: (ledgerId: LedgerId) => boolean;
 }
 
-export function createLedgerKeyring(): LedgerKeyring {
-  const held = new Map<LedgerId, KeyObject>();
+// `now` is the clock the idle expiry is measured on.
+export function createLedgerKeyring(now: () => Date): LedgerKeyring {
+  const held = new Map<LedgerId, { readonly key: KeyObject; lastRead: number }>();
+  const live = (ledgerId: LedgerId) => {
+    const entry = held.get(ledgerId);
+    if (entry === undefined) return undefined;
+    if (now().getTime() - entry.lastRead >= IDLE_LOCK_MS) {
+      held.delete(ledgerId);
+      return undefined;
+    }
+    return entry;
+  };
   return {
-    privateKey: (ledgerId) => held.get(ledgerId),
-    hold: (ledgerId, privateKey) => {
-      held.set(ledgerId, privateKey);
+    privateKey: (ledgerId) => {
+      const entry = live(ledgerId);
+      if (entry === undefined) return undefined;
+      entry.lastRead = now().getTime();
+      return entry.key;
     },
-    lock: (ledgerId) => held.delete(ledgerId),
+    isUnlocked: (ledgerId) => live(ledgerId) !== undefined,
+    hold: (ledgerId, privateKey) => {
+      held.set(ledgerId, { key: privateKey, lastRead: now().getTime() });
+    },
+    lock: (ledgerId) => live(ledgerId) !== undefined && held.delete(ledgerId),
   };
 }
 
@@ -110,7 +132,7 @@ export type EncryptionState =
 export function encryptionState(deps: KeyDeps, user: User): EncryptionState {
   const ledger = personalLedger(deps.db, user);
   if (!isSealedLedger(deps, ledger.id)) return { kind: 'off', ledger };
-  return { kind: deps.keys.privateKey(ledger.id) === undefined ? 'locked' : 'unlocked', ledger };
+  return { kind: deps.keys.isUnlocked(ledger.id) ? 'unlocked' : 'locked', ledger };
 }
 
 function personalLedger(db: Db, user: User): Ledger {
@@ -403,6 +425,16 @@ export async function changePassphrase(
   })();
 }
 
+// /lock: forgets the personal ledger's key now. `off` when it isn't sealed, `locked` when it
+// already was.
+export function lockLedger(deps: KeyDeps, user: User): 'locked' | 'alreadyLocked' | 'off' {
+  const state = encryptionState(deps, user);
+  if (state.kind === 'off') return 'off';
+  if (!deps.keys.lock(state.ledger.id)) return 'alreadyLocked';
+  deps.logger.info({ ledgerId: state.ledger.id, userId: user.id }, 'ledger locked');
+  return 'locked';
+}
+
 // A read of a sealed ledger while it is locked.
 export interface Locked {
   readonly kind: 'locked';
@@ -416,7 +448,7 @@ export function isLocked(value: object | undefined): value is Locked {
 
 // The ledger is sealed and this process holds no key for it.
 export function ledgerIsLocked(deps: Pick<KeyDeps, 'db' | 'keys'>, ledgerId: LedgerId): boolean {
-  return isSealedLedger(deps, ledgerId) && deps.keys.privateKey(ledgerId) === undefined;
+  return isSealedLedger(deps, ledgerId) && !deps.keys.isUnlocked(ledgerId);
 }
 
 export type Opened = { readonly kind: 'open'; readonly expenses: Expense[] } | Locked;
