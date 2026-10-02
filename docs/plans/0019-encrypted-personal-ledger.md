@@ -388,8 +388,10 @@ are stored per wrap, so they can change later without a migration.
   handler); `sealLedgerRows` re-keys the ledger's `sms:` and `rcpt:` rows to `sealed:<expenseId>`
   inside the enable transaction (`rekeyContentSourceKeys` in `src/db/expenses.ts`). README states
   the second-paste behavior. The sealed-ledger SMS done-whens are service tests in
-  `recordBankSms.test.ts`; the handler passes the key it builds for typed text. Committed with
-  this line.
+  `recordBankSms.test.ts`; the handler passes the key it builds for typed text. `74d3cb6`.
+- Fix (review minor: no guard on SQL sums over amounts): `src/db/noAmountAggregates.test.ts`
+  fails when any non-test source under `src/db/`, migrations included, aggregates
+  `amount_minor`. Committed with this line.
 
 ### Close triggers
 
