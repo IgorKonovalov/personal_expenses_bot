@@ -1,4 +1,4 @@
-import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import { InlineKeyboard, type CommandContext, type Composer, type Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import { cancelFlow, type ScreenAnchor, type SecretFlow } from '../../services/flowSessions.js';
 import {
@@ -161,9 +161,16 @@ export async function answerSecretFlow(
   }
 }
 
+// A secret typed after the command (`/unlock <passphrase>`, `/recover <code>`) is deleted unread;
+// the argument is ignored and the prompt asks for it on its own.
+async function deleteCommandArgument(ctx: CommandContext<Context>, deps: HandlerDeps) {
+  if (ctx.match.trim() !== '') await deleteSecretMessage(ctx, deps);
+}
+
 export function registerUnlock(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('unlock', async (ctx) => {
     if (ctx.from === undefined) return;
+    await deleteCommandArgument(ctx, deps);
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
     switch (startUnlockFlow(deps, user, now)) {
@@ -195,6 +202,7 @@ export function registerUnlock(bot: Composer<Context>, deps: HandlerDeps): void 
 
   bot.command('recover', async (ctx) => {
     if (ctx.from === undefined) return;
+    await deleteCommandArgument(ctx, deps);
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
     await replyHtml(

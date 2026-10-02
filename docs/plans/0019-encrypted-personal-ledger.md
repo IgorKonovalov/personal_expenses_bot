@@ -394,7 +394,10 @@ are stored per wrap, so they can change later without a migration.
   `amount_minor`. `e8a751d`.
 - Fix (review nit: the engines floor): `package.json` engines reads `>=24.7.0 <25`, the first
   Node with `crypto.argon2`. `.nvmrc` (`24`) and the Docker base (`node:24-alpine` by digest) are
-  unchanged. Committed with this line.
+  unchanged. `52cc236`.
+- Fix (review minor: a secret typed as a command argument): `/unlock` and `/recover` with text
+  after the command delete that message unread, then prompt as before; the argument is ignored.
+  Committed with this line.
 
 ### Close triggers
 
@@ -417,7 +420,7 @@ are stored per wrap, so they can change later without a migration.
   messages are deleted. `/help` has one new line, its menu line names encryption. README has an
   `### Encrypted ledger` section. Existing databases go through the `expenses` rebuild at boot.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 70 files,
-  980 tests (after the second fix pass); `pnpm build` exit 0 (`dist/db/migrations` holds `0012_sealed_ledgers.sql`);
+  981 tests (after the third fix pass); `pnpm build` exit 0 (`dist/db/migrations` holds `0012_sealed_ledgers.sql`);
   `node --test "tools/conductor/test/*.test.mjs"` exit 0, 236 tests;
   `node --test ".claude/hooks/*.test.mjs"` exit 0, 31 tests; `node scripts/check-doc-links.mjs`
   exit 0, 240 links.

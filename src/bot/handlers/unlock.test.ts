@@ -328,6 +328,24 @@ describe('/recover and the passphrase change in the bot', () => {
     expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
   });
 
+  it('deletes a secret typed after /unlock or /recover, and still prompts for it', async () => {
+    const { calls, say, sent, deleted, code } = await enabled();
+
+    await say(`/unlock ${PASSPHRASE}`, 10);
+    expect(deleted()).toEqual([10]);
+    expect(sent()).toEqual([messages.unlockPrompt]);
+
+    calls.length = 0;
+    await say(`/recover ${code}`, 11);
+    expect(deleted()).toEqual([11]);
+    expect(sent()).toEqual([messages.recoverPrompt]);
+
+    // A bare command carries nothing to delete.
+    calls.length = 0;
+    await say('/unlock', 12);
+    expect(deleted()).toEqual([]);
+  });
+
   it('a wrong code is deleted and refused, and the ledger stays locked', async () => {
     const { say, sent, deleted } = await enabled();
 
