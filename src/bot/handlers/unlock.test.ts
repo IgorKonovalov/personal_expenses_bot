@@ -93,6 +93,10 @@ describe('a sealed personal ledger in the bot', () => {
     expect((codeMessage?.payload as { text: string }).text).toMatch(
       /<code>[A-Z2-7]{4}(-[A-Z2-7]{4}){7}<\/code>/,
     );
+    // The enable confirmation names the backups taken before the switch.
+    expect((codeMessage?.payload as { text: string }).text).toContain(
+      'Резервные копии, сделанные до сегодняшнего дня, хранят их незашифрованными',
+    );
     expect((codeMessage?.payload as { reply_markup: unknown }).reply_markup).toEqual({
       inline_keyboard: [[{ text: 'Сохранил', callback_data: RECOVERY_SAVED }]],
     });

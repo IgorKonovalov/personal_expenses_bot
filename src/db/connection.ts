@@ -13,5 +13,8 @@ export function openDatabase(path: string): Db {
   db.pragma('busy_timeout = 5000');
   // Per connection: SQLite ships with foreign keys off.
   db.pragma('foreign_keys = ON');
+  // Deleted and overwritten content is zeroed, so sealing a ledger (ADR-0020) leaves no
+  // plaintext in freed pages.
+  db.pragma('secure_delete = ON');
   return db;
 }

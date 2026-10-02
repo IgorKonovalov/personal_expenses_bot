@@ -2,6 +2,7 @@ import { listActiveCategories } from '../db/categories.js';
 import {
   findExpenseById,
   findHistoryCategory,
+  isSealed,
   type Expense,
   type ExpenseId,
 } from '../db/expenses.js';
@@ -26,7 +27,14 @@ import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { FetchedItem, FetchedReceipt, ReceiptCountry } from '../domain/receipts/types.js';
-import { plaintext } from './ledgerKeys.js';
+import {
+  foldedReceipt,
+  isLocked,
+  openExpense,
+  plaintext,
+  type KeyDeps,
+  type Locked,
+} from './ledgerKeys.js';
 import type { RecordDeps } from './recordExpense.js';
 
 // Why a fetch failed. `error` is a fetcher that threw instead of answering.
@@ -240,15 +248,26 @@ export type ReceiptItemsResult =
   | { readonly kind: 'notFound' }
   // Only the expense's author sees its items.
   | { readonly kind: 'forbidden' }
-  | { readonly kind: 'notFetched' };
+  | { readonly kind: 'notFetched' }
+  | Locked;
 
+// A sealed row's items come from the receipt folded into its payload (ADR-0020).
 export function receiptItems(
-  { db }: Pick<FetchDeps, 'db'>,
+  deps: Pick<FetchDeps, 'db'> & Pick<KeyDeps, 'keys'>,
   input: { readonly user: User; readonly expenseId: ExpenseId },
 ): ReceiptItemsResult {
-  const expense = findPlaintextExpense(db, input.expenseId);
-  if (expense === undefined) return { kind: 'notFound' };
-  if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const { db } = deps;
+  const stored = findExpenseById(db, input.expenseId);
+  if (stored === undefined) return { kind: 'notFound' };
+  if (stored.createdBy !== input.user.id) return { kind: 'forbidden' };
+  const expense = openExpense(deps, stored);
+  if (isLocked(expense)) return expense;
+  if (isSealed(stored)) {
+    const folded = foldedReceipt(deps, stored.id);
+    if (folded === undefined) return { kind: 'notFound' };
+    if (folded.sellerName === null) return { kind: 'notFetched' };
+    return { kind: 'items', expense, sellerName: folded.sellerName, items: folded.items };
+  }
   const receipt = findReceiptByExpense(db, expense.id);
   if (receipt === undefined) return { kind: 'notFound' };
   if (receipt.fetchState !== 'fetched' || receipt.sellerName === null) {
@@ -276,8 +295,10 @@ export function retryReceipt(
   input: { readonly user: User; readonly expenseId: ExpenseId; readonly now: Date },
 ): RetryReceiptResult {
   const { db } = deps;
-  const expense = findPlaintextExpense(db, input.expenseId);
-  if (expense === undefined) return { kind: 'notFound' };
+  const stored = findExpenseById(db, input.expenseId);
+  // A sealed row's receipt was folded into it when its ledger was sealed: nothing to retry.
+  if (stored === undefined || isSealed(stored)) return { kind: 'notFound' };
+  const expense = plaintext(stored);
   if (expense.createdBy !== input.user.id) return { kind: 'forbidden' };
   const ledger = findLedgerForMember(db, expense.ledgerId, input.user.id);
   if (ledger === undefined) return { kind: 'forbidden' };

@@ -76,8 +76,8 @@ export async function answerSecretFlow(
     case 'tooShort':
       await show(ctx, anchor, encryptionPromptView(messages.passphraseTooShort));
       return;
-    case 'hasExpenses':
-      await replyHtml(ctx, messages.encryptionHasExpenses);
+    case 'pendingReceipts':
+      await replyHtml(ctx, messages.encryptionPendingReceipts);
       return;
     case 'alreadyEnabled':
     case 'enabled': {

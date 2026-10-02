@@ -89,6 +89,9 @@ export function registerReceiptCard(bot: Composer<Context>, deps: HandlerDeps): 
       case 'notFetched':
         await ctx.answerCallbackQuery({ text: messages.receiptItemsUnavailable });
         return;
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
       case 'items':
         break;
     }

@@ -20,11 +20,12 @@ function tempDbPath(): string {
 }
 
 describe('openDatabase', () => {
-  it('creates the directory and sets WAL, busy_timeout and foreign keys', () => {
+  it('creates the directory and sets WAL, busy_timeout, foreign keys and secure_delete', () => {
     const db = openDatabase(tempDbPath());
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.pragma('secure_delete', { simple: true })).toBe(1);
     db.close();
   });
 });

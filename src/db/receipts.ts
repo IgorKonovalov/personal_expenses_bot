@@ -262,6 +262,26 @@ export function findReceiptAuthor(db: Db, expenseId: ExpenseId): User | undefine
       };
 }
 
+// Every receipt behind the ledger's expenses, deleted expenses included.
+export function listLedgerReceipts(db: Db, ledgerId: LedgerId): Receipt[] {
+  return db
+    .prepare<[string], ReceiptRow>(
+      `SELECT ${COLUMNS} FROM receipts
+        WHERE expense_id IN (SELECT id FROM expenses WHERE ledger_id = ?)`,
+    )
+    .all(ledgerId)
+    .map(toReceipt);
+}
+
+// Deletes the ledger's receipts and their items, once sealing has folded them into the sealed
+// rows (ADR-0020). Run it in that transaction. Returns the number of receipts deleted.
+export function deleteLedgerReceipts(db: Db, ledgerId: LedgerId): number {
+  const mine = `SELECT id FROM receipts
+    WHERE expense_id IN (SELECT id FROM expenses WHERE ledger_id = ?)`;
+  db.prepare<[string]>(`DELETE FROM receipt_items WHERE receipt_id IN (${mine})`).run(ledgerId);
+  return db.prepare<[string]>(`DELETE FROM receipts WHERE id IN (${mine})`).run(ledgerId).changes;
+}
+
 function toReceipt(row: ReceiptRow): Receipt {
   if (row.country !== 'RS' && row.country !== 'ME') {
     throw new Error(`receipt ${row.id} has an unknown country`);

@@ -317,14 +317,28 @@ export function setExpenseDate(
   return changes === 1;
 }
 
-// Every row of the ledger, deleted or not.
-export function countLedgerExpenses(db: Db, ledgerId: LedgerId): number {
-  return (
-    db
-      .prepare<[string], number>('SELECT COUNT(*) FROM expenses WHERE ledger_id = ?')
-      .pluck()
-      .get(ledgerId) ?? 0
-  );
+// The ledger's plaintext rows, deleted ones included: what sealing a ledger seals.
+export function listLedgerPlaintextExpenses(db: Db, ledgerId: LedgerId): Expense[] {
+  return db
+    .prepare<[string], ExpenseRow>(
+      `SELECT ${COLUMNS} FROM ${FROM} WHERE e.ledger_id = ? AND e.sealed IS NULL ORDER BY e.rowid`,
+    )
+    .all(ledgerId)
+    .map(toExpense);
+}
+
+// Turns a plaintext row into a sealed one: `sealed` holds what the plaintext columns held, and
+// they are cleared. Returns false when the row is already sealed.
+export function sealExpenseInPlace(db: Db, id: ExpenseId, sealed: Buffer): boolean {
+  const { changes } = db
+    .prepare<[Buffer, string]>(
+      `UPDATE expenses
+          SET sealed = ?, amount_minor = NULL, description = NULL, category_id = NULL,
+              description_key = NULL
+        WHERE id = ? AND sealed IS NULL`,
+    )
+    .run(sealed, id);
+  return changes === 1;
 }
 
 // Non-deleted expenses of one ledger on one local date, visible only to members of that

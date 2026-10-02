@@ -284,8 +284,8 @@ are stored per wrap, so they can change later without a migration.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | `75f84e2` |
-| 2: Every read path honors the lock | dev | done | committed with this row |
-| 3: Enable on a ledger with history | dev | not started | |
+| 2: Every read path honors the lock | dev | done | `c1b5093` |
+| 3: Enable on a ledger with history | dev | done | committed with this row |
 | 4: Recovery code and passphrase change | dev | not started | |
 | 5: Lock lifecycle, log hygiene, docs | dev | not started | |
 | 6: Live check in Telegram | human | not started | |
@@ -336,6 +336,21 @@ are stored per wrap, so they can change later without a migration.
   `vi.mock` and checks it is called in a plaintext ledger and not in a sealed one.
 - Phase 2: a receipt in a sealed ledger is refused before the duplicate lookup, with
   `receiptSealedLedger`.
+- Phase 3: files outside `Files touched`: `src/services/ledgerKeys.ts` calls `sealLedgerRows`
+  inside the enable transaction and `scrubFreedPages` after it, replaces the `hasExpenses`
+  refusal with `pendingReceipts`, and gains `foldedReceipt`; `src/bot/handlers/unlock.ts`
+  replies to `pendingReceipts`; `src/services/fetchDueReceipt.ts` reads a sealed row's items
+  from its payload in `receiptItems` and answers `notFound` to [Повторить] on a sealed row;
+  `src/bot/handlers/receipt.ts` answers [Позиции] on a locked ledger with the locked toast.
+  `connection.test.ts`, `ledgerKeys.test.ts` and `unlock.test.ts` gain assertions.
+- Phase 3: a `failed` receipt folds in too, with its link and a NULL seller; its card then shows
+  no receipt line and no [Повторить].
+- Phase 3: the done-when's "card lists both items" is asserted on `receiptItems` (the [Позиции]
+  service), not on a bot tap. The card's receipt line for a sealed row comes from the folded
+  payload in `cardView`.
+- Phase 3: the backup sentence is in the recovery code message, which only enabling sends.
+- Phase 3: `scrubFreedPages` checkpoints with TRUNCATE before and after `VACUUM`. With the scrub
+  and `secure_delete` taken out, the file-bytes test fails.
 
 ### Close triggers
 

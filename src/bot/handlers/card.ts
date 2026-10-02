@@ -6,7 +6,7 @@ import type { CurrencyCode } from '../../domain/currencies.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { memberBudgetStatus } from '../../services/budget.js';
 import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
-import { isLocked } from '../../services/ledgerKeys.js';
+import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -77,7 +77,7 @@ export function cardView(
     sentOn: localDateOf(expense.occurredAt, effectiveTimezone(deps, user, ledger)),
   };
   if (expense.deletedAt !== null) return view;
-  const receipt = receiptSummary(deps, expense.id);
+  const receipt = receiptSummary(deps, expense.id) ?? foldedReceiptSummary(deps, expense.id);
   const withReceipt = receipt === undefined ? view : { ...view, receipt };
   const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
   // A sealed ledger's card right after recording, while locked, shows no budget line.
@@ -98,6 +98,14 @@ export function cardView(
         }),
     ...(cap === undefined ? {} : { cap: { ...cap, currency } }),
   };
+}
+
+// A sealed row's receipt lives in its payload (ADR-0020): shown as fetched once it has a seller.
+// Only a fetched receipt offers anything; a failed one is not retried after sealing.
+function foldedReceiptSummary(deps: HandlerDeps, expenseId: ExpenseId): ReceiptSummary | undefined {
+  const folded = foldedReceipt(deps, expenseId);
+  if (folded === undefined || folded.sellerName === null) return undefined;
+  return { state: 'fetched', sellerName: folded.sellerName, itemCount: folded.items.length };
 }
 
 // [Категория] [Изменить] above [Удалить]: the destructive button gets its own row (ADR-0011).

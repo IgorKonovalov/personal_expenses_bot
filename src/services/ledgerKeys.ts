@@ -2,10 +2,11 @@ import type { KeyObject } from 'node:crypto';
 import { findCategory, type CategoryId } from '../db/categories.js';
 import type { Db } from '../db/connection.js';
 import {
-  countLedgerExpenses,
+  findExpenseById,
   isSealed,
   type Expense,
   type ExpenseCategory,
+  type ExpenseId,
   type SealedExpense,
   type StoredExpense,
 } from '../db/expenses.js';
@@ -34,9 +35,11 @@ import {
   wrapPrivateKey,
   type Argon2idParams,
   type SealedPayloadV1,
+  type SealedReceipt,
 } from '../domain/sealing.js';
 import type { Logger } from '../logger.js';
 import { completeFlow, startFlow } from './flowSessions.js';
+import { hasPendingReceipts, scrubFreedPages, sealLedgerRows } from './sealLedger.js';
 
 // Sealed ledgers (ADR-0020): a personal ledger's owner switches encryption on with a passphrase.
 // Rows are sealed to the ledger's public key, so recording needs no unlock; reading needs the
@@ -126,13 +129,16 @@ export type EnableResult =
   | { readonly kind: 'enabled'; readonly ledger: Ledger; readonly recoveryCode: string }
   // The flow stays pending and the prompt is asked again.
   | { readonly kind: 'tooShort' }
-  // The flow is answered, nothing written.
-  | { readonly kind: 'alreadyEnabled' | 'hasExpenses' };
+  // The flow is answered, nothing written. `pendingReceipts`: a receipt of the ledger is still
+  // being fetched.
+  | { readonly kind: 'alreadyEnabled' | 'pendingReceipts' };
 
 // Seals the user's personal ledger: a new keypair, its private key wrapped under the
-// passphrase and under a fresh recovery code. The key rows and the flow's completion commit
-// together, keyed by `inputKey`; a redelivered or repeated enable finds the key and writes no
-// second one. The recovery code is returned once and stored nowhere.
+// passphrase and under a fresh recovery code, and every expense already recorded sealed to it.
+// The key rows, the sealed rows and the flow's completion commit together, keyed by
+// `inputKey`; a failure leaves every row plaintext and no key, and a redelivered or repeated
+// enable finds the key and writes no second one. The recovery code is returned once and stored
+// nowhere.
 export async function enableEncryption(
   deps: KeyDeps,
   input: {
@@ -151,9 +157,9 @@ export async function enableEncryption(
     return { kind: 'alreadyEnabled' };
   }
   if (Array.from(input.passphrase).length < MIN_PASSPHRASE_LENGTH) return { kind: 'tooShort' };
-  if (countLedgerExpenses(db, ledger.id) > 0) {
+  if (hasPendingReceipts(db, ledger.id)) {
     completeFlow(deps, user, input.inputKey);
-    return { kind: 'hasExpenses' };
+    return { kind: 'pendingReceipts' };
   }
 
   const { publicKey, privateKey } = generateLedgerKeypair();
@@ -162,16 +168,22 @@ export async function enableEncryption(
   const code = newRecoveryCode();
   const recoveryWrap = codeWrap(code, privateKey, wrapAad(ledger.id, { wrapper: 'recovery' }));
 
-  return db.transaction((): EnableResult => {
+  const result = db.transaction((): EnableResult => {
     completeFlow(deps, user, input.inputKey);
+    if (hasPendingReceipts(db, ledger.id)) return { kind: 'pendingReceipts' };
     if (!insertLedgerKeyOrIgnore(db, { ledgerId: ledger.id, publicKey, createdAt: input.now })) {
       return { kind: 'alreadyEnabled' };
     }
     insertKeyWrap(db, ledger.id, member, memberWrap);
     insertKeyWrap(db, ledger.id, { wrapper: 'recovery' }, recoveryWrap);
-    logger.info({ ledgerId: ledger.id, userId: user.id }, 'ledger sealed');
+    const sealed = sealLedgerRows(db, ledger.id, (expenseId, payload) =>
+      sealPayload(publicKey, { ledgerId: ledger.id, expenseId }, payload),
+    );
+    logger.info({ ledgerId: ledger.id, userId: user.id, rows: sealed }, 'ledger sealed');
     return { kind: 'enabled', ledger, recoveryCode: formatRecoveryCode(code) };
   })();
+  if (result.kind === 'enabled') scrubFreedPages(db);
+  return result;
 }
 
 async function passphraseWrap(
@@ -330,6 +342,19 @@ export function openExpense(
   const [expense] = opened.expenses;
   if (expense === undefined) throw new Error(`expense ${stored.id} did not open`);
   return expense;
+}
+
+// The receipt folded into a sealed row's payload when its ledger was sealed. Undefined for a
+// plaintext row, a row without one, or a locked ledger.
+export function foldedReceipt(
+  deps: Pick<KeyDeps, 'db' | 'keys'>,
+  expenseId: ExpenseId,
+): SealedReceipt | undefined {
+  const stored = findExpenseById(deps.db, expenseId);
+  if (stored === undefined || !isSealed(stored)) return undefined;
+  const privateKey = deps.keys.privateKey(stored.ledgerId);
+  if (privateKey === undefined) return undefined;
+  return decodePayload(open(stored.sealed, privateKey, rowAad(stored.ledgerId, stored.id))).receipt;
 }
 
 // The row's payload with `change` applied, sealed again to the ledger's public key. The

@@ -135,11 +135,16 @@ describe('enableEncryption', () => {
     expect(db.prepare('SELECT COUNT(*) FROM ledger_key_wraps').pluck().get()).toBe(2);
   });
 
-  it('is refused on a ledger that already has expenses', async () => {
+  it('seals the expenses already recorded, which open once unlocked', async () => {
     record('450 кофе');
 
-    expect(await enable()).toEqual({ kind: 'hasExpenses' });
-    expect(db.prepare('SELECT COUNT(*) FROM ledger_keys').pluck().get()).toBe(0);
+    expect(await enable()).toMatchObject({ kind: 'enabled' });
+    expect(db.prepare('SELECT amount_minor, description FROM expenses').all()).toEqual([
+      { amount_minor: null, description: null },
+    ]);
+    await unlock(PASSPHRASE);
+    const opened = openExpenses(deps, ledger.id, todayRows());
+    expect(opened.kind === 'open' && opened.expenses.map((e) => e.amountMinor)).toEqual([45000]);
   });
 });
 
