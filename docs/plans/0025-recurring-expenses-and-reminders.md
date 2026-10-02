@@ -1,6 +1,6 @@
 # 0025: Recurring expenses and reminders: rent and subscriptions recorded on their day
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
 > **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler),
