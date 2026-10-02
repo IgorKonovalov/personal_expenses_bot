@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@11.1.2",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24.7.0 <25"
   },
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
