@@ -20,7 +20,7 @@ status and date. What a plan did lives in the plan.
 | [0028](0028-donations.md) | Donations: everything free, `/donate` via Telegram Stars and an external link | approved (2026-10-01) |
 | [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | approved (2026-10-01) |
 | [0030](0030-mini-app-charts-and-qr-scan.md) | A Mini App for charts and a live QR scan, static with no backend | approved (2026-10-01) |
-| [0031](0031-receipt-photo-qr-retry-passes.md) | Receipt photos that fail the plain QR pass get retried on preprocessed pixels | draft (2026-10-03) |
+| [0031](0031-receipt-photo-qr-retry-passes.md) | Receipt photos that fail the plain QR pass get retried on preprocessed pixels | approved (2026-10-03) |
 
 ## Recently closed
 

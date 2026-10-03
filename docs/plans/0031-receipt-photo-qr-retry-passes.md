@@ -1,6 +1,6 @@
 # 0031: Receipt photos that fail the plain QR pass get retried on preprocessed pixels
 
-> **Status:** draft
+> **Status:** approved (2026-10-03)
 > **Created:** 2026-10-03
 > **Related ADRs:** [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
 > [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
