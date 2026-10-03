@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -4561,6 +4562,20 @@ async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]>
 
 const EXPENSE_HEADER = 'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Магазин;Чек;ID';
 
+// The deflated bytes of a zip entry, found by its local header's name.
+function zipEntry(zip: Buffer, name: string): Buffer {
+  for (let at = 0; zip.readUInt32LE(at) === 0x04034b50;) {
+    const size = zip.readUInt32LE(at + 18);
+    const nameLength = zip.readUInt16LE(at + 26);
+    const dataAt = at + 30 + nameLength + zip.readUInt16LE(at + 28);
+    if (zip.toString('utf8', at + 30, at + 30 + nameLength) === name) {
+      return zip.subarray(dataAt, dataAt + size);
+    }
+    at = dataAt + size;
+  }
+  throw new Error(`no zip entry ${name}`);
+}
+
 // A CSV's lines after the BOM, without the final CRLF.
 function csvLines(bytes: Buffer): string[] {
   return bytes.subarray(3).toString('utf8').split('\r\n').slice(0, -1);
@@ -4661,17 +4676,21 @@ describe('/export (ADR-0026)', () => {
     expect(edits.at(-1)?.payload).not.toHaveProperty('reply_markup');
   });
 
-  it('answers [Excel] with «Скоро» and sends nothing', async () => {
+  it('sends [Excel] as one expenses-all.xlsx zip, and closes the picker', async () => {
     const { bot, calls } = await withTwoExpenses();
 
     await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
 
-    expect(calls).toEqual([
-      {
-        method: 'answerCallbackQuery',
-        payload: { callback_query_id: 'cb-3', text: messages.exportSoon },
-      },
-    ]);
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
+    // Both expenses as numeric cells in the sheet, the date as text.
+    const sheet = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet1.xml')).toString('utf8');
+    expect(sheet).toContain('<v>450.00</v>');
+    expect(sheet).toContain('<v>12.50</v>');
+    expect(sheet).toContain('<t xml:space="preserve">2026-09-29</t>');
+    expect(calls.at(-1)?.payload).toMatchObject({ text: 'Готово: 2 расхода за всё время' });
   });
 
   it('leaves a soft-deleted expense out of every range', async () => {
@@ -4816,6 +4835,38 @@ describe('/export (ADR-0026)', () => {
       `${expenseId};2026-09-29;Test Market;2;Сыр;0,535;529,13;RSD`,
       `${expenseId};2026-09-29;Test Market;3;Вода;2;200,00;RSD`,
     ]);
+  });
+
+  it('puts the receipt items on a second sheet of the one xlsx', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    insertReceiptItems(db, receiptId, [{ name: 'Сыр', quantity: '0.535', totalMinor: 52913 }]);
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    const workbook = inflateRawSync(zipEntry(bytes, 'xl/workbook.xml')).toString('utf8');
+    expect([...workbook.matchAll(/<sheet name="([^"]*)"/g)].map((m) => m[1])).toEqual([
+      'Расходы',
+      'Позиции чеков',
+    ]);
+    const items = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet2.xml')).toString('utf8');
+    expect(items).toContain(`<t xml:space="preserve">${expenseId}</t>`);
+    expect(items).toContain('<v>529.13</v>');
   });
 
   it('sends exactly one document for a range without receipts', async () => {

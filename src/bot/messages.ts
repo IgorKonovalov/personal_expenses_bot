@@ -1022,7 +1022,6 @@ export const messages = {
   exportCsvButton: 'CSV',
   exportXlsxButton: 'Excel',
   exportBackButton: '← Назад',
-  exportSoon: 'Скоро',
   exportEmpty: html`За этот период расходов нет`,
   // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
   exportDone: (count: number, key: string): Html =>

@@ -295,8 +295,8 @@ for an XLSX `<v>`.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | `f77bea0` |
-| 2: Every column, the items file, and a formula-safe CSV | dev | done | committed with this row |
-| 3: The XLSX writer and the [Excel] button | dev | not started | |
+| 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
+| 3: The XLSX writer and the [Excel] button | dev | done | committed with this row |
 | 4: Groups, sealed ledgers, help and docs | dev | not started | |
 | 5: Open the files in real apps | human | not started | |
 
@@ -326,6 +326,12 @@ for an XLSX `<v>`.
   asserted anywhere.
 - Phase 2: the item columns № and Количество are text cells, so the formula guard also applies
   to a quantity such as `-1`.
+- Phase 3: `xlsx.ts` exports `xlsxParts` (the parts before zipping) beside `writeXlsx`; the
+  sheet, style and escaping done-whens are asserted on the parts, and the zip round trip on
+  `writeZip`. The number formats are custom ids from 164 (`0`, `0.00`), one per exponent used.
+  Every zip entry carries the fixed date 1980-01-01, so the bytes depend only on the parts.
+- Phase 3: the XLSX keeps № and Количество as text cells, the same cells as the CSV.
+  `messages.exportSoon` is removed with the placeholder.
 
 ### Close triggers
 

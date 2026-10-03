@@ -1,5 +1,6 @@
 import { InlineKeyboard, InputFile, InputMediaBuilder, type Composer, type Context } from 'grammy';
 import { writeCsv } from '../../domain/export/csv.js';
+import { writeXlsx } from '../../domain/export/xlsx.js';
 import {
   expensesTable,
   isExportRange,
@@ -54,23 +55,30 @@ export interface ExportFile {
 }
 
 // The files of an export in one format: the expenses, plus the receipt items when any exported
-// expense has them. The author column exists only for a shared ledger.
+// expense has them, as a second CSV or a second sheet. The author column exists only for a
+// shared ledger.
 export function exportFiles(data: LedgerExport, format: ExportFormat): ExportFile[] {
-  if (format !== 'csv') throw new Error(`export format ${format} is not built`);
-  const expenses = expensesTable(
-    messages.exportExpensesSheet,
-    messages.exportColumns(data.ledger.defaultCurrency),
-    data.expenses,
-    data.ledger.kind === 'shared',
-  );
-  const files = [
-    { filename: `${messages.exportExpensesStem}-${data.key}.csv`, bytes: writeCsv(expenses) },
+  const tables = [
+    expensesTable(
+      messages.exportExpensesSheet,
+      messages.exportColumns(data.ledger.defaultCurrency),
+      data.expenses,
+      data.ledger.kind === 'shared',
+    ),
+    ...(data.items.length === 0
+      ? []
+      : [itemsTable(messages.exportItemsSheet, messages.exportItemColumns, data.items)]),
   ];
-  if (data.items.length > 0) {
-    const items = itemsTable(messages.exportItemsSheet, messages.exportItemColumns, data.items);
-    files.push({ filename: `${messages.exportItemsStem}-${data.key}.csv`, bytes: writeCsv(items) });
+  if (format === 'xlsx') {
+    return [
+      { filename: `${messages.exportExpensesStem}-${data.key}.xlsx`, bytes: writeXlsx(tables) },
+    ];
   }
-  return files;
+  const stems = [messages.exportExpensesStem, messages.exportItemsStem];
+  return tables.map((table, i) => ({
+    filename: `${stems[i] ?? messages.exportExpensesStem}-${data.key}.csv`,
+    bytes: writeCsv(table),
+  }));
 }
 
 // Sends the export's files and closes the picker. An empty range sends nothing.
@@ -132,10 +140,6 @@ export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void 
     const range = ctx.match[1] ?? '';
     const format = ctx.match[2] === 'xlsx' ? 'xlsx' : 'csv';
     if (!isExportRange(range)) return;
-    if (format === 'xlsx') {
-      await ctx.answerCallbackQuery({ text: messages.exportSoon });
-      return;
-    }
     // A second tap while the first is still building is answered silently by the dispatcher.
     await guard(ctx, async () => {
       const now = deps.now();
