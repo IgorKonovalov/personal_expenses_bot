@@ -229,6 +229,7 @@ bot UI.
 
 ### Phase 5: A stranger's first contact
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** From a second Telegram account set to a different city than the env default, open a
   fresh invite link (Plan 0029). Go through the setup check with [Изменить], record an expense,
   then a EUR expense the next day.

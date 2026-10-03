@@ -181,7 +181,15 @@ export function registerReceiptMedia(
       await next();
       return;
     }
+    // One info line per image, whatever the outcome, so an unread receipt can be diagnosed from
+    // the log. It carries sizes and decoder diagnostics, never the QR text.
+    const read = {
+      source: document === undefined ? 'photo' : 'document',
+      bytes: file.file_size,
+      ...('width' in file ? { width: file.width, height: file.height } : {}),
+    };
     if ((file.file_size ?? 0) > MAX_DOWNLOAD_BYTES) {
+      deps.logger.info({ ...read, outcome: 'tooLarge' }, 'receipt image read');
       await replyHtml(ctx, messages.receiptPhotoHint);
       return;
     }
@@ -190,14 +198,26 @@ export function registerReceiptMedia(
     const user = ensureUser(deps, ctx.from.id, now);
     const { file_path: filePath } = await ctx.api.getFile(file.file_id);
     if (filePath === undefined) {
+      deps.logger.info({ ...read, outcome: 'noFilePath' }, 'receipt image read');
       await replyHtml(ctx, messages.receiptPhotoHint);
       return;
     }
+    const started = performance.now();
     const qr = await decodeQr(await download(filePath));
     const decoded =
       qr.kind === 'none'
         ? undefined
         : qr.texts.map(decodeReceiptUrl).find((result) => result.kind !== 'notReceipt');
+    deps.logger.info(
+      {
+        ...read,
+        ms: Math.round(performance.now() - started),
+        outcome: decoded !== undefined ? 'receipt' : qr.kind === 'none' ? 'noQr' : 'notReceipt',
+        ...(qr.kind === 'none' && qr.detected !== undefined ? { detected: qr.detected } : {}),
+        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length } : {}),
+      },
+      'receipt image read',
+    );
     if (decoded === undefined) {
       await replyHtml(ctx, messages.receiptPhotoHint);
       return;

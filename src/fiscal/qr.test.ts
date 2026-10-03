@@ -49,6 +49,13 @@ describe('decodeQr', () => {
     });
   });
 
+  it('describes a located QR that fails its checksum, without its text', async () => {
+    expect(await decodeQr(fixture('rs-receipt-damaged.jpg'))).toEqual({
+      kind: 'none',
+      detected: { error: 'ChecksumError', version: '23', ecLevel: 'M', modulePx: 4 },
+    });
+  });
+
   it('returns none for an image without a QR code', async () => {
     expect(await decodeQr(fixture('no-qr.jpg'))).toEqual({ kind: 'none' });
   });

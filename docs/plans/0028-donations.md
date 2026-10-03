@@ -150,6 +150,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 4: A real donation and refund
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, with `DONATE_URL` set, donate 50 Stars from your own account,
   then refund it with `/refund`.
 - **Done when:** The payment sheet opens from the button, the thank-you and admin notice arrive

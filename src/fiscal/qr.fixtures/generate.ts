@@ -5,6 +5,8 @@
 //   degrees, noised and saved as JPEG q75 on a 1280 px canvas, roughly a Telegram photo.
 // - rs-receipt-wrapped.jpg: the same treatment for buildRsUrl()'s link printed with a `:443`
 //   host and the base64 wrapped every 76 characters by `%0A`, as some printers do.
+// - rs-receipt-damaged.jpg: rs-receipt.jpg with two white patches over the data modules, so the
+//   symbol is located but fails its Reed-Solomon checksum, as a smudged print does.
 // - example.png: a QR holding https://example.com, not a receipt.
 // - no-qr.jpg: noise on a canvas, no barcode at all.
 import { execFileSync } from 'node:child_process';
@@ -62,6 +64,18 @@ async function receiptPhoto(text: string, name: string): Promise<void> {
 
 await receiptPhoto(buildRsUrl(), 'rs-receipt');
 await receiptPhoto(buildRsUrl({}, { wrap: '%0A', port: true }), 'rs-receipt-wrapped');
+magick(
+  `${here}rs-receipt.jpg`,
+  '-fill',
+  'white',
+  '-draw',
+  'rectangle 500,500 640,780',
+  '-draw',
+  'rectangle 700,400 800,560',
+  '-quality',
+  '75',
+  `${here}rs-receipt-damaged.jpg`,
+);
 
 const examplePng = `${here}example.src.png`;
 await qrPng('https://example.com', examplePng);

@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0034`
+- **Next free number:** `0035`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -40,3 +40,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0031](0031-local-time-scheduler.md) | One minute-tick scheduler fires per-ledger jobs at a local time, keyed by occurrence date | proposed (2026-10-02) |
 | [0032](0032-statement-rows-match-recorded-expenses.md) | A statement row counts as already recorded when a live expense matches its amount and currency within one day | proposed (2026-10-02) |
 | [0033](0033-pdf-statements-via-pdfjs-dist.md) | PDF statements are read with `pdfjs-dist`, imported lazily and only by the statements adapter | proposed (2026-10-02) |
+| [0034](0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) | Retry an unread receipt QR on preprocessed pixels, decoded with jpeg-js | proposed (2026-10-03) |
