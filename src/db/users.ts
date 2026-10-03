@@ -89,6 +89,43 @@ export function admitUser(db: Db, userId: UserId, at: Date): boolean {
   );
 }
 
+// Sets or clears `blocked_at`. Returns false when the user was already in that state.
+export function setUserBlocked(db: Db, userId: UserId, at: Date | null): boolean {
+  const sql =
+    at === null
+      ? 'UPDATE users SET blocked_at = NULL WHERE id = ? AND blocked_at IS NOT NULL'
+      : 'UPDATE users SET blocked_at = ? WHERE id = ? AND blocked_at IS NULL';
+  const params = at === null ? [userId] : [at.toISOString(), userId];
+  return db.prepare(sql).run(...params).changes > 0;
+}
+
+// The admin's /stats counts (ADR-0024): no amounts, no descriptions.
+export interface UsageCounts {
+  // Admitted and not blocked.
+  readonly admitted: number;
+  // Users who created a live expense in any ledger since `since`.
+  readonly active: number;
+  // Live expenses created since `since`.
+  readonly expenses: number;
+}
+
+export function countUsage(db: Db, since: Date): UsageCounts {
+  const admitted =
+    db
+      .prepare<[], number>(
+        'SELECT COUNT(*) FROM users WHERE admitted_at IS NOT NULL AND blocked_at IS NULL',
+      )
+      .pluck()
+      .get() ?? 0;
+  const recent = db
+    .prepare<[string], { active: number; expenses: number }>(
+      `SELECT COUNT(DISTINCT created_by) AS active, COUNT(*) AS expenses
+         FROM expenses WHERE deleted_at IS NULL AND created_at >= ?`,
+    )
+    .get(since.toISOString());
+  return { admitted, active: recent?.active ?? 0, expenses: recent?.expenses ?? 0 };
+}
+
 // Returns false when the user already has this timezone: nothing is written.
 export function updateUserTimezone(db: Db, userId: UserId, timezone: string): boolean {
   return (

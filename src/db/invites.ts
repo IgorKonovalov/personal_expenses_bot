@@ -63,6 +63,42 @@ export function insertRedemption(
   );
 }
 
+// Codes not revoked and not expired at `now`, oldest first, with how many times each was used.
+export function listLiveInviteCodes(db: Db, now: Date): (InviteCode & { readonly used: number })[] {
+  return db
+    .prepare<[string], InviteCodeRow & { used: number }>(
+      `SELECT c.code, c.max_uses, c.expires_at, c.revoked_at, c.created_at,
+              (SELECT COUNT(*) FROM invite_redemptions r WHERE r.code = c.code) AS used
+         FROM invite_codes c
+        WHERE c.revoked_at IS NULL AND c.expires_at > ?
+        ORDER BY c.created_at, c.code`,
+    )
+    .all(now.toISOString())
+    .map((row) => ({ ...toInviteCode(row), used: row.used }));
+}
+
+export function countLiveInviteCodes(db: Db, now: Date): number {
+  return (
+    db
+      .prepare<[string], number>(
+        'SELECT COUNT(*) FROM invite_codes WHERE revoked_at IS NULL AND expires_at > ?',
+      )
+      .pluck()
+      .get(now.toISOString()) ?? 0
+  );
+}
+
+// Sets `revoked_at` unless it is already set. Returns false when nothing was written.
+export function revokeInviteCode(db: Db, code: string, at: Date): boolean {
+  return (
+    db
+      .prepare<[string, string]>(
+        'UPDATE invite_codes SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL',
+      )
+      .run(at.toISOString(), code).changes > 0
+  );
+}
+
 function toInviteCode(row: InviteCodeRow): InviteCode {
   return {
     code: row.code,

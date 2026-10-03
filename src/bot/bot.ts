@@ -7,6 +7,7 @@ import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { clearFlowOnCommand } from './flows.js';
 import { groupComposer, isGroupChat } from './group/index.js';
+import { registerAdmin } from './handlers/admin.js';
 import { registerBudget } from './handlers/budget.js';
 import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
@@ -89,6 +90,7 @@ export function createBot(options: BotOptions): Bot {
   registerChangelog(dm);
   // Admin commands: from anyone else they fall through to the unknown-command reply.
   registerInvite(dm, options);
+  registerAdmin(dm, options);
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);

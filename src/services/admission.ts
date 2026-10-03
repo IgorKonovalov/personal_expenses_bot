@@ -1,13 +1,22 @@
 import { randomBytes } from 'node:crypto';
 import type { Db } from '../db/connection.js';
 import {
+  countLiveInviteCodes,
   countRedemptions,
   findInviteCode,
   insertInviteCode,
   insertRedemption,
+  listLiveInviteCodes,
+  revokeInviteCode,
   type InviteCode,
 } from '../db/invites.js';
-import { admitUser, findAdmissionByIdentity, type User } from '../db/users.js';
+import {
+  admitUser,
+  countUsage,
+  findAdmissionByIdentity,
+  setUserBlocked,
+  type User,
+} from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { provisionUser, type ServiceDeps } from './provisionUser.js';
 
@@ -82,6 +91,52 @@ export function createInvite(
   };
   insertInviteCode(db, invite);
   return invite;
+}
+
+export function liveInvites({ db }: Pick<AccessDeps, 'db'>, now: Date) {
+  return listLiveInviteCodes(db, now);
+}
+
+// [Отключить] on a code. A second tap finds it already off.
+export function revokeInvite(
+  { db }: Pick<AccessDeps, 'db'>,
+  input: { readonly code: string; readonly now: Date },
+): 'revoked' | 'alreadyRevoked' | 'notFound' {
+  return db.transaction(() => {
+    if (findInviteCode(db, input.code) === undefined) return 'notFound';
+    return revokeInviteCode(db, input.code, input.now) ? 'revoked' : 'alreadyRevoked';
+  })();
+}
+
+export type BlockResult =
+  | 'changed'
+  | 'unchanged'
+  // No user behind this Telegram id: nothing to block.
+  | 'notFound'
+  // The admin is always admitted, so blocking it would do nothing.
+  | 'admin';
+
+// /block and /unblock: sets or clears `blocked_at` on the user behind the Telegram id.
+export function setBlocked(
+  deps: AccessDeps,
+  input: { readonly telegramId: number; readonly blocked: boolean; readonly now: Date },
+): BlockResult {
+  if (input.telegramId === deps.adminTelegramId) return 'admin';
+  const admission = findAdmissionByIdentity(deps.db, 'telegram', String(input.telegramId));
+  if (admission === undefined) return 'notFound';
+  return setUserBlocked(deps.db, admission.userId, input.blocked ? input.now : null)
+    ? 'changed'
+    : 'unchanged';
+}
+
+const STATS_WINDOW_MS = 7 * DAY_MS;
+
+// /stats: counts only, never amounts or descriptions.
+export function usageStats({ db }: Pick<AccessDeps, 'db'>, now: Date) {
+  return {
+    ...countUsage(db, new Date(now.getTime() - STATS_WINDOW_MS)),
+    liveCodes: countLiveInviteCodes(db, now),
+  };
 }
 
 export type RedeemResult =

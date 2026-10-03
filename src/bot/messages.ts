@@ -493,6 +493,55 @@ export const messages = {
       '\n',
     ),
   inviteUsage: html`Использование: /invite — 10 человек, 14 дней; /invite 30 7 — 30 человек, 7 дней. Оба числа от 1 до 1000.`,
+  // The admin's /invites: one line per live code, `abc… — 3/10, до 15 октября`, with a button each.
+  inviteList: (
+    codes: readonly {
+      readonly code: string;
+      readonly used: number;
+      readonly maxUses: number;
+      readonly expiresOn: LocalDate;
+    }[],
+  ): Html =>
+    codes.length === 0
+      ? html`Действующих ссылок нет. Новая: /invite.`
+      : joinHtml(
+          [
+            html`<b>Действующие ссылки</b>`,
+            ...codes.map(
+              (c) =>
+                html`<code>${c.code}</code> — ${c.used}/${c.maxUses}, до ${dayMonth.format(new Date(`${c.expiresOn}T00:00:00Z`))}`,
+            ),
+          ],
+          '\n',
+        ),
+  inviteRevokeButton: (code: string): string => `Отключить ${code}`,
+  inviteRevokedToast: 'Ссылка отключена',
+  inviteAlreadyRevoked: 'Ссылка уже отключена',
+  inviteNotFound: 'Ссылка не найдена',
+  // The admin's /block and /unblock <telegram id>.
+  blockUsage: html`Использование: /block 123456789 или /unblock 123456789 — числовой Telegram id.`,
+  blocked: (id: number): Html => html`Пользователь ${id} заблокирован.`,
+  alreadyBlocked: (id: number): Html => html`Пользователь ${id} уже заблокирован.`,
+  unblocked: (id: number): Html => html`Пользователь ${id} разблокирован.`,
+  notBlocked: (id: number): Html => html`Пользователь ${id} не заблокирован.`,
+  blockUserNotFound: (id: number): Html => html`Пользователь ${id} мне не писал.`,
+  blockAdmin: html`Администратора заблокировать нельзя.`,
+  // The admin's /stats: counts only.
+  stats: (view: {
+    readonly admitted: number;
+    readonly active: number;
+    readonly expenses: number;
+    readonly liveCodes: number;
+  }): Html =>
+    joinHtml(
+      [
+        html`Допущено пользователей: ${view.admitted}`,
+        html`Записывали траты за 7 дней: ${view.active}`,
+        html`Трат за 7 дней: ${view.expenses}`,
+        html`Действующих ссылок: ${view.liveCodes}`,
+      ],
+      '\n',
+    ),
   // Sent to a group once, when it is bound to a new shared ledger (ADR-0014).
   groupWelcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(

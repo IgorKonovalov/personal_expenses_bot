@@ -1,4 +1,5 @@
 import { Composer, type Context } from 'grammy';
+import { accessOf } from '../../services/admission.js';
 import type { AdminDeps } from '../bot.js';
 import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
@@ -23,6 +24,18 @@ export function isGroupChat(ctx: Context): boolean {
 
 export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   const group = new Composer<Context>();
+  // A blocked sender's group updates stop here, before any handler (ADR-0024). Everyone else,
+  // admitted or not, goes on.
+  group.use(async (ctx, next) => {
+    if (ctx.from !== undefined && accessOf(deps, ctx.from.id) === 'blocked') {
+      deps.logger.info(
+        { updateId: ctx.update.update_id },
+        'group update from a blocked sender dropped',
+      );
+      return;
+    }
+    await next();
+  });
   // Answers every callback query once, silently for one no group handler claims.
   group.use(callbackDispatcher());
   registerActivation(group, deps);

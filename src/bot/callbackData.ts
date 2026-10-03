@@ -217,5 +217,13 @@ export function budgetCapClearData(categoryId: CategoryId): string {
   return assertCallbackData(`bud:capx:${categoryId}`);
 }
 
+// The admin's /invites list: [Отключить] `inv:off:<code>` (19 bytes) revokes that code
+// (ADR-0024). The code's revoked_at is the guard, so a double tap finds it already off.
+export const INVITE_REVOKE = /^inv:off:([A-Za-z0-9_-]{11})$/;
+
+export function inviteRevokeData(code: string): string {
+  return assertCallbackData(`inv:off:${code}`);
+}
+
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';

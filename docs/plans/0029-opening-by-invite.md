@@ -313,8 +313,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: an invite link admits a stranger | dev | done | committed with this row |
-| 2: Admin tools: list and revoke codes, block, stats | dev | not started | |
+| 1: Walking skeleton: an invite link admits a stranger | dev | done | a5d3864 |
+| 2: Admin tools: list and revoke codes, block, stats | dev | done | committed with this row |
 | 3: Abuse limits: message rate and daily receipts | dev | not started | |
 | 4: Delete my account | dev | not started | |
 | 5: Privacy policy and `/privacy` | dev | not started | |
@@ -338,6 +338,11 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 - Phase 1: `admitAtBoot` is `admitTelegramIds(deps, ids, now)`; `src/index.ts` passes the admin
   plus `ADMIT_TELEGRAM_IDS`. `/invite` with one argument shows the usage.
 - Phase 1: the group card's `authorAllowlisted` is renamed `authorAdmitted`.
+- Phase 2: `src/bot/bot.ts` (outside `Files touched`) registers `registerAdmin`;
+  `src/bot/callbacks.ts` is unchanged. `/stats` counts admitted users as `admitted_at` set and
+  `blocked_at` NULL, and leaves soft-deleted expenses out of both 7-day counts. `/block` on an id
+  with no user row replies that the user never wrote; on the admin it refuses. A blocked user's
+  `my_chat_member` (adding the bot) is dropped too, so the bot stays in that group unbound.
 
 ### Close triggers
 
