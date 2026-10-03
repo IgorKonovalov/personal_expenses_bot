@@ -4039,6 +4039,37 @@ describe('fiscal receipts', () => {
       expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
     });
 
+    it('logs why a located receipt QR did not decode, with the hint and nothing recorded', async () => {
+      const { sendPhoto, calls, db, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt-damaged.jpg');
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        level: 30,
+        source: 'photo',
+        bytes: 200_000,
+        width: 1280,
+        height: 1280,
+        outcome: 'noQr',
+        detected: { error: 'ChecksumError', version: '23', ecLevel: 'M', modulePx: 4 },
+      });
+    });
+
+    it('logs a read receipt photo without its QR text', async () => {
+      const { sendPhoto, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt.jpg');
+
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({ outcome: 'receipt', qrCount: 1 });
+      for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
+    });
+
     it('does not download an image file over 20 MB and answers with the hint', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 
