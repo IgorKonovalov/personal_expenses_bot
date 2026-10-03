@@ -219,6 +219,7 @@ sleeps.
 
 ### Phase 7: A real month
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, make a monthly rule for a real bill in `ask` mode, a weekly
   `auto` rule and a reminder. Restart the bot across one due time.
 - **Done when:** Each fires once at 09:00 local, including the one due during the restart, and

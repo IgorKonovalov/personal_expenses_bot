@@ -232,6 +232,7 @@ No file from a real statement enters the repo.
 
 ### Phase 5: A real statement
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, send a real Raiffeisen statement PDF for a month partly recorded
   by hand and by SMS. Then send it a second time.
 - **Done when:** The preview's purchase count matches the statement's card rows. Already-recorded

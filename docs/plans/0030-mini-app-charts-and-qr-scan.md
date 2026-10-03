@@ -151,6 +151,7 @@ flowchart LR
 
 ### Phase 5: Live check on a phone
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On a phone, open a real `/month` chart, then «📷 Скан» a real Serbian or Montenegrin
   receipt.
 - **Done when:** The pie and trend match the text screen's totals for the same period, and the

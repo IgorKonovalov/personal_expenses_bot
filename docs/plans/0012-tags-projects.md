@@ -211,6 +211,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 6: A trip in real use
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, turn on `/tag` for a few days of real spending, including a
   receipt and a foreign-currency expense, then check `/tags` and the report.
 - **Done when:** Every expense from those days carries the tag on its confirmation, and the

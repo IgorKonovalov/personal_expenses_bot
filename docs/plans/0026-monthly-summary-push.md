@@ -181,6 +181,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 5: A real month's push
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** Leave the bot running over a month boundary, or over a payday boundary for a ledger
   with a budget, with the weekly push on for one week.
 - **Done when:** Each push arrives once, at 09:00 local. Its figures match `/month` (or `/budget`)

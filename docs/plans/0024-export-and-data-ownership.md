@@ -216,6 +216,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 5: Open the files in real apps
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, export «Всё время» from a personal ledger with a receipt on
   record, in both formats. Open the `.xlsx` in Excel (desktop or phone), Google Sheets and
   LibreOffice or Numbers. Open the `.csv` in Excel with a Russian or Serbian locale.
