@@ -13,7 +13,6 @@ status and date. What a plan did lives in the plan.
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | approved (2026-10-01) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | approved (2026-10-01) |
-| [0024](0024-export-and-data-ownership.md) | Export and data ownership: every expense out as CSV or XLSX, free | approved (2026-10-01) |
 | [0025](0025-recurring-expenses-and-reminders.md) | Recurring expenses and reminders: rent and subscriptions recorded on their day | approved (2026-10-02) |
 | [0026](0026-monthly-summary-push.md) | Monthly summary push: last period's report arrives on its own | approved (2026-10-02) |
 | [0027](0027-bank-statement-import.md) | Bank statement import: a Serbian bank's export file becomes expenses | approved (2026-10-02) |
@@ -26,6 +25,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0024](done/0024-export-and-data-ownership.md) | Export and data ownership: every expense out as CSV or XLSX, free | done (2026-10-03): built as planned, one minor and two nits open, Phase 5 real-apps check owed, v0.13.0 |
 | [0019](done/0019-encrypted-personal-ledger.md) | Encrypted personal ledger: recording stays open, reading needs the owner's passphrase | done (2026-10-02): built as planned after three fix passes, one minor open, Phase 6 live check owed, v0.12.0 |
 | [0023](done/0023-fx-fetch-expense-days-newest-first.md) | The rate worker fetches only expense days, newest first | done (2026-10-01): built as planned, one nit open, Phase 2 live check owed, v0.11.1 |
 | [0022](done/0022-converted-totals-nbs.md) | Totals and budgets converted into one currency at the NBS rate | done (2026-10-01): built as planned, three nits open, Phase 4 live check owed, v0.11.0 |

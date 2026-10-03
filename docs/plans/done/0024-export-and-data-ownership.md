@@ -1,12 +1,12 @@
 # 0024: Export and data ownership: every expense out as CSV or XLSX, free
 
-> **Status:** in-progress
+> **Status:** done (2026-10-03): built as planned, one minor and two nits open, Phase 5 real-apps check owed, v0.13.0
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
-> **Related ADRs:** [ADR-0026](../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted amounts),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
+> **Related ADRs:** [ADR-0026](../../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted amounts),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers)
 
 ## TL;DR
 
@@ -370,4 +370,135 @@ for an XLSX `<v>`.
 - **Outstanding `human` phases:** Phase 5 (open the CSV and XLSX in Excel, Google Sheets and
   LibreOffice or Numbers on the deployed bot).
 
+## Close review
+
+Round 1, at tip `c525fc3`, in a fresh session. No earlier round, so no fix commits to record.
+Phase 5 (human, `Blocks merge: no`) stays **owed** after the merge.
+
+# Plan 0024 review, round 1 (tip c525fc3)
+
+**Verdict:** Clean: all four dev phases deliver what the plan asked, the named tests assert the
+done-whens, and the gate is green, with one minor lock-check gap and two nits that don't block the
+close.
+
+## Gate (run in this session at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 75 files, 1052 tests (the log says 1049. The merge from main since then
+  explains the difference)
+- `node scripts/check-doc-links.mjs`: exit 0, 245 links
+
+## Lens 1: alignment
+
+- Phases 1 to 4 each have one commit (`f77bea0`, `8d09bcf`, `440e551`, `ad7f90d`), and each
+  phase has one in-vocabulary owner tag. Phase 5 (`human`, `Blocks merge: no`) is owed, and the
+  log says so.
+- Done-whens checked against the assertions:
+  - P1 BOM, header and data rows: `src/bot/bot.test.ts` "sends a CSV of 450 кофе and 12,50 EUR
+    такси" asserts the bytes `EF BB BF`, then the full row strings `450,00;RSD;…` and
+    `12,50;EUR;…`. The header asserted is the Phase 2 header, and the log discloses that the
+    Phase 1 header went with the Phase 2 change. The plan grows that table in Phase 2, so this
+    is not a finding.
+  - P1 RFC 4180 round trip: `src/domain/export/csv.test.ts` has a real test-only parser, and
+    `a;b "c"\r\nd\ne` reads back equal.
+  - P1 Belgrade 00:30: `src/services/exportLedger.test.ts` (NOW `2026-09-30T22:30Z`) checks that
+    `tm` is `['oct1']`, that `pm` is `['sep1','sep30']`, and that sep30 is absent from `tm`. It
+    runs at the service level, as the log discloses, because the harness clock is fixed. That is
+    acceptable.
+  - P1 soft-delete, empty range and double-tap: asserted in `bot.test.ts`. The double-tap test
+    gates `sendDocument` to hold the first tap in flight, which is a real concurrency probe.
+  - P2 `1171,23` / `1171,24`: asserted through the harness on cells 2..4, and also on the
+    service.
+  - P2 receipt rows, `ID расхода` equal to `ID`, `0,535`, album with two files, one document
+    without receipts, `'=SUM(A1)`, and no Автор for a personal ledger: all asserted on exact
+    lines.
+  - P3 zip: the test-only reader walks the central directory, inflates each entry and compares
+    its CRC with `zlib.crc32`, and `entryCount` from the end record equals the number of parts.
+    Sheet names, `<v>450.00</v>` with `0.00`, `<v>1500</v>` with `0`, escaping, the U+0001 drop
+    and well-formedness (with checker self-tests) are all asserted.
+  - P4 group: B's export goes to `GROUP_ID` with both rows' Автор names. An unbound group gets
+    no calls. Both command lists are asserted. Sealed: locked gets `ledgerLocked` and the toast
+    with no document, and after unlock the file holds plaintext amounts and descriptions. The
+    unlock goes through `unlockPersonalLedger`, as the log discloses.
+- No ADR reversed. ADR-0026 (CSV shape, hand-rolled XLSX, no Zip64) is followed, and ADR-0022's
+  `convert` is used once per expense.
+
+## Lens 2: layering
+
+- grammY is imported only under `src/bot/`. `src/domain/export/` imports `node:zlib` only, and
+  the plan names it. Copy, headers, stems and sheet names live in `messages.ts`.
+
+## Lens 3: correctness
+
+- Money: `decimalAmount` lives in the money module and works on integer digits. No float
+  arithmetic on amounts.
+- Time: `now` is injected. Ranges and Время use `effectiveTimezone` in private and the ledger's
+  timezone in a group.
+- Idempotency: export writes nothing, and the tap guard covers the double-tap.
+- Privacy: the info log carries ledgerId, range, format, rows and bytes only. Fixtures are
+  synthetic.
+- Telegram limits: callback data is at most 13 bytes, and the album is two documents.
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+1. **A range tap on an old picker skips the lock check.**
+   - **Where:** `src/bot/handlers/export.ts:159`.
+   - **What:** `bot.callbackQuery(EXPORT_RANGE, …)` calls `showFormatStep` without
+     `pickerState`. On a sealed ledger that is locked, tapping «Этот месяц» on an old picker
+     edits the message to «Формат файла?» instead of answering `ledgerLockedToast`.
+   - **Why it matters:** Phase 4 says "a tap on an old picker answer[s] with Plan 0019's locked
+     message". [← Назад] and the format tap honour it, but the range tap doesn't. No data leaks,
+     because the format tap still refuses.
+   - **Fix:** In the DM handler, check `pickerState(ctx.from.id)` first, answer
+     `ledgerLockedToast` when it reads locked, as `EXPORT_BACK` does, and add a harness case for
+     it.
+
+### nit
+
+1. **The group timezone is resolved twice.**
+   - **Where:** `src/services/exportLedger.ts:67-70`.
+   - **What:** The code repeats the ledger-timezone resolution that `boundGroupLedger` already
+     does (`src/services/periodSummary.ts:100-103`).
+   - **Fix:** Have `boundGroupLedger` also return its `timezone`, and use it.
+2. **The `/help` line is out of place.**
+   - **Where:** `src/bot/messages.ts`, the private help list.
+   - **What:** The `/export` line sits after «… — эта подсказка» rather than with the other
+     reports.
+   - **Fix:** Move it above `${menu.help}`. This is cosmetic.
+
+## Bookkeeping owed at close
+
+- Flip the plan to `done` and `git mv` it to `docs/plans/done/`, then repair the links (inbound
+  and the plan's own `../adrs/` links) and re-run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0026 (`proposed` to `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Make a minor version bump (a feature plan): `package.json`, `CHANGELOG.md`, and the
+  `versionAnnouncements` entry for `/export`.
+- Phase 5 (human, opening the files in real apps) stays owed after the merge, and the close
+  should record it as outstanding.
+- The two followups in the log (numeric quantity cells in the XLSX, and an over-45-MB export
+  falling into the expense-recording apology) go to `## Followups`.
+
 ## Followups
+
+- The round-1 minor: a range tap on an old picker of a locked sealed ledger shows the format step
+  instead of `ledgerLockedToast` (`src/bot/handlers/export.ts`).
+- The round-1 nits: the group timezone resolved twice in `src/services/exportLedger.ts`, and the
+  `/export` line placed after the `/help` line in the private help list.
+- In the XLSX, № and Количество are text cells, so a spreadsheet can't sum or sort quantities as
+  numbers. A numeric cell kind for a non-money decimal would fix it.
+- An export over the 45 MB check throws into the generic apology, whose copy talks about
+  recording an expense.
+- Phase 5 (human): open both formats in Excel, Google Sheets and LibreOffice or Numbers on the
+  deployed bot.

@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.13.0 (2026-10-03)
+
+From Plan 0024 (export and data ownership).
+
+- /export, in the private chat and in a bound group, picks a period (this month, last month,
+  this year, all time) and a format, then sends the expenses as a file: CSV (plus a second CSV
+  of receipt items, as one album) or an Excel workbook with a receipt-items sheet.
+- Each row carries the date and time, the amount and currency as recorded, the amount in the
+  ledger's currency at the NBS rate, the category, the description, the author in a shared
+  ledger, and the shop and link for a receipt. Export is free.
+- A sealed ledger exports only while unlocked, and the picker says the file is an unencrypted
+  copy.
+
 ## 0.12.0 (2026-10-02)
 
 From Plan 0019 (encrypted personal ledger).

@@ -32,7 +32,7 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0023](0023-budgets-count-converted-spending.md) | Budgets count spending in every currency, converted into the budget's currency | accepted (2026-10-01) |
 | [0024](0024-admission-lives-in-the-database-via-invite-codes.md) | Admission lives in the database, granted by admin-made invite codes | proposed (2026-10-01) |
 | [0025](0025-static-mini-app-fragment-in-senddata-out.md) | A static Mini App with no backend: data arrives in the URL fragment and leaves by sendData | proposed (2026-10-01) |
-| [0026](0026-export-csv-and-hand-rolled-xlsx.md) | Export writes CSV and a hand-rolled XLSX, with no spreadsheet dependency | proposed (2026-10-01) |
+| [0026](0026-export-csv-and-hand-rolled-xlsx.md) | Export writes CSV and a hand-rolled XLSX, with no spreadsheet dependency | accepted (2026-10-03) |
 | [0027](0027-donations-only-funding.md) | The bot is funded by donations only: no paid tier, and a donation unlocks nothing | proposed (2026-10-01) |
 | [0028](0028-contextual-tips-registry.md) | Contextual tips are a registry of conditions, shown as one capped message, seen when sent | proposed (2026-10-01) |
 | [0029](0029-tags-on-the-expense-row.md) | Tags are `#words` stripped from the expense text and stored on the expense row | proposed (2026-10-01) |
