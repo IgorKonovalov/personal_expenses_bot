@@ -4,8 +4,8 @@ import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import type { DecodeReceiptResult } from '../../domain/receipts/types.js';
 import { decodeQr } from '../../fiscal/qr.js';
 import { receiptItems, rememberReceiptCard, retryReceipt } from '../../services/fetchDueReceipt.js';
-import { recordReceipt } from '../../services/recordReceipt.js';
-import type { HandlerDeps } from '../bot.js';
+import { RECEIPTS_PER_DAY, recordReceipt } from '../../services/recordReceipt.js';
+import type { AdminDeps, HandlerDeps } from '../bot.js';
 import {
   RECEIPT_ITEMS,
   RECEIPT_RETRY,
@@ -24,7 +24,7 @@ import { ensureUser } from './start.js';
 // the existing card for a receipt this ledger already has.
 export async function answerReceipt(
   ctx: Context,
-  deps: HandlerDeps,
+  deps: AdminDeps,
   input: {
     readonly user: User;
     readonly decoded: Exclude<DecodeReceiptResult, { kind: 'notReceipt' }>;
@@ -45,7 +45,13 @@ export async function answerReceipt(
     placeholder: messages.receiptPlaceholder,
     occurredAt: input.occurredAt,
     now: input.now,
+    // The admin is exempt from the daily cap (ADR-0024).
+    dailyCap: ctx.from?.id === deps.adminTelegramId ? undefined : RECEIPTS_PER_DAY,
   });
+  if (result.kind === 'capReached') {
+    await replyHtml(ctx, messages.receiptCapReached);
+    return;
+  }
   if (result.kind === 'futureReceipt') {
     await replyHtml(ctx, messages.futureReceipt);
     return;
@@ -166,7 +172,7 @@ export function telegramFileDownloader(token: string): FileDownloader {
 // falls through to the help reply. Register before the non-text handler.
 export function registerReceiptMedia(
   bot: Composer<Context>,
-  deps: HandlerDeps,
+  deps: AdminDeps,
   download: FileDownloader,
 ): void {
   bot.on(['message:photo', 'message:document'], async (ctx, next) => {

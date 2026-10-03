@@ -314,8 +314,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: an invite link admits a stranger | dev | done | a5d3864 |
-| 2: Admin tools: list and revoke codes, block, stats | dev | done | committed with this row |
-| 3: Abuse limits: message rate and daily receipts | dev | not started | |
+| 2: Admin tools: list and revoke codes, block, stats | dev | done | 5e1c62b |
+| 3: Abuse limits: message rate and daily receipts | dev | done | committed with this row |
 | 4: Delete my account | dev | not started | |
 | 5: Privacy policy and `/privacy` | dev | not started | |
 | 6: Deploy and open | human | not started | |
@@ -343,6 +343,15 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
   `blocked_at` NULL, and leaves soft-deleted expenses out of both 7-day counts. `/block` on an id
   with no user row replies that the user never wrote; on the admin it refuses. A blocked user's
   `my_chat_member` (adding the bot) is dropped too, so the bot stays in that group unbound.
+- Phase 3: `src/bot/handlers/text.ts` (outside `Files touched`) takes `AdminDeps` so the link
+  path can exempt the admin. `recordReceipt`'s `dailyCap` is optional: absent means no cap, so
+  the existing test callers are unchanged. The cap counts the user's receipts in any ledger,
+  deleted expenses included, created within the local day of the ledger's effective timezone.
+- Phase 3 done-whens: the Belgrade cap case and the duplicate past the cap are tested on
+  `recordReceipt` (`src/services/recordReceipt.test.ts`, outside `Files touched`), not with a
+  redelivered photo through the bot: the photo path ends in the same `recordReceipt` call. The
+  injected-clock case is tested on the `RateLimiter` class; the middleware is tested through the
+  bot at a fixed clock.
 
 ### Close triggers
 

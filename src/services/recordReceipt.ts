@@ -7,6 +7,7 @@ import {
 } from '../db/expenses.js';
 import { findActiveLedger, findLedgerForMember, type Ledger } from '../db/ledgers.js';
 import {
+  countReceiptsCreatedBy,
   findMerchantCategory,
   findReceiptByExpense,
   insertReceipt,
@@ -16,7 +17,7 @@ import {
 import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import type { DecodedReceipt } from '../domain/receipts/types.js';
-import { localDateOf } from '../domain/time.js';
+import { localDateOf, localDayWindow } from '../domain/time.js';
 import { isSealedLedger, plaintext } from './ledgerKeys.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
@@ -28,7 +29,12 @@ export interface RecordReceiptInput {
   // When the user sent it (the Telegram message date).
   readonly occurredAt: Date;
   readonly now: Date;
+  // How many receipts the user may record per local day; absent for no cap (the admin).
+  readonly dailyCap?: number | undefined;
 }
+
+// Each recorded receipt makes the worker call a tax site on the user's behalf (ADR-0018).
+export const RECEIPTS_PER_DAY = 20;
 
 export type RecordReceiptResult =
   | {
@@ -42,7 +48,9 @@ export type RecordReceiptResult =
   // The receipt's local issue date is after the local date the message was sent.
   | { readonly kind: 'futureReceipt' }
   // The active ledger is sealed (ADR-0020): receipts aren't taken there, nothing is recorded.
-  | { readonly kind: 'sealedLedger' };
+  | { readonly kind: 'sealedLedger' }
+  // The user already recorded `dailyCap` receipts on their local today: nothing is recorded.
+  | { readonly kind: 'capReached' };
 
 // Records a decoded receipt into the user's active ledger as one expense with the receipt's total
 // and currency, dated the issue instant's local date, plus a `pending` receipt row the worker
@@ -61,6 +69,15 @@ export function recordReceipt(deps: RecordDeps, input: RecordReceiptInput): Reco
   if (seen !== undefined) return duplicate(deps, user, plaintext(seen));
 
   const timezone = effectiveTimezone(deps, user, ledger);
+  // After the duplicate lookup, which needs the decoded fiscal id: a receipt already recorded
+  // answers as one even past the cap, and doesn't count toward it.
+  if (input.dailyCap !== undefined) {
+    const today = localDayWindow(localDateOf(input.now, timezone), timezone);
+    if (countReceiptsCreatedBy(db, user.id, today) >= input.dailyCap) {
+      logger.info({ userId: user.id }, 'daily receipt cap reached');
+      return { kind: 'capReached' };
+    }
+  }
   const sentOn = localDateOf(input.occurredAt, timezone);
   const issuedOn = localDateOf(receipt.issuedAt, timezone);
   if (issuedOn > sentOn) return { kind: 'futureReceipt' };

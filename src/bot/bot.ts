@@ -27,6 +27,7 @@ import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
+import { rateLimit } from './middleware/rateLimit.js';
 import { replyHtml } from './render/html.js';
 
 export interface HandlerDeps {
@@ -62,6 +63,8 @@ export function createBot(options: BotOptions): Bot {
   // Registered first so it wraps every later middleware, including handlers added after
   // createBot returns. bot.catch only sees errors under bot.start(), not handleUpdate().
   bot.use(errorBoundary(logger));
+  // Before the access check and the group branch: a flood is dropped before any DB read.
+  bot.use(rateLimit(options));
 
   // Group updates and everything else take separate composers (ADR-0014): no DM handler, flow
   // or anchor sees a group update, and the group side never falls through to the DM side.

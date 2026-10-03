@@ -661,6 +661,8 @@ export const messages = {
     refund: html`Это чек возврата. Возвраты пока не записываются, ничего не записано.`,
   },
   futureReceipt: html`Дата на чеке ещё не наступила. Ничего не записано.`,
+  // The daily receipt cap (ADR-0024).
+  receiptCapReached: html`Лимит чеков на сегодня исчерпан, попробуйте завтра.`,
 
   // Bank card-purchase SMS (ADR-0021): the header matched, but the body records nothing.
   bankSmsRefused: {

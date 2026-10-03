@@ -6,7 +6,7 @@ import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordBankSms } from '../../services/recordBankSms.js';
 import { recordExpense } from '../../services/recordExpense.js';
-import type { HandlerDeps } from '../bot.js';
+import type { AdminDeps, HandlerDeps } from '../bot.js';
 import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
@@ -21,7 +21,7 @@ import { answerExpiredSecret } from './unlock.js';
 // ignored, a pending flow takes the text as its answer, and anything else is an expense attempt.
 // Register after command handlers. The taps on the ambiguous amount question it asks are
 // registered with it.
-export function registerText(bot: Composer<Context>, deps: HandlerDeps): void {
+export function registerText(bot: Composer<Context>, deps: AdminDeps): void {
   registerAmbiguous(bot, deps);
 
   bot.on('message:text', async (ctx) => {
