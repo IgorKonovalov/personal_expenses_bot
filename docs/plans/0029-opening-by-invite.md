@@ -317,7 +317,7 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 2: Admin tools: list and revoke codes, block, stats | dev | done | 5e1c62b |
 | 3: Abuse limits: message rate and daily receipts | dev | done | cfd47fc |
 | 4: Delete my account | dev | done | 8b41787 |
-| 5: Privacy policy and `/privacy` | dev | done | committed with this row |
+| 5: Privacy policy and `/privacy` | dev | done | 56b6444 |
 | 6: Deploy and open | human | not started | |
 
 ### Notes
@@ -369,13 +369,28 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
   Receipts and Currency conversion sections and checks `PRIVACY.md` names each. `/privacy` and
   `/delete_account` are in `/help`, not in the `setMyCommands` list. The contact in `PRIVACY.md`
   is the placeholder `TODO-CONTACT`, for Phase 6.
+- Followups noticed, not acted on: `src/services/groupChats.ts` comments still say "allowlisted
+  user" / "the allowlist" (lines 30 and 68); a stranger's callback query other than
+  [Удалить всё] is dropped without an `answerCallbackQuery`.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** migration `0013_admission.sql`; `src/services/admission.ts`,
+  `src/db/invites.ts`, `src/bot/middleware/access.ts` (replaces `allowlist.ts`),
+  `src/bot/middleware/rateLimit.ts`, `src/bot/handlers/invite.ts`, `admin.ts`,
+  `deleteAccount.ts`, `privacy.ts`, `src/services/deleteAccount.ts`, the receipt cap in
+  `recordReceipt`, `PRIVACY.md`. Commits a5d3864, 5e1c62b, cfd47fc, 8b41787, 56b6444.
+- **User-visible surface changed:** new commands `/invite`, `/invites`, `/block`, `/unblock`,
+  `/stats` (admin only), `/privacy`, `/delete_account`; callback data `inv:off:<code>`,
+  `acct:del`, `acct:keep`; new copy «Бот работает по приглашениям…», «Ссылка недействительна или
+  истекла.», «Лимит чеков на сегодня исчерпан, попробуйте завтра.», «удалённый участник» (was
+  «Без имени» in group reports); `/help` gains two lines. Env: `ADMIN_TELEGRAM_ID` (required),
+  `ADMIT_TELEGRAM_IDS` (optional); a set `ALLOWED_TELEGRAM_IDS` fails the boot.
+- **Gate at the tip (56b6444):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 77 files, 1027 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit
+  0, 242 relative links resolve.
+- **Outstanding `human` phases:** Phase 6 (fill the `PRIVACY.md` contact, rename the VPS env
+  before the deploy, deploy, test `/invite` with a second account).
 
 ## Followups
 
