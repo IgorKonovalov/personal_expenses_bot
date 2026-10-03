@@ -1,6 +1,6 @@
 # 0031: Receipt photos that fail the plain QR pass get retried on preprocessed pixels
 
-> **Status:** approved (2026-10-03)
+> **Status:** in-progress
 > **Created:** 2026-10-03
 > **Related ADRs:** [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
 > [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
@@ -201,13 +201,34 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Collect the corpus | human | not started | |
-| 2: Walking skeleton | dev | not started | |
+| 1: Collect the corpus | human | done (user; 8 images in `data/qr-corpus/`) | |
+| 2: Walking skeleton | dev | done | committed with this row |
 | 3: Tune variants and budget | dev | not started | |
 | 4: Two hints | dev | not started | |
 | 5: Live check | human | not started | |
 
 ### Notes
+
+- Phase 2: the threshold reads "mean - 3%" as relative to the mean, strict: a pixel is white when
+  `L > 0.97 * mean`. ImageMagick's `-lat 31x31-3%` subtracts 3% of the full range instead. With
+  the absolute offset, the 64x64 half-black test's uniformly black area turns white.
+- Phase 2: rerunning `generate.ts` rewrote `example.png` bytes; it was restored from `HEAD`, and
+  only `rs-receipt-dotgain.jpg` is new. The fixture: EC level L, 7 px per module, `Erode Disk:2`,
+  `-blur 0x2`.
+- Phase 2 `pnpm qr:corpus` (8 images):
+
+  | file | pass | detected | ms |
+  |---|---|---|---|
+  | photo_2026-10-03_21-30-22.jpg | none | | 452 |
+  | photo_2026-10-03_21-31-00.jpg | none | | 311 |
+  | photo_2026-10-03_21-31-05.jpg | none | v23 L ChecksumError 6.9px | 300 |
+  | photo_2026-10-03_21-31-10.jpg | blur3-lmt31-3 | | 283 |
+  | photo_2026-10-03_21-31-15.jpg | none | | 265 |
+  | photo_2026-10-03_21-31-21.jpg | none | | 253 |
+  | photo_2026-10-03_21-31-27.jpg | none | v20 L ChecksumError 8px | 306 |
+  | photo_2026-10-03_21-31-33.jpg | none | v20 L ChecksumError 7.1px | 289 |
+
+  Total: 1 of 8 decoded, slowest 452 ms.
 
 ### Close triggers
 

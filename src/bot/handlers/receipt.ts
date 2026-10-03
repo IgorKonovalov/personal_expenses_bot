@@ -214,7 +214,7 @@ export function registerReceiptMedia(
         ms: Math.round(performance.now() - started),
         outcome: decoded !== undefined ? 'receipt' : qr.kind === 'none' ? 'noQr' : 'notReceipt',
         ...(qr.kind === 'none' && qr.detected !== undefined ? { detected: qr.detected } : {}),
-        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length } : {}),
+        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length, pass: qr.pass } : {}),
       },
       'receipt image read',
     );

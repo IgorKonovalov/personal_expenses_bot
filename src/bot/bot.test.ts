@@ -19,6 +19,7 @@ import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
+import { VARIANTS } from '../fiscal/qrPixels.js';
 import { createLogger } from '../logger.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
@@ -4066,7 +4067,31 @@ describe('fiscal receipts', () => {
 
       const reads = logLines.filter((line) => line.includes('receipt image read'));
       expect(reads).toHaveLength(1);
-      expect(JSON.parse(String(reads[0]))).toMatchObject({ outcome: 'receipt', qrCount: 1 });
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'receipt',
+        qrCount: 1,
+        pass: 'plain',
+      });
+      for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
+    });
+
+    it('records a dot-gain receipt photo through a pixel retry and logs its pass', async () => {
+      const { sendPhoto, calls, db, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt-dotgain.jpg');
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 82912, currency: 'RSD' },
+      ]);
+      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'receipt',
+        qrCount: 1,
+        pass: VARIANTS[0]?.name,
+      });
+      expect(VARIANTS[0]?.name).toBe('blur3-lmt31-3');
       for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
     });
 
