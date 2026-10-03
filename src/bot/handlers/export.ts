@@ -1,6 +1,11 @@
-import { InlineKeyboard, InputFile, type Composer, type Context } from 'grammy';
+import { InlineKeyboard, InputFile, InputMediaBuilder, type Composer, type Context } from 'grammy';
 import { writeCsv } from '../../domain/export/csv.js';
-import { expensesTable, isExportRange, type ExportRange } from '../../domain/export/rows.js';
+import {
+  expensesTable,
+  isExportRange,
+  itemsTable,
+  type ExportRange,
+} from '../../domain/export/rows.js';
 import { exportActiveLedger, type LedgerExport } from '../../services/exportLedger.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import type { HandlerDeps } from '../bot.js';
@@ -48,17 +53,24 @@ export interface ExportFile {
   readonly bytes: Buffer;
 }
 
-// The files of an export in one format.
+// The files of an export in one format: the expenses, plus the receipt items when any exported
+// expense has them. The author column exists only for a shared ledger.
 export function exportFiles(data: LedgerExport, format: ExportFormat): ExportFile[] {
   if (format !== 'csv') throw new Error(`export format ${format} is not built`);
   const expenses = expensesTable(
     messages.exportExpensesSheet,
-    messages.exportColumns,
+    messages.exportColumns(data.ledger.defaultCurrency),
     data.expenses,
+    data.ledger.kind === 'shared',
   );
-  return [
+  const files = [
     { filename: `${messages.exportExpensesStem}-${data.key}.csv`, bytes: writeCsv(expenses) },
   ];
+  if (data.items.length > 0) {
+    const items = itemsTable(messages.exportItemsSheet, messages.exportItemColumns, data.items);
+    files.push({ filename: `${messages.exportItemsStem}-${data.key}.csv`, bytes: writeCsv(items) });
+  }
+  return files;
 }
 
 // Sends the export's files and closes the picker. An empty range sends nothing.
@@ -80,8 +92,13 @@ export async function sendExport(
     throw new Error(`export file over ${MAX_FILE_BYTES} bytes`);
   }
   await ctx.answerCallbackQuery();
-  for (const file of files) {
-    await ctx.replyWithDocument(new InputFile(file.bytes, file.filename));
+  const inputs = files.map((file) => new InputFile(file.bytes, file.filename));
+  const [single] = inputs;
+  if (inputs.length === 1 && single !== undefined) {
+    await ctx.replyWithDocument(single);
+  } else {
+    // One album, so the two files stay together in the chat.
+    await ctx.replyWithMediaGroup(inputs.map((input) => InputMediaBuilder.document(input)));
   }
   deps.logger.info(
     { ledgerId: data.ledger.id, range, format, rows: data.expenses.length, bytes },

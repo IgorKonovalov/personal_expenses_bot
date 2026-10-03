@@ -60,40 +60,128 @@ export function exportSpan(range: ExportRange, today: LocalDate): ExportSpan {
 export interface ExportExpense {
   readonly id: string;
   readonly occurredOn: LocalDate;
+  // `HH:MM` of occurred_at in the ledger's timezone.
+  readonly time: string;
   readonly amount: Money;
+  // In the ledger's currency at the NBS rate of occurredOn (ADR-0022); undefined with no rate.
+  readonly converted: Money | undefined;
   readonly category: string | null;
   readonly description: string;
+  // The author's display name; null for a member with none. Read only for a shared ledger.
+  readonly author: string | null;
+  // The receipt's shop and fiscal link; null without a receipt, or before the shop is known.
+  readonly shop: string | null;
+  readonly receiptUrl: string | null;
 }
 
-export interface ExpenseHeaders {
+// One line item of an exported expense's receipt.
+export interface ExportItem {
+  readonly expenseId: string;
+  readonly occurredOn: LocalDate;
+  readonly shop: string | null;
+  // 1-based, in the order the tax site lists them.
+  readonly position: number;
+  readonly name: string;
+  // Decimal source text, e.g. `0.535`: a quantity, not money.
+  readonly quantity: string;
+  readonly total: Money;
+}
+
+export interface ExpenseLabels {
   readonly date: string;
+  readonly time: string;
   readonly amount: string;
   readonly currency: string;
+  readonly converted: string;
   readonly category: string;
   readonly description: string;
+  readonly author: string;
+  readonly shop: string;
+  readonly receipt: string;
+  readonly id: string;
+  // The Автор cell for a member with no display name.
+  readonly unnamedAuthor: string;
 }
 
-// The expenses table, one row per expense in the order given.
+// The expenses table, one row per expense in the order given. The author column exists only
+// `withAuthor`, for a shared ledger.
 export function expensesTable(
   name: string,
-  headers: ExpenseHeaders,
+  labels: ExpenseLabels,
   expenses: readonly ExportExpense[],
+  withAuthor: boolean,
+): ExportTable {
+  const headers = [
+    labels.date,
+    labels.time,
+    labels.amount,
+    labels.currency,
+    labels.converted,
+    labels.category,
+    labels.description,
+    ...(withAuthor ? [labels.author] : []),
+    labels.shop,
+    labels.receipt,
+    labels.id,
+  ];
+  return {
+    name,
+    columns: headers.map((header) => ({ header })),
+    rows: expenses.map((expense) => [
+      text(expense.occurredOn),
+      text(expense.time),
+      amount(expense.amount),
+      text(expense.amount.currency),
+      expense.converted === undefined ? EMPTY : amount(expense.converted),
+      optionalText(expense.category),
+      text(expense.description),
+      ...(withAuthor ? [text(expense.author ?? labels.unnamedAuthor)] : []),
+      optionalText(expense.shop),
+      optionalText(expense.receiptUrl),
+      text(expense.id),
+    ]),
+  };
+}
+
+export interface ItemLabels {
+  readonly expenseId: string;
+  readonly date: string;
+  readonly shop: string;
+  readonly position: string;
+  readonly name: string;
+  readonly quantity: string;
+  readonly amount: string;
+  readonly currency: string;
+}
+
+// The receipt items table, one row per item in the order given. The quantity keeps its digits,
+// with a decimal comma.
+export function itemsTable(
+  name: string,
+  labels: ItemLabels,
+  items: readonly ExportItem[],
 ): ExportTable {
   return {
     name,
     columns: [
-      headers.date,
-      headers.amount,
-      headers.currency,
-      headers.category,
-      headers.description,
+      labels.expenseId,
+      labels.date,
+      labels.shop,
+      labels.position,
+      labels.name,
+      labels.quantity,
+      labels.amount,
+      labels.currency,
     ].map((header) => ({ header })),
-    rows: expenses.map((expense) => [
-      text(expense.occurredOn),
-      amount(expense.amount),
-      text(expense.amount.currency),
-      optionalText(expense.category),
-      text(expense.description),
+    rows: items.map((item) => [
+      text(item.expenseId),
+      text(item.occurredOn),
+      optionalText(item.shop),
+      text(String(item.position)),
+      text(item.name),
+      text(item.quantity.replace('.', ',')),
+      amount(item.total),
+      text(item.total.currency),
     ]),
   };
 }

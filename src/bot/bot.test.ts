@@ -10,6 +10,8 @@ import type { CategoryId } from '../db/categories.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
+import { insertReceiptItems } from '../db/receiptItems.js';
+import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
 import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
@@ -4535,23 +4537,29 @@ interface SentDocument {
   readonly bytes: Buffer;
 }
 
-// The documents the bot sent, with the bytes each InputFile holds.
+// The documents the bot sent, alone or in an album, with the bytes each InputFile holds.
 async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]> {
+  const files = calls.flatMap((call) => {
+    if (call.method === 'sendDocument') {
+      const payload = call.payload as { chat_id: unknown; document: InputFile };
+      return [{ chatId: payload.chat_id, file: payload.document }];
+    }
+    if (call.method === 'sendMediaGroup') {
+      const payload = call.payload as { chat_id: unknown; media: { media: InputFile }[] };
+      return payload.media.map((item) => ({ chatId: payload.chat_id, file: item.media }));
+    }
+    return [];
+  });
   return Promise.all(
-    calls
-      .filter((call) => call.method === 'sendDocument')
-      .map(async (call) => {
-        const payload = call.payload as { chat_id: unknown; document: InputFile };
-        const raw = await payload.document.toRaw();
-        if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
-        return {
-          chatId: payload.chat_id,
-          filename: payload.document.filename,
-          bytes: Buffer.from(raw),
-        };
-      }),
+    files.map(async ({ chatId, file }) => {
+      const raw = await file.toRaw();
+      if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
+      return { chatId, filename: file.filename, bytes: Buffer.from(raw) };
+    }),
   );
 }
+
+const EXPENSE_HEADER = 'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Магазин;Чек;ID';
 
 // A CSV's lines after the BOM, without the final CRLF.
 function csvLines(bytes: Buffer): string[] {
@@ -4620,8 +4628,11 @@ describe('/export (ADR-0026)', () => {
     });
   });
 
+  const idOf = (db: Db, description: string) =>
+    db.prepare('SELECT id FROM expenses WHERE description = ?').pluck().get(description) as string;
+
   it('sends a CSV of 450 кофе and 12,50 EUR такси for all time, then closes the picker', async () => {
-    const { bot, calls } = await withTwoExpenses();
+    const { bot, calls, db } = await withTwoExpenses();
 
     await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
     await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:r:all', messageId: 5 }));
@@ -4634,10 +4645,13 @@ describe('/export (ADR-0026)', () => {
     expect(csv?.filename).toBe('expenses-all.csv');
     expect([...(csv?.bytes.subarray(0, 3) ?? [])]).toEqual([0xef, 0xbb, 0xbf]);
     const lines = csvLines(csv?.bytes ?? Buffer.alloc(0));
-    expect(lines[0]).toBe('Дата;Сумма;Валюта;Категория;Описание');
+    // A personal ledger: no Автор column. No EUR rate is stored, so its converted cell is empty.
+    expect(lines[0]).toBe(EXPENSE_HEADER);
     expect(lines.slice(1)).toEqual([
-      '2026-09-29;450,00;RSD;Кафе и рестораны;кофе',
-      expect.stringMatching(/^2026-09-29;12,50;EUR;[^;]*;такси$/),
+      `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      expect.stringMatching(
+        new RegExp(`^2026-09-29;23:50;12,50;EUR;;[^;]*;такси;;;${idOf(db, 'такси')}$`),
+      ),
     ]);
     const edits = calls.filter((call) => call.method === 'editMessageText');
     expect(edits.at(-1)?.payload).toMatchObject({
@@ -4672,8 +4686,8 @@ describe('/export (ADR-0026)', () => {
       );
       const [csv] = await sentDocuments(calls);
       expect(csvLines(csv?.bytes ?? Buffer.alloc(0))).toEqual([
-        'Дата;Сумма;Валюта;Категория;Описание',
-        '2026-09-29;450,00;RSD;Кафе и рестораны;кофе',
+        EXPENSE_HEADER,
+        `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
       ]);
     }
   });
@@ -4714,6 +4728,120 @@ describe('/export (ADR-0026)', () => {
 
     expect((await sentDocuments(calls)).map((doc) => doc.filename)).toEqual(['expenses-all.csv']);
     expect(calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(2);
+  });
+
+  // Inserts a live expense into the harness user's active ledger.
+  function insertExpense(db: Db, id: string, amountMinor: number, description: string) {
+    const owner = db.prepare('SELECT id, active_ledger_id FROM users').get() as {
+      id: string;
+      active_ledger_id: string;
+    };
+    insertExpenseOrGetExisting(db, {
+      id: id as ExpenseId,
+      ledgerId: owner.active_ledger_id as LedgerId,
+      createdBy: owner.id as UserId,
+      amountMinor,
+      currency: 'RSD',
+      description,
+      occurredAt: new Date('2026-09-29T12:00:00Z'),
+      occurredOn: '2026-09-29' as LocalDate,
+      sourceKey: `test:${id}`,
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+  }
+
+  it.each([
+    [1171234, '1171,23'],
+    [1171235, '1171,24'],
+  ])('exports 10,00 EUR at an EUR rate of %i as %s in Сумма в RSD', async (middleE4, cell) => {
+    const { bot, calls, db } = createTestBot();
+    const day = '2026-09-29' as LocalDate;
+    const fetchedAt = new Date('2026-09-29T08:00:00Z');
+    storeFxList(
+      db,
+      { listDate: day, listNumber: 1, rates: [{ currency: 'EUR', unit: 1, middleE4 }] },
+      fetchedAt,
+    );
+    setFxDay(db, day, day, fetchedAt);
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '10 EUR такси' }));
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const fields = csvLines(csv?.bytes ?? Buffer.alloc(0))[1]?.split(';');
+    expect(fields?.slice(2, 5)).toEqual(['10,00', 'EUR', cell]);
+  });
+
+  it('sends the expenses and the receipt items as one album, the items keyed by the expense ID', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    db.transaction(() => {
+      markReceiptFetched(db, receiptId, 'Test Market');
+      insertReceiptItems(db, receiptId, [
+        { name: 'Хлеб', quantity: '1', totalMinor: 9999 },
+        { name: 'Сыр', quantity: '0.535', totalMinor: 52913 },
+        { name: 'Вода', quantity: '2', totalMinor: 20000 },
+      ]);
+    })();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(1);
+    const [expenses, items] = await sentDocuments(calls);
+    expect(expenses?.filename).toBe('expenses-all.csv');
+    expect(items?.filename).toBe('receipt-items-all.csv');
+    const receiptRow = csvLines(expenses?.bytes ?? Buffer.alloc(0)).find((line) =>
+      line.endsWith(expenseId),
+    );
+    expect(receiptRow?.split(';').slice(7)).toEqual([
+      'Test Market',
+      'https://suf.example/v/?vl=synthetic',
+      expenseId,
+    ]);
+    expect(csvLines(items?.bytes ?? Buffer.alloc(0))).toEqual([
+      'ID расхода;Дата;Магазин;№;Наименование;Количество;Сумма;Валюта',
+      `${expenseId};2026-09-29;Test Market;1;Хлеб;1;99,99;RSD`,
+      `${expenseId};2026-09-29;Test Market;2;Сыр;0,535;529,13;RSD`,
+      `${expenseId};2026-09-29;Test Market;3;Вода;2;200,00;RSD`,
+    ]);
+  });
+
+  it('sends exactly one document for a range without receipts', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendDocument')).toHaveLength(1);
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(0);
+  });
+
+  it("exports a description =SUM(A1) as '=SUM(A1), and never prefixes an amount cell", async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    insertExpense(db, '00000000-0000-4000-8000-0000000000bb', 500, '=SUM(A1)');
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => row[6])).toContain("'=SUM(A1)");
+    for (const row of rows) {
+      expect(row[2]).toMatch(/^\d/);
+      expect(row[4] ?? '').not.toMatch(/^'/);
+    }
   });
 
   it('is in the command menu', () => {

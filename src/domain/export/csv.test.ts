@@ -91,4 +91,28 @@ describe('writeCsv', () => {
   it('leaves a plain field unquoted', () => {
     expect(decoded(writeCsv(table('такси')))).toContain(';такси\r\n');
   });
+
+  it.each([
+    ['=SUM(A1)', "'=SUM(A1)"],
+    ['+7 999', "'+7 999"],
+    ['-5', "'-5"],
+    ['@cmd', "'@cmd"],
+    ['\tx', "'\tx"],
+    ['\rx', "'\rx"],
+    ['a=b', 'a=b'],
+  ])('reads the text cell %j back as %j', (description, expected) => {
+    const records = parseCsv(decoded(writeCsv(table(description))));
+
+    expect(records[1]?.[3]).toBe(expected);
+  });
+
+  it('never prefixes an amount cell, a negative one included', () => {
+    const negative: ExportTable = {
+      name: 'x',
+      columns: [{ header: 'Сумма' }],
+      rows: [[{ kind: 'amount', minor: -525, currency: 'RSD' }]],
+    };
+
+    expect(parseCsv(decoded(writeCsv(negative)))).toEqual([['Сумма'], ['-5,25']]);
+  });
 });

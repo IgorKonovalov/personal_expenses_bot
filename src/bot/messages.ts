@@ -1027,16 +1027,35 @@ export const messages = {
   // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
   exportDone: (count: number, key: string): Html =>
     html`Готово: ${expenseCountWords(count)} за ${exportPeriodName(key)}`,
-  // The file stem and the column headers; a file is `<stem>-<key>.csv`.
+  // The file stems, sheet names and column headers; a file is `<stem>-<key>.csv`.
   exportExpensesStem: 'expenses',
-  exportColumns: {
+  exportItemsStem: 'receipt-items',
+  exportExpensesSheet: 'Расходы',
+  exportItemsSheet: 'Позиции чеков',
+  exportColumns: (ledgerCurrency: CurrencyCode) => ({
     date: 'Дата',
+    time: 'Время',
     amount: 'Сумма',
     currency: 'Валюта',
+    converted: `Сумма в ${ledgerCurrency}`,
     category: 'Категория',
     description: 'Описание',
+    author: 'Автор',
+    shop: 'Магазин',
+    receipt: 'Чек',
+    id: 'ID',
+    unnamedAuthor: 'участник',
+  }),
+  exportItemColumns: {
+    expenseId: 'ID расхода',
+    date: 'Дата',
+    shop: 'Магазин',
+    position: '№',
+    name: 'Наименование',
+    quantity: 'Количество',
+    amount: 'Сумма',
+    currency: 'Валюта',
   },
-  exportExpensesSheet: 'Расходы',
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',

@@ -294,8 +294,8 @@ for an XLSX `<v>`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | committed with this row |
-| 2: Every column, the items file, and a formula-safe CSV | dev | not started | |
+| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | `f77bea0` |
+| 2: Every column, the items file, and a formula-safe CSV | dev | done | committed with this row |
 | 3: The XLSX writer and the [Excel] button | dev | not started | |
 | 4: Groups, sealed ledgers, help and docs | dev | not started | |
 | 5: Open the files in real apps | human | not started | |
@@ -314,6 +314,18 @@ for an XLSX `<v>`.
   `messages.commands`; the pinned `registerCommands` test is updated.
 - Phase 1: a format tap on a locked sealed ledger already answers `ledgerLockedToast` and sends
   nothing, since the read goes through `openExpenses`.
+- Phase 2: `src/db/receipts.ts` is unchanged: the service reads the existing
+  `listLedgerReceipts` and keeps the exported expenses' receipts. The items come from a new
+  `listLedgerReceiptItems` in `src/db/receiptItems.ts`, one query per export.
+- Phase 2: for all time the rates are read over the first to the last exported `occurred_on`.
+  The Время column is formatted in the service with `date-fns` and `@date-fns/tz` (both already
+  dependencies), since `src/domain/time.ts` is outside the phase's files.
+- Phase 2: the `1171,23` / `1171,24` done-when runs through the bot harness with a stored rate;
+  the same pair is asserted on the service. A Phase 1 bot test now expects the full Phase 2
+  header, so the Phase 1 header line `Дата;Сумма;Валюта;Категория;Описание` is no longer
+  asserted anywhere.
+- Phase 2: the item columns № and Количество are text cells, so the formula guard also applies
+  to a quantity such as `-1`.
 
 ### Close triggers
 

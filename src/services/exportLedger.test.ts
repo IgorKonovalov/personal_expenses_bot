@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
+import { insertReceiptItems } from '../db/receiptItems.js';
+import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
 import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { EXPORT_RANGES, type ExportRange } from '../domain/export/rows.js';
@@ -113,15 +116,109 @@ describe('exportActiveLedger', () => {
     for (const range of EXPORT_RANGES) expect(ids(range)).not.toContain('gone');
   });
 
-  it('resolves the amount, currency, category name and description', () => {
+  it('resolves time, amount, category, description and author, with no receipt', () => {
     const sep30 = run('pm').expenses.find((e) => e.id === 'sep30');
 
     expect(sep30).toEqual({
       id: 'sep30',
       occurredOn: '2026-09-30',
+      // 10:00Z is 12:00 in Belgrade (CEST).
+      time: '12:00',
       amount: { amountMinor: 45000, currency: 'RSD' },
+      converted: { amountMinor: 45000, currency: 'RSD' },
       category: 'Кафе и рестораны',
       description: 'кофе',
+      author: null,
+      shop: null,
+      receiptUrl: null,
     });
+  });
+
+  it('times 22:20Z on 30 September as 00:20 on 1 October local', () => {
+    expect(run('tm').expenses[0]?.time).toBe('00:20');
+  });
+});
+
+describe('converted amounts (ADR-0022)', () => {
+  function storeEurRate(day: string, middleE4: number) {
+    const fetchedAt = new Date(`${day}T08:00:00Z`);
+    storeFxList(
+      db,
+      {
+        listDate: day as LocalDate,
+        listNumber: 1,
+        rates: [{ currency: 'EUR', unit: 1, middleE4 }],
+      },
+      fetchedAt,
+    );
+    setFxDay(db, day as LocalDate, day as LocalDate, fetchedAt);
+  }
+
+  it.each([
+    // 1000 × 1171234 / 10000 = 117123.4, rounding half-up to 117123.
+    [1171234, 117123],
+    // 117123.5 rounds up to 117124.
+    [1171235, 117124],
+  ])('converts 10,00 EUR at %i into %i RSD minor units', (middleE4, expected) => {
+    storeEurRate('2026-09-15', middleE4);
+    add('eur', '2026-09-15', 1000, 'EUR');
+
+    expect(run('pm').expenses[0]?.converted).toEqual({ amountMinor: expected, currency: 'RSD' });
+  });
+
+  it('leaves a foreign expense on a day with no rate unconverted, an RSD one as itself', () => {
+    add('eur', '2026-09-15', 1000, 'EUR');
+    add('rsd', '2026-09-15', 45000, 'RSD');
+
+    expect(run('all').expenses.map((e) => [e.id, e.converted])).toEqual([
+      ['eur', undefined],
+      ['rsd', { amountMinor: 45000, currency: 'RSD' }],
+    ]);
+  });
+});
+
+describe('receipts and their items', () => {
+  it("puts the shop and link on the expense and lists the items in the expense's order", () => {
+    add('plain', '2026-09-10', 100, 'RSD');
+    add('rcpt', '2026-09-12', 82912, 'RSD');
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: 'rcpt' as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: NOW,
+      createdAt: NOW,
+    });
+    db.transaction(() => {
+      markReceiptFetched(db, receiptId, 'Test Market');
+      insertReceiptItems(db, receiptId, [
+        { name: 'Хлеб', quantity: '1', totalMinor: 9999 },
+        { name: 'Сыр', quantity: '0.535', totalMinor: 52913 },
+        { name: 'Вода', quantity: '2', totalMinor: 20000 },
+      ]);
+    })();
+
+    const result = run('pm');
+
+    expect(result.expenses.map((e) => [e.id, e.shop, e.receiptUrl])).toEqual([
+      ['plain', null, null],
+      ['rcpt', 'Test Market', 'https://suf.example/v/?vl=synthetic'],
+    ]);
+    expect(result.items).toEqual([
+      {
+        expenseId: 'rcpt',
+        occurredOn: '2026-09-12',
+        shop: 'Test Market',
+        position: 1,
+        name: 'Хлеб',
+        quantity: '1',
+        total: { amountMinor: 9999, currency: 'RSD' },
+      },
+      expect.objectContaining({ expenseId: 'rcpt', position: 2, quantity: '0.535' }),
+      expect.objectContaining({ expenseId: 'rcpt', position: 3, name: 'Вода' }),
+    ]);
   });
 });
