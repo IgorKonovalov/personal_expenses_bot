@@ -296,8 +296,8 @@ for an XLSX `<v>`.
 |---|---|---|---|
 | 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | `f77bea0` |
 | 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
-| 3: The XLSX writer and the [Excel] button | dev | done | committed with this row |
-| 4: Groups, sealed ledgers, help and docs | dev | not started | |
+| 3: The XLSX writer and the [Excel] button | dev | done | `440e551` |
+| 4: Groups, sealed ledgers, help and docs | dev | done | committed with this row |
 | 5: Open the files in real apps | human | not started | |
 
 ### Notes
@@ -332,6 +332,18 @@ for an XLSX `<v>`.
   Every zip entry carries the fixed date 1980-01-01, so the bytes depend only on the parts.
 - Phase 3: the XLSX keeps № and Количество as text cells, the same cells as the CSV.
   `messages.exportSoon` is removed with the placeholder.
+- Phase 4: both `src/bot/group/export.ts` (the handlers) and `src/bot/group/index.ts` (one
+  registration line) are touched. The group picker reuses `rangeStep`, `showFormatStep`,
+  `showRangeStep` and `sendExport` exported from `src/bot/handlers/export.ts`.
+- Phase 4: while locked, `/export` replies `ledgerLocked`; a tap on an old picker (format or
+  [← Назад]) answers the toast `ledgerLockedToast`, as Plan 0019's other taps do. The service
+  gains `activeExportState` for the picker. A sealed, unlocked ledger's range step carries one
+  line saying the file is an unencrypted copy (`exportRangePrompt(true)`).
+- Phase 4: a sealed ledger's receipts were folded into its rows' payloads when it was sealed, so
+  the export reads shop, link and items through `foldedReceipt`: one more decryption per row.
+- Phase 4: the "after `/unlock`" done-when unlocks through `unlockPersonalLedger` (the service
+  `/unlock` calls) on the harness keyring, not by sending `/unlock` and the passphrase through
+  the harness.
 
 ### Close triggers
 

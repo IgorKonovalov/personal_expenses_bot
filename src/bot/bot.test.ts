@@ -13,7 +13,7 @@ import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
 import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
-import type { UserId } from '../db/users.js';
+import { findUserByIdentity, type UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
@@ -25,6 +25,7 @@ import { compareVersions } from '../domain/version.js';
 import { createLogger } from '../logger.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, registerCommands } from './bot.js';
 import {
   BUDGET_CAP,
@@ -4895,7 +4896,39 @@ describe('/export (ADR-0026)', () => {
     }
   });
 
-  it('is in the command menu', () => {
+  it('sends nothing for a locked sealed ledger, and the plaintext once unlocked', async () => {
+    const { bot, calls, db, keys } = await withTwoExpenses();
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db, logger: silentLogger(), keys };
+    await sealPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['sendMessage', 'answerCallbackQuery']);
+    expect(calls[0]?.payload).toMatchObject({ text: messages.ledgerLocked });
+    expect(calls[1]?.payload).toMatchObject({ text: messages.ledgerLockedToast });
+
+    await unlockPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+    calls.length = 0;
+    await bot.handleUpdate(textUpdate({ updateId: 5, messageId: 6, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 6, data: 'xp:f:all:csv', messageId: 7 }));
+
+    expect(calls[0]?.payload).toMatchObject({ text: messages.exportRangePrompt(true) });
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => [row[2], row[3], row[6]])).toEqual([
+      ['450,00', 'RSD', 'кофе'],
+      ['12,50', 'EUR', 'такси'],
+    ]);
+  });
+
+  it('is in the command menu and the help text', () => {
     expect(messages.commands.map((c) => c.command)).toContain('export');
+    expect(messages.help).toContain('/export');
+    expect(messages.groupHelp).toContain('/export');
   });
 });

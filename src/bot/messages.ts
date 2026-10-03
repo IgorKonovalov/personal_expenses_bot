@@ -547,6 +547,7 @@ export const messages = {
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории и шифрование`,
       html`${menu.help} — эта подсказка`,
+      html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
       html`/cancel — отменить ввод`,
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
@@ -563,6 +564,7 @@ export const messages = {
       html`/today — траты группы за сегодня`,
       html`/week и /month — по категориям и по участникам`,
       html`/budget — бюджет группы: сколько осталось на сегодня и до конца периода`,
+      html`/export — все траты группы файлом CSV или Excel`,
       html`/card — ответом на сообщение с тратой: показать её карточку`,
       html`/settings — часовой пояс и валюта группы (для того, кто добавил меня)`,
       html`/help — эта подсказка`,
@@ -577,6 +579,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'budget', description: 'Бюджет группы: сколько осталось' },
+    { command: 'export', description: 'Выгрузить траты группы в CSV или Excel' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
@@ -1011,7 +1014,11 @@ export const messages = {
   },
 
   // /export (ADR-0026): the range step, then the format step, edited in place.
-  exportRangePrompt: html`Что выгрузить?`,
+  // A sealed ledger's picker says the file is a plaintext copy.
+  exportRangePrompt: (sealed: boolean): Html =>
+    sealed
+      ? html`Что выгрузить?\n\nУчёт зашифрован, а файл — нет: копия останется в чате и на ваших устройствах.`
+      : html`Что выгрузить?`,
   exportRangeButtons: {
     tm: 'Этот месяц',
     pm: 'Прошлый месяц',

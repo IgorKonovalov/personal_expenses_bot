@@ -7,7 +7,11 @@ import {
   itemsTable,
   type ExportRange,
 } from '../../domain/export/rows.js';
-import { exportActiveLedger, type LedgerExport } from '../../services/exportLedger.js';
+import {
+  activeExportState,
+  exportActiveLedger,
+  type LedgerExport,
+} from '../../services/exportLedger.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -20,12 +24,13 @@ import {
 } from '../callbackData.js';
 import { createTapGuard } from '../callbacks.js';
 import { messages } from '../messages.js';
-import { editHtml, replyHtml } from '../render/html.js';
+import { editHtml, replyHtml, type Html } from '../render/html.js';
 import { ensureUser } from './start.js';
 
 // /export (ADR-0026): a range step and a format step edited in place, then the file sent as a
 // document in the same update. Nothing is written, so the picker needs no anchor: a tap reads
-// the active ledger. The log carries the range, format, row count and byte size, never a cell.
+// the active ledger here, the chat's binding in a group. A sealed ledger exports only while
+// unlocked (ADR-0020). The log carries the range, format, row count and byte size, never a cell.
 
 // Telegram takes bot uploads up to 50 MB; past this the export fails loudly instead.
 const MAX_FILE_BYTES = 45 * 1024 * 1024;
@@ -81,10 +86,11 @@ export function exportFiles(data: LedgerExport, format: ExportFormat): ExportFil
   }));
 }
 
-// Sends the export's files and closes the picker. An empty range sends nothing.
+// Sends the export's files to the chat of the tapped picker and closes the picker. An empty
+// range sends nothing.
 export async function sendExport(
   ctx: Context,
-  deps: HandlerDeps,
+  deps: Pick<HandlerDeps, 'logger'>,
   data: LedgerExport,
   range: ExportRange,
   format: ExportFormat,
@@ -115,25 +121,50 @@ export async function sendExport(
   await editHtml(ctx, messages.exportDone(data.expenses.length, data.key));
 }
 
+// The range step's view; a sealed ledger's says the file is a copy outside the encryption.
+export function rangeStep(sealed: boolean): { text: Html; markup: InlineKeyboard } {
+  return { text: messages.exportRangePrompt(sealed), markup: rangeKeyboard() };
+}
+
+// [← Назад] and a range tap, which edit the picker in place; shared with the group picker.
+export async function showRangeStep(ctx: Context, sealed: boolean): Promise<void> {
+  const step = rangeStep(sealed);
+  await ctx.answerCallbackQuery();
+  await editHtml(ctx, step.text, { reply_markup: step.markup });
+}
+
+export async function showFormatStep(ctx: Context, range: string): Promise<void> {
+  await ctx.answerCallbackQuery();
+  if (!isExportRange(range)) return;
+  await editHtml(ctx, messages.exportFormatPrompt, { reply_markup: formatKeyboard(range) });
+}
+
 export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void {
   const guard = createTapGuard();
+  // The picker's state for the tapping user's active ledger; a locked ledger answers locked.
+  const pickerState = (telegramId: number) =>
+    activeExportState(deps, ensureUser(deps, telegramId, deps.now()));
 
   bot.command('export', async (ctx) => {
     if (ctx.from === undefined) return;
-    ensureUser(deps, ctx.from.id, deps.now());
-    await replyHtml(ctx, messages.exportRangePrompt, { reply_markup: rangeKeyboard() });
+    const state = pickerState(ctx.from.id);
+    if (isLocked(state)) {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
+    const step = rangeStep(state.sealed);
+    await replyHtml(ctx, step.text, { reply_markup: step.markup });
   });
 
-  bot.callbackQuery(EXPORT_RANGE, async (ctx) => {
-    const range = ctx.match[1] ?? '';
-    await ctx.answerCallbackQuery();
-    if (!isExportRange(range)) return;
-    await editHtml(ctx, messages.exportFormatPrompt, { reply_markup: formatKeyboard(range) });
-  });
+  bot.callbackQuery(EXPORT_RANGE, (ctx) => showFormatStep(ctx, ctx.match[1] ?? ''));
 
   bot.callbackQuery(EXPORT_BACK, async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await editHtml(ctx, messages.exportRangePrompt, { reply_markup: rangeKeyboard() });
+    const state = pickerState(ctx.from.id);
+    if (isLocked(state)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
+    await showRangeStep(ctx, state.sealed);
   });
 
   bot.callbackQuery(EXPORT_FORMAT, async (ctx) => {

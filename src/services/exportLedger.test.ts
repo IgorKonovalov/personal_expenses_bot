@@ -12,10 +12,16 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { EXPORT_RANGES, type ExportRange } from '../domain/export/rows.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
-import { exportActiveLedger, type LedgerExport } from './exportLedger.js';
+import {
+  activeExportState,
+  exportActiveLedger,
+  exportGroupLedger,
+  type LedgerExport,
+} from './exportLedger.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import type { RecordDeps } from './recordExpense.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 
 // 00:30 on Thursday 1 October in Belgrade (CEST), still 30 September in UTC.
 const NOW = new Date('2026-09-30T22:30:00Z');
@@ -174,6 +180,60 @@ describe('converted amounts (ADR-0022)', () => {
       ['eur', undefined],
       ['rsd', { amountMinor: 45000, currency: 'RSD' }],
     ]);
+  });
+});
+
+describe('a sealed personal ledger (ADR-0020)', () => {
+  it('exports nothing while locked, and the plaintext rows and folded receipt once unlocked', async () => {
+    add('rcpt', '2026-09-12', 82912, 'RSD', { description: 'Чек' });
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: 'rcpt' as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: NOW,
+      createdAt: NOW,
+    });
+    db.transaction(() => {
+      markReceiptFetched(db, receiptId, 'Test Market');
+      insertReceiptItems(db, receiptId, [{ name: 'Сыр', quantity: '0.535', totalMinor: 52913 }]);
+    })();
+    await sealPersonalLedger(deps, user, NOW);
+
+    expect(activeExportState(deps, user)).toEqual({ kind: 'locked' });
+    expect(exportActiveLedger(deps, { user, range: 'all', now: NOW })).toEqual({ kind: 'locked' });
+
+    await unlockPersonalLedger(deps, user, NOW);
+
+    expect(activeExportState(deps, user)).toEqual({ kind: 'open', sealed: true });
+    const result = run('all');
+    expect(result.expenses.map((e) => [e.amount.amountMinor, e.description, e.shop])).toEqual([
+      [82912, 'Чек', 'Test Market'],
+    ]);
+    expect(result.items).toEqual([
+      {
+        expenseId: 'rcpt',
+        occurredOn: '2026-09-12',
+        shop: 'Test Market',
+        position: 1,
+        name: 'Сыр',
+        quantity: '0.535',
+        total: { amountMinor: 52913, currency: 'RSD' },
+      },
+    ]);
+  });
+
+  it('reads a plaintext ledger as plain', () => {
+    expect(activeExportState(deps, user)).toEqual({ kind: 'open', sealed: false });
+  });
+});
+
+describe('exportGroupLedger', () => {
+  it('is undefined for a chat bound to no ledger', () => {
+    expect(exportGroupLedger(deps, { chatId: -1, range: 'all', now: NOW })).toBeUndefined();
   });
 });
 
