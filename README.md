@@ -30,10 +30,12 @@ when an amount could be read two ways.
 | [Вернуть]                            | Restores the expense, and `/today` counts it again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `/categories`                        | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back. [Обязательные] marks which categories are essential (rent, groceries)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/budget`                            | The ledger's budget: the limit, the period with its day number, what's left for today and for the period, with spending in other currencies converted into the budget's currency, and any spending with no rate listed as not counted. [Задать лимит] sets the limit for a period, [День начала периода] moves the period start to your payday (1 to 31), [Считать все] / [Только необязательные] picks whether essential categories count, and [Лимиты по категориям] caps single categories. Once set, every expense card gains `Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD`, and a capped category's line `Кафе и рестораны: 450.00 из 5 000.00 RSD`. Yesterday's leftover or overspend carries into today |
-| `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта], [Категории] and [Шифрование] (see [Encrypted ledger](#encrypted-ledger)). The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта], [Категории] and [Шифрование] (see [Encrypted ledger](#encrypted-ledger)). The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `/changelog`                         | What's new: one entry per version, newest first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/privacy`                           | A three-line summary of what is stored and who sees it, and a link to [PRIVACY.md](PRIVACY.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `/delete_account`                    | Says what goes (the personal ledger with every expense, receipt, category and budget, and your settings) and what stays (your expenses in group ledgers, shown as «удалённый участник», and backups for up to `BACKUP_KEEP` days), with [Удалить всё] / [Отмена]. After deleting, the same Telegram account needs a new invite                                                                                                                                                                                                                                                                                                                                                                                                |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
@@ -42,9 +44,28 @@ stickers, voice messages and files that aren't images get the help reply. Photos
 receipt QR code (see Receipts below). Editing a sent expense doesn't change the record, and the
 bot says so.
 
-Only Telegram accounts listed in `ALLOWED_TELEGRAM_IDS` get any reply in a private chat. Everyone
-else is ignored there. The first id listed is the admin: on a boot with a new version, the bot
-sends them a short «🆕 Версия X.Y.Z» note (ADR-0013).
+### Joining
+
+The bot works by invitation ([ADR-0024](docs/adrs/0024-admission-lives-in-the-database-via-invite-codes.md)).
+The admin (`ADMIN_TELEGRAM_ID`) sends `/invite` and gets a link `https://t.me/<bot>?start=<code>`
+that admits up to 10 people within 14 days; `/invite 30 7` makes one for 30 people and 7 days
+(each number from 1 to 1000). Opening the link starts the bot as a normal `/start`. A link that is
+used up, expired or switched off answers «Ссылка недействительна или истекла». Anyone else gets
+one «Бот работает по приглашениям» reply and then silence. `ADMIT_TELEGRAM_IDS` admits the listed
+ids at boot, without a link.
+
+Admin-only commands (anyone else gets the `/help` answer):
+
+| Admin sends            | The bot does                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `/invite [uses days]`  | Makes an invite link                                                                               |
+| `/invites`             | Lists the live links with `used/max` and the expiry date, each with [Отключить] to switch it off   |
+| `/block <telegram id>` | Drops every update from that account, in private and in groups; `/unblock <telegram id>` undoes it |
+| `/stats`               | Admitted users, users and expenses of the last 7 days, live links. Counts only, no amounts         |
+
+Limits for everyone but the admin: at most 30 updates per minute (the rest are dropped silently),
+and 20 receipts per local day («Лимит чеков на сегодня исчерпан, попробуйте завтра»). On a boot
+with a new version, the bot sends the admin a short «🆕 Версия X.Y.Z» note (ADR-0013).
 
 ### In a group
 
@@ -54,13 +75,13 @@ The bot can keep a group's shared books, such as a family's, next to everyone's 
 1. In [@BotFather](https://t.me/BotFather), set `/setjoingroups` to Enabled and `/setprivacy` to
    Disabled, so the bot reads ordinary group messages. A privacy change applies only to groups
    the bot joins afterwards, so remove the bot from a group and add it again after changing it.
-2. An allowlisted user adds the bot to the group. The group gets its own shared ledger, named
+2. An admitted user adds the bot to the group. The group gets its own shared ledger, named
    after the group, in that user's currency and timezone. Added by anyone else, the bot leaves.
 
 | In the group                | The bot does                                                                                                                                                                                                                   |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `450 кафе` from any member  | Records it in the group ledger under the sender's name, dated in the ledger's timezone. A recognised category gets a ✍ reaction; «Другое» gets a reply card with [Удалить]                                                    |
-| [Удалить], [Вернуть]        | Work for the expense's author only. [Изменить в личке] on the card opens it in the author's private chat (allowlisted authors only)                                                                                            |
+| [Удалить], [Вернуть]        | Work for the expense's author only. [Изменить в личке] on the card opens it in the author's private chat (admitted authors only)                                                                                               |
 | `/card` as a reply          | Shows the card of the expense that message recorded                                                                                                                                                                            |
 | `/today`, `/week`, `/month` | The group ledger's totals, by category and by person, one total in the group ledger's currency, foreign amounts converted. The pager works for anyone in the group                                                             |
 | `/settings`                 | For the person who added the bot: a link to the group ledger's timezone and currency in the private chat, where [Бюджет] sets the group ledger's budget. Your own timezone doesn't change. Anyone else gets a one-line refusal |
@@ -69,7 +90,7 @@ The bot can keep a group's shared books, such as a family's, next to everyone's 
 
 Other chatter, stickers and other bots' commands get no reply. Expenses you send the bot in
 private stay in your personal ledger and never appear in the group. Removing the bot keeps the
-ledger; adding it back (an allowlisted user) picks the same ledger up again.
+ledger; adding it back (an admitted user) picks the same ledger up again.
 
 ### Receipts
 
@@ -203,15 +224,20 @@ Requirements: Node 24 (`.nvmrc`), and pnpm at the version pinned in `package.jso
 
    ```sh
    pnpm install            # also installs the husky pre-commit hook
-   cp .env.example .env    # fill in BOT_TOKEN and ALLOWED_TELEGRAM_IDS (your Telegram user id)
+   cp .env.example .env    # fill in BOT_TOKEN and ADMIN_TELEGRAM_ID (your Telegram user id)
    pnpm dev                # long polling, restarts on change
    ```
 
 3. Send `/start` to your bot.
 
 Configuration is environment-only and validated at boot. Every variable is documented in
-[.env.example](.env.example): token, allowlist, the timezone and currency new users get, the
-SQLite path and the log level. Runtime data lives in `./data/` (gitignored).
+[.env.example](.env.example): token, the admin id and the ids admitted at boot, the timezone and
+currency new users get, the SQLite path and the log level. Runtime data lives in `./data/`
+(gitignored).
+
+`ADMIN_TELEGRAM_ID` and `ADMIT_TELEGRAM_IDS` replace `ALLOWED_TELEGRAM_IDS`. A boot with the old
+variable still set fails with a message naming the new ones: set `ADMIN_TELEGRAM_ID` to the old
+first id and `ADMIT_TELEGRAM_IDS` to the rest, then remove `ALLOWED_TELEGRAM_IDS`.
 
 ## Running in Docker
 

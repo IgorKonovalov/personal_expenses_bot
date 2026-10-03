@@ -19,6 +19,7 @@ import { registerHelp } from './handlers/help.js';
 import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
+import { registerPrivacy } from './handlers/privacy.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
@@ -95,6 +96,7 @@ export function createBot(options: BotOptions): Bot {
   registerDeleteAccount(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
+  registerPrivacy(dm);
   // Admin commands: from anyone else they fall through to the unknown-command reply.
   registerInvite(dm, options);
   registerAdmin(dm, options);

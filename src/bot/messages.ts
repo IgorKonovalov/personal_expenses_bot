@@ -267,6 +267,9 @@ function conversionNotes(
   return notes.length === 0 ? [] : [joinHtml(notes, '\n')];
 }
 
+// The privacy policy in the public repo; /privacy links it.
+const PRIVACY_URL = 'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/PRIVACY.md';
+
 // A group member with no stored display name: a deleted account, whose expenses stay in the
 // group's totals (ADR-0024).
 const DELETED_MEMBER = 'удалённый участник';
@@ -557,6 +560,17 @@ export const messages = {
       ],
       '\n\n',
     ),
+  // /privacy: the policy itself is PRIVACY.md in the public repo.
+  privacy: joinHtml(
+    [
+      html`Я храню ваш Telegram id, траты, чеки с позициями и настройки — на сервере в ЕС, с ежедневными резервными копиями.`,
+      html`Данные видит администратор бота, кроме зашифрованного учёта. Наружу уходят только запросы чеков на налоговые сайты; рекламы и аналитики нет.`,
+      html`Удалить всё: /delete_account.`,
+      html``,
+      html`Полная политика: ${PRIVACY_URL}`,
+    ],
+    '\n',
+  ),
   deleteAccountButton: 'Удалить всё',
   // The author a group card names for an expense whose account was deleted.
   deletedMember: DELETED_MEMBER,
@@ -611,6 +625,8 @@ export const messages = {
       html`/changelog — что нового в боте`,
       html`/cancel — отменить ввод`,
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
+      html`/privacy — какие данные хранятся и кто их видит`,
+      html`/delete_account — удалить аккаунт и личный учёт`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
     ],

@@ -316,8 +316,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 1: Walking skeleton: an invite link admits a stranger | dev | done | a5d3864 |
 | 2: Admin tools: list and revoke codes, block, stats | dev | done | 5e1c62b |
 | 3: Abuse limits: message rate and daily receipts | dev | done | cfd47fc |
-| 4: Delete my account | dev | done | committed with this row |
-| 5: Privacy policy and `/privacy` | dev | not started | |
+| 4: Delete my account | dev | done | 8b41787 |
+| 5: Privacy policy and `/privacy` | dev | done | committed with this row |
 | 6: Deploy and open | human | not started | |
 
 ### Notes
@@ -363,6 +363,12 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 - Phase 4: the sealed ledger's `ledger_keys` and `ledger_key_wraps` rows are deleted in
   `deleteLedger` (`src/db/ledgers.ts`), not in `src/db/ledgerKeys.ts`. The group card's author
   is «удалённый участник» on `/card` for an expense whose author is deleted.
+- Phase 5: `.env.example` was already updated in Phase 1 and is unchanged here;
+  `src/bot/handlers/help.ts` is unchanged (the help text is in `messages.ts`). Added test
+  `src/bot/handlers/privacy.test.ts`: it reads the backticked host names from the README's
+  Receipts and Currency conversion sections and checks `PRIVACY.md` names each. `/privacy` and
+  `/delete_account` are in `/help`, not in the `setMyCommands` list. The contact in `PRIVACY.md`
+  is the placeholder `TODO-CONTACT`, for Phase 6.
 
 ### Close triggers
 
