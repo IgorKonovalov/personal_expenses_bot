@@ -1,11 +1,12 @@
 import type { Composer, Context } from 'grammy';
 import type { ChatMember } from 'grammy/types';
+import { isAdmitted } from '../../services/admission.js';
 import { bindGroup, migrateGroup, unbindGroup } from '../../services/groupChats.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import type { GroupHandlerDeps } from './index.js';
 
-// The bot's own membership in a group changing (`my_chat_member`). Added by an allowlisted user,
+// The bot's own membership in a group changing (`my_chat_member`). Added by an admitted user,
 // it binds the group to a new shared ledger, or reactivates the one it had, and says hello;
 // added by anyone else, it leaves. Removed, it deactivates the binding and keeps the ledger. A
 // group upgraded to a supergroup moves its binding to the new chat id.
@@ -28,10 +29,10 @@ export function registerActivation(group: Composer<Context>, deps: GroupHandlerD
       return;
     }
     if (wasIn || !nowIn) return;
-    if (!deps.allowedTelegramIds.has(update.from.id)) {
+    if (!isAdmitted(deps, update.from.id)) {
       deps.logger.info(
         { updateId: ctx.update.update_id },
-        'added to a group by a non-allowlisted user',
+        'added to a group by a non-admitted user',
       );
       await ctx.leaveChat();
       return;

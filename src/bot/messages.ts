@@ -483,6 +483,16 @@ export const messages = {
       ],
       '\n\n',
     ),
+  // Admission (ADR-0024): a stranger's first private message, and a deep link that admits no one.
+  invitationOnly: html`Бот работает по приглашениям. Попросите ссылку у того, кто вас пригласил.`,
+  inviteInvalid: html`Ссылка недействительна или истекла.`,
+  // The admin's /invite.
+  inviteCreated: ({ link, maxUses, days }: { link: string; maxUses: number; days: number }): Html =>
+    joinHtml(
+      [html`Ссылка-приглашение: до ${maxUses} чел., действует ${days} дн.`, html`${link}`],
+      '\n',
+    ),
+  inviteUsage: html`Использование: /invite — 10 человек, 14 дней; /invite 30 7 — 30 человек, 7 дней. Оба числа от 1 до 1000.`,
   // Sent to a group once, when it is bound to a new shared ledger (ADR-0014).
   groupWelcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(
@@ -505,7 +515,7 @@ export const messages = {
   },
   groupExpenseDeleted: (view: GroupCardView): Html =>
     joinHtml([html`Удалено.`, groupExpenseLine(view)], ' '),
-  // A deep link to the author's DM card, shown only to an allowlisted author (ADR-0014).
+  // A deep link to the author's DM card, shown only to an admitted author (ADR-0014, ADR-0024).
   groupEditInDmButton: 'Изменить в личке',
   groupNotAuthor: 'Это может только тот, кто записал трату',
   // The group's /settings, for the ledger's owner: the settings open in the DM.

@@ -619,7 +619,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
 
     calls.length = 0;
     await dm(STRANGER_ID, `/start e_${b}`, 82);
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([{ payload: { text: messages.invitationOnly } }]);
   });
 
   it("refuses A's undo, category change and amount edit of B's group expense in the service, writing nothing", async () => {
@@ -1100,7 +1100,8 @@ describe('group lifecycle and ledger settings (Phase 4)', () => {
     calls.length = 0;
 
     await dm(STRANGER_ID, `/start gs_${ledgerId}`, 190);
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([{ payload: { text: messages.invitationOnly } }]);
+    calls.length = 0;
 
     await dm(SECOND_ALLOWED_ID, `/start gs_${ledgerId}`, 191);
     expect(calls).toHaveLength(1);

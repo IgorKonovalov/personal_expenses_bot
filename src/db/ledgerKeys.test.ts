@@ -108,7 +108,8 @@ describe('migration 0012', () => {
       VALUES ('r1', 1, 'Milk', '1', 45000);
     `);
 
-    expect(runMigrations(db, NOW)).toEqual(['0012']);
+    // 0012 first, then any later migrations.
+    expect(runMigrations(db, NOW)[0]).toBe('0012');
 
     expect(db.prepare('SELECT id, amount_minor, description, sealed FROM expenses').all()).toEqual([
       { id: 'e1', amount_minor: 45000, description: 'кофе', sealed: null },

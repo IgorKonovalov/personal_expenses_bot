@@ -1,6 +1,6 @@
 # 0029: Opening by invite: invite links, abuse limits, a privacy policy and account deletion
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
@@ -313,7 +313,7 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: an invite link admits a stranger | dev | not started | |
+| 1: Walking skeleton: an invite link admits a stranger | dev | done | committed with this row |
 | 2: Admin tools: list and revoke codes, block, stats | dev | not started | |
 | 3: Abuse limits: message rate and daily receipts | dev | not started | |
 | 4: Delete my account | dev | not started | |
@@ -321,6 +321,23 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 6: Deploy and open | human | not started | |
 
 ### Notes
+
+- Phase 1: the migration is `0013_admission.sql`. Redemption runs in the access middleware
+  (`src/bot/middleware/access.ts`), not in `src/bot/handlers/start.ts`, because
+  `clearFlowOnCommand` provisions the sender before any command handler; `start.ts` is unchanged
+  (it already ignores an unknown payload). Only an 11-character base64url payload is taken as a
+  code; a stranger's `/start e_…` or `gs_…` gets the invitation reply.
+- Phase 1: files changed outside `Files touched`: `src/bot/group/index.ts` (drops
+  `allowedTelegramIds` from `GroupHandlerDeps`), `src/bot/testHarness.ts` (admin = `ALLOWED_ID`;
+  `admitOnFirstDm` admits `SECOND_ALLOWED_ID` just before its first private update),
+  `src/config.test.ts`, `src/bot/bot.test.ts`, `src/bot/handlers/unlock.test.ts`,
+  `src/bot/group/group.test.ts` (two stranger deep-link cases now expect the invitation reply),
+  `src/db/ledgerKeys.test.ts` (pinned the migration list `['0012']`; now asserts 0012 runs
+  first). `src/bot/middleware/allowlist.test.ts` was removed with `allowlist.ts`; its cases
+  moved to `access.test.ts`. Added test `src/db/invites.test.ts`.
+- Phase 1: `admitAtBoot` is `admitTelegramIds(deps, ids, now)`; `src/index.ts` passes the admin
+  plus `ADMIT_TELEGRAM_IDS`. `/invite` with one argument shows the usage.
+- Phase 1: the group card's `authorAllowlisted` is renamed `authorAdmitted`.
 
 ### Close triggers
 

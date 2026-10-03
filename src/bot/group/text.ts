@@ -1,5 +1,6 @@
 import type { Composer, Context } from 'grammy';
 import type { Message } from 'grammy/types';
+import { isAdmitted } from '../../services/admission.js';
 import { recordGroupExpense } from '../../services/groupChats.js';
 import { reacted, replyGroupCard } from './card.js';
 import type { GroupHandlerDeps } from './index.js';
@@ -40,7 +41,7 @@ export function registerGroupText(group: Composer<Context>, deps: GroupHandlerDe
     await replyGroupCard(deps, ctx, {
       expense: result.expense,
       author: ctx.from.first_name,
-      authorAllowlisted: deps.allowedTelegramIds.has(ctx.from.id),
+      authorAdmitted: isAdmitted(deps, ctx.from.id),
       ledger: result.ledger,
       replyTo: message.message_id,
     });

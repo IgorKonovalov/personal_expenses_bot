@@ -14,6 +14,7 @@ import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
 import { registerHelp } from './handlers/help.js';
+import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
@@ -24,7 +25,7 @@ import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
-import { allowlist } from './middleware/allowlist.js';
+import { access } from './middleware/access.js';
 import { replyHtml } from './render/html.js';
 
 export interface HandlerDeps {
@@ -38,9 +39,14 @@ export interface HandlerDeps {
   readonly keys: LedgerKeyring;
 }
 
-export interface BotOptions extends HandlerDeps {
+// The handlers that check admission or serve the admin (ADR-0024).
+export interface AdminDeps extends HandlerDeps {
+  // Always admitted, and the only sender of the admin commands.
+  readonly adminTelegramId: number;
+}
+
+export interface BotOptions extends AdminDeps {
   readonly token: string;
-  readonly allowedTelegramIds: ReadonlySet<number>;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
 }
@@ -61,7 +67,7 @@ export function createBot(options: BotOptions): Bot {
   const dm = new Composer<Context>();
   bot.branch(isGroupChat, groupComposer(options), dm);
 
-  dm.use(allowlist(options.allowedTelegramIds, logger));
+  dm.use(access(options));
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
   dm.use(callbackDispatcher());
@@ -81,6 +87,8 @@ export function createBot(options: BotOptions): Bot {
   registerCancel(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
+  // Admin commands: from anyone else they fall through to the unknown-command reply.
+  registerInvite(dm, options);
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);

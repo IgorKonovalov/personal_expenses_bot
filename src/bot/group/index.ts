@@ -1,5 +1,5 @@
 import { Composer, type Context } from 'grammy';
-import type { HandlerDeps } from '../bot.js';
+import type { AdminDeps } from '../bot.js';
 import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
 import { registerGroupCard } from './card.js';
@@ -12,10 +12,9 @@ import { registerGroupText } from './text.js';
 // ADR-0009 flow, ADR-0011 anchor, menu keyboard or help fallback is reachable from here, and an
 // update no group handler claims ends here silently.
 
-export interface GroupHandlerDeps extends HandlerDeps {
-  // Who may bind a group by adding the bot. Group senders themselves are not checked.
-  readonly allowedTelegramIds: ReadonlySet<number>;
-}
+// Who may bind a group by adding the bot is `isAdmitted` (ADR-0024). Group senders themselves
+// need no admission.
+export type GroupHandlerDeps = AdminDeps;
 
 export function isGroupChat(ctx: Context): boolean {
   const type = ctx.chat?.type;

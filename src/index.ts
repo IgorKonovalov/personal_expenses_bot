@@ -13,6 +13,7 @@ import { createNbsFetcher } from './fx/nbsFetcher.js';
 import { startRateWorker } from './fx/rateWorker.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
 import { createLogger } from './logger.js';
+import { admitTelegramIds } from './services/admission.js';
 import { announceVersion } from './services/announceVersion.js';
 import { createLedgerKeyring } from './services/ledgerKeys.js';
 import { seedLedgersWithoutCategories } from './services/seedCategories.js';
@@ -28,6 +29,19 @@ const applied = runMigrations(db, new Date());
 logger.info({ node: process.version, applied }, 'migrations checked');
 const seeded = seedLedgersWithoutCategories(db, new Date());
 logger.info({ ledgers: seeded.length }, 'categories seeded');
+// The admin and ADMIT_TELEGRAM_IDS (ADR-0024). Idempotent: an admitted id keeps its admitted_at.
+const admitted = admitTelegramIds(
+  {
+    db,
+    newId: randomUUID,
+    adminTelegramId: config.adminTelegramId,
+    defaultTimezone: config.defaultTimezone,
+    defaultCurrency: config.defaultCurrency,
+  },
+  [config.adminTelegramId, ...config.admitTelegramIds],
+  new Date(),
+);
+logger.info({ admitted }, 'boot admissions checked');
 
 const backups: BackupSchedule | undefined =
   config.backupDir === undefined
@@ -46,7 +60,7 @@ const keys = createLedgerKeyring(() => new Date());
 
 const bot = createBot({
   token: config.botToken,
-  allowedTelegramIds: config.allowedTelegramIds,
+  adminTelegramId: config.adminTelegramId,
   logger,
   db,
   newId: randomUUID,

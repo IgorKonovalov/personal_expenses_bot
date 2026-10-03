@@ -518,12 +518,14 @@ describe('/changelog', () => {
     expect(messages.help).toContain('/changelog');
   });
 
-  it('answers nothing to a user outside the allow-list', async () => {
+  it('answers a user who is not admitted with the invitation reply only', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, fromId: STRANGER_ID, text: '/changelog' }));
 
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([
+      { method: 'sendMessage', payload: { chat_id: STRANGER_ID, text: messages.invitationOnly } },
+    ]);
   });
 });
 
@@ -1812,7 +1814,7 @@ describe('/budget and the card line (ADR-0017)', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -2343,7 +2345,7 @@ describe('/week and /month', () => {
     let messageId = 99;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -2827,7 +2829,7 @@ describe('/categories screen and text flows', () => {
     let messageId = opts.firstMessageId ?? 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -3273,7 +3275,7 @@ describe('/settings hub and the timezone picker', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
       logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -4446,7 +4448,7 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
       logger: createLogger('trace', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
