@@ -1815,6 +1815,7 @@ describe('/budget and the card line (ADR-0017)', () => {
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -2346,6 +2347,7 @@ describe('/week and /month', () => {
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -2830,6 +2832,7 @@ describe('/categories screen and text flows', () => {
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -3276,6 +3279,7 @@ describe('/settings hub and the timezone picker', () => {
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -4449,6 +4453,7 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: createLogger('trace', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,

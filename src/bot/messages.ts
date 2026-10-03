@@ -267,6 +267,10 @@ function conversionNotes(
   return notes.length === 0 ? [] : [joinHtml(notes, '\n')];
 }
 
+// A group member with no stored display name: a deleted account, whose expenses stay in the
+// group's totals (ADR-0024).
+const DELETED_MEMBER = 'удалённый участник';
+
 // `Анна: ≈ 1 650.00 RSD, 5 000.00 KZT` per member, under a heading. Empty when nobody spent.
 function peopleSection(people: PeopleView | undefined): Html[] {
   if (people === undefined || people.length === 0) return [];
@@ -276,7 +280,7 @@ function peopleSection(people: PeopleView | undefined): Html[] {
         html`<b>По участникам</b>`,
         ...people.map(
           (person) =>
-            html`${person.name ?? 'Без имени'}: ${person.converted === true ? '≈ ' : ''}${person.totals.map(formatMoney).join(', ')}`,
+            html`${person.name ?? DELETED_MEMBER}: ${person.converted === true ? '≈ ' : ''}${person.totals.map(formatMoney).join(', ')}`,
         ),
       ],
       '\n',
@@ -542,6 +546,24 @@ export const messages = {
       ],
       '\n',
     ),
+  // /delete_account (ADR-0024): what goes, what stays, and the two buttons.
+  deleteAccountPrompt: (backupKeep: number): Html =>
+    joinHtml(
+      [
+        html`<b>Удалить аккаунт?</b>`,
+        html`Удалится личный учёт: все траты, чеки, категории и бюджет, а также ваши настройки. Это нельзя отменить.`,
+        html`Останутся траты в общих учётах групп — там вы будете показаны как «${DELETED_MEMBER}». В резервных копиях данные хранятся ещё до ${backupKeep} дн.`,
+        html`После удаления пользоваться ботом можно будет только по новому приглашению.`,
+      ],
+      '\n\n',
+    ),
+  deleteAccountButton: 'Удалить всё',
+  // The author a group card names for an expense whose account was deleted.
+  deletedMember: DELETED_MEMBER,
+  accountDeleted: html`Аккаунт и личный учёт удалены.`,
+  accountDeletedToast: 'Данные удалены',
+  accountAlreadyDeleted: 'Данные уже удалены',
+  accountKept: html`Ничего не удалено.`,
   // Sent to a group once, when it is bound to a new shared ledger (ADR-0014).
   groupWelcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(

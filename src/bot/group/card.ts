@@ -5,6 +5,7 @@ import type { User } from '../../db/users.js';
 import { localDateOf } from '../../domain/time.js';
 import { isAdmitted } from '../../services/admission.js';
 import { showExpense } from '../../services/changeCategory.js';
+import { isAccountDeleted } from '../../services/deleteAccount.js';
 import { boundLedger } from '../../services/groupChats.js';
 import { plaintext } from '../../services/ledgerKeys.js';
 import {
@@ -115,7 +116,9 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
     const expense = plaintext(stored);
     await replyGroupCard(deps, ctx, {
       expense,
-      author: replied.from.first_name,
+      author: isAccountDeleted(deps, expense.createdBy)
+        ? messages.deletedMember
+        : replied.from.first_name,
       authorAdmitted: isAdmitted(deps, replied.from.id),
       ledger,
       replyTo: replied.message_id,

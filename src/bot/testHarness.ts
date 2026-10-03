@@ -58,6 +58,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   const bot = createBot({
     ...deps,
     token: '123456:test-token',
+    backupKeep: 14,
     logger: createLogger(options.logLevel ?? 'silent', {
       write: (line: string) => void logLines.push(line),
     }),

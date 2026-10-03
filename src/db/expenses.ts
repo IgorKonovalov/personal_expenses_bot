@@ -171,6 +171,12 @@ export function findExpenseById(db: Db, id: ExpenseId): StoredExpense | undefine
 }
 
 // Returns false when the expense was already deleted, leaving deleted_at unchanged.
+// Hard-deletes every expense of the ledger, soft-deleted ones included. Run it after the
+// ledger's receipts are gone. Returns how many.
+export function deleteLedgerExpenses(db: Db, ledgerId: LedgerId): number {
+  return db.prepare<[string]>('DELETE FROM expenses WHERE ledger_id = ?').run(ledgerId).changes;
+}
+
 export function softDeleteExpense(db: Db, id: ExpenseId, deletedAt: Date): boolean {
   const { changes } = db
     .prepare<[string, string]>(

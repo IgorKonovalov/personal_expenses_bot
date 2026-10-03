@@ -40,6 +40,7 @@ function sealedBot() {
   const bot = createBot({
     token: '123456:test-token',
     adminTelegramId: ALLOWED_ID,
+    backupKeep: 14,
     logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
     db,
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,

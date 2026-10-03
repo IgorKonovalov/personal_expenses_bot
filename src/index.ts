@@ -61,6 +61,7 @@ const keys = createLedgerKeyring(() => new Date());
 const bot = createBot({
   token: config.botToken,
   adminTelegramId: config.adminTelegramId,
+  backupKeep: config.backupKeep,
   logger,
   db,
   newId: randomUUID,

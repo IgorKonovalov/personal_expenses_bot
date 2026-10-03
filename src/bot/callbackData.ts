@@ -225,5 +225,10 @@ export function inviteRevokeData(code: string): string {
   return assertCallbackData(`inv:off:${code}`);
 }
 
+// /delete_account's [Удалить всё] and [Отмена] (ADR-0024). The user's tombstone is the guard: a
+// second [Удалить всё] finds no account behind the Telegram id.
+export const ACCOUNT_DELETE = 'acct:del';
+export const ACCOUNT_KEEP = 'acct:keep';
+
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';

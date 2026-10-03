@@ -315,8 +315,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 |---|---|---|---|
 | 1: Walking skeleton: an invite link admits a stranger | dev | done | a5d3864 |
 | 2: Admin tools: list and revoke codes, block, stats | dev | done | 5e1c62b |
-| 3: Abuse limits: message rate and daily receipts | dev | done | committed with this row |
-| 4: Delete my account | dev | not started | |
+| 3: Abuse limits: message rate and daily receipts | dev | done | cfd47fc |
+| 4: Delete my account | dev | done | committed with this row |
 | 5: Privacy policy and `/privacy` | dev | not started | |
 | 6: Deploy and open | human | not started | |
 
@@ -352,6 +352,17 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
   redelivered photo through the bot: the photo path ends in the same `recordReceipt` call. The
   injected-clock case is tested on the `RateLimiter` class; the middleware is tested through the
   bot at a fixed clock.
+- Phase 4: files changed outside `Files touched`: `src/bot/bot.ts` (registers the handler;
+  `BotOptions.backupKeep` for the prompt's backup line), `src/index.ts`,
+  `src/bot/testHarness.ts`, `src/bot/bot.test.ts`, `src/bot/handlers/unlock.test.ts` (pass
+  `backupKeep`), and `src/bot/middleware/access.ts`: the second [Удалить всё] comes from an id
+  with no identity, so the access gate answers it with «Данные уже удалены». Listed but
+  unchanged: `src/db/receiptItems.ts` (the existing `deleteLedgerReceipts` deletes the items),
+  `src/bot/callbacks.ts`, `src/bot/group/summary.ts` (the «удалённый участник» fallback is in
+  `messages.ts`, where the report's «Без имени» was).
+- Phase 4: the sealed ledger's `ledger_keys` and `ledger_key_wraps` rows are deleted in
+  `deleteLedger` (`src/db/ledgers.ts`), not in `src/db/ledgerKeys.ts`. The group card's author
+  is «удалённый участник» on `/card` for an expense whose author is deleted.
 
 ### Close triggers
 

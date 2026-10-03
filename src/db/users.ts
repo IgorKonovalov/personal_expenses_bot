@@ -126,6 +126,31 @@ export function countUsage(db: Db, since: Date): UsageCounts {
   return { admitted, active: recent?.active ?? 0, expenses: recent?.expenses ?? 0 };
 }
 
+// Account deletion's tombstone (ADR-0024): the identity goes, so the Telegram id matches no one,
+// and the row stays for the group expenses it authored, with admission and the active ledger
+// cleared. Returns false when the user was already deleted.
+export function tombstoneUser(db: Db, userId: UserId, at: Date): boolean {
+  db.prepare<[string]>('DELETE FROM auth_identities WHERE user_id = ?').run(userId);
+  return (
+    db
+      .prepare<[string, string]>(
+        `UPDATE users SET deleted_at = ?, admitted_at = NULL, active_ledger_id = NULL
+          WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .run(at.toISOString(), userId).changes > 0
+  );
+}
+
+// Whether the user's account was deleted.
+export function isUserDeleted(db: Db, userId: UserId): boolean {
+  return (
+    db
+      .prepare<[string], number>('SELECT deleted_at IS NOT NULL FROM users WHERE id = ?')
+      .pluck()
+      .get(userId) === 1
+  );
+}
+
 // Returns false when the user already has this timezone: nothing is written.
 export function updateUserTimezone(db: Db, userId: UserId, timezone: string): boolean {
   return (

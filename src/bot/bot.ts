@@ -14,6 +14,7 @@ import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import { registerDeleteAccount } from './handlers/deleteAccount.js';
 import { registerHelp } from './handlers/help.js';
 import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
@@ -49,6 +50,8 @@ export interface AdminDeps extends HandlerDeps {
 
 export interface BotOptions extends AdminDeps {
   readonly token: string;
+  // BACKUP_KEEP: how long deleted data lingers in backups, as /delete_account says.
+  readonly backupKeep: number;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
 }
@@ -89,6 +92,7 @@ export function createBot(options: BotOptions): Bot {
   registerSettings(dm, options);
   registerUnlock(dm, options);
   registerCancel(dm, options);
+  registerDeleteAccount(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
   // Admin commands: from anyone else they fall through to the unknown-command reply.

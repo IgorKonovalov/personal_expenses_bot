@@ -1,6 +1,7 @@
 import type { Context, MiddlewareFn } from 'grammy';
 import { accessOf, redeemInvite } from '../../services/admission.js';
 import type { AdminDeps } from '../bot.js';
+import { ACCOUNT_DELETE } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 
@@ -77,6 +78,11 @@ export function access(deps: AdminDeps, capacity = INVITED_MEMORY): MiddlewareFn
       return;
     }
     logger.info({ updateId }, 'update from a stranger dropped');
+    // A second [Удалить всё]: the first one deleted the account behind this id.
+    if (ctx.callbackQuery?.data === ACCOUNT_DELETE) {
+      await ctx.answerCallbackQuery({ text: messages.accountAlreadyDeleted });
+      return;
+    }
     if (ctx.message !== undefined && invited.add(fromId)) {
       await replyHtml(ctx, messages.invitationOnly);
     }
