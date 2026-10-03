@@ -216,6 +216,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 5: Open the files in real apps
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, export «Всё время» from a personal ledger with a receipt on
   record, in both formats. Open the `.xlsx` in Excel (desktop or phone), Google Sheets and
   LibreOffice or Numbers. Open the `.csv` in Excel with a Russian or Serbian locale.
@@ -298,7 +299,7 @@ for an XLSX `<v>`.
 | 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
 | 3: The XLSX writer and the [Excel] button | dev | done | `440e551` |
 | 4: Groups, sealed ledgers, help and docs | dev | done | `ad7f90d` |
-| 5: Open the files in real apps | human | pending | (no commit) |
+| 5: Open the files in real apps | human | owed | (no commit) |
 
 ### Notes
 
