@@ -297,8 +297,8 @@ for an XLSX `<v>`.
 | 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | `f77bea0` |
 | 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
 | 3: The XLSX writer and the [Excel] button | dev | done | `440e551` |
-| 4: Groups, sealed ledgers, help and docs | dev | done | committed with this row |
-| 5: Open the files in real apps | human | not started | |
+| 4: Groups, sealed ledgers, help and docs | dev | done | `ad7f90d` |
+| 5: Open the files in real apps | human | pending | (no commit) |
 
 ### Notes
 
@@ -344,7 +344,29 @@ for an XLSX `<v>`.
 - Phase 4: the "after `/unlock`" done-when unlocks through `unlockPersonalLedger` (the service
   `/unlock` calls) on the harness keyring, not by sending `/unlock` and the passphrase through
   the harness.
+- Followup (not acted on): in the XLSX, № and Количество are text cells, so a spreadsheet can't
+  sum or sort the quantities as numbers. A numeric cell kind for a non-money decimal would fix it.
+- Followup (not acted on): the 45 MB check runs per file; an export over it throws into the
+  generic apology, whose copy talks about recording an expense.
 
 ### Close triggers
+
+- **What shipped:** `src/domain/export/` (`rows.ts`: the ranges, the export tables and their
+  cells; `csv.ts`: the ADR-0026 CSV with the formula guard; `zip.ts`: deflate, CRC-32 and a
+  central directory with no Zip64; `xlsx.ts`: the workbook parts); `decimalAmount` in
+  `src/domain/money.ts`; `listLedgerExpenses` in `src/db/expenses.ts`; `listLedgerReceiptItems` in
+  `src/db/receiptItems.ts`; `src/services/exportLedger.ts` (`exportActiveLedger`,
+  `exportGroupLedger`, `activeExportState`); `src/bot/handlers/export.ts`,
+  `src/bot/group/export.ts`; `createTapGuard` in `src/bot/callbacks.ts`; the `xp:` callback data.
+  No new dependency, no migration.
+- **User-visible surface changed:** new `/export` in private chats and bound groups (in both
+  command lists and both help texts): a range step, a format step, then `expenses-<range>.csv`
+  (plus `receipt-items-<range>.csv` as one album) or `expenses-<range>.xlsx`, and the picker
+  edited to «Готово: N расходов за …». A sealed ledger's picker warns the file is an unencrypted
+  copy; while locked, `/export` answers locked. README's command tables gain `/export`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 75 files,
+  1049 tests; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0, 240 links.
+- **Outstanding `human` phases:** Phase 5 (open the CSV and XLSX in Excel, Google Sheets and
+  LibreOffice or Numbers on the deployed bot).
 
 ## Followups
