@@ -204,7 +204,7 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 | 1: Collect the corpus | human | done (user; 8 images in `data/qr-corpus/`) | |
 | 2: Walking skeleton | dev | done | `04c352e` |
 | 3: Tune variants and budget | dev | done | `7385355` |
-| 4: Two hints | dev | done | committed with this row |
+| 4: Two hints | dev | done | `41b9357` |
 | 5: Live check | human | not started | |
 
 ### Notes
@@ -263,10 +263,17 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `decodeQr` retries a JPEG the plain pass reads no QR from on luminance decoded
+  by `jpeg-js` (exact pin, limits 8 MP and 64 MB), through `VARIANTS` in `src/fiscal/qrPixels.ts`:
+  one variant, `blur3-lmt21-3`, under `QR_RETRY_BUDGET_MS` = 1000. The decoded result and the
+  `receipt image read` log line carry `pass`. `pnpm qr:corpus` measures `data/qr-corpus/`: 2 of 8
+  decoded. `receiptPhotoHint` is split into `receiptPhotoNoQr` and `receiptPhotoUnreadable`.
+- **User-visible surface changed:** a receipt photo the plain pass can't read may now record its
+  expense. A photo with a located but unread QR gets the new unreadable hint; every other
+  unread image gets the new no-QR hint. Neither mentions an uncompressed file.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 71 files,
+  996 tests; `pnpm build` exit 0.
+- **Outstanding `human` phases:** Phase 5 (live check after deploy; blocks merge: no).
 
 ## Followups
 
