@@ -417,11 +417,12 @@ function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
   return html`${author}${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
-// Telegram rejects messages over 4096 characters. The /changelog entries get at most this many
-// UTF-16 units of HTML, counted with their separators; the rest of the 4096 holds the header and
-// the truncation line. Markup counts too, so the visible text is shorter still.
-const CHANGELOG_BUDGET = 3900;
-const CHANGELOG_SEPARATOR = '\n\n';
+// /changelog shows this many versions, newest first; older ones are behind a link to the full
+// CHANGELOG.md. A fixed count keeps the reply well under Telegram's 4096 characters as releases
+// accumulate (messages.test.ts caps each announcement's length).
+export const CHANGELOG_RECENT = 5;
+const CHANGELOG_URL =
+  'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/CHANGELOG.md';
 
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
@@ -1078,21 +1079,14 @@ export const messages = {
   // The message the admin gets at boot on a new version.
   versionAnnouncement: (version: string, body: Html): Html =>
     joinHtml([html`🆕 Версия ${version}`, body, html`Все изменения: /changelog`], '\n\n'),
-  // /changelog: newest version first, by number. Older entries past the budget are dropped
-  // whole and the reply says so.
+  // /changelog: the CHANGELOG_RECENT newest versions, by number, then a link to the rest.
   changelog: (announcements: Readonly<Record<string, Html>>): Html => {
     const entries = Object.entries(announcements)
       .sort(([a], [b]) => compareVersions(b, a))
       .map(([version, body]) => joinHtml([html`<b>${version}</b>`, body], '\n'));
-    const shown: Html[] = [];
-    let used = 0;
-    for (const entry of entries) {
-      used += entry.length + CHANGELOG_SEPARATOR.length;
-      if (used > CHANGELOG_BUDGET) break;
-      shown.push(entry);
-    }
-    const parts = [html`<b>Что нового</b>`, ...shown];
-    if (shown.length < entries.length) parts.push(html`Более ранние версии не поместились.`);
-    return joinHtml(parts, CHANGELOG_SEPARATOR);
+    const parts = [html`<b>Что нового</b>`, ...entries.slice(0, CHANGELOG_RECENT)];
+    if (entries.length > CHANGELOG_RECENT)
+      parts.push(html`Более ранние версии: <a href="${CHANGELOG_URL}">CHANGELOG.md</a>`);
+    return joinHtml(parts, '\n\n');
   },
 } as const;

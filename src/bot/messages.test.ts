@@ -35,6 +35,12 @@ describe('version announcements (ADR-0013)', () => {
     }
   });
 
+  // Five of them plus the header and the link stay under Telegram's 4096 characters.
+  it('keeps every entry within 700 characters of HTML', () => {
+    for (const [version, body] of Object.entries(messages.versionAnnouncements))
+      expect(body.length, version).toBeLessThanOrEqual(700);
+  });
+
   it('wraps a body in the version header and the /changelog pointer', () => {
     expect(messages.versionAnnouncement('0.3.0', html`<b>Что-то</b> новое`)).toBe(
       '🆕 Версия 0.3.0\n\n<b>Что-то</b> новое\n\nВсе изменения: /changelog',

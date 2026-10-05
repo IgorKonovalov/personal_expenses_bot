@@ -51,7 +51,7 @@ import {
   summaryPageData,
   undoExpenseData,
 } from './callbackData.js';
-import { messages } from './messages.js';
+import { CHANGELOG_RECENT, messages } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
   ALLOWED_ID,
@@ -455,9 +455,10 @@ describe('command registration at boot', () => {
 });
 
 describe('/changelog', () => {
-  const TRUNCATED = 'Более ранние версии не поместились.';
+  const OLDER =
+    '\n\nБолее ранние версии: <a href="https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/CHANGELOG.md">CHANGELOG.md</a>';
 
-  it('lists every announced version, newest first', async () => {
+  it('lists the five newest announced versions, newest first, then links the rest', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/changelog' }));
@@ -466,19 +467,24 @@ describe('/changelog', () => {
     const newestFirst = Object.keys(messages.versionAnnouncements).sort((x, y) =>
       compareVersions(y, x),
     );
-    const sections = newestFirst.map(
-      (v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`,
-    );
+    expect(newestFirst.length).toBeGreaterThan(CHANGELOG_RECENT);
+    const sections = newestFirst
+      .slice(0, 5)
+      .map((v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`);
+    const text = `<b>Что нового</b>\n\n${sections.join('\n\n')}${OLDER}`;
     expect(calls).toEqual([
       {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: `<b>Что нового</b>\n\n${sections.join('\n\n')}`,
+          text,
+          link_preview_options: { is_disabled: true },
           ...htmlParseMode,
         },
       },
     ]);
+    expect(text).not.toContain(`<b>${String(newestFirst[5])}</b>`);
+    expect(text.length).toBeLessThan(4096);
   });
 
   it('sorts by version number, not by insertion order', () => {
@@ -487,31 +493,26 @@ describe('/changelog', () => {
     expect(text).toBe('<b>Что нового</b>\n\n<b>0.10.0</b>\nдесять\n\n<b>0.9.0</b>\nдевять');
   });
 
-  it('keeps the newest entries under 4096 characters and ends with the truncation line', () => {
-    const body = html`${'я'.repeat(300)}`;
+  it('shows 0.39.0 down to 0.35.0 of forty versions, and the link', () => {
     const announcements = Object.fromEntries(
-      Array.from({ length: 40 }, (_, i) => [`0.${String(i)}.0`, body]),
+      Array.from({ length: 40 }, (_, i) => [`0.${String(i)}.0`, html`версия ${i}`]),
     );
 
     const text = messages.changelog(announcements);
 
-    expect(text.length).toBeLessThan(4096);
-    expect(text.startsWith(`<b>Что нового</b>\n\n<b>0.39.0</b>\n${body}\n\n<b>0.38.0</b>`)).toBe(
-      true,
+    expect(text).toBe(
+      `<b>Что нового</b>\n\n${[39, 38, 37, 36, 35]
+        .map((i) => `<b>0.${String(i)}.0</b>\nверсия ${String(i)}`)
+        .join('\n\n')}${OLDER}`,
     );
-    expect(text.endsWith(`\n\n${TRUNCATED}`)).toBe(true);
-    expect(text).not.toContain('<b>0.0.0</b>');
-    // Only whole entries are dropped: every shown body is complete.
-    expect(
-      text
-        .split('\n\n')
-        .slice(1, -1)
-        .every((entry) => entry.endsWith(body)),
-    ).toBe(true);
   });
 
-  it('has no truncation line when everything fits', () => {
-    expect(messages.changelog(messages.versionAnnouncements)).not.toContain(TRUNCATED);
+  it('has no link line when every version fits in the five', () => {
+    const announcements = Object.fromEntries(
+      Array.from({ length: 5 }, (_, i) => [`0.${String(i)}.0`, html`версия ${i}`]),
+    );
+
+    expect(messages.changelog(announcements)).not.toContain('Более ранние версии');
   });
 
   it('is in the command menu and the help text', () => {
