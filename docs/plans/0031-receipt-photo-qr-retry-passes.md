@@ -203,8 +203,8 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 |---|---|---|---|
 | 1: Collect the corpus | human | done (user; 8 images in `data/qr-corpus/`) | |
 | 2: Walking skeleton | dev | done | `04c352e` |
-| 3: Tune variants and budget | dev | done | committed with this row |
-| 4: Two hints | dev | not started | |
+| 3: Tune variants and budget | dev | done | `7385355` |
+| 4: Two hints | dev | done | committed with this row |
 | 5: Live check | human | not started | |
 
 ### Notes
@@ -258,6 +258,8 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   name; the pin changed to `blur3-lmt21-3`.
 - Phase 3: `decodeQr` takes an optional `{ variants, now }` so the budget test drives a fake
   clock.
+- Phase 4: the plan's copy shipped unchanged; it was not run past `ux-telegram`. The «без сжатия»
+  test reads the `messages.ts` source.
 
 ### Close triggers
 

@@ -4031,22 +4031,22 @@ describe('fiscal receipts', () => {
     it.each([
       ['no QR', 'no-qr.jpg'],
       ['a QR that is not a receipt', 'example.png'],
-    ])('answers a photo with %s with the hint and records nothing', async (_name, fileId) => {
+    ])('answers a photo with %s with the no-QR hint and records nothing', async (_name, fileId) => {
       const { sendPhoto, calls, db } = receiptBot();
 
       await sendPhoto(fileId);
 
       expect(expenseCount(db)).toEqual({ n: 0 });
-      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
     });
 
-    it('logs why a located receipt QR did not decode, with the hint and nothing recorded', async () => {
+    it('logs why a located receipt QR did not decode, with the unreadable hint and nothing recorded', async () => {
       const { sendPhoto, calls, db, logLines } = receiptBot({ logLevel: 'info' });
 
       await sendPhoto('rs-receipt-damaged.jpg');
 
       expect(expenseCount(db)).toEqual({ n: 0 });
-      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoUnreadable]);
       const reads = logLines.filter((line) => line.includes('receipt image read'));
       expect(reads).toHaveLength(1);
       expect(JSON.parse(String(reads[0]))).toMatchObject({
@@ -4095,14 +4095,21 @@ describe('fiscal receipts', () => {
       for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
     });
 
-    it('does not download an image file over 20 MB and answers with the hint', async () => {
+    it('does not download an image file over 20 MB and answers with the no-QR hint', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 
       await sendDocument('rs-receipt.jpg', 'image/jpeg', 25_000_000);
 
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
-      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
+    });
+
+    it('suggests an uncompressed file in no message', () => {
+      // The source, so copy built by message functions is covered too.
+      const source = readFileSync(new URL('./messages.ts', import.meta.url), 'utf8');
+      expect(source).toContain('receiptPhotoUnreadable');
+      expect(source).not.toContain('без сжатия');
     });
 
     it('does not download a non-image file and keeps the help reply', async () => {

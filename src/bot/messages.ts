@@ -636,8 +636,11 @@ export const messages = {
     pages.push(page);
     return pages;
   },
-  // A photo or image file without a readable receipt QR code (ADR-0019).
-  receiptPhotoHint: html`Не нашёл QR-код чека на изображении. Сфотографируйте QR-код крупнее, отправьте фото файлом без сжатия или вставьте ссылку из QR-кода.`,
+  // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
+  // image too large to download (ADR-0019, ADR-0034).
+  receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
+  // A photo where a QR symbol was located but no pass read it (ADR-0034).
+  receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.

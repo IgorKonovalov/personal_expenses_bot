@@ -190,7 +190,7 @@ export function registerReceiptMedia(
     };
     if ((file.file_size ?? 0) > MAX_DOWNLOAD_BYTES) {
       deps.logger.info({ ...read, outcome: 'tooLarge' }, 'receipt image read');
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(ctx, messages.receiptPhotoNoQr);
       return;
     }
 
@@ -199,7 +199,7 @@ export function registerReceiptMedia(
     const { file_path: filePath } = await ctx.api.getFile(file.file_id);
     if (filePath === undefined) {
       deps.logger.info({ ...read, outcome: 'noFilePath' }, 'receipt image read');
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(ctx, messages.receiptPhotoNoQr);
       return;
     }
     const started = performance.now();
@@ -219,7 +219,12 @@ export function registerReceiptMedia(
       'receipt image read',
     );
     if (decoded === undefined) {
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(
+        ctx,
+        qr.kind === 'none' && qr.detected !== undefined
+          ? messages.receiptPhotoUnreadable
+          : messages.receiptPhotoNoQr,
+      );
       return;
     }
     await answerReceipt(ctx, deps, {
