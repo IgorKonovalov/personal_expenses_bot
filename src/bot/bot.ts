@@ -31,7 +31,7 @@ import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { allowlist } from './middleware/allowlist.js';
-import { replyHtml } from './render/html.js';
+import { replyHtml, type Html } from './render/html.js';
 
 export interface HandlerDeps {
   readonly db: Db;
@@ -51,6 +51,12 @@ export interface BotOptions extends HandlerDeps {
   readonly botInfo?: UserFromGetMe;
   // Read on every /donate, so links created after createBot returns are seen. Absent is none.
   readonly donationLinks?: ReadonlyMap<DonationPreset, string>;
+  // The external donation page behind /donate's last button. Absent hides the button.
+  readonly donateUrl?: string | undefined;
+  // The admin (ADR-0013): their Telegram id, and the notifier that messages them. index.ts
+  // builds the notifier from bot.api after createBot, so it is called late-bound.
+  readonly adminTelegramId?: number;
+  readonly notifyAdmin?: (body: Html) => Promise<void>;
 }
 
 export function createBot(options: BotOptions): Bot {
@@ -69,8 +75,14 @@ export function createBot(options: BotOptions): Bot {
   const dm = new Composer<Context>();
   bot.branch(isGroupChat, groupComposer(options), dm);
 
+  const donateDeps = {
+    ...options,
+    donationLinks: options.donationLinks ?? new Map<DonationPreset, string>(),
+    donateUrl: options.donateUrl,
+    notifyAdmin: options.notifyAdmin ?? (() => Promise.resolve()),
+  };
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
-  registerSuccessfulPayment(dm, options);
+  registerSuccessfulPayment(dm, donateDeps);
   dm.use(allowlist(options.allowedTelegramIds, logger));
   registerPreCheckout(dm);
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
@@ -92,7 +104,7 @@ export function createBot(options: BotOptions): Bot {
   registerCancel(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
-  registerDonate(dm, { ...options, donationLinks: options.donationLinks ?? new Map() });
+  registerDonate(dm, donateDeps);
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);

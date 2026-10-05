@@ -59,7 +59,13 @@ const bot = createBot({
   defaultCurrency: config.defaultCurrency,
   keys,
   donationLinks,
+  donateUrl: config.donateUrl,
+  adminTelegramId: config.adminTelegramId,
+  // Late-bound: the notifier needs bot.api, built just below. No update is handled before
+  // polling starts.
+  notifyAdmin: (body) => notifyAdmin(body),
 });
+const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 
 await registerCommands(bot, logger);
 // The Stars invoice links (ADR-0027). A failed preset is left out, and boot continues.
@@ -89,7 +95,6 @@ const rateWorker = startRateWorker({
 });
 
 // Not awaited: a slow or refused send must not delay polling. announceVersion never rejects.
-const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 void announceVersion(
   {
     db,

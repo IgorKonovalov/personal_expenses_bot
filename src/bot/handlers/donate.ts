@@ -10,7 +10,7 @@ import type { Logger } from '../../logger.js';
 import { recordDonation } from '../../services/recordDonation.js';
 import type { HandlerDeps } from '../bot.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { replyHtml, type Html } from '../render/html.js';
 
 // One cached Stars invoice link per preset (ADR-0027). Filled at boot, after the bot exists; a
 // preset whose link could not be created is absent.
@@ -18,6 +18,9 @@ export type DonationLinks = Map<DonationPreset, string>;
 
 export interface DonateDeps extends HandlerDeps {
   readonly donationLinks: ReadonlyMap<DonationPreset, string>;
+  // DONATE_URL: the last button when set.
+  readonly donateUrl: string | undefined;
+  readonly notifyAdmin: (body: Html) => Promise<void>;
 }
 
 // Creates the invoice links into `links`. A failure logs at warn and leaves that preset out, so
@@ -55,6 +58,10 @@ export function registerDonate(bot: Composer<Context>, deps: DonateDeps): void {
     for (const [stars, link] of deps.donationLinks) {
       markup.url(messages.donateStarsButton(stars), link);
     }
+    if (deps.donateUrl !== undefined) {
+      if (deps.donationLinks.size > 0) markup.row();
+      markup.url(messages.donateExternal, deps.donateUrl);
+    }
     if (markup.inline_keyboard.flat().length === 0) {
       await replyHtml(ctx, messages.donateUnavailable);
       return;
@@ -80,9 +87,9 @@ export function registerPreCheckout(bot: Composer<Context>): void {
 }
 
 // Before the access middleware: the Stars are already taken, so the payment is recorded even
-// for a payer blocked since the pre-checkout. The charge id makes a redelivery record and thank
-// once. Logs carry the charge id and the amount, never a name.
-export function registerSuccessfulPayment(bot: Composer<Context>, deps: HandlerDeps): void {
+// for a payer blocked since the pre-checkout. The charge id makes a redelivery record, thank and
+// notify the admin once. Logs carry the charge id and the amount, never a name.
+export function registerSuccessfulPayment(bot: Composer<Context>, deps: DonateDeps): void {
   bot.on('message:successful_payment', async (ctx) => {
     const payment = ctx.message.successful_payment;
     const chargeId = payment.telegram_payment_charge_id;
@@ -95,9 +102,20 @@ export function registerSuccessfulPayment(bot: Composer<Context>, deps: HandlerD
     if (result.kind === 'duplicate') return;
     if (result.kind === 'unknownPayer') {
       deps.logger.warn({ chargeId }, 'donation from a payer with no user, not recorded');
-    } else {
-      deps.logger.info({ chargeId, stars: payment.total_amount }, 'donation recorded');
+      await replyHtml(ctx, messages.donateThanks);
+      return;
     }
+    const stars = payment.total_amount;
+    deps.logger.info({ chargeId, stars }, 'donation recorded');
     await replyHtml(ctx, messages.donateThanks);
+    // A refused notice (the admin never pressed /start) costs only the notice.
+    try {
+      await deps.notifyAdmin(messages.adminDonation({ stars, userId: result.userId, chargeId }));
+    } catch (error) {
+      deps.logger.warn(
+        { chargeId, err: error instanceof Error ? error.message : typeof error },
+        'admin donation notice failed',
+      );
+    }
   });
 }

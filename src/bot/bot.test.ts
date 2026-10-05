@@ -54,6 +54,7 @@ import {
 import { CHANGELOG_RECENT, messages } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
+  ADMIN_ID,
   ALLOWED_ID,
   GROUP_ID,
   SECOND_ALLOWED_ID,
@@ -682,29 +683,142 @@ describe('donations (ADR-0027)', () => {
     expect(calls).toEqual([]);
   });
 
-  it('records a payment once and thanks once when the update is delivered twice', async () => {
+  it('records, thanks and notifies the admin once when the update is delivered twice', async () => {
     const { bot, calls, db } = createTestBot();
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
     calls.length = 0;
 
-    const payment = successfulPaymentUpdate({ updateId: 2, stars: 150, chargeId: 'charge-1' });
+    const payment = successfulPaymentUpdate({
+      updateId: 2,
+      stars: 150,
+      chargeId: 'charge-1',
+      fromId: SECOND_ALLOWED_ID,
+    });
     await bot.handleUpdate(payment);
     await bot.handleUpdate(payment);
 
+    const userId = userIdOf(db, SECOND_ALLOWED_ID);
     expect(donationRows(db)).toEqual([
-      {
-        user_id: userIdOf(db, ALLOWED_ID),
-        stars: 150,
-        telegram_payment_charge_id: 'charge-1',
-        refunded_at: null,
-      },
+      { user_id: userId, stars: 150, telegram_payment_charge_id: 'charge-1', refunded_at: null },
     ]);
     expect(calls).toEqual([
       {
         method: 'sendMessage',
-        payload: { chat_id: ALLOWED_ID, text: messages.donateThanks, ...htmlParseMode },
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.donateThanks, ...htmlParseMode },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ADMIN_ID,
+          text: `⭐ Пожертвование: 150 Stars\nПользователь: <code>${String(userId)}</code>\nПлатёж: <code>charge-1</code>`,
+          ...htmlParseMode,
+        },
       },
     ]);
+    // No Telegram name in the notice.
+    expect(sentTexts(calls)[1]).not.toContain('Test');
+  });
+
+  it('still thanks the donor when the admin notice is refused', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    bot.api.config.use((prev, method, payload, signal) =>
+      method === 'sendMessage' && (payload as { chat_id: number }).chat_id === ADMIN_ID
+        ? Promise.reject(new Error('Forbidden: bot was blocked by the user'))
+        : prev(method, payload, signal),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 2,
+        stars: 50,
+        chargeId: 'charge-2',
+        fromId: SECOND_ALLOWED_ID,
+      }),
+    );
+
+    expect(sentTexts(calls)).toEqual([messages.donateThanks]);
+    expect(donationRows(db)).toHaveLength(1);
+  });
+
+  it('adds a last [Ko-fi] URL button when DONATE_URL is set', async () => {
+    const { bot, calls, prepareDonations } = createTestBot({
+      donateUrl: 'https://ko-fi.com/example',
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
+      .reply_markup;
+    const buttons = markup.inline_keyboard.flat();
+    expect(buttons).toHaveLength(4);
+    expect(buttons[3]).toEqual({ text: messages.donateExternal, url: 'https://ko-fi.com/example' });
+    expect(markup.inline_keyboard).toEqual([
+      ...starsKeyboard,
+      [{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }],
+    ]);
+  });
+
+  it('has three buttons without DONATE_URL', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
+      .reply_markup;
+    expect(markup.inline_keyboard.flat()).toHaveLength(3);
+  });
+
+  it('shows only [Ko-fi] when every link creation failed and DONATE_URL is set', async () => {
+    const { bot, calls, prepareDonations } = createTestBot({
+      donateUrl: 'https://ko-fi.com/example',
+      failMethods: ['createInvoiceLink'],
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.donate,
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('ends the private /help with the donate line, and keeps /donate out of the group help', async () => {
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 1,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help' }));
+    await bot.handleUpdate(groupTextUpdate({ updateId: 3, text: '/help' }));
+
+    const [privateHelp, groupHelp] = sentTexts(calls);
+    expect(String(privateHelp).endsWith('\nБот бесплатный. Поддержать: /donate')).toBe(true);
+    expect(messages.helpDonateLine).toBe('Бот бесплатный. Поддержать: /donate');
+    expect(groupHelp).toBe(messages.groupHelp);
+    expect(String(groupHelp)).not.toContain('/donate');
   });
 
   it('records a payment from a user the access middleware would refuse', async () => {

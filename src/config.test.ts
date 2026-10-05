@@ -19,6 +19,13 @@ describe('loadConfig', () => {
     expect(config.logLevel).toBe('info');
     expect(config.backupDir).toBeUndefined();
     expect(config.backupKeep).toBe(14);
+    expect(config.donateUrl).toBeUndefined();
+  });
+
+  it('reads an https DONATE_URL', () => {
+    expect(loadConfig({ ...valid, DONATE_URL: 'https://ko-fi.com/example' }).donateUrl).toBe(
+      'https://ko-fi.com/example',
+    );
   });
 
   it('takes the first allowed id as the admin', () => {
@@ -50,6 +57,8 @@ describe('loadConfig', () => {
     ['LOG_LEVEL', 'loud'],
     ['BACKUP_KEEP', '0'],
     ['BACKUP_KEEP', 'abc'],
+    ['DONATE_URL', 'http://example.com'],
+    ['DONATE_URL', 'ko-fi.com/example'],
   ])('names %s when it is invalid', (name, value) => {
     expect(() => loadConfig({ ...valid, [name]: value })).toThrow(new RegExp(name));
   });

@@ -249,6 +249,8 @@ function amountOnly(money: Money): string {
 
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
 
+const helpDonateLine = html`Бот бесплатный. Поддержать: /donate`;
+
 // What a converted report was converted from, and what it could not convert (ADR-0022). Empty
 // when nothing was foreign.
 function conversionNotes(
@@ -535,6 +537,8 @@ export const messages = {
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
+      html``,
+      helpDonateLine,
     ],
     '\n',
   ),
@@ -1089,6 +1093,28 @@ export const messages = {
   // Shown by Telegram on the payment sheet when the pre-checkout is refused. Plain text.
   donateRejected: 'Эта сумма больше не принимается. Откройте /donate заново.',
   donateThanks: html`Спасибо! Бот остаётся бесплатным для всех.`,
+  // The button to DONATE_URL, after the Stars buttons.
+  donateExternal: 'Ko-fi',
+  // The private help's last line.
+  helpDonateLine,
+  // To the admin, once per recorded donation. No Telegram name or username.
+  adminDonation: ({
+    stars,
+    userId,
+    chargeId,
+  }: {
+    stars: number;
+    userId: string;
+    chargeId: string;
+  }): Html =>
+    joinHtml(
+      [
+        html`⭐ Пожертвование: ${stars} Stars`,
+        html`Пользователь: <code>${userId}</code>`,
+        html`Платёж: <code>${chargeId}</code>`,
+      ],
+      '\n',
+    ),
 
   versionAnnouncements,
   // The message the admin gets at boot on a new version.

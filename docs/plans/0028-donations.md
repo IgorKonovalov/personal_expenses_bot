@@ -220,8 +220,8 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | committed with this row |
-| 2: The external link, the `/help` line and the admin notice | dev | not started | |
+| 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | ecfb196 |
+| 2: The external link, the `/help` line and the admin notice | dev | done | committed with this row |
 | 3: `/paysupport` and the admin's `/refund` | dev | not started | |
 | 4: A real donation and refund | human | not started | |
 
@@ -233,6 +233,15 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 - Phase 1: `BotOptions.donationLinks` is optional (absent is no links), so the other test files
   calling `createBot` (`unlock.test.ts`, outside Files touched) compile unchanged. The migration
   also adds an index `donations_user (user_id, created_at)`.
+- Phase 2: the donate line is the last line of `messages.help` itself, so every private help
+  reply (unknown command, non-text message) carries it too. `src/bot/handlers/help.ts` and
+  `src/bot/adminNotifier.ts` are unchanged.
+- Phase 2: `BotOptions` also carries `adminTelegramId` (passed from `config.adminTelegramId` in
+  `src/index.ts`), unused until Phase 3, whose Files touched exclude `src/index.ts`.
+  `donateUrl`, `adminTelegramId` and `notifyAdmin` are optional (absent: no button, no admin,
+  a no-op notifier).
+- Phase 2: a refused admin notice is caught and logged at warn with the charge id; the donor's
+  thank-you is sent first.
 
 ### Close triggers
 

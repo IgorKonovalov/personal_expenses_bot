@@ -4,6 +4,7 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { adminNotifier } from './adminNotifier.js';
 import { createBot } from './bot.js';
 import { createDonationLinks, type DonationLinks } from './handlers/donate.js';
 
@@ -37,7 +38,12 @@ export interface TestBotOptions {
   readonly logLevel?: 'info' | 'silent';
   // Bot API methods the fake rejects with a 400, e.g. a chat with reactions disabled.
   readonly failMethods?: readonly string[];
+  // DONATE_URL.
+  readonly donateUrl?: string;
 }
+
+// The admin, as in production: the first allowed id (ADR-0013).
+export const ADMIN_ID = 1001;
 
 export function createTestBot(options: TestBotOptions = {}) {
   const now = options.now ?? new Date('2026-09-29T22:10:00Z');
@@ -62,6 +68,9 @@ export function createTestBot(options: TestBotOptions = {}) {
     keys,
     botInfo,
     donationLinks,
+    donateUrl: options.donateUrl,
+    adminTelegramId: ADMIN_ID,
+    notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
   });
 
   const calls: ApiCall[] = [];

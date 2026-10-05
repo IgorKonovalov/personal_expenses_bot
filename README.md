@@ -34,6 +34,7 @@ when an amount could be read two ways.
 | `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `/changelog`                         | What's new: the five newest versions, then a link to CHANGELOG.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `/donate`                            | The bot is free and a donation unlocks nothing. Offers [⭐ 50] [⭐ 150] [⭐ 500], each opening Telegram's Stars payment sheet, and [Ko-fi] when `DONATE_URL` is set. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
@@ -165,6 +166,21 @@ passphrase or the code is deleted as soon as it arrives.
 
 A worker fetches the rate lists at boot and then hourly, so the bot needs outbound HTTPS to
 `webappcenter.nbs.rs`. If NBS can't be reached, reports fall back to per-currency blocks.
+
+### Donations
+
+The bot is free for everyone, with no paid tier
+([ADR-0027](docs/adrs/0027-donations-only-funding.md)). `/donate` works in a private chat only.
+
+- At boot the bot creates one Telegram Stars invoice link per preset amount. A preset whose link
+  can't be created is left out. With no link and no `DONATE_URL`, `/donate` says donations are
+  unavailable.
+- A payment is checked before Telegram takes it: the currency must be Stars and the amount must
+  match the button's preset.
+- A completed payment is stored once per Telegram charge id: the Stars amount, the donor's
+  internal user id and the time. The donor gets one thank-you, and the admin one notice with the
+  amount, the internal user id and the charge id, never a name.
+- The private `/help` ends with a line pointing to `/donate`.
 
 ### Amount rules
 
