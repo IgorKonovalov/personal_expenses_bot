@@ -88,8 +88,10 @@ code, the photo as a file, or the link the QR code holds (`https://suf.purs.gov.
 - The same receipt sent again, as a photo or as a link, records nothing and answers «Уже
   записано» with the existing card. Refunds, copies, pro-forma and advance invoices are refused.
 - QR codes are decoded with [zxing-wasm](https://github.com/Sec-ant/zxing-wasm), loaded from
-  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). If a photo doesn't
-  decode, send it as a file or paste the link.
+  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). A JPEG that doesn't
+  decode is retried on preprocessed pixels
+  ([ADR-0034](docs/adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md)). If that fails too, the
+  bot says whether it found the code at all and how to retake the photo, or to paste the link.
 
 Besides Telegram, these are the only hosts the bot connects to, and only to fetch a receipt's
 shop and items:
