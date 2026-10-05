@@ -4095,6 +4095,26 @@ describe('fiscal receipts', () => {
       for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
     });
 
+    it('logs a pixel decode refused over the limit, with the no-QR hint', async () => {
+      const { sendPhoto, calls, logLines } = receiptBot({ logLevel: 'info' });
+      // rs-receipt.jpg with its baseline frame header (FF C0 at byte 89) claiming 20000x20000.
+      const bytes = readFileSync(new URL('../fiscal/qr.fixtures/rs-receipt.jpg', import.meta.url));
+      expect([bytes[89], bytes[90]]).toEqual([0xff, 0xc0]);
+      bytes.writeUInt16BE(20000, 89 + 5);
+      bytes.writeUInt16BE(20000, 89 + 7);
+      globalThis.fetch = () => Promise.resolve(new Response(bytes));
+
+      await sendPhoto('huge.jpg');
+
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'noQr',
+        pixelDecode: 'overLimit',
+      });
+    });
+
     it('does not download an image file over 20 MB and answers with the no-QR hint', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 

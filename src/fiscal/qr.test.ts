@@ -130,7 +130,7 @@ describe('decodeQr', () => {
     new DataView(bytes.buffer, bytes.byteOffset).setUint16(89 + 5, 20000);
     new DataView(bytes.buffer, bytes.byteOffset).setUint16(89 + 7, 20000);
 
-    expect(await decodeQr(bytes)).toEqual({ kind: 'none' });
+    expect(await decodeQr(bytes)).toEqual({ kind: 'none', pixelDecode: 'overLimit' });
     const outcome = vi.mocked(decode).mock.results[0];
     expect(outcome?.type).toBe('throw');
     expect(String(outcome?.value)).toMatch(/maxResolutionInMP limit exceeded/);

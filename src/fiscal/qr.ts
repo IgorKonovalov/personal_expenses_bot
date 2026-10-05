@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
-import { jpegLuma, lumaToRgba, VARIANTS, type Variant } from './qrPixels.js';
+import { jpegLuma, lumaToRgba, VARIANTS, type LumaRefusal, type Variant } from './qrPixels.js';
 
 // QR decoding for receipt photos (ADR-0019): ZXing-C++ as WebAssembly, fed the JPEG/PNG bytes
 // Telegram returns. By default the library downloads its .wasm from jsDelivr at first use; the
@@ -14,7 +14,12 @@ export type QrDecodeResult =
   | { readonly kind: 'decoded'; readonly texts: readonly string[]; readonly pass: string }
   // No QR code was read, or the bytes aren't an image the decoder reads. `detected` describes the
   // largest symbol that was located but failed to decode, for the log; absent when none was.
-  | { readonly kind: 'none'; readonly detected?: QrDetected };
+  // `pixelDecode` is set when a JPEG's pixel decode was refused, so no retry variant ran.
+  | {
+      readonly kind: 'none';
+      readonly detected?: QrDetected;
+      readonly pixelDecode?: LumaRefusal;
+    };
 
 // A located QR symbol that didn't decode. Carries no decoded text, so it is safe to log.
 export interface QrDetected {
@@ -67,12 +72,12 @@ export async function decodeQr(
   const texts = validTexts(plain);
   if (texts.length > 0) return { kind: 'decoded', texts, pass: 'plain' };
 
-  const luma = isJpeg(image) ? jpegLuma(image) : undefined;
-  if (luma !== undefined) {
+  const pixels = isJpeg(image) ? jpegLuma(image) : undefined;
+  if (pixels?.kind === 'luma') {
     const started = now();
     for (const variant of variants) {
       if (now() - started > QR_RETRY_BUDGET_MS) break;
-      const retried = await read(lumaToRgba(variant.apply(luma)));
+      const retried = await read(lumaToRgba(variant.apply(pixels.luma)));
       const found = retried === undefined ? [] : validTexts(retried);
       if (found.length > 0) return { kind: 'decoded', texts: found, pass: variant.name };
     }
@@ -82,7 +87,11 @@ export async function decodeQr(
   const failed = plain
     .filter((r) => !r.isValid && r.format === 'QRCode')
     .sort((a, b) => edgePx(b) - edgePx(a))[0];
-  return failed === undefined ? { kind: 'none' } : { kind: 'none', detected: describe(failed) };
+  return {
+    kind: 'none',
+    ...(failed === undefined ? {} : { detected: describe(failed) }),
+    ...(pixels?.kind === 'refused' ? { pixelDecode: pixels.reason } : {}),
+  };
 }
 
 // The decoder's results, or undefined for input it can't read as an image.

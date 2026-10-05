@@ -54,7 +54,7 @@ describe('luminance', () => {
 });
 
 describe('jpegLuma', () => {
-  it('returns undefined for a header claiming 20000x20000, refused before the pixels', () => {
+  it('refuses a header claiming 20000x20000 as over the limit, before the pixels', () => {
     const bytes = new Uint8Array(
       readFileSync(new URL('./qr.fixtures/rs-receipt.jpg', import.meta.url)),
     );
@@ -64,10 +64,17 @@ describe('jpegLuma', () => {
     new DataView(bytes.buffer, bytes.byteOffset).setUint16(89 + 7, 20000);
     vi.mocked(decode).mockClear();
 
-    expect(jpegLuma(bytes)).toBeUndefined();
+    expect(jpegLuma(bytes)).toEqual({ kind: 'refused', reason: 'overLimit' });
 
     const outcome = vi.mocked(decode).mock.results[0];
     expect(outcome?.type).toBe('throw');
     expect(String(outcome?.value)).toMatch(/maxResolutionInMP limit exceeded/);
+  });
+
+  it('refuses a truncated JPEG as undecodable', () => {
+    expect(jpegLuma(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00]))).toEqual({
+      kind: 'refused',
+      reason: 'undecodable',
+    });
   });
 });

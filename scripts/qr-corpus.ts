@@ -1,6 +1,7 @@
 // Measures decodeQr on the private corpus of real receipt photos in data/qr-corpus/ (gitignored,
 // ADR-0034): `pnpm qr:corpus`. One line per image: the file name, the pass that decoded it or
-// `none`, the located-but-unread symbol when there is one, and the milliseconds. It never prints
+// `none`, the located-but-unread symbol when there is one, `pixels <reason>` when the pixel decode
+// was refused (so no retry variant ran), and the milliseconds. It never prints
 // decoded text: the corpus is real receipts.
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -21,13 +22,16 @@ for (const name of names) {
   slowest = Math.max(slowest, ms);
   let pass = 'none';
   let detected = '';
+  let pixels = '';
   if (result.kind === 'decoded') {
     decoded += 1;
     pass = result.pass;
-  } else if (result.detected !== undefined) {
+  } else {
     const d = result.detected;
-    detected = `detected v${d.version} ${d.ecLevel} ${d.error} ${d.modulePx}px`;
+    if (d !== undefined)
+      detected = `detected v${d.version} ${d.ecLevel} ${d.error} ${d.modulePx}px`;
+    if (result.pixelDecode !== undefined) pixels = `pixels ${result.pixelDecode}`;
   }
-  console.log([name, pass, detected, `${ms} ms`].filter((cell) => cell !== '').join('\t'));
+  console.log([name, pass, detected, pixels, `${ms} ms`].filter((cell) => cell !== '').join('\t'));
 }
 console.log(`total: ${decoded} of ${names.length} decoded, slowest ${slowest} ms`);

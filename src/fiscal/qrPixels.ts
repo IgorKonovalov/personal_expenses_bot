@@ -21,17 +21,26 @@ export function luminance(r: number, g: number, b: number): number {
   return Math.floor((299 * r + 587 * g + 114 * b) / 1000);
 }
 
-// The pixel decode's limits. A Telegram photo is at most 2560 px on its long side (3.7 MP); a
-// larger image sent as a file still gets the plain pass, only not the retries. At 8 MP the
-// decoder's own buffers stay under 64 MB, and a retry's peak (the RGBA output, the Float64
-// integral image, two luminance buffers) stays near 130 MB against the container's 256 MiB.
+// The pixel decode's limits. jpeg-js counts its own buffers against maxMemoryUsageInMB: about
+// 51 MB for a 2560x1440 4:2:0 JPEG, 68 MB for 2560x1920 4:2:0, 138 MB for 2560x2560 4:4:4 (a
+// Telegram photo is at most 2560 px on its long side). A JPEG over the limit gets the plain pass
+// only, reported as `overLimit`. The real peak is larger than the count: under a 256 MiB cgroup,
+// a 2560x2560 photo decoded at a 160 MB limit was OOM-killed, and at this limit it survived.
 export const MAX_RESOLUTION_MP = 8;
 export const MAX_MEMORY_MB = 64;
 
-// Decodes a JPEG to luminance, or undefined for bytes jpeg-js can't decode (not a JPEG, a
-// truncated file, an unsupported encoding) or that exceed the limits above. jpeg-js checks the
-// resolution from the frame header before it allocates the pixels.
-export function jpegLuma(bytes: Uint8Array): Luma | undefined {
+// Why the pixel decode produced no luminance: the JPEG exceeds the limits above, or jpeg-js
+// can't decode it (not a JPEG, a truncated file, an unsupported encoding).
+export type LumaRefusal = 'overLimit' | 'undecodable';
+
+export type LumaDecode =
+  | { readonly kind: 'luma'; readonly luma: Luma }
+  | { readonly kind: 'refused'; readonly reason: LumaRefusal };
+
+// Decodes a JPEG to luminance. jpeg-js checks the resolution from the frame header before it
+// allocates the pixels, and throws "maxResolutionInMP limit exceeded" or "maxMemoryUsageInMB
+// limit exceeded" past the limits; any other throw is an undecodable JPEG.
+export function jpegLuma(bytes: Uint8Array): LumaDecode {
   let rgba;
   try {
     rgba = decode(bytes, {
@@ -40,15 +49,16 @@ export function jpegLuma(bytes: Uint8Array): Luma | undefined {
       maxResolutionInMP: MAX_RESOLUTION_MP,
       maxMemoryUsageInMB: MAX_MEMORY_MB,
     });
-  } catch {
-    return undefined;
+  } catch (error) {
+    const overLimit = error instanceof Error && error.message.includes('limit exceeded');
+    return { kind: 'refused', reason: overLimit ? 'overLimit' : 'undecodable' };
   }
   const { width, height, data: src } = rgba;
   const data = new Uint8Array(width * height);
   for (let i = 0; i < data.length; i++) {
     data[i] = luminance(src[4 * i] ?? 0, src[4 * i + 1] ?? 0, src[4 * i + 2] ?? 0);
   }
-  return { width, height, data };
+  return { kind: 'luma', luma: { width, height, data } };
 }
 
 // The grey RGBA image ZXing reads in place of ImageData.
