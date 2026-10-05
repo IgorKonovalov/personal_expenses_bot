@@ -223,7 +223,7 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 | 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | ecfb196 |
 | 2: The external link, the `/help` line and the admin notice | dev | done | 7d10a1e |
 | 3: `/paysupport` and the admin's `/refund` | dev | done | 3e64aad |
-| 4: A real donation and refund | human | not started | |
+| 4: A real donation and refund | human | owed | |
 
 ### Notes
 
