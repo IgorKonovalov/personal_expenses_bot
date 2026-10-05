@@ -1,6 +1,6 @@
 # 0028: Donations: everything free, `/donate` via Telegram Stars and an external link
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Related ADRs:** [ADR-0027](../adrs/0027-donations-only-funding.md) (donations only, no paid tier),
 > [ADR-0024](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md) (who is admitted)
@@ -220,12 +220,19 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | not started | |
+| 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | committed with this row |
 | 2: The external link, the `/help` line and the admin notice | dev | not started | |
 | 3: `/paysupport` and the admin's `/refund` | dev | not started | |
 | 4: A real donation and refund | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/db/ledgerKeys.test.ts` (outside Files touched) pinned the full list of pending
+  migrations as `['0012']`; adding `0013_donations.sql` turned it red. It now asserts `0012` is
+  the first applied.
+- Phase 1: `BotOptions.donationLinks` is optional (absent is no links), so the other test files
+  calling `createBot` (`unlock.test.ts`, outside Files touched) compile unchanged. The migration
+  also adds an index `donations_user (user_id, created_at)`.
 
 ### Close triggers
 

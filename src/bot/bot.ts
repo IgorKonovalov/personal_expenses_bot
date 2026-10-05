@@ -2,6 +2,7 @@ import { Bot, Composer, type Context, type MiddlewareFn } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { DonationPreset } from '../domain/donations.js';
 import type { Logger } from '../logger.js';
 import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
@@ -13,6 +14,11 @@ import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import {
+  registerDonate,
+  registerPreCheckout,
+  registerSuccessfulPayment,
+} from './handlers/donate.js';
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
@@ -43,6 +49,8 @@ export interface BotOptions extends HandlerDeps {
   readonly allowedTelegramIds: ReadonlySet<number>;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
+  // Read on every /donate, so links created after createBot returns are seen. Absent is none.
+  readonly donationLinks?: ReadonlyMap<DonationPreset, string>;
 }
 
 export function createBot(options: BotOptions): Bot {
@@ -61,7 +69,10 @@ export function createBot(options: BotOptions): Bot {
   const dm = new Composer<Context>();
   bot.branch(isGroupChat, groupComposer(options), dm);
 
+  // A completed payment is recorded whatever the payer's access is now (ADR-0027).
+  registerSuccessfulPayment(dm, options);
   dm.use(allowlist(options.allowedTelegramIds, logger));
+  registerPreCheckout(dm);
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
   dm.use(callbackDispatcher());
@@ -81,6 +92,7 @@ export function createBot(options: BotOptions): Bot {
   registerCancel(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
+  registerDonate(dm, { ...options, donationLinks: options.donationLinks ?? new Map() });
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);

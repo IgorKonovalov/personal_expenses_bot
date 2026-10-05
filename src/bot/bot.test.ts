@@ -61,8 +61,11 @@ import {
   callbackUpdate,
   createTestBot,
   groupTextUpdate,
+  invoiceLink,
   logContent,
   myChatMemberUpdate,
+  preCheckoutUpdate,
+  successfulPaymentUpdate,
   textUpdate,
   type ApiCall,
 } from './testHarness.js';
@@ -374,7 +377,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help and /changelog from messages', async () => {
+  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -394,6 +397,7 @@ describe('command registration at boot', () => {
             { command: 'lock', description: messages.commands[7].description },
             { command: 'help', description: messages.commands[8].description },
             { command: 'changelog', description: messages.commands[9].description },
+            { command: 'donate', description: messages.commands[10].description },
           ],
         },
       },
@@ -526,6 +530,224 @@ describe('/changelog', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, fromId: STRANGER_ID, text: '/changelog' }));
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe('donations (ADR-0027)', () => {
+  function donationRows(db: Db): unknown[] {
+    return db
+      .prepare('SELECT user_id, stars, telegram_payment_charge_id, refunded_at FROM donations')
+      .all();
+  }
+
+  function userIdOf(db: Db, telegramId: number): unknown {
+    return db
+      .prepare('SELECT user_id FROM auth_identities WHERE external_id = ?')
+      .pluck()
+      .get(String(telegramId));
+  }
+
+  const starsKeyboard = [
+    [
+      { text: '⭐ 50', url: invoiceLink('donate:50') },
+      { text: '⭐ 150', url: invoiceLink('donate:150') },
+      { text: '⭐ 500', url: invoiceLink('donate:500') },
+    ],
+  ];
+
+  it('creates one XTR invoice link per preset at boot, with an empty provider token', async () => {
+    const { calls, prepareDonations } = createTestBot();
+
+    await prepareDonations();
+
+    expect(calls).toEqual(
+      [50, 150, 500].map((stars) => ({
+        method: 'createInvoiceLink',
+        payload: {
+          title: messages.donateInvoiceTitle,
+          description: messages.donateInvoiceDescription,
+          payload: `donate:${String(stars)}`,
+          provider_token: '',
+          currency: 'XTR',
+          prices: [{ label: messages.donateInvoiceLabel, amount: stars }],
+        },
+      })),
+    );
+  });
+
+  it('answers /donate with the text and one URL button per cached link', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.donate,
+          reply_markup: { inline_keyboard: starsKeyboard },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('answers donateUnavailable when every link creation failed and logs each at warn', async () => {
+    const { bot, calls, logLines, prepareDonations } = createTestBot({
+      logLevel: 'info',
+      failMethods: ['createInvoiceLink'],
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(sentTexts(calls)).toEqual([messages.donateUnavailable]);
+    expect(
+      logLines
+        .filter((line) => line.includes('createInvoiceLink failed'))
+        .map((line) => {
+          const { level, stars } = JSON.parse(line) as { level: number; stars: number };
+          return { level, stars };
+        }),
+    ).toEqual([
+      { level: 40, stars: 50 },
+      { level: 40, stars: 150 },
+      { level: 40, stars: 500 },
+    ]);
+  });
+
+  it('gets no reply to /donate in a bound group', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 1,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(groupTextUpdate({ updateId: 2, text: '/donate' }));
+
+    expect(calls).toEqual([]);
+  });
+
+  it('is in the private command menu and not in the group one', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('donate');
+    expect(messages.groupCommands.map((c) => c.command)).not.toContain('donate');
+  });
+
+  it.each([
+    ['XTR', 150, 'donate:150', true],
+    ['XTR', 50, 'donate:150', false],
+    ['USD', 150, 'donate:150', false],
+  ] as const)(
+    'answers a pre-checkout of %s, %d, %s with ok %s',
+    async (currency, totalAmount, payload, ok) => {
+      const { bot, calls, db } = createTestBot();
+
+      await bot.handleUpdate(preCheckoutUpdate({ updateId: 1, currency, totalAmount, payload }));
+
+      expect(calls).toEqual([
+        {
+          method: 'answerPreCheckoutQuery',
+          payload: ok
+            ? { pre_checkout_query_id: 'pcq-1', ok: true }
+            : { pre_checkout_query_id: 'pcq-1', ok: false, error_message: messages.donateRejected },
+        },
+      ]);
+      expect(donationRows(db)).toEqual([]);
+    },
+  );
+
+  it('does not answer a pre-checkout from a user outside the allow-list', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(
+      preCheckoutUpdate({
+        updateId: 1,
+        currency: 'XTR',
+        totalAmount: 150,
+        payload: 'donate:150',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(calls).toEqual([]);
+  });
+
+  it('records a payment once and thanks once when the update is delivered twice', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    calls.length = 0;
+
+    const payment = successfulPaymentUpdate({ updateId: 2, stars: 150, chargeId: 'charge-1' });
+    await bot.handleUpdate(payment);
+    await bot.handleUpdate(payment);
+
+    expect(donationRows(db)).toEqual([
+      {
+        user_id: userIdOf(db, ALLOWED_ID),
+        stars: 150,
+        telegram_payment_charge_id: 'charge-1',
+        refunded_at: null,
+      },
+    ]);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.donateThanks, ...htmlParseMode },
+      },
+    ]);
+  });
+
+  it('records a payment from a user the access middleware would refuse', async () => {
+    const { bot, db } = createTestBot();
+    // A user admitted earlier and dropped from the allow-list since the pre-checkout.
+    db.prepare("INSERT INTO users (id, timezone, created_at) VALUES ('u-gone', 'UTC', 'x')").run();
+    db.prepare(
+      "INSERT INTO auth_identities (provider, external_id, user_id) VALUES ('telegram', ?, 'u-gone')",
+    ).run(String(STRANGER_ID));
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 1,
+        stars: 50,
+        chargeId: 'charge-9',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(donationRows(db)).toEqual([
+      { user_id: 'u-gone', stars: 50, telegram_payment_charge_id: 'charge-9', refunded_at: null },
+    ]);
+  });
+
+  it('thanks a payer with no user, records nothing and logs the charge id at warn', async () => {
+    const { bot, calls, db, logLines } = createTestBot({ logLevel: 'info' });
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 1,
+        stars: 50,
+        chargeId: 'charge-7',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(donationRows(db)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.donateThanks]);
+    expect(
+      logLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((l) => l.level === 40),
+    ).toMatchObject([{ chargeId: 'charge-7' }]);
   });
 });
 

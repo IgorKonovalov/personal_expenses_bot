@@ -475,6 +475,7 @@ export const messages = {
     { command: 'lock', description: 'Закрыть зашифрованный учёт' },
     { command: 'help', description: 'Как записать трату' },
     { command: 'changelog', description: 'Что нового в боте' },
+    { command: 'donate', description: 'Поддержать бота' },
   ],
 
   welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
@@ -1074,6 +1075,20 @@ export const messages = {
   },
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
+
+  // Donations in Telegram Stars (ADR-0027): a donation unlocks nothing.
+  donate: html`Бот бесплатный для всех и таким останется: платных функций нет. Пожертвование ничего не открывает, оно помогает оплачивать сервер. Если хотите поддержать, выберите сумму:`,
+  donateUnavailable: html`Пожертвования временно недоступны.`,
+  donateStarsButton: (stars: number): string => `⭐ ${stars}`,
+  // The invoice behind each Stars button: title at most 32 characters, description at most 255.
+  // Plain text.
+  donateInvoiceTitle: 'Поддержать бота',
+  donateInvoiceDescription:
+    'Пожертвование на оплату сервера. Бот остаётся бесплатным, пожертвование ничего не открывает.',
+  donateInvoiceLabel: 'Пожертвование',
+  // Shown by Telegram on the payment sheet when the pre-checkout is refused. Plain text.
+  donateRejected: 'Эта сумма больше не принимается. Откройте /donate заново.',
+  donateThanks: html`Спасибо! Бот остаётся бесплатным для всех.`,
 
   versionAnnouncements,
   // The message the admin gets at boot on a new version.
