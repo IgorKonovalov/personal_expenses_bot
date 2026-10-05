@@ -136,6 +136,35 @@ describe('decodeQr', () => {
     expect(String(outcome?.value)).toMatch(/maxResolutionInMP limit exceeded/);
   });
 
+  it.each(['blank-2560x1920-420.jpg', 'blank-2560x2560-420.jpg'])(
+    'runs the retry variants on a 4:2:0 JPEG of %s, within the pixel decode limits',
+    async (name) => {
+      const variant = { name: 'spy', apply: vi.fn((src: Parameters<Variant['apply']>[0]) => src) };
+
+      expect(await decodeQr(fixture(name), { variants: [variant] })).toEqual({ kind: 'none' });
+
+      expect(variant.apply).toHaveBeenCalledTimes(1);
+      const luma = variant.apply.mock.calls[0]?.[0];
+      expect([luma?.width, luma?.height]).toEqual(
+        name.includes('2560x1920') ? [2560, 1920] : [2560, 2560],
+      );
+    },
+  );
+
+  it('returns overLimit for a 2560x2560 4:4:4 JPEG, without running a variant', async () => {
+    const variant = { name: 'spy', apply: vi.fn((src: Parameters<Variant['apply']>[0]) => src) };
+
+    expect(await decodeQr(fixture('blank-2560x2560-444.jpg'), { variants: [variant] })).toEqual({
+      kind: 'none',
+      pixelDecode: 'overLimit',
+    });
+
+    expect(variant.apply).not.toHaveBeenCalled();
+    const outcome = vi.mocked(decode).mock.results[0];
+    expect(outcome?.type).toBe('throw');
+    expect(String(outcome?.value)).toMatch(/maxMemoryUsageInMB limit exceeded/);
+  });
+
   it('describes a located QR that fails its checksum, without its text', async () => {
     expect(await decodeQr(fixture('rs-receipt-damaged.jpg'))).toEqual({
       kind: 'none',

@@ -21,13 +21,15 @@ export function luminance(r: number, g: number, b: number): number {
   return Math.floor((299 * r + 587 * g + 114 * b) / 1000);
 }
 
-// The pixel decode's limits. jpeg-js counts its own buffers against maxMemoryUsageInMB: about
-// 51 MB for a 2560x1440 4:2:0 JPEG, 68 MB for 2560x1920 4:2:0, 138 MB for 2560x2560 4:4:4 (a
-// Telegram photo is at most 2560 px on its long side). A JPEG over the limit gets the plain pass
-// only, reported as `overLimit`. The real peak is larger than the count: under a 256 MiB cgroup,
-// a 2560x2560 photo decoded at a 160 MB limit was OOM-killed, and at this limit it survived.
+// The pixel decode's limits. jpeg-js counts its own buffers against maxMemoryUsageInMB: 68 MB for
+// a 2560x1920 4:2:0 JPEG, 91 MB for 2560x2560 4:2:0, 104 MB for 2560x1920 4:4:4 and 138 MB for
+// 2560x2560 4:4:4 (a Telegram photo is at most 2560 px on its long side). At 110 MB all but the
+// last are retried; a JPEG over the limit gets the plain pass only, reported as `overLimit`. The
+// real peak is larger than the count: the whole decodeQr on the built bot, under the 384 MiB
+// cgroup docker-compose.yml sets, peaked at 228, 290, 315 and 293 MiB for those four (the last
+// refused, its peak from ZXing's own plain-pass decode).
 export const MAX_RESOLUTION_MP = 8;
-export const MAX_MEMORY_MB = 64;
+export const MAX_MEMORY_MB = 110;
 
 // Why the pixel decode produced no luminance: the JPEG exceeds the limits above, or jpeg-js
 // can't decode it (not a JPEG, a truncated file, an unsupported encoding).
