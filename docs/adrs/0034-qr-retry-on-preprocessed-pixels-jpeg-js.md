@@ -1,8 +1,8 @@
 # ADR-0034: Retry an unread receipt QR on preprocessed pixels, decoded with jpeg-js
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-05)
 > **Date:** 2026-10-03
-> **Related plan(s):** [Plan 0031](../plans/0031-receipt-photo-qr-retry-passes.md)
+> **Related plan(s):** [Plan 0031](../plans/done/0031-receipt-photo-qr-retry-passes.md)
 
 ## Context
 
@@ -74,3 +74,16 @@ This would add no dependency. It lost on evidence: every option combination resc
 Plan 0030's live scan reads many frames, but the user reports that the phone's scanner struggles
 with these receipts too. So the photo path stays worth improving, and the scan and the link
 remain the fallbacks.
+
+## Outcome (2026-10-05)
+
+Plan 0031 shipped the decision as written. Two things it recorded did not hold:
+
+- **Memory.** The 15 MB estimate covered only the RGBA buffer. `jpeg-js` counts 68 to 138 MB of
+  its own buffers for a 2560 px photo, depending on size and chroma sampling, and the whole
+  `decodeQr` peaked at up to 315 MiB. The pixel decode runs with limits of 8 MP and 110 MB, and
+  `docker-compose.yml` raised the container's `mem_limit` from 256m to 384m. The plan's
+  Implementation log has the measurements.
+- **The variant kinds.** Of blur, local-mean threshold, morphology and crop, only blur plus
+  threshold rescued a corpus photo. One variant ships, `blur3-lmt21-3`, and it decodes 2 of the 8
+  corpus photos. Erosion and crop-to-symbol rescued none and were dropped.

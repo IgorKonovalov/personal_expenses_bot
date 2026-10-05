@@ -20,7 +20,6 @@ status and date. What a plan did lives in the plan.
 | [0028](0028-donations.md) | Donations: everything free, `/donate` via Telegram Stars and an external link | approved (2026-10-01) |
 | [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | approved (2026-10-01) |
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
-| [0031](0031-receipt-photo-qr-retry-passes.md) | Receipt photos that fail the plain QR pass get retried on preprocessed pixels | in-progress (2026-10-05): dev phases done, review owed |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 
@@ -28,6 +27,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0031](done/0031-receipt-photo-qr-retry-passes.md) | Receipt photos that fail the plain QR pass get retried on preprocessed pixels | done (2026-10-05): built as planned after two fix passes, one minor and one nit open, Phase 5 live check owed, v0.13.0 |
 | [0019](done/0019-encrypted-personal-ledger.md) | Encrypted personal ledger: recording stays open, reading needs the owner's passphrase | done (2026-10-02): built as planned after three fix passes, one minor open, Phase 6 live check owed, v0.12.0 |
 | [0023](done/0023-fx-fetch-expense-days-newest-first.md) | The rate worker fetches only expense days, newest first | done (2026-10-01): built as planned, one nit open, Phase 2 live check owed, v0.11.1 |
 | [0022](done/0022-converted-totals-nbs.md) | Totals and budgets converted into one currency at the NBS rate | done (2026-10-01): built as planned, three nits open, Phase 4 live check owed, v0.11.0 |

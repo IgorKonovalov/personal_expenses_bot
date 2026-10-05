@@ -1,9 +1,9 @@
 # 0031: Receipt photos that fail the plain QR pass get retried on preprocessed pixels
 
-> **Status:** in-progress
+> **Status:** done (2026-10-05): built as planned after two fix passes, one minor and one nit open, Phase 5 live check owed, v0.13.0
 > **Created:** 2026-10-03
-> **Related ADRs:** [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
-> [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
+> **Related ADRs:** [ADR-0034](../../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
+> [ADR-0019](../../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
 
 ## TL;DR
 
@@ -319,3 +319,6 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 
 - Plan 0030: move Phase 4 («📷 Скан») ahead of the charts phases, once the other session's
   uncommitted edits to 0030 are committed.
+- Close review (minor): peak memory with the real boot (config, open database, grammY polling)
+  inside the 384m cgroup is unmeasured. At the Phase 5 live check, send one 2560 px photo and
+  log the container's `docker stats` peak next to the `pass` values.

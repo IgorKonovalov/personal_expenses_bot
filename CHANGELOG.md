@@ -2,6 +2,15 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.13.0 (2026-10-05)
+
+From Plan 0031 (receipt photo QR retry passes).
+
+- A receipt photo whose QR code doesn't read on the first try is retried on preprocessed pixels
+  (blurred and thresholded), so a pale or smudged thermal-print QR can still record the expense.
+- When nothing reads, the hint says whether the QR code was found at all: get closer when it
+  wasn't, shoot flat, in focus and without glare when it was. Neither suggests sending a file.
+
 ## 0.12.0 (2026-10-02)
 
 From Plan 0019 (encrypted personal ledger).
