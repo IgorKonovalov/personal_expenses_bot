@@ -260,6 +260,22 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   clock.
 - Phase 4: the plan's copy shipped unchanged; it was not run past `ux-telegram`. The «без сжатия»
   test reads the `messages.ts` source.
+- Review fix pass, finding 1 (major, the 64 MB limit), partly fixed in `481516a`: `decodeQr`
+  returns `pixelDecode` (`overLimit` or `undecodable`) when the pixel decode refuses a JPEG, and
+  the `receipt image read` log line and `pnpm qr:corpus` show it; the limits comment carries the
+  numbers below. The limit stays 64 MB, open for `/architect` at the user's call. jpeg-js's
+  counted memory: 2560x1920 4:2:0 68 MB, 2560x2560 4:2:0 91 MB, 2560x1920 4:4:4 104 MB,
+  2560x2560 4:4:4 138 MB. Whole `decodeQr` under a 256 MiB cgroup (`systemd-run`, tsx, base
+  106-119 MiB): at a 160 MB limit, both 2560x2560 samplings were OOM-killed and 2560x1920 4:2:0
+  peaked at 253 MiB; at 64 MB, 2560x2560 4:4:4 peaked at 248 MiB and 4:2:0 at 207 MiB. No test
+  that a 2560x2560 JPEG decodes was added: at 64 MB it doesn't.
+- Fix pass `pnpm qr:corpus` at 64 MB: the same 8 rows as Phase 3, no `pixels` cell on any row,
+  2 of 8 decoded, slowest 445 ms.
+- Review finding 2 (README file advice): `d03c1bd`.
+- Review finding 3 (`scripts/qr-corpus.ts` outside the gate): `079e94e`. `tsconfig.json` includes
+  `scripts/**/*.ts`, and `eslint.config.js` ignores `scripts/**/*.mjs` in place of `scripts/`.
+- Review finding 4: per the user, all 8 corpus files are the photos from 2026-10-03; the
+  done-when's five is these 8. 2 of the 8 decode (21-31-10, 21-31-15).
 
 ### Close triggers
 
@@ -272,7 +288,7 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   expense. A photo with a located but unread QR gets the new unreadable hint; every other
   unread image gets the new no-QR hint. Neither mentions an uncompressed file.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 71 files,
-  996 tests; `pnpm build` exit 0.
+  998 tests; `pnpm build` exit 0.
 - **Outstanding `human` phases:** Phase 5 (live check after deploy; blocks merge: no).
 
 ## Followups
