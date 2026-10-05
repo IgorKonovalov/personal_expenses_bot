@@ -4,8 +4,8 @@ import { decode } from 'jpeg-js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readBarcodes } from 'zxing-wasm/reader';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
-import { decodeQr } from './qr.js';
-import { VARIANTS } from './qrPixels.js';
+import { decodeQr, QR_RETRY_BUDGET_MS } from './qr.js';
+import { VARIANTS, type Variant } from './qrPixels.js';
 
 // The JPEG decoder is wrapped in a spy, to tell which inputs reach the pixel retries.
 vi.mock('jpeg-js', async (importOriginal) => {
@@ -83,8 +83,57 @@ describe('decodeQr', () => {
       texts: [buildRsUrl()],
       pass: VARIANTS[0]?.name,
     });
-    expect(VARIANTS[0]?.name).toBe('blur3-lmt31-3');
+    expect(VARIANTS[0]?.name).toBe('blur3-lmt21-3');
     expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts no variant once the retry budget has passed, and returns none', async () => {
+    let clock = 0;
+    const first: Variant = {
+      name: 'first',
+      apply: (src) => {
+        clock += QR_RETRY_BUDGET_MS + 1;
+        return src;
+      },
+    };
+    const second = { name: 'second', apply: vi.fn((src: Parameters<Variant['apply']>[0]) => src) };
+
+    const result = await decodeQr(fixture('no-qr.jpg'), {
+      variants: [first, second],
+      now: () => clock,
+    });
+
+    expect(result).toEqual({ kind: 'none' });
+    expect(second.apply).not.toHaveBeenCalled();
+  });
+
+  it('runs the next variant while the retry budget lasts', async () => {
+    let clock = 0;
+    const first: Variant = {
+      name: 'first',
+      apply: (src) => {
+        clock += QR_RETRY_BUDGET_MS;
+        return src;
+      },
+    };
+    const second = { name: 'second', apply: vi.fn((src: Parameters<Variant['apply']>[0]) => src) };
+
+    await decodeQr(fixture('no-qr.jpg'), { variants: [first, second], now: () => clock });
+
+    expect(second.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns none for a JPEG header claiming 20000x20000, refused by the pixel decode', async () => {
+    const bytes = new Uint8Array(fixture('rs-receipt.jpg'));
+    // The baseline frame header (FF C0) at byte 89: height at +5, width at +7, big-endian.
+    expect([bytes[89], bytes[90]]).toEqual([0xff, 0xc0]);
+    new DataView(bytes.buffer, bytes.byteOffset).setUint16(89 + 5, 20000);
+    new DataView(bytes.buffer, bytes.byteOffset).setUint16(89 + 7, 20000);
+
+    expect(await decodeQr(bytes)).toEqual({ kind: 'none' });
+    const outcome = vi.mocked(decode).mock.results[0];
+    expect(outcome?.type).toBe('throw');
+    expect(String(outcome?.value)).toMatch(/maxResolutionInMP limit exceeded/);
   });
 
   it('describes a located QR that fails its checksum, without its text', async () => {

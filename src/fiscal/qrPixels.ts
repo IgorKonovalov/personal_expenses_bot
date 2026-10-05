@@ -21,12 +21,25 @@ export function luminance(r: number, g: number, b: number): number {
   return Math.floor((299 * r + 587 * g + 114 * b) / 1000);
 }
 
+// The pixel decode's limits. A Telegram photo is at most 2560 px on its long side (3.7 MP); a
+// larger image sent as a file still gets the plain pass, only not the retries. At 8 MP the
+// decoder's own buffers stay under 64 MB, and a retry's peak (the RGBA output, the Float64
+// integral image, two luminance buffers) stays near 130 MB against the container's 256 MiB.
+export const MAX_RESOLUTION_MP = 8;
+export const MAX_MEMORY_MB = 64;
+
 // Decodes a JPEG to luminance, or undefined for bytes jpeg-js can't decode (not a JPEG, a
-// truncated file, an unsupported encoding).
+// truncated file, an unsupported encoding) or that exceed the limits above. jpeg-js checks the
+// resolution from the frame header before it allocates the pixels.
 export function jpegLuma(bytes: Uint8Array): Luma | undefined {
   let rgba;
   try {
-    rgba = decode(bytes, { useTArray: true, formatAsRGBA: true });
+    rgba = decode(bytes, {
+      useTArray: true,
+      formatAsRGBA: true,
+      maxResolutionInMP: MAX_RESOLUTION_MP,
+      maxMemoryUsageInMB: MAX_MEMORY_MB,
+    });
   } catch {
     return undefined;
   }
@@ -124,10 +137,11 @@ export function localMeanThreshold(src: Luma, window: number, offsetPercent: num
   return { width: src.width, height: src.height, data };
 }
 
-// The retry variants, tried in order after the plain pass.
+// The retry variants, tried in order after the plain pass. Each one is kept only while it decodes
+// a photo in the private corpus that no earlier variant decodes, as measured by `pnpm qr:corpus`.
 export const VARIANTS: readonly Variant[] = [
   {
-    name: 'blur3-lmt31-3',
-    apply: (src) => localMeanThreshold(boxBlur3(src), 31, 3),
+    name: 'blur3-lmt21-3',
+    apply: (src) => localMeanThreshold(boxBlur3(src), 21, 3),
   },
 ];

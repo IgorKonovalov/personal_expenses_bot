@@ -202,8 +202,8 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Collect the corpus | human | done (user; 8 images in `data/qr-corpus/`) | |
-| 2: Walking skeleton | dev | done | committed with this row |
-| 3: Tune variants and budget | dev | not started | |
+| 2: Walking skeleton | dev | done | `04c352e` |
+| 3: Tune variants and budget | dev | done | committed with this row |
 | 4: Two hints | dev | not started | |
 | 5: Live check | human | not started | |
 
@@ -229,6 +229,35 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   | photo_2026-10-03_21-31-33.jpg | none | v20 L ChecksumError 7.1px | 289 |
 
   Total: 1 of 8 decoded, slowest 452 ms.
+- Phase 3 candidates, each over the 8 corpus photos (files by time suffix):
+  - Local-mean threshold after a 3x3 blur (or two), windows 13 to 31, offsets 1 to 5%: the best
+    rescue 21-31-10 and 21-31-15. Shipped: `blur3-lmt21-3`, the only variant, rescuing both.
+  - `blur3-lmt31-3` (Phase 2's variant): rescues 21-31-10 only, also rescued by
+    `blur3-lmt21-3`: 0 unique, dropped.
+  - 1 px erosion of the dark modules, before or after the threshold: 0, dropped.
+  - Crop to the located symbol with a 4-module margin, upscaled 2x (also 1x, 3x), alone, with the
+    local threshold, with erosion, or with an Otsu global threshold: 0, dropped. None of the
+    three detected photos (21-31-05, 21-31-27, 21-31-33) decodes under any candidate.
+- Phase 3 `pnpm qr:corpus` (8 images):
+
+  | file | pass | detected | ms |
+  |---|---|---|---|
+  | photo_2026-10-03_21-30-22.jpg | none | | 401 |
+  | photo_2026-10-03_21-31-00.jpg | none | | 287 |
+  | photo_2026-10-03_21-31-05.jpg | none | v23 L ChecksumError 6.9px | 287 |
+  | photo_2026-10-03_21-31-10.jpg | blur3-lmt21-3 | | 277 |
+  | photo_2026-10-03_21-31-15.jpg | blur3-lmt21-3 | | 249 |
+  | photo_2026-10-03_21-31-21.jpg | none | | 255 |
+  | photo_2026-10-03_21-31-27.jpg | none | v20 L ChecksumError 8px | 238 |
+  | photo_2026-10-03_21-31-33.jpg | none | v20 L ChecksumError 7.1px | 271 |
+
+  Total: 2 of 8 decoded, slowest 401 ms (whole `decodeQr`). The slowest whole retry list (one
+  variant plus its ZXing read) took 66 ms; `QR_RETRY_BUDGET_MS` is 1000.
+- Phase 3: the pixel decode's limits are 8 MP and 64 MB; a larger JPEG gets the plain pass only.
+- Phase 3 deviation: `src/bot/bot.test.ts`, outside `Files touched`, pins the first variant's
+  name; the pin changed to `blur3-lmt21-3`.
+- Phase 3: `decodeQr` takes an optional `{ variants, now }` so the budget test drives a fake
+  clock.
 
 ### Close triggers
 

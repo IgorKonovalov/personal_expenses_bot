@@ -4091,7 +4091,7 @@ describe('fiscal receipts', () => {
         qrCount: 1,
         pass: VARIANTS[0]?.name,
       });
-      expect(VARIANTS[0]?.name).toBe('blur3-lmt31-3');
+      expect(VARIANTS[0]?.name).toBe('blur3-lmt21-3');
       for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
     });
 

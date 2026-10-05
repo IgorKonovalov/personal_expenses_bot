@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
-import { jpegLuma, lumaToRgba, VARIANTS } from './qrPixels.js';
+import { jpegLuma, lumaToRgba, VARIANTS, type Variant } from './qrPixels.js';
 
 // QR decoding for receipt photos (ADR-0019): ZXing-C++ as WebAssembly, fed the JPEG/PNG bytes
 // Telegram returns. By default the library downloads its .wasm from jsDelivr at first use; the
@@ -26,6 +27,16 @@ export interface QrDetected {
   readonly modulePx: number;
 }
 
+// No retry variant starts once this many milliseconds have passed since the first one started.
+// A started variant runs to the end: the decode blocks the event loop and can't be interrupted.
+export const QR_RETRY_BUDGET_MS = 1000;
+
+// The retry list and the clock the budget is measured on; replaced only in tests.
+export interface RetryOptions {
+  readonly variants?: readonly Variant[];
+  readonly now?: () => number;
+}
+
 let ready: Promise<unknown> | undefined;
 
 // Instantiates the module once per process, on the first decode.
@@ -46,7 +57,10 @@ function prepare(): Promise<unknown> {
 type ReadResult = Awaited<ReturnType<typeof readBarcodes>>[number];
 
 // Every QR text in the image, in the decoder's order.
-export async function decodeQr(image: Uint8Array): Promise<QrDecodeResult> {
+export async function decodeQr(
+  image: Uint8Array,
+  { variants = VARIANTS, now = performance.now.bind(performance) }: RetryOptions = {},
+): Promise<QrDecodeResult> {
   await prepare();
   const plain = await read(image);
   if (plain === undefined) return { kind: 'none' };
@@ -55,7 +69,9 @@ export async function decodeQr(image: Uint8Array): Promise<QrDecodeResult> {
 
   const luma = isJpeg(image) ? jpegLuma(image) : undefined;
   if (luma !== undefined) {
-    for (const variant of VARIANTS) {
+    const started = now();
+    for (const variant of variants) {
+      if (now() - started > QR_RETRY_BUDGET_MS) break;
       const retried = await read(lumaToRgba(variant.apply(luma)));
       const found = retried === undefined ? [] : validTexts(retried);
       if (found.length > 0) return { kind: 'decoded', texts: found, pass: variant.name };
