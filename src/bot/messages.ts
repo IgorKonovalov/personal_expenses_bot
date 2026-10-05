@@ -1116,6 +1116,47 @@ export const messages = {
       '\n',
     ),
 
+  // /paysupport, which Telegram requires of a bot taking payments.
+  paySupport: html`Пожертвование ничего не открывает: бот одинаково бесплатный для всех. Чтобы попросить вернуть пожертвование, отправьте /paysupport и текст просьбы одним сообщением, например: «/paysupport верните, пожалуйста, пожертвование».`,
+  paySupportSent: html`Просьба передана. Ответ придёт в этот чат.`,
+  // To the admin: the request, the user's internal id and their newest donations. `on` is the
+  // donation's date in the admin's timezone. The text is user text.
+  adminPaySupport: ({
+    userId,
+    text,
+    donations,
+  }: {
+    userId: string;
+    text: string;
+    donations: readonly { chargeId: string; stars: number; on: LocalDate; refunded: boolean }[];
+  }): Html =>
+    joinHtml(
+      [
+        html`💬 /paysupport от <code>${userId}</code>`,
+        html`${text}`,
+        donations.length === 0
+          ? html`Пожертвований нет.`
+          : joinHtml(
+              [
+                html`Пожертвования:`,
+                ...donations.map(
+                  (d) =>
+                    html`<code>${d.chargeId}</code> · ${d.stars} Stars · ${dayMonth.format(new Date(`${d.on}T00:00:00Z`))} ${d.on.slice(0, 4)}${d.refunded ? ' · возвращено' : ''}`,
+                ),
+              ],
+              '\n',
+            ),
+      ],
+      '\n\n',
+    ),
+  // The admin's /refund <charge id>.
+  refundUsage: html`Укажите платёж: /refund и его id из уведомления о пожертвовании.`,
+  refundDone: (stars: number): Html => html`Возвращено: ${stars} Stars.`,
+  refundNotFound: html`Пожертвование с таким id не найдено.`,
+  refundAlreadyRefunded: html`Это пожертвование уже возвращено.`,
+  refundFailed: (reason: string): Html =>
+    html`Telegram не вернул Stars: ${reason}. Пожертвование не отмечено возвращённым.`,
+
   versionAnnouncements,
   // The message the admin gets at boot on a new version.
   versionAnnouncement: (version: string, body: Html): Html =>

@@ -221,8 +221,8 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | ecfb196 |
-| 2: The external link, the `/help` line and the admin notice | dev | done | committed with this row |
-| 3: `/paysupport` and the admin's `/refund` | dev | not started | |
+| 2: The external link, the `/help` line and the admin notice | dev | done | 7d10a1e |
+| 3: `/paysupport` and the admin's `/refund` | dev | done | committed with this row |
 | 4: A real donation and refund | human | not started | |
 
 ### Notes
@@ -242,6 +242,10 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
   a no-op notifier).
 - Phase 2: a refused admin notice is caught and logged at warn with the charge id; the donor's
   thank-you is sent first.
+- Phase 3: `/paysupport` is not added to `messages.commands`. The relayed list marks a refunded
+  donation «возвращено» and reads «Пожертвований нет.» when empty. A refund whose payer has no
+  Telegram identity left is reported as a failure without calling Telegram. A `/refund` with no
+  id answers `messages.refundUsage`.
 
 ### Close triggers
 

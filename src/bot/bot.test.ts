@@ -865,6 +865,176 @@ describe('donations (ADR-0027)', () => {
   });
 });
 
+describe('/paysupport and /refund', () => {
+  // SECOND_ALLOWED_ID donates 50 (charge-a) and then 150 (charge-b); ADMIN_ID is the admin.
+  async function withTwoDonations(options: { failMethods?: readonly string[] } = {}) {
+    const harness = createTestBot(options);
+    const { bot, calls } = harness;
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    for (const [i, [stars, chargeId]] of [
+      [50, 'charge-a'],
+      [150, 'charge-b'],
+    ].entries()) {
+      await bot.handleUpdate(
+        successfulPaymentUpdate({
+          updateId: 2 + i,
+          stars: Number(stars),
+          chargeId: String(chargeId),
+          fromId: SECOND_ALLOWED_ID,
+        }),
+      );
+    }
+    calls.length = 0;
+    return harness;
+  }
+
+  function refundedAt(db: Db, chargeId: string): unknown {
+    return db
+      .prepare('SELECT refunded_at FROM donations WHERE telegram_payment_charge_id = ?')
+      .pluck()
+      .get(chargeId);
+  }
+
+  function refundCalls(calls: readonly ApiCall[]): unknown[] {
+    return calls.filter((c) => c.method === 'refundStarPayment').map((c) => c.payload);
+  }
+
+  // The texts of the messages sent, leaving out the refundStarPayment call.
+  function replies(calls: readonly ApiCall[]): unknown[] {
+    return sentTexts(calls.filter((c) => c.method === 'sendMessage'));
+  }
+
+  it('explains, with no text, that a donation unlocks nothing and how to ask for a refund', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, text: '/paysupport', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.paySupport, ...htmlParseMode },
+      },
+    ]);
+    expect(messages.paySupport).toContain('ничего не открывает');
+    expect(messages.paySupport).toContain('/paysupport');
+  });
+
+  it('relays the request with both charge ids to the admin once and confirms to the user', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(
+      textUpdate({
+        updateId: 10,
+        text: '/paysupport верните пожалуйста',
+        fromId: SECOND_ALLOWED_ID,
+      }),
+    );
+
+    const userId = String(
+      db.prepare("SELECT user_id FROM auth_identities WHERE external_id = '1003'").pluck().get(),
+    );
+    // The harness clock is 2026-09-29T22:10Z: already the 30th in the admin's default zone.
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ADMIN_ID,
+          text:
+            `💬 /paysupport от <code>${userId}</code>\n\nверните пожалуйста\n\nПожертвования:\n` +
+            '<code>charge-b</code> · 150 Stars · 30 сентября 2026\n' +
+            '<code>charge-a</code> · 50 Stars · 30 сентября 2026',
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.paySupportSent, ...htmlParseMode },
+      },
+    ]);
+  });
+
+  it('caps the relayed donations at the ten newest', async () => {
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    for (let i = 0; i < 12; i++) {
+      await bot.handleUpdate(
+        successfulPaymentUpdate({
+          updateId: 2 + i,
+          stars: 50,
+          chargeId: `charge-${String(i).padStart(2, '0')}`,
+          fromId: SECOND_ALLOWED_ID,
+        }),
+      );
+    }
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 20, text: '/paysupport вопрос', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    const relayed = String(sentTexts(calls)[0]);
+    expect(relayed.match(/<code>charge-/g)).toHaveLength(10);
+    expect(relayed).toContain('charge-11');
+    expect(relayed).not.toContain('charge-01');
+    expect(relayed).not.toContain('charge-00');
+  });
+
+  it('refunds once with the payer’s Telegram id, then answers already-refunded without Telegram', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-a' }));
+
+    expect(refundCalls(calls)).toEqual([
+      { user_id: SECOND_ALLOWED_ID, telegram_payment_charge_id: 'charge-a' },
+    ]);
+    expect(refundedAt(db, 'charge-a')).toBe('2026-09-29T22:10:00.000Z');
+    expect(refundedAt(db, 'charge-b')).toBeNull();
+    expect(replies(calls)).toEqual([messages.refundDone(50)]);
+    expect(messages.refundDone(50)).toBe('Возвращено: 50 Stars.');
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 11, text: '/refund charge-a' }));
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.refundAlreadyRefunded]);
+  });
+
+  it('answers not-found for an unknown charge id', async () => {
+    const { bot, calls } = await withTwoDonations();
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-x' }));
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.refundNotFound]);
+  });
+
+  it('leaves refunded_at NULL and reports a refundStarPayment error to the admin', async () => {
+    const { bot, calls, db } = await withTwoDonations({ failMethods: ['refundStarPayment'] });
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-b' }));
+
+    expect(refundCalls(calls)).toHaveLength(1);
+    expect(refundedAt(db, 'charge-b')).toBeNull();
+    const [reply] = replies(calls);
+    expect(String(reply)).toMatch(/^Telegram не вернул Stars: .*Bad Request: test/);
+    expect(calls.at(-1)?.payload).toMatchObject({ chat_id: ADMIN_ID });
+  });
+
+  it('treats a non-admin’s /refund as an unknown command', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 10, text: '/refund charge-a', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(refundedAt(db, 'charge-a')).toBeNull();
+    expect(sentTexts(calls)).toEqual([messages.help]);
+  });
+});
+
 describe('recording an expense', () => {
   it('confirms 450 coffee naming the ledger, with an Undo button', async () => {
     const { bot, calls } = createTestBot();

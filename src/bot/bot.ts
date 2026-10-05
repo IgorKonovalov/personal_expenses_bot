@@ -22,7 +22,9 @@ import {
 import { registerHelp } from './handlers/help.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
+import { registerPaySupport } from './handlers/paysupport.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
+import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerSummary } from './handlers/summary.js';
@@ -79,6 +81,7 @@ export function createBot(options: BotOptions): Bot {
     ...options,
     donationLinks: options.donationLinks ?? new Map<DonationPreset, string>(),
     donateUrl: options.donateUrl,
+    adminTelegramId: options.adminTelegramId,
     notifyAdmin: options.notifyAdmin ?? (() => Promise.resolve()),
   };
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
@@ -105,6 +108,8 @@ export function createBot(options: BotOptions): Bot {
   registerHelp(dm);
   registerChangelog(dm);
   registerDonate(dm, donateDeps);
+  registerPaySupport(dm, donateDeps);
+  registerRefund(dm, donateDeps);
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);
