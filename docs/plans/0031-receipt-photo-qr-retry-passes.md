@@ -271,6 +271,30 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   that a 2560x2560 JPEG decodes was added: at 64 MB it doesn't.
 - Fix pass `pnpm qr:corpus` at 64 MB: the same 8 rows as Phase 3, no `pixels` cell on any row,
   2 of 8 decoded, slowest 445 ms.
+- Fix pass 2, finding 1 (the 64 MB limit), in `e2d6a7f`: `MAX_MEMORY_MB` is 110 and
+  `docker-compose.yml`'s `mem_limit` is 384m. Three fixtures, `blank-2560x1920-420.jpg`,
+  `blank-2560x2560-420.jpg` and `blank-2560x2560-444.jpg` (plain white, three components), are
+  in `qr.test.ts`: both 4:2:0 run a spy variant on a 2560-wide luma with no `pixelDecode`, and
+  4:4:4 returns `overLimit` from `maxMemoryUsageInMB limit exceeded` with the spy not called.
+  2560x1920 4:4:4 (104 MB) is also under 110 MB and is retried.
+- Fix pass 2 peaks: the whole `decodeQr` from `pnpm build`'s `dist/`, run by node under
+  `systemd-run --user --scope -p MemoryMax=384M -p MemorySwapMax=0`, after importing the dist
+  bot, receipt worker, db, fetcher, rate worker and logger modules; `memory.peak` of the scope,
+  three runs each, on ImageMagick Gaussian-noise JPEGs at q75 (no QR, so every variant runs):
+
+  | input | pixelDecode | peak MiB | ms |
+  |---|---|---|---|
+  | base (imports + `no-qr.jpg`) | | 73-75 | |
+  | 2560x1920 4:2:0 | | 226-228 | 806-837 |
+  | 2560x2560 4:2:0 | | 282-290 | 1084-1216 |
+  | 2560x1920 4:4:4 | | 304-315 | 1033-1040 |
+  | 2560x2560 4:4:4 | overLimit | 288-293 | 985-1239 |
+
+  Under `MemoryMax=256M`, 2560x2560 4:2:0 exited 137 and 2560x1920 4:2:0 peaked at 228 MiB.
+  The 2560x2560 4:2:0 and 4:4:4 runs exceed `QR_RETRY_BUDGET_MS` (1000) as whole-`decodeQr`
+  times; the budget covers the retries only. The bot's real boot (config, open database,
+  grammY polling) was not run inside the cgroup.
+- Fix pass 2 `pnpm qr:corpus` at 110 MB: the same 8 rows, 2 of 8 decoded, slowest 429 ms.
 - Review finding 2 (README file advice): `d03c1bd`.
 - Review finding 3 (`scripts/qr-corpus.ts` outside the gate): `079e94e`. `tsconfig.json` includes
   `scripts/**/*.ts`, and `eslint.config.js` ignores `scripts/**/*.mjs` in place of `scripts/`.
@@ -280,7 +304,7 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 ### Close triggers
 
 - **What shipped:** `decodeQr` retries a JPEG the plain pass reads no QR from on luminance decoded
-  by `jpeg-js` (exact pin, limits 8 MP and 64 MB), through `VARIANTS` in `src/fiscal/qrPixels.ts`:
+  by `jpeg-js` (exact pin, limits 8 MP and 110 MB; `mem_limit` 384m), through `VARIANTS` in `src/fiscal/qrPixels.ts`:
   one variant, `blur3-lmt21-3`, under `QR_RETRY_BUDGET_MS` = 1000. The decoded result and the
   `receipt image read` log line carry `pass`. `pnpm qr:corpus` measures `data/qr-corpus/`: 2 of 8
   decoded. `receiptPhotoHint` is split into `receiptPhotoNoQr` and `receiptPhotoUnreadable`.
@@ -288,7 +312,7 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
   expense. A photo with a located but unread QR gets the new unreadable hint; every other
   unread image gets the new no-QR hint. Neither mentions an uncompressed file.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 71 files,
-  998 tests; `pnpm build` exit 0.
+  1001 tests; `pnpm build` exit 0.
 - **Outstanding `human` phases:** Phase 5 (live check after deploy; blocks merge: no).
 
 ## Followups
