@@ -222,7 +222,7 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
 |---|---|---|---|
 | 1: Walking skeleton: `/donate` takes 50 Stars and says thank you | dev | done | ecfb196 |
 | 2: The external link, the `/help` line and the admin notice | dev | done | 7d10a1e |
-| 3: `/paysupport` and the admin's `/refund` | dev | done | committed with this row |
+| 3: `/paysupport` and the admin's `/refund` | dev | done | 3e64aad |
 | 4: A real donation and refund | human | not started | |
 
 ### Notes
@@ -246,7 +246,24 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
   donation «возвращено» and reads «Пожертвований нет.» when empty. A refund whose payer has no
   Telegram identity left is reported as a failure without calling Telegram. A `/refund` with no
   id answers `messages.refundUsage`.
+- Followup, not acted on: `README.md` describes `/donate` but not `/paysupport` or `/refund`
+  (Phase 3's Files touched exclude it).
+- Followup, not acted on: `/paysupport` is absent from the command menu Telegram shows.
 
 ### Close triggers
+
+- **What shipped:** migration `0013_donations.sql` (`donations`, UNIQUE charge id); at boot one
+  XTR invoice link per preset in `DONATION_PRESETS` (`createDonationLinks`); private `/donate`
+  with one URL button per link plus [Ko-fi] when `DONATE_URL` (https only) is set; a
+  pre-checkout behind the allowlist approving only `acceptsDonation`; `successful_payment` ahead
+  of the allowlist recording once per charge id, thanking once and notifying the admin once;
+  the private help's last line `helpDonateLine`; `/paysupport` relaying to the admin; the admin's
+  `/refund <charge id>` via `refundStarPayment`.
+- **User-visible surface changed:** new commands `/donate` (in `messages.commands`),
+  `/paysupport`, and admin-only `/refund`; the private help gains a last line; new optional env
+  `DONATE_URL`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 75
+  files, 1052 tests; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 4 (a real donation and refund; blocks merge: no).
 
 ## Followups
