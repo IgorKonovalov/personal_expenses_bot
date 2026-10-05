@@ -1,6 +1,6 @@
 # 0032: A live QR scan in a Mini App records a receipt
 
-> **Status:** draft
+> **Status:** approved (2026-10-05)
 > **Created:** 2026-10-05
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
 > [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),

@@ -21,8 +21,8 @@ status and date. What a plan did lives in the plan.
 | [0029](0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | approved (2026-10-01) |
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0031](0031-receipt-photo-qr-retry-passes.md) | Receipt photos that fail the plain QR pass get retried on preprocessed pixels | in-progress (2026-10-05): dev phases done, review owed |
-| [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | draft (2026-10-05) |
-| [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | draft (2026-10-05) |
+| [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
+| [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 
 ## Recently closed
 

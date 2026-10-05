@@ -1,6 +1,6 @@
 # 0033: A committed sweep for more receipt QR retry variants
 
-> **Status:** draft
+> **Status:** approved (2026-10-05)
 > **Created:** 2026-10-05
 > **Related ADRs:** [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js)
 
