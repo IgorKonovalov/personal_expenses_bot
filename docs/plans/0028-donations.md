@@ -116,7 +116,11 @@ between phases. The architect reviews once at the end, in a fresh session. All n
     donor's internal user id and the charge id. No Telegram name or username goes in the notice.
 - **Files touched:** `src/config.ts` (+ test), `.env.example`, `src/bot/handlers/donate.ts`,
   `src/bot/handlers/help.ts`, `src/bot/adminNotifier.ts`, `src/bot/messages.ts`,
-  `src/bot/bot.test.ts`, `README.md`.
+  `src/bot/bot.ts` (`BotOptions` carries the donate URL and the admin notifier to the handlers),
+  `src/index.ts` (passes `config.donateUrl` and the notifier into `createBot`; `adminNotifier`
+  is built from `bot.api` after `createBot`, so the handler reaches it late-bound),
+  `src/bot/testHarness.ts` (`TestBotOptions` sets the donate URL), `src/bot/bot.test.ts`,
+  `README.md`.
 - **Done when:**
   - `DONATE_URL=http://example.com` fails config validation with an error naming `DONATE_URL`.
     `https://ko-fi.com/example` passes.
