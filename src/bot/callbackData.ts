@@ -235,6 +235,11 @@ export const ACCOUNT_KEEP = 'acct:keep';
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';
 
+// A bank statement's preview (Plan 0027): [Записать все] `stm:all` and [Отмена] `stm:x`. They act
+// on the statement the user's flow session holds, so none carries an id.
+export const STATEMENT_RECORD_ALL = 'stm:all';
+export const STATEMENT_CANCEL = 'stm:x';
+
 // Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the
 // schedules from the expense's date; `rec:s:<uuid>:<m|w|y>` (44 bytes) makes the rule on one:
 // monthly, weekly or yearly.

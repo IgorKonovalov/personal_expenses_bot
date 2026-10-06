@@ -19,6 +19,7 @@ src/
 ├── services/        # use-cases orchestrating domain + db
 ├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module
 ├── fiscal/          # the receipts adapter: QR decoding (zxing-wasm, jpeg-js) and the tax-site fetchers
+├── statements/      # the bank-statement adapter: PDF text as positioned lines (pdfjs-dist, lazy)
 ├── fx/              # the rates adapter: the NBS middle-rate fetcher and its hourly worker
 ├── scheduler/       # the local-time scheduler (ADR-0031): the 60 s tick and its providers
 ├── config.ts        # env -> typed config, validated at boot

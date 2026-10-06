@@ -165,6 +165,21 @@ interface SummaryView {
   readonly people?: PeopleView | undefined;
 }
 
+// A bank statement's preview (Plan 0027): the new purchases a tap would record. Merchants are
+// bank text and go through `html`.
+interface StatementPreviewView {
+  readonly period: { readonly from: LocalDate; readonly to: LocalDate } | undefined;
+  readonly ledger: LedgerRef;
+  // Every card purchase in the file.
+  readonly purchaseCount: number;
+  readonly fresh: readonly StatementRowView[];
+}
+
+interface StatementRowView extends Money {
+  readonly date: LocalDate;
+  readonly merchant: string;
+}
+
 const MONTHS = [
   'Январь',
   'Февраль',
@@ -342,6 +357,40 @@ function itemCount(n: number): string {
   if (ones >= 2 && ones <= 4) return `${n} позиции`;
   return `${n} позиций`;
 }
+
+// `1 покупка`, `2 покупки`, `5 покупок`, `21 покупка`.
+function purchaseCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} покупок`;
+  if (ones === 1) return `${n} покупка`;
+  if (ones >= 2 && ones <= 4) return `${n} покупки`;
+  return `${n} покупок`;
+}
+
+// `01.09.2026` from a local date.
+function numericDate(date: LocalDate): string {
+  return `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;
+}
+
+// Totals per currency, never converted: `1 234.56 RSD, 15.00 USD`.
+function moneyTotals(rows: readonly Money[]): string {
+  const totals = new Map<CurrencyCode, number>();
+  for (const { currency, amountMinor } of rows) {
+    totals.set(currency, (totals.get(currency) ?? 0) + amountMinor);
+  }
+  return [...totals]
+    .map(([currency, amountMinor]) => formatMoney({ amountMinor, currency }))
+    .join(', ');
+}
+
+// `12.09 · 450.00 RSD · KAFE PRIMER`
+function statementRowLine(row: StatementRowView): Html {
+  return html`${row.date.slice(8, 10)}.${row.date.slice(5, 7)} · ${formatMoney(row)} · ${shownDescription(row.merchant)}`;
+}
+
+// How many new rows the preview lists.
+const STATEMENT_ROWS_SHOWN = 10;
 
 // `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
 function expenseCountWords(n: number): string {
@@ -847,6 +896,42 @@ export const messages = {
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
   // A photo where a QR symbol was located but no pass read it (ADR-0034).
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
+
+  // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
+  // the first of them, above [Записать все (N)] and [Отмена].
+  statementPreview: ({ period, ledger, purchaseCount, fresh }: StatementPreviewView): Html => {
+    const title =
+      period === undefined
+        ? html`<b>Выписка</b> → «${ledgerName(ledger)}»`
+        : html`<b>Выписка за ${numericDate(period.from)}–${numericDate(period.to)}</b> → «${ledgerName(ledger)}»`;
+    const lines = [
+      title,
+      html`Найдено ${purchaseCountWords(purchaseCount)}, новых: ${fresh.length}`,
+    ];
+    if (fresh.length > 0) {
+      lines.push(html`На сумму: ${moneyTotals(fresh)}`, html``);
+      lines.push(...fresh.slice(0, STATEMENT_ROWS_SHOWN).map(statementRowLine));
+      if (fresh.length > STATEMENT_ROWS_SHOWN) {
+        lines.push(html`…и ещё ${fresh.length - STATEMENT_ROWS_SHOWN}`);
+      }
+    }
+    return joinHtml(lines, '\n');
+  },
+  statementRecordAllButton: (n: number): string => `Записать все (${n})`,
+  statementRecorded: ({
+    ledger,
+    count,
+    totals,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly count: number;
+    readonly totals: readonly Money[];
+  }): Html =>
+    count === 0
+      ? html`Ничего нового: все покупки из выписки уже записаны.`
+      : html`Записано в «${ledgerName(ledger)}»: ${purchaseCountWords(count)} на ${moneyTotals(totals)}.`,
+  statementRecordedToast: 'Выписка записана',
+  statementCancelled: html`Выписка не записана.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.

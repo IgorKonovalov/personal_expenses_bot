@@ -11,7 +11,9 @@ import {
 import type { LedgerId } from '../db/ledgers.js';
 import type { RuleId } from '../db/recurring.js';
 import type { User } from '../db/users.js';
-import type { LocalDate } from '../domain/time.js';
+import { toCurrencyCode } from '../domain/currencies.js';
+import type { StatementPeriod, StatementPurchase } from '../domain/statements/types.js';
+import { parseLocalDate, type LocalDate } from '../domain/time.js';
 
 // ADR-0009's session row, typed: the user's screen anchor (ADR-0011) and at most one pending
 // text flow. It lives in SQLite, so both survive a restart.
@@ -178,7 +180,38 @@ export type Flow =
   | RecurringAmountFlow
   | ReminderTextFlow;
 
+// A parsed bank statement awaiting [Записать все] (Plan 0027). It shares the pending-flow slot
+// and its TTL, but takes no typed answer: text routes as if nothing were pending.
+export const STATEMENT_FLOW = 'statementImport';
+
+export interface StatementFlow {
+  readonly ledgerId: LedgerId;
+  readonly period: StatementPeriod | undefined;
+  readonly purchases: readonly StatementPurchase[];
+}
+
 type Deps = { readonly db: Db };
+
+// Holds a statement's purchases for the buttons under its preview, replacing any pending flow.
+export function startStatementFlow({ db }: Deps, user: User, flow: StatementFlow, now: Date): void {
+  savePendingFlow(db, user.id, {
+    kind: STATEMENT_FLOW,
+    payload: JSON.stringify(flow),
+    expiresAt: new Date(now.getTime() + FLOW_TTL_MS),
+  });
+}
+
+// The pending statement, unless it expired, was replaced by another flow, or can't be read.
+export function pendingStatementFlow(
+  { db }: Deps,
+  user: User,
+  now: Date,
+): StatementFlow | undefined {
+  const pending = findFlowSession(db, user.id)?.pending ?? null;
+  if (pending === null || pending.kind !== STATEMENT_FLOW) return undefined;
+  if (now.getTime() >= pending.expiresAt.getTime()) return undefined;
+  return parseStatementFlow(pending.payload);
+}
 
 export function currentAnchor({ db }: Deps, user: User): ScreenAnchor | undefined {
   const anchor = findFlowSession(db, user.id)?.anchor ?? null;
@@ -255,7 +288,8 @@ export function routeText(
   if (session === undefined) return { kind: 'free', expiredFlow: false };
   if (session.lastInputKey === input.inputKey) return { kind: 'redelivered' };
   const { pending } = session;
-  if (pending === null) return { kind: 'free', expiredFlow: false };
+  if (pending === null || pending.kind === STATEMENT_FLOW)
+    return { kind: 'free', expiredFlow: false };
   const now = input.now.getTime();
   const expiresAt = pending.expiresAt.getTime();
   if (now < expiresAt) {
@@ -338,6 +372,48 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }
   return undefined;
+}
+
+function parseStatementFlow(payload: string): StatementFlow | undefined {
+  const parsed = parseObject(payload);
+  if (typeof parsed?.ledgerId !== 'string' || !Array.isArray(parsed.purchases)) return undefined;
+  const purchases: StatementPurchase[] = [];
+  for (const raw of parsed.purchases as unknown[]) {
+    const purchase = parseStatementPurchase(raw);
+    if (purchase === undefined) return undefined;
+    purchases.push(purchase);
+  }
+  const period = parsed.period as Record<string, unknown> | undefined;
+  const from = typeof period?.from === 'string' ? parseLocalDate(period.from) : undefined;
+  const to = typeof period?.to === 'string' ? parseLocalDate(period.to) : undefined;
+  return {
+    ledgerId: parsed.ledgerId as LedgerId,
+    period: from === undefined || to === undefined ? undefined : { from, to },
+    purchases,
+  };
+}
+
+function parseStatementPurchase(raw: unknown): StatementPurchase | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const fields = raw as Record<string, unknown>;
+  const date = typeof fields.date === 'string' ? parseLocalDate(fields.date) : undefined;
+  const currency =
+    typeof fields.currency === 'string' ? toCurrencyCode(fields.currency) : undefined;
+  const { amountMinor, merchant, debitRsdMinor, ordinal } = fields;
+  if (
+    date === undefined ||
+    currency === undefined ||
+    !Number.isSafeInteger(amountMinor) ||
+    typeof amountMinor !== 'number' ||
+    typeof merchant !== 'string' ||
+    typeof debitRsdMinor !== 'number' ||
+    !Number.isSafeInteger(debitRsdMinor) ||
+    typeof ordinal !== 'number' ||
+    !Number.isSafeInteger(ordinal)
+  ) {
+    return undefined;
+  }
+  return { date, amountMinor, currency, merchant, debitRsdMinor, ordinal };
 }
 
 function parseObject(json: string): Record<string, unknown> | undefined {

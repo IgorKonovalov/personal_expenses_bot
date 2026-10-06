@@ -1,6 +1,6 @@
 # 0027: Bank statement import: a Serbian bank's export file becomes expenses
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed ledgers in Phase 4)
 > **Related ADRs:** [ADR-0032](../adrs/0032-statement-rows-match-recorded-expenses.md) (matching rows to recorded expenses),
@@ -299,13 +299,29 @@ interface StatementPurchase {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a statement PDF records its card purchases | dev | not started | |
+| 1: Walking skeleton: a statement PDF records its card purchases | dev | done | committed with this row |
 | 2: Already recorded, and sending the file twice | dev | not started | |
 | 3: Paging, limits, errors and categories | dev | not started | |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real statement | human | not started | |
 
 ### Notes
+
+- Phase 1: `pdfjs-dist` resolved to 6.3.289 under the cooldown. It brings the optional
+  `@napi-rs/canvas` 1.0.9 (prebuilt per-platform binaries, no install script) into the lockfile.
+- Phase 1: the statement flow is kept out of the `Flow` union. `flowSessions.ts` stores it under
+  its own kind, and `routeText` treats it as nothing pending, so typed text still records. Because
+  of that, `src/bot/flows.ts`, `src/bot/handlers/receipt.ts` and `src/bot/callbacks.ts` are unchanged.
+- Phase 1: recording already goes through `suggestCategory` with history (planned for Phase 3),
+  and an expired or consumed session's tap already edits the preview to `flowExpired`.
+- Phase 1: the preview names its target ledger. Added `statementCancelled` (after [Отмена]) and
+  `statementRecordedToast`.
+- Phase 1: two existing bot tests sent a PDF as "a non-image file". They now send
+  `application/msword`, since a PDF is downloaded and read as a statement.
+- Phase 1: the synthetic PDF writer is `src/domain/statements/testing/buildPdf.ts`. It writes
+  Helvetica with a `/Differences` encoding for `ć č đ Ć Č Đ`. The boot test resets the module
+  graph and counts loads of `pdfjs-dist` with `vi.doMock`. A positive control in the same test
+  shows the probe counts one load for one PDF read.
 
 ### Close triggers
 

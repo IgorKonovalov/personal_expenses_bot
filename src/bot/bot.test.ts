@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
@@ -21,6 +21,8 @@ import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/cur
 import { parseExpenseText } from '../domain/expenseText.js';
 import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
+import { buildPdf } from '../domain/statements/testing/buildPdf.js';
+import { statementPdf, TWO_PAGE_ROWS } from '../domain/statements/testing/raiffeisenStatement.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
@@ -307,7 +309,7 @@ describe('input that is not an expense text', () => {
   it.each([
     [
       'non-image file',
-      { document: { file_id: 'd', file_unique_id: 'd', mime_type: 'application/pdf' } },
+      { document: { file_id: 'd', file_unique_id: 'd', mime_type: 'application/msword' } },
     ],
     [
       'sticker',
@@ -4665,7 +4667,7 @@ describe('fiscal receipts', () => {
     it('does not download a non-image file and keeps the help reply', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 
-      await sendDocument('report.pdf', 'application/pdf', 1000);
+      await sendDocument('report.docx', 'application/msword', 1000);
 
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
@@ -5965,5 +5967,218 @@ describe('/export (ADR-0026)', () => {
     expect(messages.commands.map((c) => c.command)).toContain('export');
     expect(messages.help).toContain('/export');
     expect(messages.groupHelp).toContain('/export');
+  });
+});
+
+describe('bank statements (Plan 0027)', () => {
+  const SENT = new Date('2026-10-02T09:00:00Z');
+  // The download goes through fetch; it serves the files registered by file id.
+  const realFetch = globalThis.fetch;
+  let files: Map<string, Uint8Array>;
+  let fetched: string[];
+  beforeEach(() => {
+    files = new Map();
+    fetched = [];
+    globalThis.fetch = (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      fetched.push(url);
+      const body = files.get(url.slice(url.lastIndexOf('/') + 1));
+      return Promise.resolve(
+        body === undefined ? new Response('gone', { status: 404 }) : new Response(body),
+      );
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function statementBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+    const harness = createTestBot({ now: SENT, ...options });
+    let updateId = 0;
+    harness.bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'getFile') return prev(method, payload, signal);
+      const { file_id } = payload as { file_id: string };
+      return Promise.resolve({
+        ok: true,
+        result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+      });
+    });
+    const send = (text: string) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, date: SENT }),
+      );
+    const sendPdf = (
+      bytes: Uint8Array,
+      document: { fileName?: string; mimeType?: string; fileSize?: number } = {},
+    ) => {
+      const fileId = `file-${++updateId}`;
+      files.set(fileId, bytes);
+      return harness.bot.handleUpdate({
+        update_id: updateId,
+        message: {
+          message_id: updateId,
+          date: Math.floor(SENT.getTime() / 1000),
+          chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+          from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+          document: {
+            file_id: fileId,
+            file_unique_id: fileId,
+            file_name: document.fileName ?? 'izvod.pdf',
+            mime_type: document.mimeType ?? 'application/pdf',
+            file_size: document.fileSize ?? bytes.length,
+          },
+        },
+      });
+    };
+    const tap = (data: string) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: 500 }));
+    return { ...harness, send, sendPdf, tap };
+  }
+
+  const TWO_PAGE_PDF = statementPdf(TWO_PAGE_ROWS, { rowsPerPage: 6 });
+  const PREVIEW = [
+    '<b>Выписка за 01.09.2026–30.09.2026</b> → «Личные расходы»',
+    'Найдено 6 покупок, новых: 6',
+    'На сумму: 4 134.56 RSD, 15.00 USD, 0.30 EUR',
+    '',
+    '02.09 · 450.00 RSD · PRODAVNICA PRIMER BEOGRAD',
+    '05.09 · 1 234.56 RSD · SUPERMARKET PRIMER NOVI SAD BULEVAR OSLOBOĐENJA 1',
+    '07.09 · 15.00 USD · EXAMPLE.COM AMSTERDAM',
+    '07.09 · 0.30 EUR · EXAMPLE.COM AMSTERDAM',
+    '14.09 · 2 000.00 RSD · APOTEKA PRIMER',
+    '20.09 · 450.00 RSD · KAFE PRIMER',
+  ].join('\n');
+
+  function storedRows(db: Db) {
+    return db
+      .prepare('SELECT amount_minor, currency, occurred_on FROM expenses ORDER BY rowid')
+      .all();
+  }
+
+  it('previews a statement PDF with its card purchases and records nothing yet', async () => {
+    const { sendPdf, calls, db } = statementBot();
+
+    await sendPdf(TWO_PAGE_PDF);
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(calls.filter((call) => call.method !== 'getFile')).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: PREVIEW,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: 'Записать все (6)', callback_data: 'stm:all' },
+                { text: 'Отмена', callback_data: 'stm:x' },
+              ],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('[Записать все] records the 6 card purchases dated by transaction, in their own currency', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    calls.length = 0;
+
+    await tap('stm:all');
+
+    expect(storedRows(db)).toEqual([
+      { amount_minor: 45000, currency: 'RSD', occurred_on: '2026-09-02' },
+      { amount_minor: 123456, currency: 'RSD', occurred_on: '2026-09-05' },
+      { amount_minor: 1500, currency: 'USD', occurred_on: '2026-09-07' },
+      { amount_minor: 30, currency: 'EUR', occurred_on: '2026-09-07' },
+      { amount_minor: 200000, currency: 'RSD', occurred_on: '2026-09-14' },
+      { amount_minor: 45000, currency: 'RSD', occurred_on: '2026-09-20' },
+    ]);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: 'Выписка записана' },
+      },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: ALLOWED_ID,
+          message_id: 500,
+          text: 'Записано в «Личные расходы»: 6 покупок на 4 134.56 RSD, 15.00 USD, 0.30 EUR.',
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('[Отмена] records nothing, and a later [Записать все] answers that time is up', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    calls.length = 0;
+
+    await tap('stm:x');
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+      messages.statementCancelled,
+      messages.flowExpired,
+    ]);
+  });
+
+  it('records a typed expense while a preview is pending, and the buttons still work', async () => {
+    const { sendPdf, send, tap, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+
+    await send('450 кофе');
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 7 });
+  });
+
+  it('answers a PDF that is not this statement with the help reply and records nothing', async () => {
+    const { sendPdf, calls, db } = statementBot();
+
+    await sendPdf(buildPdf([[{ y: 40, cells: [{ x: 20, text: 'Racun za struju' }] }]]));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+      messages.help,
+    ]);
+  });
+
+  it('reads a document named .pdf without the PDF MIME type', async () => {
+    const { sendPdf, calls } = statementBot();
+
+    await sendPdf(TWO_PAGE_PDF, { mimeType: 'application/octet-stream', fileName: 'IZVOD.PDF' });
+
+    expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([PREVIEW]);
+  });
+
+  it('does not load pdfjs-dist with the bot wiring, only for a PDF', async () => {
+    // A fresh module graph, with a probe that counts each load of the PDF engine.
+    vi.resetModules();
+    const loads = { count: 0 };
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', async (importOriginal) => {
+      loads.count++;
+      return importOriginal();
+    });
+    try {
+      const harness = await import('./testHarness.js');
+      const { bot } = harness.createTestBot({ now: SENT });
+
+      await bot.handleUpdate(harness.textUpdate({ updateId: 1, text: '/start' }));
+      await bot.handleUpdate(harness.textUpdate({ updateId: 2, messageId: 2, text: '450 кофе' }));
+
+      expect(loads.count).toBe(0);
+      // The probe counts: reading a PDF loads it once.
+      const { readPdfLines } = await import('../statements/pdf.js');
+      await readPdfLines(TWO_PAGE_PDF);
+      expect(loads.count).toBe(1);
+    } finally {
+      vi.doUnmock('pdfjs-dist/legacy/build/pdf.mjs');
+    }
   });
 });
