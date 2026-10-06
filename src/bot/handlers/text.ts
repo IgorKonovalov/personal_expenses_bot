@@ -23,8 +23,8 @@ import { answerExpiredSecret } from './unlock.js';
 // Text that isn't a command or a menu tap, routed by ADR-0009: a redelivered flow answer is
 // ignored, a pending flow takes the text as its answer, and anything else is an expense attempt.
 // Under the tidy chat switch (ADR-0038), a text that recorded an expense is deleted after its
-// card; a flow answer or a text that recorded nothing stays. Register after command handlers. The taps on the ambiguous amount question it asks are
-// registered with it.
+// card; a flow answer or a text that recorded nothing stays. Register after command handlers.
+// The taps on the ambiguous amount question it asks are registered with it.
 export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
   registerAmbiguous(bot, deps);
 

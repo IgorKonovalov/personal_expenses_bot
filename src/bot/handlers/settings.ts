@@ -65,8 +65,8 @@ import { ensureUser } from './start.js';
 
 // The /settings hub (ADR-0011): the user's timezone and the active ledger's default currency,
 // each changed in place in the anchor, a way into the categories screen, and the tips and tidy
-// chat switches. [Другой…] asks for
-// an IANA name through a text flow (ADR-0009); flows.ts takes the answer.
+// chat switches. [Другой…] asks for an IANA name through a text flow (ADR-0009); flows.ts
+// takes the answer.
 // Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
 // link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
 
