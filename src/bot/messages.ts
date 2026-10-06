@@ -429,6 +429,7 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.14.0': html`Бот остаётся бесплатным для всех, без платных функций. Если хотите поддержать его, /donate принимает Telegram Stars, а пожертвование ничего не открывает. Вернуть пожертвование можно через /paysupport.`,
   '0.13.0': html`Бледный или мятый QR-код на фото чека бот теперь пробует прочитать ещё раз. Если не вышло, подскажет, как переснять.`,
   '0.12.0': html`Личный учёт можно зашифровать в /settings. Траты записываются как обычно, а итоги видны после /unlock с паролем. /lock закрывает учёт.`,
   '0.11.1': html`Исправление. После обновления бота курсы НБС загружаются сначала для последних дней с тратами, поэтому итоги /week и /month пересчитываются в одну валюту сразу, а не через несколько часов.`,

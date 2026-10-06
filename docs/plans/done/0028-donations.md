@@ -1,9 +1,9 @@
 # 0028: Donations: everything free, `/donate` via Telegram Stars and an external link
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned, two minors open, Phase 4 live donation and refund owed, v0.14.0
 > **Created:** 2026-10-01
-> **Related ADRs:** [ADR-0027](../adrs/0027-donations-only-funding.md) (donations only, no paid tier),
-> [ADR-0024](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md) (who is admitted)
+> **Related ADRs:** [ADR-0027](../../adrs/0027-donations-only-funding.md) (donations only, no paid tier),
+> [ADR-0024](../../adrs/0024-admission-lives-in-the-database-via-invite-codes.md) (who is admitted)
 
 ## TL;DR
 
@@ -266,4 +266,83 @@ function parseDonationPayload(payload: string): DonationPreset | undefined; // '
   files, 1052 tests; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0.
 - **Outstanding `human` phases:** Phase 4 (a real donation and refund; blocks merge: no).
 
+## Close review
+
+The round 1 review (tip 88693ed), in full:
+
+> **Verdict:** Every dev phase of Plan 0028 is built as planned and every named done-when has a
+> test with a real assertion; three minors and no blockers or majors, so the plan can close once
+> Phase 4 (human, does not block merge) is scheduled.
+>
+> **Gate (run at the tip):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 75
+> files, 1052 tests; `node scripts/check-doc-links.mjs` exit 0, 256 relative links resolve.
+>
+> **Alignment.** Phases 1-3 map to ecfb196, 7d10a1e and 3e64aad. Phase 4 (human, `Blocks merge:
+> no`) is owed. Every phase carries exactly one in-vocabulary owner tag. The logged deviations
+> (the `ledgerKeys.test.ts` edit, optional `BotOptions` donation fields, the donate line living in
+> `messages.help` itself, `adminTelegramId` on `BotOptions`) are each disclosed and harmless. The
+> assertions read for the done-whens:
+>
+> - `src/domain/donations.test.ts`: `parseDonationPayload('donate:150')` is 150. `donate:149`,
+>   `donate:`, `donate:1e2` and `other:150` (plus `donate:0150` and a trailing space) are undefined.
+> - `src/bot/bot.test.ts` "answers a pre-checkout of ...": the exact `answerPreCheckoutQuery`
+>   payload, ok true for XTR/150/donate:150, ok false with `donateRejected` for XTR/50 and
+>   USD/150. No row is written.
+> - "records, thanks and notifies the admin once when the update is delivered twice": the same
+>   update is handled twice. It asserts one row with `stars: 150` and exactly two sends, one
+>   thank-you and one admin notice. The notice text is asserted in full, with no `Test` name in it.
+> - "records a payment from a user the access middleware would refuse": a STRANGER_ID user with an
+>   identity gets a row.
+> - "answers donateUnavailable when every link creation failed": with `failMethods`, the only send
+>   is `donateUnavailable`, plus three warn lines (level 40).
+> - "gets no reply to /donate in a bound group": `calls` is `[]` after the bind.
+> - Config: `http://example.com` and a scheme-less value throw a message naming `DONATE_URL`, and
+>   `https://ko-fi.com/example` passes.
+> - The four-button keyboard ends in the Ko-fi URL button. Without the URL there are three buttons.
+> - Private `/help` ends with `\nБот бесплатный. Поддержать: /donate`. Group `/help` equals
+>   `groupHelp` and does not contain `/donate`.
+> - `/paysupport верните пожалуйста`: the full admin message is asserted, with both charge ids and
+>   the text, followed by the `paySupportSent` confirmation.
+> - `/refund`: one `refundStarPayment` with `user_id: 1003`, then `refunded_at` is set. A second
+>   `/refund` makes no Telegram call and answers `refundAlreadyRefunded`. On a refused refund,
+>   `refunded_at` stays NULL and the error reaches the admin. A non-admin's `/refund` makes no call
+>   and gets `messages.help`.
+>
+> ADR-0027 is not reversed: there is no perk, gate or paid path.
+>
+> **Layering and correctness.** grammY appears only under `src/bot/`. The domain module is pure,
+> the SQL lives in `src/db/donations.ts`, and the services take injected `now`/`refundStars`. All
+> copy is in `messages.ts`. Stars are a whole count, stored as `stars INTEGER CHECK (stars > 0)`,
+> with no money arithmetic. Idempotency: `ON CONFLICT (telegram_payment_charge_id) DO NOTHING`, and
+> the thank-you and notice go out only on `recorded`. `markDonationRefunded` is guarded by
+> `refunded_at IS NULL`. Privacy: the logs carry the charge id and the stars, and the admin notice
+> carries the internal id and the charge id. User text in the relay is escaped through the `html`
+> tag. The `/paysupport` dates go through `localDateOf` in the admin's zone, and the test pins the
+> 22:10Z to «30 сентября» rollover.
+>
+> **Findings.** No blocker, no major, no nit. Three minors:
+>
+> 1. **minor, open.** The charge id of a payment whose insert throws is never logged
+>    (`src/bot/handlers/donate.ts:96`, `errorBoundary` in `src/bot/bot.ts:152-157`). The Risks
+>    section promises the error boundary logs it, but `errorBoundary` logs only `updateId` and the
+>    error. Fix: wrap `recordDonation` in try/catch, log `{ chargeId, stars }` at error, rethrow,
+>    with a test that makes the insert throw.
+> 2. **minor, open.** A long `/paysupport` request can exceed Telegram's 4096-character limit and
+>    be lost (`src/bot/handlers/paysupport.ts:47`, `messages.adminPaySupport`). Fix: truncate the
+>    text to a fixed budget (about 3000 characters with an ellipsis) and assert a 4000-character
+>    request still sends one admin message of at most 4096 characters.
+> 3. **minor, fixed at close in ed5d167.** README did not document `/paysupport` or the admin's
+>    `/refund`.
+>
+> **Bookkeeping owed at close:** flip the status and move the plan; accept ADR-0027; refresh the
+> plans index; a minor bump with its CHANGELOG and `versionAnnouncements` entries; carry `dev`'s
+> menu followup; Plan 0029 still owes the `PRIVACY.md` line on donation rows outliving
+> `/delete_account`.
+
+No earlier round raised a finding, so no fix round resolved one. Phase 4 (human) stays owed.
+
 ## Followups
+
+- `/paysupport` is absent from the command menu Telegram shows (from `dev`'s log).
+- Minors 1 and 2 above, for a fix plan.
+- Plan 0029's `PRIVACY.md` must say donation rows outlive `/delete_account` (see Risks).

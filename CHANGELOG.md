@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.14.0 (2026-10-06)
+
+From Plan 0028 (donations).
+
+- The bot stays free and says so. /donate in a private chat offers 50, 150 or 500 Telegram Stars,
+  each opening the payment sheet directly, plus an external page when `DONATE_URL` is set. A
+  donation unlocks nothing. The donor gets one thank-you and the admin one notice.
+- The private /help ends with a line pointing to /donate.
+- /paysupport <text> relays a refund request to the admin, and the admin's /refund <charge id>
+  returns the Stars.
+
 ## 0.13.0 (2026-10-05)
 
 From Plan 0031 (receipt photo QR retry passes).
