@@ -7,6 +7,32 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-05 22:07 to 2026-10-06 15:16: Plans 0028, 0029, 0025, 0027, 0013 and 0012
+
+Queue `a` from the last run, plus 0034 queued mid-run. Merged 0028 (v0.14.0), 0029 (v0.16.0),
+0025 (v0.17.0), 0027 (v0.18.0), 0013 (v0.19.0) and 0012 (v0.20.0); 0024 merged by hand
+(v0.15.0). 3 parks, 17 h wall including a machine sleep overnight and a usage-limit wait, $94.38.
+Stopped by `pause` after 0012 so 0034 runs in a live session.
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H1 | 0025 | `plan_wrong` at `ready` (before the run) | Phase 6 copied a sealed template onto new expense ids, which ADR-0020's binding can't open. ADR-0035 and the Phase 6 amendment (`037352b`). |
+| H2 | 0024 | `question` at the fast-forward | F26 came true: 0024 and 0031 both closed v0.13.0. Re-versioned to v0.15.0 in the lane, merged main twice, gated, and fast-forwarded main by hand (`a852c8e`, `ad8abe1`); its worktree and branch removed by hand. Its state record still reads `queued`. |
+| H3 | 0029 | `human_phase` at Phase 6 | The blocking phase needed a deploy, which needs the merge. Split into a blocking prep Phase 6 and an owed Phase 7 (`cd72ab7`, `e747178`); PRIVACY.md contact and the VPS `.env` done, then `resume`. |
+| H4 | 0029 | none (after the merge) | The bot crash-looped about 2 h after a push shipped 0029 while the VPS `.env` still held `ALLOWED_TELEGRAM_IDS`, kept on purpose for pre-0029 deploys. Removed it and recreated the container. |
+| H5 | 0025, 0013 | `stop_condition` / `question` before the last phase | The $15 implement budget ran out a phase short; `resume` gave the last phase a fresh session. Implement budget raised to $50, run budget to $300. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F28 | conductor (dev) | **No command records a hand merge.** After H2 the plan's record stays `queued` forever; `pickNext` skips it only because its file is under `done/`. Add `adopt-merge NNNN`, or let `prune` mark such a plan merged. | open |
+| F29 | architect | **An env rename in a blocking human phase strands the push after the merge** (H4). Either the code accepts the old key with a warning for one release, or the phase that removes it is the push itself. Prefer the former in future plans. | open |
+| F30 | conductor (dev) | **A budget park a phase short is mechanical** (H5): the session committed cleanly and left resume notes. Let it resume itself once, as `deps_install` does. | open |
+| F31 | - | **Plan 0034 is queued but runs in a live session.** `prune` it, or remove it from lane `a`, before the next `run`. | open |
+
 ## 2026-10-02 to 2026-10-03: Plans 0024 to 0030 in lane a
 
 Queue `a: 0024, 0029, 0028, 0025, 0013, 0027, 0030, 0015, 0026` (0012 added after 0024).
@@ -29,7 +55,7 @@ Nothing merged: 4 parks, 33 h wall, $26.30. Lane a then stopped at the worktree 
 | F24 | architect | **A new config key that reaches a handler also touches `src/index.ts`, `src/bot/bot.ts` (`BotOptions`) and `src/bot/testHarness.ts`.** Same gap class as F14/F19 (0028 H3). Add the line to the plan template's Files touched guidance. | open |
 | F25 | architect | **A blocking `human` phase parks a lane slot for days** (0029 H4), and with 0028 parked the cap stopped lane a. Queue a plan with a blocking human phase last, or raise `max_open_worktrees`. | open |
 | F26 | architect | **Two lanes closed the same version** (0024 and 0031 both v0.13.0), because 0031 was closed by hand while 0024 sat parked. Before a hand close, check the parked lanes' claimed versions. | open |
-| F27 | - | Edits after `ready` (`6eca81a`) cleared six plans' readiness records, so each needs `ready` again before `check` passes. | open |
+| F27 | - | Edits after `ready` (`6eca81a`) cleared six plans' readiness records, so each needs `ready` again before `check` passes. | done (re-run 2026-10-05 before this run) |
 
 ## 2026-10-01: Plan 0017 (interactive, not a run)
 
