@@ -271,8 +271,8 @@ const MAX_TAGS_PER_EXPENSE = 5;
 | 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | cdb24c3 |
 | 2: The per-tag report | dev | done | d41c71c |
 | 3: The sticky trip tag | dev | done | 43bdd58 |
-| 4: Editing tags, the card, and groups | dev | done | committed with this row |
-| 5: Sealed ledgers, export, help | dev | not started | |
+| 4: Editing tags, the card, and groups | dev | done | 22559ac |
+| 5: Sealed ledgers, export, help | dev | done | committed with this row |
 | 6: A trip in real use | human | not started | |
 
 ### Notes
@@ -302,6 +302,17 @@ const MAX_TAGS_PER_EXPENSE = 5;
 - Phase 4: in a group, `/tag` from a sender who has recorded nothing there answers
   `groupStickyTagNotMember`. `/tag` with no argument answers the usage, with no current-tag view.
   Group `tag:off` clears the tapper's own sticky tag.
+- Phase 5: files changed outside `Files touched`: `src/services/recordExpense.ts` (tags into the
+  sealed payload), `src/services/ledgerKeys.ts` (`openRow` reads them; `resealed` takes `tags`),
+  `src/services/sealLedger.ts` (sealing a ledger carries existing tags), `src/services/editExpense.ts`
+  (a sealed tag edit reseals), `src/bot/handlers/tags.ts` (`stickyTagOnSealed`) and
+  `src/bot/group/group.test.ts` (the group export's Автор column moves to index 8).
+  `sealExpenseInPlace` also clears `expenses.tags`. `src/services/tagSummary.ts` (listed) is
+  unchanged: it already reads through `openExpenses`.
+- Phase 5: the sealed sticky tag lives in a `WeakMap` keyed by the process's `LedgerKeyring`. The
+  restart done-when is tested in `stickyTag.test.ts` with a new keyring over the same database.
+  The export done-when is tested in `rows.test.ts` (`#отпуск #рим` in Метки), not through
+  `/export`. No test covers `sealExpenseInPlace` clearing `tags`.
 
 ### Close triggers
 

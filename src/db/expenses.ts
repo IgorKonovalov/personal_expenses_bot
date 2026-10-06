@@ -378,7 +378,7 @@ export function sealExpenseInPlace(db: Db, id: ExpenseId, sealed: Buffer): boole
     .prepare<[Buffer, string]>(
       `UPDATE expenses
           SET sealed = ?, amount_minor = NULL, description = NULL, category_id = NULL,
-              description_key = NULL
+              description_key = NULL, tags = NULL
         WHERE id = ? AND sealed IS NULL`,
     )
     .run(sealed, id);

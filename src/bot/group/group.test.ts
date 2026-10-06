@@ -1364,8 +1364,8 @@ describe('/export in a group (Plan 0024)', () => {
     const { chatId, lines } = await csvSentTo(calls);
     expect(chatId).toBe(GROUP_ID);
     const [header, ...rows] = lines;
-    expect(header?.[7]).toBe('Автор');
-    expect(rows.map((row) => [row[2], row[6], row[7]])).toEqual([
+    expect(header?.[8]).toBe('Автор');
+    expect(rows.map((row) => [row[2], row[6], row[8]])).toEqual([
       ['450,00', 'кафе', 'Анна'],
       ['300,00', 'такси', 'Борис'],
     ]);

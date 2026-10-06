@@ -269,6 +269,9 @@ export function storeExpense(
               amountMinor: fields.amountMinor,
               description: fields.description,
               categoryId: category.id,
+              ...(fields.tags === undefined || fields.tags.length === 0
+                ? {}
+                : { tags: fields.tags }),
             },
           ),
         });

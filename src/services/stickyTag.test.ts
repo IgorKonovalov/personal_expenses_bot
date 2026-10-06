@@ -1,10 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import type { TagName } from '../domain/tags.js';
+import { createLogger } from '../logger.js';
+import { createLedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
+import { recordExpense } from './recordExpense.js';
+import { sealPersonalLedger } from './testing/sealLedger.js';
 import {
   clearStickyTag,
   currentStickyTag,
@@ -62,6 +67,36 @@ describe('clearStickyTag', () => {
     clearStickyTag({ db }, alice);
 
     expect(currentStickyTag({ db }, alice)).toMatchObject({ name: undefined });
+  });
+});
+
+describe('in a sealed ledger (ADR-0020)', () => {
+  it('holds the tag in memory only, so a new process records without it', async () => {
+    const keys = createLedgerKeyring(() => NOW);
+    const deps = {
+      db,
+      keys,
+      logger: createLogger('silent'),
+      newId: () => randomUUID(),
+      defaultTimezone: 'Europe/Belgrade',
+    };
+    await sealPersonalLedger(deps, alice, NOW);
+
+    expect(setStickyTag(deps, alice, 'отпуск')).toMatchObject({ kind: 'set', sealed: true });
+    expect(db.prepare('SELECT sticky_tag FROM ledger_members').pluck().all()).toEqual([null]);
+    const record = (d: typeof deps, key: string) =>
+      recordExpense(d, {
+        user: alice,
+        text: '300 такси',
+        sourceKey: key,
+        occurredAt: NOW,
+        now: NOW,
+      });
+    expect(record(deps, 'tg:1001:1')).toMatchObject({ expense: { tags: ['отпуск'] } });
+
+    // A restarted bot: the same database, a new keyring.
+    const restarted = { ...deps, keys: createLedgerKeyring(() => NOW) };
+    expect(record(restarted, 'tg:1001:2')).toMatchObject({ expense: { tags: [] } });
   });
 });
 

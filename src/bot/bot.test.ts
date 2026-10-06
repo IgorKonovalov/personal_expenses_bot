@@ -5613,7 +5613,8 @@ async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]>
   );
 }
 
-const EXPENSE_HEADER = 'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Магазин;Чек;ID';
+const EXPENSE_HEADER =
+  'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Метки;Магазин;Чек;ID';
 
 // The deflated bytes of a zip entry, found by its local header's name.
 function zipEntry(zip: Buffer, name: string): Buffer {
@@ -5716,9 +5717,9 @@ describe('/export (ADR-0026)', () => {
     // A personal ledger: no Автор column. No EUR rate is stored, so its converted cell is empty.
     expect(lines[0]).toBe(EXPENSE_HEADER);
     expect(lines.slice(1)).toEqual([
-      `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;;${idOf(db, 'кофе')}`,
       expect.stringMatching(
-        new RegExp(`^2026-09-29;23:50;12,50;EUR;;[^;]*;такси;;;${idOf(db, 'такси')}$`),
+        new RegExp(`^2026-09-29;23:50;12,50;EUR;;[^;]*;такси;;;;${idOf(db, 'такси')}$`),
       ),
     ]);
     const edits = calls.filter((call) => call.method === 'editMessageText');
@@ -5759,7 +5760,7 @@ describe('/export (ADR-0026)', () => {
       const [csv] = await sentDocuments(calls);
       expect(csvLines(csv?.bytes ?? Buffer.alloc(0))).toEqual([
         EXPENSE_HEADER,
-        `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+        `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;;${idOf(db, 'кофе')}`,
       ]);
     }
   });
@@ -5877,7 +5878,7 @@ describe('/export (ADR-0026)', () => {
     const receiptRow = csvLines(expenses?.bytes ?? Buffer.alloc(0)).find((line) =>
       line.endsWith(expenseId),
     );
-    expect(receiptRow?.split(';').slice(7)).toEqual([
+    expect(receiptRow?.split(';').slice(8)).toEqual([
       'Test Market',
       'https://suf.example/v/?vl=synthetic',
       expenseId,
@@ -7277,6 +7278,34 @@ describe('tags (Plan 0012)', () => {
 
     await say('/tags', 3);
     expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#ремонт — 450.00 RSD');
+  });
+
+  it('seals #лечение in a sealed ledger, answers locked, and lists it after /unlock', async () => {
+    const { say, calls, db, keys } = tagBot();
+    await say('/start', 1);
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db, logger: silentLogger(), keys };
+    const now = new Date('2026-09-29T22:10:00Z');
+    const ledger = await sealPersonalLedger(keyDeps, user, now);
+
+    await say('450 кофе #лечение', 2);
+
+    const rows = db.prepare('SELECT * FROM expenses').all() as Record<string, unknown>[];
+    expect(rows.map((row) => row.tags)).toEqual([null]);
+    const needle = Buffer.from('лечение', 'utf8');
+    for (const value of Object.values(rows[0] ?? {})) {
+      if (Buffer.isBuffer(value)) expect(value.includes(needle)).toBe(false);
+      else expect(String(value)).not.toContain('лечение');
+    }
+
+    keys.lock(ledger.id);
+    await say('/tags', 3);
+    expect(lastText(calls)).toBe(messages.ledgerLocked);
+
+    await unlockPersonalLedger(keyDeps, user, now);
+    await say('/tags', 4);
+    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#лечение — 450.00 RSD');
   });
 
   it('keeps a 32-letter Cyrillic tag button at 14 bytes', () => {

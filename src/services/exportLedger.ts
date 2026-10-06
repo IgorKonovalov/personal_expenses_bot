@@ -131,6 +131,7 @@ function exportOf(
       converted: convertedOf(expense),
       category: expense.category?.name ?? null,
       description: expense.description,
+      tags: expense.tags,
       author: names.get(expense.createdBy) ?? null,
       shop,
       receiptUrl: receipt?.verifyUrl ?? null,

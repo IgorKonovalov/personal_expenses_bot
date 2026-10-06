@@ -217,7 +217,14 @@ export function answerEditFlow(
         const tags = parseTagsAnswer(text);
         if (tags === undefined) return refuse({ reason: 'noTags' });
         if (tags.length > MAX_TAGS_PER_EXPENSE) return refuse({ reason: 'tooManyTags' });
-        changed = setExpenseTags(db, expense.id, tags, now);
+        changed = isSealed(stored)
+          ? tags.join(' ') !== expense.tags.join(' ') &&
+            resealExpense(db, stored.id, {
+              sealed: resealed(deps, stored, { tags }),
+              currency: stored.currency,
+              updatedAt: now,
+            })
+          : setExpenseTags(db, expense.id, tags, now);
         edited = { ...expense, tags };
         break;
       }

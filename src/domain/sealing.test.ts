@@ -181,6 +181,21 @@ describe('payload', () => {
   });
 });
 
+describe('payload tags (ADR-0029)', () => {
+  const base = { v: 1, amountMinor: 45000, description: 'кофе', categoryId: 2 } as const;
+
+  it('round-trips the tags, and reads a payload without them as having none', () => {
+    const tagged = { ...base, tags: ['лечение', 'рим'] };
+    expect(decodePayload(encodePayload(tagged))).toEqual(tagged);
+    expect(decodePayload(encodePayload(base))).toEqual(base);
+  });
+
+  it('throws on tags that are no list of strings', () => {
+    const bad = Buffer.from(JSON.stringify({ ...base, tags: [1] }), 'utf8');
+    expect(() => decodePayload(bad)).toThrow('sealed tags are no list of strings');
+  });
+});
+
 describe('debt payloads', () => {
   const { publicKey, privateKey } = generateLedgerKeypair();
 

@@ -67,6 +67,8 @@ export interface ExportExpense {
   readonly converted: Money | undefined;
   readonly category: string | null;
   readonly description: string;
+  // Normalized names without `#`, first-written order (ADR-0029).
+  readonly tags: readonly string[];
   // The author's display name; null for a member with none. Read only for a shared ledger.
   readonly author: string | null;
   // The receipt's shop and fiscal link; null without a receipt, or before the shop is known.
@@ -95,6 +97,7 @@ export interface ExpenseLabels {
   readonly converted: string;
   readonly category: string;
   readonly description: string;
+  readonly tags: string;
   readonly author: string;
   readonly shop: string;
   readonly receipt: string;
@@ -119,6 +122,7 @@ export function expensesTable(
     labels.converted,
     labels.category,
     labels.description,
+    labels.tags,
     ...(withAuthor ? [labels.author] : []),
     labels.shop,
     labels.receipt,
@@ -135,6 +139,10 @@ export function expensesTable(
       expense.converted === undefined ? EMPTY : amount(expense.converted),
       optionalText(expense.category),
       text(expense.description),
+      // `#отпуск #рим`; empty for none.
+      optionalText(
+        expense.tags.length === 0 ? null : expense.tags.map((tag) => `#${tag}`).join(' '),
+      ),
       ...(withAuthor ? [text(expense.author ?? labels.unnamedAuthor)] : []),
       optionalText(expense.shop),
       optionalText(expense.receiptUrl),

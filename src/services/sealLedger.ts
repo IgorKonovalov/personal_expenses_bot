@@ -67,6 +67,7 @@ export function sealLedgerRows(
       description: row.description,
       categoryId: row.category?.id ?? null,
       ...(receipt === undefined ? {} : { receipt }),
+      ...(row.tags.length === 0 ? {} : { tags: row.tags }),
     };
     if (!sealExpenseInPlace(db, row.id, seal(row.id, payload))) {
       throw new Error(`expense ${row.id} was sealed concurrently`);

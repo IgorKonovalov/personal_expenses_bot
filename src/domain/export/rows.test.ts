@@ -47,6 +47,7 @@ const LABELS: ExpenseLabels = {
   converted: 'Сумма в RSD',
   category: 'Категория',
   description: 'Описание',
+  tags: 'Метки',
   author: 'Автор',
   shop: 'Магазин',
   receipt: 'Чек',
@@ -62,6 +63,7 @@ const COFFEE: ExportExpense = {
   converted: { amountMinor: 45000, currency: 'RSD' },
   category: 'Кафе',
   description: 'кофе',
+  tags: ['отпуск', 'рим'],
   author: 'Анна',
   shop: 'Test Market',
   receiptUrl: 'https://suf.example/v?vl=x',
@@ -75,6 +77,7 @@ const TAXI: ExportExpense = {
   converted: undefined,
   category: null,
   description: 'такси',
+  tags: [],
   author: null,
   shop: null,
   receiptUrl: null,
@@ -92,6 +95,7 @@ describe('expensesTable', () => {
       'Сумма в RSD',
       'Категория',
       'Описание',
+      'Метки',
       'Магазин',
       'Чек',
       'ID',
@@ -105,6 +109,7 @@ describe('expensesTable', () => {
         { kind: 'amount', minor: 45000, currency: 'RSD' },
         { kind: 'text', value: 'Кафе' },
         { kind: 'text', value: 'кофе' },
+        { kind: 'text', value: '#отпуск #рим' },
         { kind: 'text', value: 'Test Market' },
         { kind: 'text', value: 'https://suf.example/v?vl=x' },
         { kind: 'text', value: 'e1' },
@@ -119,16 +124,17 @@ describe('expensesTable', () => {
         { kind: 'text', value: 'такси' },
         { kind: 'empty' },
         { kind: 'empty' },
+        { kind: 'empty' },
         { kind: 'text', value: 'e2' },
       ],
     ]);
   });
 
-  it('adds Автор after Описание for a shared ledger, «участник» for a member with no name', () => {
+  it('adds Автор after Метки for a shared ledger, «участник» for a member with no name', () => {
     const table = expensesTable('Расходы', LABELS, [COFFEE, TAXI], true);
 
-    expect(table.columns.map((c) => c.header).slice(6, 8)).toEqual(['Описание', 'Автор']);
-    expect(table.rows.map((row) => row[7])).toEqual([
+    expect(table.columns.map((c) => c.header).slice(6, 9)).toEqual(['Описание', 'Метки', 'Автор']);
+    expect(table.rows.map((row) => row[8])).toEqual([
       { kind: 'text', value: 'Анна' },
       { kind: 'text', value: 'участник' },
     ]);

@@ -231,6 +231,8 @@ export interface SealedPayloadV1 {
   readonly description: string;
   readonly categoryId: number | null;
   readonly receipt?: SealedReceipt;
+  // The expense's tags (ADR-0029); absent for none, and in a row sealed before tags existed.
+  readonly tags?: readonly string[];
 }
 
 export interface SealedReceipt {
@@ -266,8 +268,16 @@ export function decodePayload(bytes: Uint8Array): SealedPayloadV1 {
     amountMinor: p.amountMinor,
     description: p.description,
     categoryId,
+    ...(p.tags === undefined ? {} : { tags: decodeTagList(p.tags) }),
   };
   return p.receipt === undefined ? base : { ...base, receipt: decodeReceipt(p.receipt) };
+}
+
+function decodeTagList(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((tag) => typeof tag === 'string')) {
+    throw new Error('sealed tags are no list of strings');
+  }
+  return value;
 }
 
 function decodeReceipt(value: unknown): SealedReceipt {

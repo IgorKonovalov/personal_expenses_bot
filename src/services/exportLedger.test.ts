@@ -134,6 +134,7 @@ describe('exportActiveLedger', () => {
       converted: { amountMinor: 45000, currency: 'RSD' },
       category: 'Кафе и рестораны',
       description: 'кофе',
+      tags: [],
       author: null,
       shop: null,
       receiptUrl: null,

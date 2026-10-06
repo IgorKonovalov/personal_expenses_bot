@@ -97,7 +97,11 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
       await replyHtml(ctx, messages.stickyTagUsage);
       return;
     }
-    await replyHtml(ctx, messages.stickyTagOn(result), { reply_markup: offKeyboard });
+    await replyHtml(
+      ctx,
+      result.sealed ? messages.stickyTagOnSealed(result) : messages.stickyTagOn(result),
+      { reply_markup: offKeyboard },
+    );
   });
 
   bot.callbackQuery(STICKY_TAG_OFF, async (ctx) => {

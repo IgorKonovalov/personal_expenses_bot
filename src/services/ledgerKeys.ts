@@ -47,6 +47,7 @@ import {
   type SealedPayloadV1,
   type SealedReceipt,
 } from '../domain/sealing.js';
+import { toTagName } from '../domain/tags.js';
 import type { Logger } from '../logger.js';
 import { completeFlow, startFlow } from './flowSessions.js';
 import {
@@ -590,7 +591,7 @@ export function foldedReceipt(
 export function resealed(
   deps: Pick<KeyDeps, 'db' | 'keys'>,
   row: SealedExpense,
-  change: Partial<Pick<SealedPayloadV1, 'amountMinor' | 'description' | 'categoryId'>>,
+  change: Partial<Pick<SealedPayloadV1, 'amountMinor' | 'description' | 'categoryId' | 'tags'>>,
 ): Buffer {
   const privateKey = deps.keys.privateKey(row.ledgerId);
   const publicKey = sealingKey(deps, row.ledgerId);
@@ -638,6 +639,6 @@ function openRow(
     sourceKey: row.sourceKey,
     deletedAt: row.deletedAt,
     category: categoryOf(payload.categoryId),
-    tags: [],
+    tags: (payload.tags ?? []).flatMap((tag) => toTagName(tag) ?? []),
   };
 }
