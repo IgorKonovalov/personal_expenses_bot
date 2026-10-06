@@ -3,7 +3,7 @@
 > **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the encryption tip),
-> [Plan 0024](done/0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
+> [Plan 0024](done/0024-export-and-data-ownership.md) (`/export`), [Plan 0029](done/0029-opening-by-invite.md)
 > (`/start <code>`, `/privacy`)
 > **Related ADRs:** [ADR-0028](../adrs/0028-contextual-tips-registry.md) (the tips registry),
 > [ADR-0011](../adrs/0011-navigation-model.md) (menu and screens),

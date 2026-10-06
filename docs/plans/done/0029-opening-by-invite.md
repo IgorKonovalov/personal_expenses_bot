@@ -1,10 +1,10 @@
 # 0029: Opening by invite: invite links, abuse limits, a privacy policy and account deletion
 
-> **Status:** approved
+> **Status:** done (2026-10-06): built as planned after one fix pass, one minor fixed at close, Phase 7 deploy and open owed, v0.16.0
 > **Created:** 2026-10-01
-> **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
-> [ADR-0002](../adrs/0002-ledgers-and-identity.md) (identity)
+> **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
+> [ADR-0002](../../adrs/0002-ledgers-and-identity.md) (identity)
 
 ## TL;DR
 
@@ -414,6 +414,117 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
   resolve.
 - **Outstanding `human` phases:** Phase 7 (deploy and open; blocks merge: no).
 
+## Close review
+
+### Plan 0029 review, round 2 (tip 9152406)
+
+**Verdict:** The round-1 major, the rate-limit minor and both nits are fixed, with tests that defend
+them, and the gate is green. One minor is left: the implementation log still names the wrong
+migration and the wrong owed phase. Nothing blocks the close.
+
+#### Gate (run in this session at 9152406)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 87 files, 1168 tests passed. That is round 1's 1166 plus the two new tests.
+- `node scripts/check-doc-links.mjs`: exit 0, 259 relative links resolve.
+- The tree is clean after the run.
+
+#### Scope of this round
+
+There has been no new merge from main since round 1 (4fd8d61). The fix commits 084e6b2, e5f2db9,
+05c8a75 and 9152406 touch only the files listed below. The round-1 grading of the Phase 1-5
+done-whens and their assertions still stands (see `0029-round-1.md`). This round re-reads the fixes.
+
+#### Round-1 findings re-checked
+
+- **Major 1 (donations missing from the policy), fixed in 084e6b2.**
+  - `PRIVACY.md` adds «Пожертвования: сколько звёзд, когда и идентификатор платежа Telegram»
+    under «Что хранится». «Роль Telegram» says that Stars payments go through Telegram.
+    «Удаление» says that donation records stay, because a refund needs them.
+  - `deleteAccountPrompt` (`src/bot/messages.ts:585`) adds the same clause to the «Останутся» line.
+  - Tests:
+    - `src/bot/handlers/deleteAccount.test.ts`: the test records a 50-Star donation before the
+      deletion and asserts that the row `{stars: 50, telegram_payment_charge_id: 'charge-1'}`
+      exists before and after the deletion.
+    - `src/bot/handlers/privacy.test.ts`: the test asserts the «- Пожертвования:» bullet, and
+      that «пожертвованиях» appears inside the «Удаление» section (sliced up to the next `## `)
+      and in the prompt.
+
+  Both tests are real assertions, not tautologies.
+- **Minor 1 (the rate limit drops `successful_payment`), fixed in e5f2db9.**
+  - `src/bot/middleware/rateLimit.ts:68` passes an update that carries a `successful_payment`
+    straight to `next()`, without counting it, as it does for the admin.
+  - `rateLimit.test.ts` sends 30 updates (the limit), then the payment as the 31st, which the
+    limiter would otherwise drop. It asserts exactly one `donations` row.
+- **Nit 1 (misplaced comment), fixed in 05c8a75.** The comment sits above `softDeleteExpense` again
+  (`src/db/expenses.ts:179`).
+- **Nit 2 ("allowlist" wording), fixed in 05c8a75.** `src/services/groupChats.ts:30` and `:68`, and
+  the `group.test.ts:436` title, now say "admitted".
+- **Minor 2 (stale log), not fixed.** The fix pass's note gives as its reason that "the fix pass
+  edits only this Notes list". `dev` owns the whole `## Implementation log`, close triggers
+  included, so that reason does not hold. It is carried below.
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+1. **The implementation log still names `0013_admission.sql` and the wrong owed phase.**
+   - **What:**
+     - Main took `0013` for donations, and the tree's migration is
+       `src/db/migrations/0014_admission.sql`. The log still says `0013_admission.sql` in the
+       Phase 1 note and in "What shipped".
+     - "Outstanding `human` phases" still describes Phase 6 as owed. The phase table marks
+       Phase 6 done and Phase 7 owed.
+     - "Gate at the tip (56b6444)" quotes numbers from before the merge.
+   - **Where:** `docs/plans/0029-opening-by-invite.md:339`, `:401`, `:412`, `:415`.
+   - **Why it matters:** the close session and later readers take the migration name and the owed
+     phase from this log.
+   - **Fix:** the close session can make this change in the plan, since it already edits the file.
+     A separate fix pass is not needed.
+     - Change both mentions to `0014_admission.sql`.
+     - Make the outstanding line read "Phase 7 (deploy and open; blocks merge: no)".
+     - Restate the gate at 9152406: 87 files, 1168 tests, 259 links.
+
+#### nit
+
+None.
+
+#### Bookkeeping owed at close
+
+- Apply minor 1 to the log.
+- Flip Status to `done` and `git mv` the plan to `docs/plans/done/`. Repair inbound and outbound
+  links, then run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0024 (`proposed` to `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Bump the minor version for this feature plan:
+  - `package.json`;
+  - a `CHANGELOG.md` entry;
+  - a `versionAnnouncements` entry in `src/bot/messages.ts`. The household sees `/privacy` and
+    `/delete_account`, and the admin commands are admin-only, so the announcement names only the
+    first two.
+- Phase 7 (human) stays owed. It does not block the merge.
+- Carry these followups:
+  - hand a group ledger to a new owner (already in `## Followups`);
+  - answer a stranger's callback queries other than [Удалить всё] with `answerCallbackQuery`.
+
+### Resolved findings from earlier rounds
+
+- Round 1, major 1 (donation records missing from `PRIVACY.md` and the deletion prompt): fixed in 084e6b2.
+- Round 1, minor 1 (the rate limit drops a `successful_payment`): fixed in e5f2db9.
+- Round 1, nit 1 (misplaced `softDeleteExpense` comment): fixed in 05c8a75.
+- Round 1, nit 2 ("allowlist" wording in `groupChats.ts` and a `group.test.ts` title): fixed in 05c8a75.
+- Round 1, minor 2 / round 2, minor 1 (stale migration name, gate and owed phase in the log): fixed at close in e720435.
+
+Phase 7 (deploy and open, human) stays owed; it does not block the merge.
+
 ## Followups
 
 - Hand a group ledger to another admitted member when its owner deletes their account.
+- Answer a stranger's callback queries other than [Удалить всё] with `answerCallbackQuery`.
