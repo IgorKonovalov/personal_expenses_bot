@@ -386,6 +386,15 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 - Followups noticed, not acted on: `src/services/groupChats.ts` comments still say "allowlisted
   user" / "the allowlist" (lines 30 and 68); a stranger's callback query other than
   [Удалить всё] is dropped without an `answerCallbackQuery`.
+- Review round 1, major 1 (donation rows missing from the policy): `PRIVACY.md` and
+  `deleteAccountPrompt` name donation records and that they outlive `/delete_account`; tests in
+  `deleteAccount.test.ts` and `privacy.test.ts`. Commit 084e6b2.
+- Review round 1, minor 1 (rate limit drops `successful_payment`): exempted in `rateLimit`, with
+  a flood-then-pay test. Commit e5f2db9.
+- Review round 1, nits 1 and 2 (misplaced `softDeleteExpense` comment, "allowlist" wording in
+  `groupChats.ts` and a `group.test.ts` title): commit 05c8a75.
+- Review round 1, minor 2 (stale `0013_admission.sql` and outstanding-phase lines in this log):
+  not changed; the fix pass edits only this Notes list.
 
 ### Close triggers
 
