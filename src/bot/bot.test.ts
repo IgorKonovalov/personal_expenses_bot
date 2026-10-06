@@ -96,7 +96,7 @@ import {
   invoiceLink,
   logContent,
   myChatMemberUpdate,
-  onboardOnCreate,
+  quietFirstContact,
   preCheckoutUpdate,
   successfulPaymentUpdate,
   textUpdate,
@@ -2454,7 +2454,7 @@ describe('/budget and the card line (ADR-0017)', () => {
     const clock = { now: OCT_1 };
     const db = openDatabase(':memory:');
     runMigrations(db, OCT_1);
-    onboardOnCreate(db);
+    quietFirstContact(db);
     let ids = 0;
     let messageId = 100;
     const bot = createBot({
@@ -2986,7 +2986,7 @@ describe('/week and /month', () => {
   async function summaryBot(opts: { fixture?: boolean } = {}) {
     const db = openDatabase(':memory:');
     runMigrations(db, NOW);
-    onboardOnCreate(db);
+    quietFirstContact(db);
     let ids = 0;
     // The /start welcome and setup check take 99 and 100, so the first screen after them is 101.
     let messageId = 98;
@@ -3472,7 +3472,7 @@ describe('/categories screen and text flows', () => {
       (() => {
         const memory = openDatabase(':memory:');
         runMigrations(memory, T);
-        onboardOnCreate(memory);
+        quietFirstContact(memory);
         return memory;
       })();
     let messageId = opts.firstMessageId ?? 100;
@@ -3920,7 +3920,7 @@ describe('/settings hub and the timezone picker', () => {
     const clock = { now: LATE };
     const db = openDatabase(':memory:');
     runMigrations(db, LATE);
-    onboardOnCreate(db);
+    quietFirstContact(db);
     const logLines: string[] = [];
     let ids = 0;
     let messageId = 100;
@@ -3969,6 +3969,8 @@ describe('/settings hub and the timezone picker', () => {
       ],
       [{ text: 'Категории', callback_data: 'set:cat' }],
       [{ text: 'Шифрование', callback_data: 'set:enc' }],
+      // Tips are off for a test user that isn't about them.
+      [{ text: 'Подсказки: выкл', callback_data: 'set:tips' }],
     ],
   };
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
@@ -5224,7 +5226,7 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     const now = new Date('2026-09-30T10:00:00Z');
     const db = openDatabase(':memory:');
     runMigrations(db, now);
-    onboardOnCreate(db);
+    quietFirstContact(db);
     const logLines: string[] = [];
     let ids = 0;
     let messageId = 100;
@@ -7092,7 +7094,7 @@ describe('bank statements (Plan 0027)', () => {
       try {
         const db = openDatabase(join(dataDir, 'bot.db'));
         runMigrations(db, SENT);
-        onboardOnCreate(db);
+        quietFirstContact(db);
         let n = 0;
         const bot = createBot({
           db,
@@ -8006,8 +8008,12 @@ describe('onboarding (Plan 0015)', () => {
     currency: 'RSD',
   });
 
-  function onboardingBot(opts: { onboarding?: boolean } = {}) {
-    const harness = createTestBot({ now: NOW, onboarding: opts.onboarding ?? true });
+  function onboardingBot(opts: { onboarding?: boolean; tips?: boolean } = {}) {
+    const harness = createTestBot({
+      now: NOW,
+      onboarding: opts.onboarding ?? true,
+      tips: opts.tips ?? true,
+    });
     const lastMessageId = withMessageIds(harness.bot);
     let updateId = 0;
     const send = (text: string, fromId = ALLOWED_ID) =>
@@ -8184,8 +8190,9 @@ describe('onboarding (Plan 0015)', () => {
       expect(onboardedAt()).toBe(NOW.toISOString());
     });
 
+    // With tips on, the second message would also bring the first tip (Phase 3).
     it('answers the second message with its confirmation only', async () => {
-      const { send, calls } = onboardingBot();
+      const { send, calls } = onboardingBot({ tips: false });
       await send('450 кофе');
       calls.length = 0;
 
@@ -8197,7 +8204,7 @@ describe('onboarding (Plan 0015)', () => {
     });
 
     it('records one expense and sends the pair once for a redelivered first update', async () => {
-      const { bot, calls, db } = onboardingBot();
+      const { bot, calls, db } = onboardingBot({ tips: false });
       const update = textUpdate({ updateId: 1, text: '450 кофе', messageId: 1, date: NOW });
 
       await bot.handleUpdate(update);
@@ -8246,6 +8253,120 @@ describe('onboarding (Plan 0015)', () => {
       expect(
         db.prepare('SELECT COUNT(*) FROM users WHERE onboarded_at IS NOT NULL').pluck().get(),
       ).toBe(0);
+    });
+  });
+
+  describe('tips (ADR-0028)', () => {
+    const tipsOffKeyboard = {
+      inline_keyboard: [[{ text: 'Отключить подсказки', callback_data: 'tip:off' }]],
+    };
+    const FIRST_EXPENSE_TIP =
+      '💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить].';
+
+    it('sends the first-expense tip after the card, as its own message with the off button', async () => {
+      const { send, calls } = onboardingBot({ onboarding: false });
+
+      await send('450 кофе');
+
+      expect(sentTexts(calls)).toEqual([
+        'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны',
+        FIRST_EXPENSE_TIP,
+      ]);
+      expect(calls[1]?.payload).toMatchObject({ reply_markup: tipsOffKeyboard });
+    });
+
+    it('sends the past-date tip after the /today screen', async () => {
+      const { send, calls } = onboardingBot({ onboarding: false });
+
+      await send('/today');
+
+      expect(sentTexts(calls).at(-1)).toBe(
+        '💡 Забыли записать вчера? Добавьте дату последним словом: «450 такси вчера» или «450 такси 25.09».',
+      );
+    });
+
+    it('sends one tip at most for a redelivered 450 кофе', async () => {
+      const { bot, calls } = onboardingBot({ onboarding: false });
+      const update = textUpdate({ updateId: 1, text: '450 кофе', messageId: 1, date: NOW });
+
+      await bot.handleUpdate(update);
+      await bot.handleUpdate(update);
+
+      expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([
+        FIRST_EXPENSE_TIP,
+      ]);
+    });
+
+    it('[Отключить подсказки] switches tips off, says how to switch back, and drops its button', async () => {
+      const { send, tap, calls, db, userId } = onboardingBot({ onboarding: false });
+      await send('450 кофе');
+      calls.length = 0;
+
+      await tap('tip:off', 7);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: {
+            callback_query_id: 'cb-2',
+            text: 'Подсказки отключены. Включить: /settings',
+          },
+        },
+        {
+          method: 'editMessageReplyMarkup',
+          payload: { chat_id: ALLOWED_ID, message_id: 7, reply_markup: { inline_keyboard: [] } },
+        },
+      ]);
+      expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(userId())).toBe(1);
+    });
+
+    it('sends no tip on any trigger with tips off; [Подсказки: выкл] in the hub turns them back on', async () => {
+      const { send, tap, calls, db, userId, lastMessageId } = onboardingBot({ onboarding: false });
+      await send('/help');
+      db.prepare('UPDATE users SET tips_off = 1 WHERE id = ?').run(userId());
+      calls.length = 0;
+
+      await send('450 кофе');
+      await send('/today');
+      await send('/settings');
+
+      expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([]);
+      const hub = calls.at(-1)?.payload as { reply_markup: { inline_keyboard: unknown[][] } };
+      expect(hub.reply_markup.inline_keyboard.at(-1)).toEqual([
+        { text: 'Подсказки: выкл', callback_data: 'set:tips' },
+      ]);
+      calls.length = 0;
+
+      await tap('set:tips', lastMessageId());
+
+      expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(userId())).toBe(0);
+      const edit = calls.find((c) => c.method === 'editMessageText')?.payload as {
+        reply_markup: { inline_keyboard: unknown[][] };
+      };
+      expect(edit.reply_markup.inline_keyboard.at(-1)).toEqual([
+        { text: 'Подсказки: вкл', callback_data: 'set:tips' },
+      ]);
+    });
+
+    it('sends no tip for an expense recorded in a group', async () => {
+      const { bot, calls, db } = onboardingBot({ onboarding: false });
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 1,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 2, text: '450 xyzzy', messageId: 3, date: NOW }),
+      );
+
+      expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+      expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([]);
+      expect(db.prepare('SELECT COUNT(*) FROM user_tips').pluck().get()).toBe(0);
     });
   });
 

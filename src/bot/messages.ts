@@ -4,6 +4,7 @@ import type { ExportRange } from '../domain/export/rows.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { Schedule } from '../domain/schedule.js';
 import type { LocalDate } from '../domain/time.js';
+import type { TipKey } from '../domain/tips.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { compareVersions } from '../domain/version.js';
 import { html, joinHtml, type Html } from './render/html.js';
@@ -146,6 +147,12 @@ interface CategoriesScreenView {
   readonly categories: readonly { readonly name: string }[];
   // A line about what just changed, above the list.
   readonly header?: Html | undefined;
+}
+
+// What a tip's copy may name.
+interface TipCopyView {
+  readonly ledgerCurrency: CurrencyCode;
+  readonly expenseCurrency?: CurrencyCode;
 }
 
 interface SettingsScreenView {
@@ -810,6 +817,21 @@ export const messages = {
       '\n',
     ),
   setupAfterExpense,
+  // Contextual tips (ADR-0028), one per registry key in src/domain/tips.ts. Currency codes only.
+  tips: {
+    tipFirstExpense: () =>
+      html`💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить].`,
+    tipOther: () =>
+      html`💡 Категорию не узнал и записал в «Другое». Выберите её кнопкой [Категория], и для такого же описания я дальше буду выбирать её сам.`,
+    tipForeign: ({ ledgerCurrency, expenseCurrency }) =>
+      html`💡 Траты в ${expenseCurrency ?? ledgerCurrency} я пересчитываю в ${ledgerCurrency} по курсу НБС на день траты, поэтому в итогах всё в одной валюте.`,
+    tipPastDate: () =>
+      html`💡 Забыли записать вчера? Добавьте дату последним словом: «450 такси вчера» или «450 такси 25.09».`,
+  } satisfies Record<TipKey, (view: TipCopyView) => Html>,
+  tipsOffButton: 'Отключить подсказки',
+  tipsOff: 'Подсказки отключены. Включить: /settings',
+  tipsToggleOn: 'Подсказки: вкл',
+  tipsToggleOff: 'Подсказки: выкл',
   setupOkButton: 'Да, всё верно',
   setupEditButton: 'Изменить',
   setupConfirmed: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>

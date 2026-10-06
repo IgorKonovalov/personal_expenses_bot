@@ -42,10 +42,9 @@ export interface TestBotOptions {
   readonly failMethods?: readonly string[];
   // DONATE_URL.
   readonly donateUrl?: string;
-  // True: a new user gets the first-contact welcome and setup check (ADR-0028). False, the
-  // default: every user is onboarded the moment it is created, so a test's first message gets
-  // only its own reply.
+  // First contact and tips (ADR-0028), both off unless a test is about them.
   readonly onboarding?: boolean;
+  readonly tips?: boolean;
 }
 
 // The admin, as in production: the first allowed id (ADR-0013).
@@ -55,7 +54,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   const now = options.now ?? new Date('2026-09-29T22:10:00Z');
   const db: Db = openDatabase(':memory:');
   runMigrations(db, now);
-  if (options.onboarding !== true) onboardOnCreate(db);
+  quietFirstContact(db, options);
   const logLines: string[] = [];
   let n = 0;
   const keys = createLedgerKeyring(() => now);
@@ -106,13 +105,28 @@ export function createTestBot(options: TestBotOptions = {}) {
   return { bot, db, calls, logLines, keys, prepareDonations };
 }
 
-// Marks every user onboarded the moment it is created, so a test's first message gets only its
-// own reply, without the first-contact welcome and setup check (ADR-0028). For a bot a test builds
-// with createBot itself.
-export function onboardOnCreate(db: Db): void {
-  db.exec(`CREATE TEMP TRIGGER test_onboarded AFTER INSERT ON users BEGIN
-             UPDATE users SET onboarded_at = NEW.created_at WHERE id = NEW.id;
-           END`);
+// Keeps first contact and tips (ADR-0028) out of the replies of a test that isn't about them.
+// Unless `onboarding`, every user is onboarded the moment it is created, so its first message gets
+// only its own reply. Unless `tips`, every user's tips are off and stay off, the /start replay
+// included. Also for a bot a test builds with createBot itself.
+export function quietFirstContact(
+  db: Db,
+  { onboarding = false, tips = false }: { onboarding?: boolean; tips?: boolean } = {},
+): void {
+  if (!onboarding) {
+    db.exec(`CREATE TEMP TRIGGER test_onboarded AFTER INSERT ON users BEGIN
+               UPDATE users SET onboarded_at = NEW.created_at WHERE id = NEW.id;
+             END`);
+  }
+  if (!tips) {
+    db.exec(`CREATE TEMP TRIGGER test_tips_off AFTER INSERT ON users BEGIN
+               UPDATE users SET tips_off = 1 WHERE id = NEW.id;
+             END;
+             CREATE TEMP TRIGGER test_tips_stay_off AFTER UPDATE OF tips_off ON users
+               WHEN NEW.tips_off = 0 BEGIN
+               UPDATE users SET tips_off = 1 WHERE id = NEW.id;
+             END`);
+  }
 }
 
 // Gives every sendMessage a result with a fresh message id, so a screen can become the anchor.

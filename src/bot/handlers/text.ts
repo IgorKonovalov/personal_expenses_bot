@@ -10,6 +10,7 @@ import type { HandlerDeps } from '../bot.js';
 import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
 import { joinHtml, replyHtml } from '../render/html.js';
+import { offerTip } from '../tips.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
 import { cardFor, cardView } from './card.js';
 import { offerSplit } from './debts.js';
@@ -79,6 +80,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
         const { split } = result;
         if (split === undefined) {
           await replyHtml(ctx, card.text, { reply_markup: card.markup });
+          await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
           return;
         }
         // A `/N` split: the card says what the share is of, then the picker asks who owes the
@@ -98,6 +100,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
             sourceKey,
           });
         }
+        await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
         return;
       }
       case 'splitInGroup':
@@ -186,4 +189,5 @@ async function answerBankSms(
   await replyHtml(ctx, result.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
     reply_markup: card.markup,
   });
+  await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
 }

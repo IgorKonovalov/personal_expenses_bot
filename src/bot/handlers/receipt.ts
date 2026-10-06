@@ -16,6 +16,7 @@ import { messages } from '../messages.js';
 import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { kickReceiptWorker } from '../receiptWorker.js';
 import { editHtml, replyHtml } from '../render/html.js';
+import { offerTip } from '../tips.js';
 import { cardFor, cardView, expenseIdOf } from './card.js';
 import { ensureUser } from './start.js';
 
@@ -78,6 +79,7 @@ export async function answerReceipt(
       messageId: sent.message_id,
     });
   }
+  await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
   return result.duplicate ? 'duplicate' : 'recorded';
 }
 

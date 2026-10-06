@@ -16,6 +16,7 @@ import {
   startPassphraseChange,
 } from '../../services/ledgerKeys.js';
 import { activeLedgerCategories } from '../../services/manageCategories.js';
+import { switchTips, tipsOn } from '../../services/tips.js';
 import {
   screenSettings,
   setLedgerCurrency,
@@ -34,6 +35,7 @@ import {
   SETTINGS_ENCRYPTION,
   SETTINGS_OPEN,
   SETTINGS_PASSPHRASE,
+  SETTINGS_TIPS,
   TIMEZONE_OTHER,
   TIMEZONE_PAGE,
   TIMEZONE_PICKER,
@@ -53,12 +55,13 @@ import {
   type ScreenTap,
   type ScreenView,
 } from '../screens.js';
+import { registerTipsOff } from '../tips.js';
 import { budgetView } from './budget.js';
 import { categoriesView } from './categories.js';
 import { ensureUser } from './start.js';
 
 // The /settings hub (ADR-0011): the user's timezone and the active ledger's default currency,
-// each changed in place in the anchor, and a way into the categories screen. [Другой…] asks for
+// each changed in place in the anchor, a way into the categories screen, and the tips switch. [Другой…] asks for
 // an IANA name through a text flow (ADR-0009); flows.ts takes the answer.
 // Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
 // link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
@@ -82,6 +85,12 @@ export function settingsView(
           pickers,
           [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
           [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
+          [
+            InlineKeyboard.text(
+              tipsOn(deps, user) ? messages.tipsToggleOn : messages.tipsToggleOff,
+              SETTINGS_TIPS,
+            ),
+          ],
         ]),
       }
     : {
@@ -300,6 +309,21 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     startEnableFlow(deps, tap.user, deps.now());
     await renderAnchor(ctx, tap.anchor, encryptionPromptView());
   });
+
+  // The personal hub's [Подсказки: вкл/выкл] (ADR-0028): flips the switch and re-renders.
+  bot.callbackQuery(SETTINGS_TIPS, async (ctx) => {
+    const tap = await settingsTap(ctx, deps);
+    if (tap === undefined) return;
+    if (tap.ledgerId !== undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    switchTips(deps, tap.user, !tipsOn(deps, tap.user));
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
+  });
+  // [Отключить подсказки] under a tip.
+  registerTipsOff(bot, deps);
 
   // [Сменить пароль] on the unlocked ledger's encryption screen.
   bot.callbackQuery(SETTINGS_PASSPHRASE, async (ctx) => {

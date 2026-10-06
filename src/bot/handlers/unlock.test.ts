@@ -21,7 +21,7 @@ import {
   ALLOWED_ID,
   callbackUpdate,
   createTestBot,
-  onboardOnCreate,
+  quietFirstContact,
   textUpdate,
   type ApiCall,
 } from '../testHarness.js';
@@ -35,7 +35,7 @@ function sealedBot() {
   const clock = { now: NOW };
   const db = openDatabase(':memory:');
   runMigrations(db, NOW);
-  onboardOnCreate(db);
+  quietFirstContact(db);
   const logLines: string[] = [];
   let ids = 0;
   let messageId = 100;

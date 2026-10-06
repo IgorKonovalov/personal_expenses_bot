@@ -1,16 +1,18 @@
+import type { TipKey } from '../domain/tips.js';
 import type { Db } from './connection.js';
 import type { UserId } from './users.js';
 
 // The contextual tips a user has been sent (ADR-0028), keyed by user and registry key.
 
 export interface TipShown {
+  // A registry key; a row may name a tip the registry has since dropped.
   readonly tip: string;
   readonly shownAt: Date;
 }
 
 // Records the tip as shown. True when this call inserted the row, so of two concurrent offers of
 // the same tip only one sends it.
-export function insertTipShown(db: Db, userId: UserId, tip: string, at: Date): boolean {
+export function insertTipShown(db: Db, userId: UserId, tip: TipKey, at: Date): boolean {
   return (
     db
       .prepare<[string, string, string]>(

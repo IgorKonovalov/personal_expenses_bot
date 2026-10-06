@@ -321,8 +321,8 @@ first, Phase 1 adds that delete to its deletion service.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | 8bc02c1 |
-| 2: A first message that isn't `/start` | dev | done | committed with this row |
-| 3: The tips registry and the recording tips | dev | not started | |
+| 2: A first message that isn't `/start` | dev | done | 52228f2 |
+| 3: The tips registry and the recording tips | dev | done | committed with this row |
 | 4: The feature tips and the group welcome | dev | not started | |
 | 5: A stranger's first contact | human | not started | |
 
@@ -340,6 +340,16 @@ first, Phase 1 adds that delete to its deletion service.
   `bot.test.ts` and `src/bot/handlers/unlock.test.ts` build with `createBot`.
 - Phase 2: "the user has at least one expense" reads as a live expense the user created in the
   active ledger.
+- Phase 3: with tips on, a new user's second message (`300 такси`) also brings `tipFirstExpense`,
+  because the user is onboarded by then. Phase 2's "only the confirmation" and the redelivery test
+  run with tips off.
+- Phase 3: `src/bot/testHarness.ts` (outside `Files touched`): `onboardOnCreate` became
+  `quietFirstContact(db, { onboarding, tips })`. Tips are off for test users unless a test asks,
+  with a temp trigger that keeps them off through the /start replay.
+- Phase 3: `tip:off` is registered from `registerSettings` via `registerTipsOff` in
+  `src/bot/tips.ts`, because `src/bot/bot.ts` isn't in this phase's list. Its keyboard removal
+  treats "message is not modified" as success locally. The tip ledger is the expense's ledger
+  for `expenseRecorded`, otherwise the active ledger.
 
 ### Close triggers
 

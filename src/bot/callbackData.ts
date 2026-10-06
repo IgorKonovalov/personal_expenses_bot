@@ -152,6 +152,10 @@ export function setCategoryEssentialData(categoryId: CategoryId, essential: bool
 export const ONBOARDING_OK = 'onb:ok';
 export const ONBOARDING_EDIT = 'onb:edit';
 
+// [Отключить подсказки] under a tip (ADR-0028): switches tips off, a set-to-value, so a second
+// tap changes nothing more.
+export const TIPS_OFF = 'tip:off';
+
 // The /settings hub (ADR-0011). `set:open` shows the hub in the anchor, from any of its pickers
 // and from the categories or budget screen it opened.
 export const SETTINGS_OPEN = 'set:open';
@@ -164,6 +168,8 @@ export const SETTINGS_ENCRYPTION = 'set:enc';
 export const SETTINGS_PASSPHRASE = 'set:encpw';
 // [Сохранил] under the recovery code message deletes that message.
 export const RECOVERY_SAVED = 'enc:saved';
+// The personal hub's [Подсказки: вкл/выкл] (ADR-0028): flips the tips switch and re-renders.
+export const SETTINGS_TIPS = 'set:tips';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
 export const CURRENCY_PICKER = 'set:cur';
 export const SET_CURRENCY = /^set:cur:([A-Z]{3})$/;
