@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.22.0 (2026-10-06)
+
+From Plan 0015 (onboarding).
+
+- A new user's first `/start`, or first message of any kind, brings a welcome and a setup check:
+  the timezone with the local time and the default currency, with [Да, всё верно] and [Изменить].
+  A bare `/start` replays both later.
+- Short tips appear when a feature becomes relevant, at most one a day and each once.
+  [Отключить подсказки] under a tip switches them off, and `/settings` switches them back on.
+- The group welcome points to /month and /settings.
+
 ## 0.21.0 (2026-10-06)
 
 From Plan 0034 (pre-invite polish).

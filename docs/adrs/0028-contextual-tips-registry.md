@@ -1,8 +1,8 @@
 # ADR-0028: Contextual tips are a registry of conditions, shown as one capped message, seen when sent
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0015 ([0015-onboarding.md](../plans/0015-onboarding.md))
+> **Related plan(s):** Plan 0015 ([0015-onboarding.md](../plans/done/0015-onboarding.md))
 
 ## Context
 

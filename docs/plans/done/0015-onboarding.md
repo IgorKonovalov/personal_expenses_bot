@@ -1,14 +1,14 @@
 # 0015: Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned after one fix pass, two followups open, Phase 5 stranger first contact owed
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the encryption tip),
-> [Plan 0024](done/0024-export-and-data-ownership.md) (`/export`), [Plan 0029](done/0029-opening-by-invite.md)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the encryption tip),
+> [Plan 0024](0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
 > (`/start <code>`, `/privacy`)
-> **Related ADRs:** [ADR-0028](../adrs/0028-contextual-tips-registry.md) (the tips registry),
-> [ADR-0011](../adrs/0011-navigation-model.md) (menu and screens),
-> [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (flows),
-> [ADR-0037](../adrs/0037-first-time-notices-and-transient-replies.md) (`user_notices`, kept apart
+> **Related ADRs:** [ADR-0028](../../adrs/0028-contextual-tips-registry.md) (the tips registry),
+> [ADR-0011](../../adrs/0011-navigation-model.md) (menu and screens),
+> [ADR-0009](../../adrs/0009-persisted-flow-sessions.md) (flows),
+> [ADR-0037](../../adrs/0037-first-time-notices-and-transient-replies.md) (`user_notices`, kept apart
 > from tips)
 
 ## TL;DR
@@ -384,3 +384,8 @@ first, Phase 1 adds that delete to its deletion service.
 - **Outstanding `human` phases:** Phase 5 (a stranger's first contact), owed after the deploy.
 
 ## Followups
+
+- A first receipt is recorded in «Другое» until its store is fetched, so it brings `tipOther`
+  ahead of `tipReceipt` (from the implementation log).
+- An expense recorded through the ambiguous-amount buttons (`src/bot/handlers/ambiguous.ts`)
+  offers no tip (from the implementation log).

@@ -10,7 +10,6 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
-| [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | approved (2026-10-01) |
 | [0026](0026-monthly-summary-push.md) | Monthly summary push: last period's report arrives on its own | approved (2026-10-02) |
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
@@ -22,6 +21,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0015](done/0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | done (2026-10-06): built as planned after one fix pass, two followups open, Phase 5 stranger first contact owed, v0.22.0 |
 | [0034](done/0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | done (2026-10-06): built as planned, one minor fixed at close, one minor open, Phase 5 live check passed, v0.21.0 |
 | [0012](done/0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | done (2026-10-06): built as planned, one minor fixed at close, five minors and three nits open, Phase 6 real trip owed, v0.20.0 |
 | [0013](done/0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | done (2026-10-06): built as planned after one fix pass, four minors and two nits open, Phase 6 real debts and group owed, v0.19.0 |
