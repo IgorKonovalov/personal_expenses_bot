@@ -313,7 +313,7 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | 4: Reminders | dev | done | 33b0e97 |
 | 5: Group ledgers | dev | done | 5a3194b |
 | 6: Sealed ledgers, help and docs | dev | done | 6da3312 |
-| 7: A real month | human | not started | |
+| 7: A real month | human | owed | |
 
 ### Notes
 
