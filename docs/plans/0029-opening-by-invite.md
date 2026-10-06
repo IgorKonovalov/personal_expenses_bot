@@ -332,7 +332,7 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 4: Delete my account | dev | done | 8b41787 |
 | 5: Privacy policy and `/privacy` | dev | done | 56b6444 |
 | 6: Prepare the opening | human | done | PRIVACY.md contact in this commit; VPS .env holds ADMIN_TELEGRAM_ID (no other household id, so no ADMIT_TELEGRAM_IDS) beside the old key |
-| 7: Deploy and open | human | not started | |
+| 7: Deploy and open | human | owed | |
 
 ### Notes
 
