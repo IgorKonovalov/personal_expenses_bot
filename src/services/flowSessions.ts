@@ -88,10 +88,15 @@ export interface CommandArgScreen {
   readonly name: 'commandArg';
 }
 
-// /prices (ADR-0039): the product list of `ledgerId` and the products it opens.
+// /prices (ADR-0039): the product list of `ledgerId` and the products it opens. A review holds
+// its normalized item names in `names` and the one being answered at `position`; with `product`,
+// the names are that product's, opened from its [Названия], and an answer goes back to it.
 export interface PricesScreen {
   readonly name: 'prices';
   readonly ledgerId: LedgerId;
+  readonly names?: readonly string[];
+  readonly position?: number;
+  readonly product?: string;
 }
 
 export type Screen =
@@ -394,8 +399,20 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       ? { name, ledgerId: parsed.ledgerId as LedgerId }
       : { name };
   }
-  if ((name === 'summary' || name === 'prices') && typeof parsed?.ledgerId === 'string') {
+  if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
     return { name, ledgerId: parsed.ledgerId as LedgerId };
+  }
+  if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
+    const { names, position, product } = parsed;
+    const review =
+      Array.isArray(names) && names.every((n) => typeof n === 'string') ? { names } : {};
+    return {
+      name,
+      ledgerId: parsed.ledgerId as LedgerId,
+      ...review,
+      ...(Number.isSafeInteger(position) ? { position: position as number } : {}),
+      ...(typeof product === 'string' ? { product } : {}),
+    };
   }
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
     return { name, expenseId: parsed.expenseId as ExpenseId };

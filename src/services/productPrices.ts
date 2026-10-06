@@ -1,4 +1,5 @@
 import { isSealed, listLedgerExpenses } from '../db/expenses.js';
+import { listItemProducts } from '../db/itemProducts.js';
 import {
   findActiveLedger,
   findLedgerForMember,
@@ -10,7 +11,7 @@ import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
 import { amountOf, type Unit } from '../domain/products/amount.js';
-import { catalogProduct } from '../domain/products/catalog.js';
+import { CATALOG } from '../domain/products/catalog.js';
 import { matchProduct } from '../domain/products/match.js';
 import {
   monthLines,
@@ -23,6 +24,7 @@ import { normalize } from '../domain/products/normalize.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
   foldedReceipt,
+  isLocked,
   isSealedLedger,
   ledgerIsLocked,
   LOCKED,
@@ -34,18 +36,41 @@ import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 // /prices (ADR-0039): the viewer's own receipt items in one ledger, grouped into products, with
 // what each product cost per month. Only the viewer's live expenses with a fetched receipt count;
 // a sealed ledger's items come from the receipts folded into its rows, and it must be unlocked.
+// A name the user answered takes the answer's product; any other the keyword rules'. A sealed
+// ledger uses the rules only and offers no review.
 
-type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> & Pick<KeyDeps, 'keys'>;
+export type ProductDeps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> &
+  Pick<KeyDeps, 'keys'>;
 
-// `b:<catalog key>`: what a product travels as in callback data.
+// `b:<catalog key>`: what a product is stored and travels as in callback data.
 export type ProductRef = `b:${string}`;
 
-interface ProductItem {
+export interface Product {
+  readonly ref: ProductRef;
+  readonly name: string;
+  readonly unit: Unit;
+}
+
+export interface ResolvedItem {
   readonly nameKey: string;
   readonly quantity: string;
   readonly totalMinor: number;
   readonly currency: CurrencyCode;
   readonly occurredOn: LocalDate;
+  // Undefined: no product, by the rules or by the user's "not a product".
+  readonly ref: ProductRef | undefined;
+  // The user answered this name: it is out of the review queue.
+  readonly answered: boolean;
+}
+
+export interface LedgerItems {
+  readonly ledger: Ledger;
+  // A sealed ledger: rules only, no review.
+  readonly sealed: boolean;
+  // Oldest first.
+  readonly items: readonly ResolvedItem[];
+  // Every product a name can be assigned to, by ref.
+  readonly products: ReadonlyMap<ProductRef, Product>;
 }
 
 export interface ProductSummary {
@@ -59,6 +84,9 @@ export interface ProductList {
   readonly ledger: Ledger;
   // By recentMinor, largest first, then by name.
   readonly products: readonly ProductSummary[];
+  // Distinct names with no product that the user hasn't answered; 0 for a sealed ledger.
+  readonly unmatched: number;
+  readonly reviewable: boolean;
 }
 
 export interface ProductView {
@@ -70,29 +98,34 @@ export interface ProductView {
   readonly months: readonly MonthLine[];
   // All time, ordered as in a month.
   readonly totals: readonly PriceLine[];
+  readonly reviewable: boolean;
 }
 
-interface Product {
-  readonly name: string;
-  readonly unit: Unit;
+function catalogProducts(): Map<ProductRef, Product> {
+  return new Map(
+    CATALOG.map(({ key, name, unit }) => [`b:${key}`, { ref: `b:${key}`, name, unit }] as const),
+  );
 }
 
-function refOf(nameKey: string): ProductRef | undefined {
+function ruleRef(nameKey: string): ProductRef | undefined {
   const product = matchProduct(nameKey);
   return product === undefined ? undefined : `b:${product.key}`;
 }
 
-function productOf(ref: ProductRef): Product | undefined {
-  return catalogProduct(ref.slice(2));
+interface RawItem {
+  readonly nameKey: string;
+  readonly quantity: string;
+  readonly totalMinor: number;
+  readonly currency: CurrencyCode;
+  readonly occurredOn: LocalDate;
 }
 
-// The viewer's items in the ledger, oldest first, or `locked` for a sealed ledger without its key.
-function ownItems(deps: Deps, user: User, ledger: Ledger): ProductItem[] | Locked {
-  if (ledgerIsLocked(deps, ledger.id)) return LOCKED;
-  const items: ProductItem[] = listLedgerDatedItems(deps.db, ledger.id)
+// The viewer's items in the ledger, oldest first.
+function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean): RawItem[] {
+  const items: RawItem[] = listLedgerDatedItems(deps.db, ledger.id)
     .filter((item) => item.createdBy === user.id)
     .map((item) => ({ ...item, nameKey: normalize(item.name) }));
-  if (!isSealedLedger(deps, ledger.id)) return items;
+  if (!sealed) return items;
   for (const row of listLedgerExpenses(deps.db, { ledgerId: ledger.id, memberId: user.id })) {
     if (!isSealed(row) || row.createdBy !== user.id) continue;
     const folded = foldedReceipt(deps, row.id);
@@ -110,47 +143,93 @@ function ownItems(deps: Deps, user: User, ledger: Ledger): ProductItem[] | Locke
   return items;
 }
 
+// The viewer's items with their products, or `locked` for a sealed ledger without its key.
+export function resolveItems(deps: ProductDeps, user: User, ledger: Ledger): LedgerItems | Locked {
+  if (ledgerIsLocked(deps, ledger.id)) return LOCKED;
+  const sealed = isSealedLedger(deps, ledger.id);
+  const products = catalogProducts();
+  const answers = sealed ? new Map<string, string | null>() : listItemProducts(deps.db, user.id);
+  const items = ownItems(deps, user, ledger, sealed).map((item) => {
+    if (!answers.has(item.nameKey)) {
+      return { ...item, ref: ruleRef(item.nameKey), answered: false };
+    }
+    // An answer naming a product that no longer exists counts as "not a product".
+    const answer = answers.get(item.nameKey) ?? null;
+    const ref = [...products.keys()].find((r) => r === answer);
+    return { ...item, ref, answered: true };
+  });
+  return { ledger, sealed, items, products };
+}
+
+// The ledger the screen was opened on, with the viewer's items. Undefined for a non-member.
+export function ledgerItems(
+  deps: ProductDeps,
+  input: { readonly user: User; readonly ledgerId: LedgerId },
+): LedgerItems | Locked | undefined {
+  const ledger = findLedgerForMember(deps.db, input.ledgerId, input.user.id);
+  if (ledger === undefined) return undefined;
+  return resolveItems(deps, input.user, ledger);
+}
+
 // The first day of the month 11 months before today's: the start of "the last 12 months".
-function recentFrom(deps: Deps, user: User, ledger: Ledger, now: Date): LocalDate {
+function recentFrom(deps: ProductDeps, user: User, ledger: Ledger, now: Date): LocalDate {
   let month = monthOf(localDateOf(now, effectiveTimezone(deps, user, ledger)));
   for (let i = 0; i < 11; i++) month = previous(month);
   return month.from;
 }
 
-function listOf(deps: Deps, user: User, ledger: Ledger, now: Date): ProductList | Locked {
-  const items = ownItems(deps, user, ledger);
-  if (!Array.isArray(items)) return items;
+// The distinct names awaiting review: no product, never answered. By purchases, most first,
+// then by name.
+export function unmatchedNames(resolved: LedgerItems): string[] {
+  if (resolved.sealed) return [];
+  const counts = new Map<string, number>();
+  for (const item of resolved.items) {
+    if (item.ref !== undefined || item.answered) continue;
+    counts.set(item.nameKey, (counts.get(item.nameKey) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+    .map(([nameKey]) => nameKey);
+}
+
+function listOf(deps: ProductDeps, user: User, resolved: LedgerItems, now: Date): ProductList {
+  const { ledger } = resolved;
   const from = recentFrom(deps, user, ledger, now);
   const recent = new Map<ProductRef, number>();
-  for (const item of items) {
-    const ref = refOf(item.nameKey);
-    if (ref === undefined) continue;
+  for (const item of resolved.items) {
+    if (item.ref === undefined) continue;
     const counts = item.occurredOn >= from && item.currency === ledger.defaultCurrency;
-    recent.set(ref, (recent.get(ref) ?? 0) + (counts ? item.totalMinor : 0));
+    recent.set(item.ref, (recent.get(item.ref) ?? 0) + (counts ? item.totalMinor : 0));
   }
   const products = [...recent].flatMap(([ref, recentMinor]) => {
-    const name = productOf(ref)?.name;
+    const name = resolved.products.get(ref)?.name;
     return name === undefined ? [] : [{ ref, name, recentMinor }];
   });
   products.sort((a, b) => b.recentMinor - a.recentMinor || a.name.localeCompare(b.name, 'ru'));
-  return { ledger, products };
+  return {
+    ledger,
+    products,
+    unmatched: unmatchedNames(resolved).length,
+    reviewable: !resolved.sealed,
+  };
 }
 
 // /prices: the products of the user's active ledger.
-export function activeProductList(deps: Deps, user: User, now: Date): ProductList | Locked {
+export function activeProductList(deps: ProductDeps, user: User, now: Date): ProductList | Locked {
   const ledger = findActiveLedger(deps.db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
-  return listOf(deps, user, ledger, now);
+  const resolved = resolveItems(deps, user, ledger);
+  return isLocked(resolved) ? resolved : listOf(deps, user, resolved, now);
 }
 
 // A page of the list the screen was opened on. Undefined once the user is no longer a member.
 export function ledgerProductList(
-  deps: Deps,
+  deps: ProductDeps,
   input: { readonly user: User; readonly ledgerId: LedgerId; readonly now: Date },
 ): ProductList | Locked | undefined {
-  const ledger = findLedgerForMember(deps.db, input.ledgerId, input.user.id);
-  if (ledger === undefined) return undefined;
-  return listOf(deps, input.user, ledger, input.now);
+  const resolved = ledgerItems(deps, input);
+  if (resolved === undefined || isLocked(resolved)) return resolved;
+  return listOf(deps, input.user, resolved, input.now);
 }
 
 // The ledger's default currency first, then by code.
@@ -163,34 +242,32 @@ function byCurrency(ledger: Ledger) {
 // One product of the screen's ledger. Undefined for a non-member, an unknown ref, or a product
 // none of the user's items names any more.
 export function ledgerProduct(
-  deps: Deps,
+  deps: ProductDeps,
   input: { readonly user: User; readonly ledgerId: LedgerId; readonly ref: string },
 ): ProductView | Locked | undefined {
-  const ledger = findLedgerForMember(deps.db, input.ledgerId, input.user.id);
-  if (ledger === undefined) return undefined;
-  const items = ownItems(deps, input.user, ledger);
-  if (!Array.isArray(items)) return items;
-  const ref = items.map((item) => refOf(item.nameKey)).find((r) => r === input.ref);
-  const product = ref === undefined ? undefined : productOf(ref);
-  if (ref === undefined || product === undefined) return undefined;
+  const resolved = ledgerItems(deps, input);
+  if (resolved === undefined || isLocked(resolved)) return resolved;
+  const { ledger } = resolved;
+  const mine = resolved.items.filter((item) => item.ref !== undefined && item.ref === input.ref);
+  const product = mine[0]?.ref === undefined ? undefined : resolved.products.get(mine[0].ref);
+  if (product === undefined) return undefined;
 
-  const priced: PricedItem[] = items
-    .filter((item) => refOf(item.nameKey) === ref)
-    .map((item) => ({
-      occurredOn: item.occurredOn,
-      currency: item.currency,
-      totalMinor: item.totalMinor,
-      amount: amountOf(item.nameKey, item.quantity, product.unit),
-    }));
+  const priced: PricedItem[] = mine.map((item) => ({
+    occurredOn: item.occurredOn,
+    currency: item.currency,
+    totalMinor: item.totalMinor,
+    amount: amountOf(item.nameKey, item.quantity, product.unit),
+  }));
   const order = byCurrency(ledger);
   return {
     ledger,
-    ref,
+    ref: product.ref,
     name: product.name,
     unit: product.unit,
     months: monthLines(priced, product.unit).sort(
       (a, b) => b.month.localeCompare(a.month) || order(a, b),
     ),
     totals: totalLines(priced, product.unit).sort(order),
+    reviewable: !resolved.sealed,
   };
 }

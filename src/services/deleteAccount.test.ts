@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
+import { setItemProduct } from '../db/itemProducts.js';
 import { runMigrations } from '../db/migrate.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { insertNoticeSeen } from '../db/notices.js';
@@ -169,6 +170,28 @@ describe('deleteAccount', () => {
     expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
 
     expect(db.prepare('SELECT user_id FROM user_tips').pluck().all()).toEqual([bob.id]);
+  });
+
+  it("deletes the user's item name corrections and no one else's", () => {
+    let k = 0;
+    const newId = () => `20000000-0000-4000-8000-${String(++k).padStart(12, '0')}`;
+    const bob = provisionUser(
+      { ...deps(), newId },
+      {
+        provider: 'telegram',
+        externalId: '1002',
+        defaultTimezone: 'Europe/Belgrade',
+        defaultCurrency: 'RSD',
+        now: NOW,
+      },
+    ).user;
+    setItemProduct(db, alice.id, 'kesa', null, NOW);
+    setItemProduct(db, alice.id, 'mleko imlek', 'b:milk', NOW);
+    setItemProduct(db, bob.id, 'kesa', null, NOW);
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT user_id FROM item_products').pluck().all()).toEqual([bob.id]);
   });
 
   it("deletes the user's debt people and operations, split lends included, and no one else's", () => {

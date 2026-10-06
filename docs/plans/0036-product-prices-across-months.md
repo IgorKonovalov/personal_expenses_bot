@@ -279,8 +279,8 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: /prices skeleton | dev | done | 878daa4 |
-| 2: amount and unit price | dev | done | committed with this row |
-| 3: review and corrections | dev | not started | |
+| 2: amount and unit price | dev | done | ccc3e48 |
+| 3: review and corrections | dev | done | committed with this row |
 | 4: user products | dev | not started | |
 | 5: coverage report | dev | not started | |
 | 6: real receipts | human | not started | |
@@ -303,6 +303,19 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
   only `amount.ts` uses.
 - Phase 2: a size in another dimension than the product's unit (`180G` on a litre product)
   counts as no size.
+- Phase 3: the migration is `0025_item_products.sql`, the next free number.
+- Phase 3: an answer is `prc:r:<position>:<ref | n | s>`, not `prc:r:<index>`. It carries the
+  name's position in the queue and the product's ref, so a double tap answers the same name
+  with the same product. Also added: `prc:rv` ([Разобрать]), `prc:rp:<page>` (picker pages),
+  `prc:nm:<ref>` ([Названия]), `prc:np:<page>` and `prc:nn:<index>` (a name in that list).
+- Phase 3: the queue and its position live in the anchor's screen context in the
+  `flow_sessions` row (`PricesScreen.names`, `position`, `product`), not in the pending-flow
+  slot. They have no TTL and take no typed text.
+- Phase 3: `ux-telegram` was not consulted (headless conductor session). The labels are the
+  plan's ([Разобрать], [Не продукт], [Пропустить], [Названия], `Не разобрано: N`); the step
+  and names texts are dev's.
+- Phase 3: overrides are per user, not per ledger, so one answer applies in every plaintext
+  ledger the user views. A sealed ledger ignores them.
 
 ### Close triggers
 

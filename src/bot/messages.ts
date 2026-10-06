@@ -488,6 +488,15 @@ function priceLine(line: PriceLineView, unit: Unit): string {
   return parts.join(' · ');
 }
 
+function purchaseCount(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} покупок`;
+  if (ones === 1) return `${n} покупка`;
+  if (ones >= 2 && ones <= 4) return `${n} покупки`;
+  return `${n} покупок`;
+}
+
 function itemCount(n: number): string {
   const tens = n % 100;
   const ones = n % 10;
@@ -1451,24 +1460,70 @@ export const messages = {
   priceList: ({
     ledger,
     products,
+    unmatched,
   }: {
     readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
     readonly products: readonly { readonly name: string; readonly recentMinor: number }[];
+    // Distinct item names no product claims yet.
+    readonly unmatched: number;
   }): Html =>
     joinHtml(
       [
         html`<b>Цены — «${ledgerName(ledger)}»</b>`,
-        html`Потрачено за 12 месяцев:`,
-        ...products.map(
-          (p) =>
-            html`${p.name} — ${formatMoney({ amountMinor: p.recentMinor, currency: ledger.defaultCurrency })}`,
-        ),
-        html``,
-        html`Нажмите продукт, чтобы увидеть траты по месяцам.`,
+        ...(products.length === 0
+          ? []
+          : [
+              html`Потрачено за 12 месяцев:`,
+              ...products.map(
+                (p) =>
+                  html`${p.name} — ${formatMoney({ amountMinor: p.recentMinor, currency: ledger.defaultCurrency })}`,
+              ),
+              html``,
+              html`Нажмите продукт, чтобы увидеть траты по месяцам.`,
+            ]),
+        ...(unmatched === 0 ? [] : [html`Не разобрано: ${unmatched}`]),
       ],
       '\n',
     ),
   productButton: (name: string): string => name,
+  reviewButton: 'Разобрать',
+  namesButton: 'Названия',
+  notProductButton: 'Не продукт',
+  skipNameButton: 'Пропустить',
+  // One name of the review: which product it is. `step` counts the queue; a name opened from a
+  // product's [Названия] has none.
+  reviewStep: ({
+    nameKey,
+    purchases,
+    latest,
+    step,
+    product,
+  }: {
+    readonly nameKey: string;
+    readonly purchases: number;
+    readonly latest: Money;
+    readonly step?: { readonly index: number; readonly total: number };
+    // The product the name counts under now.
+    readonly product?: string;
+  }): Html =>
+    joinHtml(
+      [
+        step === undefined
+          ? html`<b>Название в чеках</b>`
+          : html`<b>Разбор названий</b> · ${step.index} из ${step.total}`,
+        html`${nameKey}`,
+        html`${purchaseCount(purchases)}, последняя — ${formatMoney(latest)}`,
+        ...(product === undefined ? [] : [html`Сейчас: ${product}`]),
+        html``,
+        html`Какой это продукт?`,
+      ],
+      '\n',
+    ),
+  // [Названия]: the names counted under a product, each a button into the picker.
+  productNamesView: (name: string): Html =>
+    html`<b>Названия — ${name}</b>\nТак этот продукт записан в чеках. Нажмите название, чтобы выбрать для него другой продукт.`,
+  nameButton: (nameKey: string, purchases: number): string =>
+    `${nameKey} · ${purchaseCount(purchases)}`,
   // One product: per month, newest first, then all time, each per currency: spent, what the
   // sized items bought and its price per unit, and how many items had no size.
   productView: ({

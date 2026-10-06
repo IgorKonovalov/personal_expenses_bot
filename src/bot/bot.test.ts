@@ -8236,7 +8236,7 @@ describe('/prices (Plan 0036)', () => {
   const LIST =
     '<b>Цены — «Личные расходы»</b>\nПотрачено за 12 месяцев:\n' +
     'Молоко — 735.00 RSD\nБананы — 249.00 RSD\nХлеб — 65.00 RSD\n\n' +
-    'Нажмите продукт, чтобы увидеть траты по месяцам.';
+    'Нажмите продукт, чтобы увидеть траты по месяцам.\nНе разобрано: 2';
   const LIST_KEYBOARD = {
     inline_keyboard: [
       [
@@ -8244,8 +8244,13 @@ describe('/prices (Plan 0036)', () => {
         { text: 'Бананы', callback_data: 'prc:o:b:bananas' },
       ],
       [{ text: 'Хлеб', callback_data: 'prc:o:b:bread' }],
+      [{ text: 'Разобрать', callback_data: 'prc:rv' }],
     ],
   };
+  type Keyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
+  const lastEdit = (calls: readonly ApiCall[]) =>
+    calls.findLast((c) => c.method === 'editMessageText')?.payload as
+      { text: string; reply_markup: Keyboard } | undefined;
 
   it('lists Молоко, Бананы, Хлеб by spend as the anchor, opens Молоко by month, and goes back', async () => {
     const { say, tap, calls, fixture, anchor } = await pricesBot();
@@ -8271,7 +8276,12 @@ describe('/prices (Plan 0036)', () => {
         'Октябрь 2026: 457.00 RSD · 2 л · 153.50 RSD/л · 1 позиция без размера\n' +
         'Сентябрь 2026: 278.00 RSD · 2 л · 139.00 RSD/л\n\n' +
         'Всего: 735.00 RSD · 4 л · 146.25 RSD/л · 1 позиция без размера',
-      reply_markup: { inline_keyboard: [[{ text: '« Назад', callback_data: 'prc:p:1' }]] },
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Названия', callback_data: 'prc:nm:b:milk' }],
+          [{ text: '« Назад', callback_data: 'prc:p:1' }],
+        ],
+      },
       ...htmlParseMode,
     });
     calls.length = 0;
@@ -8284,13 +8294,147 @@ describe('/prices (Plan 0036)', () => {
     });
   });
 
-  it('answers with pricesEmpty when no receipt names a product', async () => {
+  it('answers with pricesEmpty with no receipt items, and offers the review for unmatched ones', async () => {
     const { say, calls, receipt } = await pricesBot();
-    receipt('2026-10-05', [['KESA', '1', 300]]);
 
     await say('/prices');
+    receipt('2026-10-05', [['KESA', '1', 300]]);
+    await say('/prices');
 
-    expect(sentTexts(calls)).toEqual([messages.pricesEmpty]);
+    expect(sentTexts(calls)).toEqual([
+      messages.pricesEmpty,
+      '<b>Цены — «Личные расходы»</b>\nНе разобрано: 1',
+    ]);
+  });
+
+  it('walks the queue: cokoladno mleko to Молоко, kesa to Не продукт, then the list', async () => {
+    const { say, tap, calls, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    calls.length = 0;
+
+    await tap('prc:rv', anchor());
+
+    const first = lastEdit(calls);
+    expect(first?.text).toBe(
+      '<b>Разбор названий</b> · 1 из 2\ncokoladno mleko 0,2l\n1 покупка, последняя — 99.00 RSD\n\n' +
+        'Какой это продукт?',
+    );
+    const rows = first?.reply_markup.inline_keyboard ?? [];
+    expect(rows[0]).toEqual([
+      { text: 'Молоко', callback_data: 'prc:r:0:b:milk' },
+      { text: 'Хлеб', callback_data: 'prc:r:0:b:bread' },
+    ]);
+    expect(rows.slice(-2)).toEqual([
+      [
+        { text: 'Не продукт', callback_data: 'prc:r:0:n' },
+        { text: 'Пропустить', callback_data: 'prc:r:0:s' },
+      ],
+      [{ text: '« Назад', callback_data: 'prc:p:1' }],
+    ]);
+    calls.length = 0;
+
+    await tap('prc:r:0:b:milk', anchor());
+
+    expect(lastEdit(calls)?.text).toBe(
+      '<b>Разбор названий</b> · 2 из 2\nkesa\n1 покупка, последняя — 3.00 RSD\n\nКакой это продукт?',
+    );
+    calls.length = 0;
+
+    await tap('prc:r:1:n', anchor());
+
+    expect(lastEdit(calls)?.text).toBe(
+      '<b>Цены — «Личные расходы»</b>\nПотрачено за 12 месяцев:\n' +
+        'Молоко — 834.00 RSD\nБананы — 249.00 RSD\nХлеб — 65.00 RSD\n\n' +
+        'Нажмите продукт, чтобы увидеть траты по месяцам.',
+    );
+    calls.length = 0;
+
+    await tap('prc:o:b:milk', anchor());
+
+    expect(lastEdit(calls)?.text).toContain(
+      'Октябрь 2026: 556.00 RSD · 2.2 л · 184.55 RSD/л · 1 позиция без размера',
+    );
+  });
+
+  it('writes one override for a double-tapped answer and moves the queue on once', async () => {
+    const { say, tap, calls, db, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    await tap('prc:rv', anchor());
+    calls.length = 0;
+
+    await tap('prc:r:0:b:milk', anchor());
+    await tap('prc:r:0:b:milk', anchor());
+
+    expect(db.prepare('SELECT name_key, product FROM item_products').all()).toEqual([
+      { name_key: 'cokoladno mleko 0,2l', product: 'b:milk' },
+    ]);
+    const texts = calls.filter((c) => c.method === 'editMessageText');
+    expect(texts.map((c) => (c.payload as { text: string }).text.split('\n')[1])).toEqual([
+      'kesa',
+      'kesa',
+    ]);
+  });
+
+  it('corrects a rule match through [Названия]: mleko imlek out of Молоко drops 150.00', async () => {
+    const { say, tap, calls, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    await tap('prc:o:b:milk', anchor());
+    calls.length = 0;
+
+    await tap('prc:nm:b:milk', anchor());
+
+    const names = lastEdit(calls);
+    const imlek = names?.reply_markup.inline_keyboard
+      .flat()
+      .find((b) => b.text === 'mleko imlek · 1 покупка');
+    expect(imlek?.callback_data).toMatch(/^prc:nn:\d$/);
+    calls.length = 0;
+
+    await tap(imlek?.callback_data ?? '', anchor());
+
+    expect(lastEdit(calls)?.text).toBe(
+      '<b>Название в чеках</b>\nmleko imlek\n1 покупка, последняя — 150.00 RSD\nСейчас: Молоко\n\n' +
+        'Какой это продукт?',
+    );
+    const position = imlek?.callback_data.slice('prc:nn:'.length);
+    calls.length = 0;
+
+    await tap(`prc:r:${position}:n`, anchor());
+
+    expect(lastEdit(calls)?.text).toContain('Октябрь 2026: 307.00 RSD · 2 л · 153.50 RSD/л\n');
+  });
+
+  it('offers neither [Разобрать] nor [Названия] for a sealed ledger', async () => {
+    const { say, tap, calls, db, keys, user, fixture, anchor } = await pricesBot();
+    fixture();
+    const deps = { db, keys, logger: silentLogger(), newId: () => randomUUID() };
+    await sealPersonalLedger(deps, user, NOW);
+    await unlockPersonalLedger(deps, user, NOW);
+    calls.length = 0;
+
+    await say('/prices');
+    await tap('prc:o:b:milk', anchor());
+    await tap('prc:rv', anchor());
+
+    const sent = calls.find((c) => c.method === 'sendMessage')?.payload as {
+      text: string;
+      reply_markup: Keyboard;
+    };
+    expect(sent.text).not.toContain('Не разобрано');
+    expect(sent.reply_markup.inline_keyboard.flat().map((b) => b.callback_data)).not.toContain(
+      'prc:rv',
+    );
+    expect(lastEdit(calls)?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: '« Назад', callback_data: 'prc:p:1' }]],
+    });
+    expect(calls.at(-1)).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+    });
+    expect(db.prepare('SELECT COUNT(*) FROM item_products').pluck().get()).toBe(0);
   });
 
   it('answers ledgerLocked for a locked sealed ledger', async () => {

@@ -464,6 +464,40 @@ export function productOpenData(ref: string): string {
   return assertCallbackData(`prc:o:${ref}`);
 }
 
+// The review of item names, against the names the anchor holds: [Разобрать] `prc:rv` starts it
+// on the unmatched names, and an answer `prc:r:<position>:<ref|n|s>` (at most 40 bytes) gives the
+// name at that position a product, "not a product" (`n`), or skips it (`s`). The position makes a
+// double tap answer the same name again. `prc:rp:<page>` pages the product picker.
+export const PRICES_REVIEW = 'prc:rv';
+export const REVIEW_ANSWER = /^prc:r:(\d{1,4}):(n|s|b:[a-z0-9_]{1,24}|u:\d{1,16})$/;
+export const REVIEW_PAGE = /^prc:rp:(\d{1,4})$/;
+
+export function reviewAnswerData(position: number, choice: string): string {
+  return assertCallbackData(`prc:r:${position}:${choice}`);
+}
+
+export function reviewPageData(page: number): string {
+  return assertCallbackData(`prc:rp:${page}`);
+}
+
+// [Названия] on a product `prc:nm:<ref>` lists the names counted under it into the anchor;
+// `prc:np:<page>` pages that list and `prc:nn:<index>` opens the picker for one of them.
+export const PRODUCT_NAMES = /^prc:nm:(b:[a-z0-9_]{1,24}|u:\d{1,16})$/;
+export const NAMES_PAGE = /^prc:np:(\d{1,4})$/;
+export const NAME_PICK = /^prc:nn:(\d{1,4})$/;
+
+export function productNamesData(ref: string): string {
+  return assertCallbackData(`prc:nm:${ref}`);
+}
+
+export function namesPageData(page: number): string {
+  return assertCallbackData(`prc:np:${page}`);
+}
+
+export function namePickData(index: number): string {
+  return assertCallbackData(`prc:nn:${index}`);
+}
+
 // [Снять метку] under /tag: clears the sticky tag of the viewer's active ledger. A set-to-value,
 // so a second tap clears nothing more.
 export const STICKY_TAG_OFF = 'tag:off';

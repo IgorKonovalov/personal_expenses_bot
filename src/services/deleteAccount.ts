@@ -4,6 +4,7 @@ import type { Db } from '../db/connection.js';
 import { deleteUserDebts } from '../db/debts.js';
 import { deleteLedgerExpenses } from '../db/expenses.js';
 import { deleteFlowSession } from '../db/flowSessions.js';
+import { deleteUserItemProducts } from '../db/itemProducts.js';
 import { clearMemberDisplayNames, deleteLedger, findPersonalLedger } from '../db/ledgers.js';
 import { deleteUserNotices } from '../db/notices.js';
 import { deleteLedgerReceipts } from '../db/receipts.js';
@@ -18,7 +19,7 @@ import type { LedgerKeyring } from './ledgerKeys.js';
 // expense, receipt and its items, budget, cap, category, sealed key and membership, every
 // recurring rule and reminder the user made in any ledger with its occurrences, the ledger's
 // summary push claims, every debt person and operation (ADR-0030), then the user's flow session, one-time notices (ADR-0037),
-// tips (ADR-0028) and identity, and leaves the users row as a tombstone: `deleted_at` set,
+// tips (ADR-0028), item name corrections (ADR-0039) and identity, and leaves the users row as a tombstone: `deleted_at` set,
 // admission and the active ledger cleared, and the display name forgotten in every group. The
 // user's expenses in group ledgers stay, so the group's totals don't change; they show under a
 // deleted member. The Telegram id then matches no one and needs an invite like anyone else.
@@ -64,6 +65,7 @@ export function deleteAccount(
     deleteFlowSession(db, userId);
     deleteUserNotices(db, userId);
     deleteUserTips(db, userId);
+    deleteUserItemProducts(db, userId);
     clearMemberDisplayNames(db, userId);
     tombstoneUser(db, userId, input.now);
     return { userId, personalId: personal?.id };
