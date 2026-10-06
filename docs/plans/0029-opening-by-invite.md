@@ -25,7 +25,7 @@ hog the bot, and one user shouldn't be able to drive hundreds of requests at `su
 Strangers' financial data also brings obligations a household didn't need: a stated policy, and
 a way to delete everything. ADR-0024 records why admission moves into the database.
 
-**Prerequisites for the opening itself** (Phase 6, not for building this plan): Plan 0015
+**Prerequisites for the opening itself** (Phase 7, not for building this plan): Plan 0015
 (onboarding), Plan 0019 (encrypted ledger), Plan 0024 (export) and Plan 0028 (donations). This
 plan can land before them. With the household admitted at boot, it changes nothing they see
 until the first link goes out.
@@ -235,16 +235,27 @@ between phases. The architect reviews once at the end, in a fresh session. All n
   `/help` lists both new commands. `PRIVACY.md` names every external host the README lists under
   Receipts and Currency conversion.
 
-### Phase 6: Deploy and open
+### Phase 6: Prepare the opening
 - **Owner skill:** human
 - **What:**
   1. Fill in the contact in `PRIVACY.md`.
-  2. On the VPS, replace `ALLOWED_TELEGRAM_IDS` with `ADMIN_TELEGRAM_ID` (the old first id) and
-     `ADMIT_TELEGRAM_IDS` (the rest), before the deploy.
-  3. Push and deploy, then check that the household still records.
-  4. Test `/invite` with a second account.
-  5. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+  2. On the VPS, replace `ALLOWED_TELEGRAM_IDS` with `ADMIN_TELEGRAM_ID` (the admin's id) and
+     `ADMIT_TELEGRAM_IDS` (the rest) in the `.env`. The running container keeps its old
+     environment until the next deploy recreates it, so the live bot is unaffected.
 - **Files touched:** `PRIVACY.md`, the VPS `.env`.
+- **Done when:** `PRIVACY.md` names a contact, and the VPS `.env` sets `ADMIN_TELEGRAM_ID`, sets
+  no `ALLOWED_TELEGRAM_IDS`, and lists every other household id in `ADMIT_TELEGRAM_IDS`. This
+  phase blocks the merge: once 0029 is on main, any push deploys a config that refuses
+  `ALLOWED_TELEGRAM_IDS`.
+
+### Phase 7: Deploy and open
+- **Owner skill:** human
+- **Blocks merge:** no
+- **What:**
+  1. Push and deploy, then check that the household still records.
+  2. Test `/invite` with a second account.
+  3. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+- **Files touched:** none.
 - **Done when:** after the deploy, every household member records `450 кофе` in private. A test
   account admitted by a fresh link records too, and `/delete_account` on it leaves the
   household's data untouched.
@@ -318,7 +329,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 3: Abuse limits: message rate and daily receipts | dev | not started | |
 | 4: Delete my account | dev | not started | |
 | 5: Privacy policy and `/privacy` | dev | not started | |
-| 6: Deploy and open | human | not started | |
+| 6: Prepare the opening | human | not started | |
+| 7: Deploy and open | human | not started | |
 
 ### Notes
 
