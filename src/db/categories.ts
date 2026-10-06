@@ -178,6 +178,12 @@ export function listLedgersWithoutCategories(db: Db): LedgerId[] {
     .all() as LedgerId[];
 }
 
+// Deletes every category of the ledger, archived ones included. Run it after the ledger's
+// expenses and caps are gone. Returns how many.
+export function deleteLedgerCategories(db: Db, ledgerId: LedgerId): number {
+  return db.prepare<[string]>('DELETE FROM categories WHERE ledger_id = ?').run(ledgerId).changes;
+}
+
 function toCategory(row: CategoryRow): Category {
   return {
     id: row.id as CategoryId,

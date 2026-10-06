@@ -3,7 +3,7 @@ import { loadConfig } from './config.js';
 
 const valid = {
   BOT_TOKEN: '123456:test-token',
-  ALLOWED_TELEGRAM_IDS: '1001, 1002',
+  ADMIN_TELEGRAM_ID: '1001',
   DEFAULT_TIMEZONE: 'Europe/Belgrade',
   DEFAULT_CURRENCY: 'RSD',
 };
@@ -12,7 +12,8 @@ describe('loadConfig', () => {
   it('parses a valid environment and applies defaults', () => {
     const config = loadConfig(valid);
     expect(config.botToken).toBe('123456:test-token');
-    expect([...config.allowedTelegramIds]).toEqual([1001, 1002]);
+    expect(config.adminTelegramId).toBe(1001);
+    expect([...config.admitTelegramIds]).toEqual([]);
     expect(config.defaultTimezone).toBe('Europe/Belgrade');
     expect(config.defaultCurrency).toBe('RSD');
     expect(config.databasePath).toBe('./data/bot.sqlite');
@@ -28,8 +29,15 @@ describe('loadConfig', () => {
     );
   });
 
-  it('takes the first allowed id as the admin', () => {
-    expect(loadConfig({ ...valid, ALLOWED_TELEGRAM_IDS: '222,111' }).adminTelegramId).toBe(222);
+  it('reads ADMIT_TELEGRAM_IDS as a list of ids', () => {
+    const config = loadConfig({ ...valid, ADMIT_TELEGRAM_IDS: '111, 222' });
+    expect([...config.admitTelegramIds]).toEqual([111, 222]);
+  });
+
+  it('refuses the retired ALLOWED_TELEGRAM_IDS, naming its replacement', () => {
+    expect(() => loadConfig({ ...valid, ALLOWED_TELEGRAM_IDS: '1001,1002' })).toThrow(
+      /ADMIN_TELEGRAM_ID/,
+    );
   });
 
   it('reads BACKUP_DIR and BACKUP_KEEP', () => {
@@ -38,10 +46,10 @@ describe('loadConfig', () => {
     expect(config.backupKeep).toBe(7);
   });
 
-  it('names BOT_TOKEN when it is unset', () => {
-    const env = Object.fromEntries(Object.entries(valid).filter(([key]) => key !== 'BOT_TOKEN'));
-    expect('BOT_TOKEN' in env).toBe(false);
-    expect(() => loadConfig(env)).toThrow(/BOT_TOKEN/);
+  it.each(['BOT_TOKEN', 'ADMIN_TELEGRAM_ID'])('names %s when it is unset', (name) => {
+    const env = Object.fromEntries(Object.entries(valid).filter(([key]) => key !== name));
+    expect(name in env).toBe(false);
+    expect(() => loadConfig(env)).toThrow(new RegExp(name));
   });
 
   it('names BOT_TOKEN when it is blank', () => {
@@ -49,7 +57,9 @@ describe('loadConfig', () => {
   });
 
   it.each([
-    ['ALLOWED_TELEGRAM_IDS', '1001,abc'],
+    ['ADMIN_TELEGRAM_ID', '1001,1002'],
+    ['ADMIN_TELEGRAM_ID', 'abc'],
+    ['ADMIT_TELEGRAM_IDS', '1001,abc'],
     ['DEFAULT_TIMEZONE', 'Mars/Olympus'],
     ['DEFAULT_CURRENCY', 'dinar'],
     ['DEFAULT_CURRENCY', 'XYZ'],

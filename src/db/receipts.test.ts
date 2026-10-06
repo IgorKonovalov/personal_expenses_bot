@@ -11,6 +11,7 @@ import {
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
 import { runMigrations } from './migrate.js';
 import {
+  countReceiptsCreatedBy,
   findMerchantCategory,
   findReceiptByExpense,
   insertReceipt,
@@ -122,5 +123,22 @@ describe('receipts', () => {
 
     softDeleteExpense(db, first, NOW);
     expect(findMerchantCategory(db, LEDGER, 'rs:AAAA1111')).toBe(other);
+  });
+});
+
+describe('countReceiptsCreatedBy', () => {
+  it('counts the user’s receipts created inside the window, deleted expenses included', () => {
+    const window = {
+      start: new Date('2026-10-04T22:00:00Z'),
+      end: new Date('2026-10-05T22:00:00Z'),
+    };
+    addReceipt(1, 'rs:A', other, new Date('2026-10-04T21:59:59.999Z'));
+    addReceipt(2, 'rs:A', other, new Date('2026-10-04T22:00:00Z'));
+    addReceipt(3, 'rs:A', other, new Date('2026-10-05T21:59:59.999Z'));
+    addReceipt(4, 'rs:A', other, new Date('2026-10-05T22:00:00Z'));
+    softDeleteExpense(db, 'expense-3' as ExpenseId, NOW);
+
+    expect(countReceiptsCreatedBy(db, USER, window)).toBe(2);
+    expect(countReceiptsCreatedBy(db, 'user-b' as UserId, window)).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, minorFromDecimal, parseAmount } from './money.js';
+import { decimalAmount, formatMoney, minorFromDecimal, parseAmount } from './money.js';
 
 describe('parseAmount (RSD, exponent 2)', () => {
   it.each([
@@ -75,6 +75,21 @@ describe('formatMoney', () => {
     [450, 'JPY', '450 JPY'],
   ] as const)('%i %s -> %j', (amountMinor, currency, expected) => {
     expect(formatMoney({ amountMinor, currency })).toBe(expected);
+  });
+});
+
+describe('decimalAmount', () => {
+  it.each([
+    [45000, 'RSD', ',', '450,00'],
+    [1500, 'JPY', ',', '1500'],
+    [1250, 'EUR', ',', '12,50'],
+    [123456789, 'RSD', ',', '1234567,89'],
+    [5, 'EUR', '.', '0.05'],
+    [-525, 'RSD', '.', '-5.25'],
+    [0, 'RSD', ',', '0,00'],
+    [45000, 'RSD', '.', '450.00'],
+  ] as const)('%i %s with %j -> %j', (amountMinor, currency, separator, expected) => {
+    expect(decimalAmount({ amountMinor, currency }, separator)).toBe(expected);
   });
 });
 

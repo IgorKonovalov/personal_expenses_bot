@@ -2,6 +2,7 @@ import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
 import type { RuleId } from '../db/recurring.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { ExportRange } from '../domain/export/rows.js';
 import { periodKey, type Period } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 
@@ -218,6 +219,19 @@ export function budgetCapClearData(categoryId: CategoryId): string {
   return assertCallbackData(`bud:capx:${categoryId}`);
 }
 
+// The admin's /invites list: [Отключить] `inv:off:<code>` (19 bytes) revokes that code
+// (ADR-0024). The code's revoked_at is the guard, so a double tap finds it already off.
+export const INVITE_REVOKE = /^inv:off:([A-Za-z0-9_-]{11})$/;
+
+export function inviteRevokeData(code: string): string {
+  return assertCallbackData(`inv:off:${code}`);
+}
+
+// /delete_account's [Удалить всё] and [Отмена] (ADR-0024). The user's tombstone is the guard: a
+// second [Удалить всё] finds no account behind the Telegram id.
+export const ACCOUNT_DELETE = 'acct:del';
+export const ACCOUNT_KEEP = 'acct:keep';
+
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';
 
@@ -273,4 +287,21 @@ export type AskAction = 'ok' | 'amt' | 'skip';
 
 export function askData(action: AskAction, ruleId: RuleId, dueOn: LocalDate): string {
   return assertCallbackData(`rec:${action}:${ruleId}:${dueOn}`);
+}
+
+// The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
+// sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
+// the active ledger in a DM, the chat's binding in a group.
+export const EXPORT_RANGE = /^xp:r:(tm|pm|ty|all)$/;
+export const EXPORT_FORMAT = /^xp:f:(tm|pm|ty|all):(csv|xlsx)$/;
+export const EXPORT_BACK = 'xp:back';
+
+export type ExportFormat = 'csv' | 'xlsx';
+
+export function exportRangeData(range: ExportRange): string {
+  return assertCallbackData(`xp:r:${range}`);
+}
+
+export function exportFormatData(range: ExportRange, format: ExportFormat): string {
+  return assertCallbackData(`xp:f:${range}:${format}`);
 }

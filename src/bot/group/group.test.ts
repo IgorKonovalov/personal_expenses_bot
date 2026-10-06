@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Bot } from 'grammy';
+import type { Bot, InputFile } from 'grammy';
 import type { InlineKeyboardMarkup, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import type { CategoryId } from '../../db/categories.js';
@@ -437,7 +437,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
     ]);
   });
 
-  it('replies a card with [Удалить] only to B, who is not allowlisted, and adds the DM link for A', async () => {
+  it('replies a card with [Удалить] only to B, who is not admitted, and adds the DM link for A', async () => {
     const { db, calls, say } = await bound();
 
     await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
@@ -624,7 +624,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
 
     calls.length = 0;
     await dm(STRANGER_ID, `/start e_${b}`, 82);
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([{ payload: { text: messages.invitationOnly } }]);
   });
 
   it("refuses A's undo, category change and amount edit of B's group expense in the service, writing nothing", async () => {
@@ -1105,7 +1105,8 @@ describe('group lifecycle and ledger settings (Phase 4)', () => {
     calls.length = 0;
 
     await dm(STRANGER_ID, `/start gs_${ledgerId}`, 190);
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([{ payload: { text: messages.invitationOnly } }]);
+    calls.length = 0;
 
     await dm(SECOND_ALLOWED_ID, `/start gs_${ledgerId}`, 191);
     expect(calls).toHaveLength(1);
@@ -1331,5 +1332,54 @@ describe('recurring rules on group ledgers (Plan 0025)', () => {
 
     expect(recorded()).toBe(0);
     expect(db.prepare('SELECT paused_at IS NOT NULL FROM recurring_rules').pluck().get()).toBe(1);
+  });
+});
+
+describe('/export in a group (Plan 0024)', () => {
+  async function csvSentTo(calls: readonly { method: string; payload: unknown }[]) {
+    const call = calls.find((c) => c.method === 'sendDocument');
+    const payload = call?.payload as { chat_id: number; document: InputFile } | undefined;
+    if (payload === undefined) throw new Error('no document sent');
+    const raw = await payload.document.toRaw();
+    if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
+    const lines = Buffer.from(raw).subarray(3).toString('utf8').split('\r\n').slice(0, -1);
+    return { chatId: payload.chat_id, lines: lines.map((line) => line.split(';')) };
+  }
+
+  it("sends B's all-time CSV to the group with both members' expenses and their names", async () => {
+    const { calls, say, tap } = await bound();
+    await say(ALLOWED_ID, '450 кафе', 101, { firstName: 'Анна' });
+    await say(STRANGER_ID, '300 такси', 102, { firstName: 'Борис' });
+    calls.length = 0;
+
+    await say(STRANGER_ID, '/export', 103);
+    await tap(STRANGER_ID, 'xp:r:all', { chatId: GROUP_ID, messageId: 104 });
+    await tap(STRANGER_ID, 'xp:f:all:csv', { chatId: GROUP_ID, messageId: 104 });
+
+    expect(calls[0]).toMatchObject({
+      method: 'sendMessage',
+      payload: { chat_id: GROUP_ID, text: 'Что выгрузить?' },
+    });
+    const { chatId, lines } = await csvSentTo(calls);
+    expect(chatId).toBe(GROUP_ID);
+    const [header, ...rows] = lines;
+    expect(header?.[7]).toBe('Автор');
+    expect(rows.map((row) => [row[2], row[6], row[7]])).toEqual([
+      ['450,00', 'кафе', 'Анна'],
+      ['300,00', 'такси', 'Борис'],
+    ]);
+  });
+
+  it('does nothing for /export in an unbound group', async () => {
+    const { calls, say } = harness();
+
+    await say(ALLOWED_ID, '/export', 1);
+
+    expect(calls).toEqual([]);
+  });
+
+  it('lists export in both command menus', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('export');
+    expect(messages.groupCommands.map((c) => c.command)).toContain('export');
   });
 });

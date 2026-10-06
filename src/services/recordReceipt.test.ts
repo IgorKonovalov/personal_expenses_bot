@@ -8,7 +8,7 @@ import type { DecodedReceipt } from '../domain/receipts/types.js';
 import { createLogger } from '../logger.js';
 import { provisionUser } from './provisionUser.js';
 import type { RecordDeps } from './recordExpense.js';
-import { recordReceipt } from './recordReceipt.js';
+import { RECEIPTS_PER_DAY, recordReceipt } from './recordReceipt.js';
 
 const SENT = new Date('2026-10-01T08:00:00Z');
 
@@ -144,5 +144,60 @@ describe('recordReceipt', () => {
       expect(line).not.toContain('suf.purs');
     }
     expect(JSON.parse(logLines.at(-1) ?? '{}')).toMatchObject({ country: 'RS', level: 30 });
+  });
+});
+
+describe('the daily receipt cap', () => {
+  // A distinct fiscal id per counter.
+  const receipt = (totalCounter: number) => decoded({ totalCounter });
+  const capped = (n: number, at: Date) =>
+    recordReceipt(deps, {
+      user: alice,
+      receipt: receipt(n),
+      placeholder: 'Чек',
+      occurredAt: at,
+      now: at,
+      dailyCap: RECEIPTS_PER_DAY,
+    });
+
+  it('refuses the 21st on the Belgrade day and takes one at the next local midnight', () => {
+    // 2026-10-05 in Belgrade (UTC+2) runs from 2026-10-04T22:00Z to 2026-10-05T22:00Z.
+    const dayStart = Date.parse('2026-10-04T22:00:00Z');
+    for (let n = 1; n <= 20; n += 1) {
+      // 00:00, 01:00, … 19:00 local.
+      expect(capped(n, new Date(dayStart + (n - 1) * 3_600_000)).kind).toBe('recorded');
+    }
+
+    // 23:59 local.
+    expect(capped(21, new Date('2026-10-05T21:59:00Z'))).toEqual({ kind: 'capReached' });
+    expect(rows('SELECT COUNT(*) AS n FROM receipts')).toEqual([{ n: 20 }]);
+
+    // A receipt already recorded still answers as recorded past the cap, and adds nothing.
+    expect(capped(3, new Date('2026-10-05T21:59:00Z'))).toMatchObject({
+      kind: 'recorded',
+      duplicate: true,
+    });
+
+    // 00:00 local on 2026-10-06.
+    expect(capped(21, new Date('2026-10-05T22:00:00Z'))).toMatchObject({
+      kind: 'recorded',
+      duplicate: false,
+    });
+    expect(rows('SELECT COUNT(*) AS n FROM receipts')).toEqual([{ n: 21 }]);
+  });
+
+  it('applies no cap when none is given', () => {
+    const at = new Date('2026-10-05T10:00:00Z');
+    for (let n = 1; n <= 21; n += 1) {
+      expect(
+        recordReceipt(deps, {
+          user: alice,
+          receipt: receipt(n),
+          placeholder: 'Чек',
+          occurredAt: at,
+          now: at,
+        }).kind,
+      ).toBe('recorded');
+    }
   });
 });

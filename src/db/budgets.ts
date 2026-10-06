@@ -143,6 +143,13 @@ export function deleteLedgerCaps(db: Db, ledgerId: LedgerId): number {
     .run(ledgerId).changes;
 }
 
+// Deletes the ledger's budget row, if any. Its caps go with deleteLedgerCaps.
+export function deleteLedgerBudget(db: Db, ledgerId: LedgerId): boolean {
+  return (
+    db.prepare<[string]>('DELETE FROM ledger_budgets WHERE ledger_id = ?').run(ledgerId).changes > 0
+  );
+}
+
 // Sets what the limit counts. A ledger without a budget gets one with no limit, in `currency`.
 // Returns false when the scope is already set: nothing is written.
 export function setBudgetScope(

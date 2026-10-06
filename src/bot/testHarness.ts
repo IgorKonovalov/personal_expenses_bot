@@ -1,8 +1,10 @@
 // Test-only: drives the real bot with updates and records Bot API calls instead of sending them.
+import type { Bot } from 'grammy';
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
+import { admitTelegramIds, type AdmissionDeps } from '../services/admission.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import { adminNotifier } from './adminNotifier.js';
 import { createBot } from './bot.js';
@@ -56,22 +58,26 @@ export function createTestBot(options: TestBotOptions = {}) {
     write: (line: string) => void logLines.push(line),
   });
   const donationLinks: DonationLinks = new Map();
-  const bot = createBot({
-    token: '123456:test-token',
-    allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
-    logger,
+  const deps = {
     db,
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     now: () => now,
     defaultTimezone: 'Europe/Belgrade',
     defaultCurrency: 'RSD',
+    adminTelegramId: ADMIN_ID,
+  } as const;
+  const bot = createBot({
+    ...deps,
+    token: '123456:test-token',
+    backupKeep: 14,
+    logger,
     keys,
     botInfo,
     donationLinks,
     donateUrl: options.donateUrl,
-    adminTelegramId: ADMIN_ID,
     notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
   });
+  admitOnFirstDm(bot, deps, [SECOND_ALLOWED_ID]);
 
   const calls: ApiCall[] = [];
   const failing = new Set(options.failMethods ?? []);
@@ -141,6 +147,27 @@ export function successfulPaymentUpdate(opts: {
         provider_payment_charge_id: '',
       },
     },
+  };
+}
+
+// Admits each of `ids` the way a redeemed invite would, just before that id's first private
+// update is handled. The handler would provision the user on that update anyway, so ids and
+// timestamps come out as they would for a user who joined a moment earlier. The admin
+// (ALLOWED_ID) needs nothing: it is always admitted.
+export function admitOnFirstDm(
+  bot: Bot,
+  deps: AdmissionDeps & { readonly now: () => Date },
+  ids: readonly number[],
+): void {
+  const handle = bot.handleUpdate.bind(bot);
+  bot.handleUpdate = async (update, envelope) => {
+    const from = update.message?.from ?? update.edited_message?.from ?? update.callback_query?.from;
+    const chat =
+      update.message?.chat ?? update.edited_message?.chat ?? update.callback_query?.message?.chat;
+    if (from !== undefined && chat?.type === 'private' && ids.includes(from.id)) {
+      admitTelegramIds(deps, [from.id], deps.now());
+    }
+    await handle(update, envelope);
   };
 }
 

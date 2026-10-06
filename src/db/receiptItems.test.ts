@@ -4,7 +4,12 @@ import { openDatabase, type Db } from './connection.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from './expenses.js';
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
 import { runMigrations } from './migrate.js';
-import { countReceiptItems, insertReceiptItems, listReceiptItems } from './receiptItems.js';
+import {
+  countReceiptItems,
+  insertReceiptItems,
+  listLedgerReceiptItems,
+  listReceiptItems,
+} from './receiptItems.js';
 import { insertReceipt, type ReceiptId } from './receipts.js';
 import { insertUser, type UserId } from './users.js';
 
@@ -62,6 +67,19 @@ describe('receipt items', () => {
       { name: 'Sir', quantity: '0.535', totalMinor: 4010 },
     ]);
     expect(countReceiptItems(db, RECEIPT)).toBe(2);
+  });
+
+  it("lists the ledger's items by receipt and position, and none of another ledger", () => {
+    insertReceiptItems(db, RECEIPT, [
+      { name: 'Hljeb', quantity: '2', totalMinor: 240 },
+      { name: 'Sir', quantity: '0.535', totalMinor: 4010 },
+    ]);
+
+    expect(listLedgerReceiptItems(db, 'ledger-a' as LedgerId)).toEqual([
+      { receiptId: RECEIPT, position: 1, name: 'Hljeb', quantity: '2', totalMinor: 240 },
+      { receiptId: RECEIPT, position: 2, name: 'Sir', quantity: '0.535', totalMinor: 4010 },
+    ]);
+    expect(listLedgerReceiptItems(db, 'ledger-b' as LedgerId)).toEqual([]);
   });
 
   it('rejects a second insert of the same positions', () => {

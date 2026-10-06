@@ -1,5 +1,6 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { ExportRange } from '../domain/export/rows.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { Schedule } from '../domain/schedule.js';
 import type { LocalDate } from '../domain/time.js';
@@ -270,6 +271,13 @@ function conversionNotes(
   return notes.length === 0 ? [] : [joinHtml(notes, '\n')];
 }
 
+// The privacy policy in the public repo; /privacy links it.
+const PRIVACY_URL = 'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/PRIVACY.md';
+
+// A group member with no stored display name: a deleted account, whose expenses stay in the
+// group's totals (ADR-0024).
+const DELETED_MEMBER = 'удалённый участник';
+
 // `Анна: ≈ 1 650.00 RSD, 5 000.00 KZT` per member, under a heading. Empty when nobody spent.
 function peopleSection(people: PeopleView | undefined): Html[] {
   if (people === undefined || people.length === 0) return [];
@@ -279,7 +287,7 @@ function peopleSection(people: PeopleView | undefined): Html[] {
         html`<b>По участникам</b>`,
         ...people.map(
           (person) =>
-            html`${person.name ?? 'Без имени'}: ${person.converted === true ? '≈ ' : ''}${person.totals.map(formatMoney).join(', ')}`,
+            html`${person.name ?? DELETED_MEMBER}: ${person.converted === true ? '≈ ' : ''}${person.totals.map(formatMoney).join(', ')}`,
         ),
       ],
       '\n',
@@ -333,6 +341,24 @@ function itemCount(n: number): string {
   if (ones === 1) return `${n} позиция`;
   if (ones >= 2 && ones <= 4) return `${n} позиции`;
   return `${n} позиций`;
+}
+
+// `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
+function expenseCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} расходов`;
+  if (ones === 1) return `${n} расход`;
+  if (ones >= 2 && ones <= 4) return `${n} расхода`;
+  return `${n} расходов`;
+}
+
+// An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
+function exportPeriodName(key: string): string {
+  if (key === 'all') return 'всё время';
+  if (/^\d{4}$/.test(key)) return `${key} год`;
+  const month = MONTHS[Number(key.slice(5, 7)) - 1] ?? '';
+  return `${month.toLowerCase()} ${key.slice(0, 4)}`;
 }
 
 // `Test Market · 12 позиций` once fetched, a note once the fetch gave up, nothing while pending.
@@ -496,6 +522,8 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.16.0': html`/privacy рассказывает, какие данные хранит бот и куда они уходят. /delete_account удаляет ваш личный учёт со всеми тратами, чеками и настройками.`,
+  '0.15.0': html`/export присылает траты за выбранный период файлом CSV или Excel, в личном чате и в группе.`,
   '0.14.0': html`Бот остаётся бесплатным для всех, без платных функций. Если хотите поддержать его, /donate принимает Telegram Stars, а пожертвование ничего не открывает. Вернуть пожертвование можно через /paysupport.`,
   '0.13.0': html`Бледный или мятый QR-код на фото чека бот теперь пробует прочитать ещё раз. Если не вышло, подскажет, как переснять.`,
   '0.12.0': html`Личный учёт можно зашифровать в /settings. Траты записываются как обычно, а итоги видны после /unlock с паролем. /lock закрывает учёт.`,
@@ -541,6 +569,7 @@ export const messages = {
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'recurring', description: 'Регулярные траты' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
+    { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
     { command: 'unlock', description: 'Открыть зашифрованный учёт' },
     { command: 'lock', description: 'Закрыть зашифрованный учёт' },
@@ -557,6 +586,94 @@ export const messages = {
       ],
       '\n\n',
     ),
+  // Admission (ADR-0024): a stranger's first private message, and a deep link that admits no one.
+  invitationOnly: html`Бот работает по приглашениям. Попросите ссылку у того, кто вас пригласил.`,
+  inviteInvalid: html`Ссылка недействительна или истекла.`,
+  // The admin's /invite.
+  inviteCreated: ({ link, maxUses, days }: { link: string; maxUses: number; days: number }): Html =>
+    joinHtml(
+      [html`Ссылка-приглашение: до ${maxUses} чел., действует ${days} дн.`, html`${link}`],
+      '\n',
+    ),
+  inviteUsage: html`Использование: /invite — 10 человек, 14 дней; /invite 30 7 — 30 человек, 7 дней. Оба числа от 1 до 1000.`,
+  // The admin's /invites: one line per live code, `abc… — 3/10, до 15 октября`, with a button each.
+  inviteList: (
+    codes: readonly {
+      readonly code: string;
+      readonly used: number;
+      readonly maxUses: number;
+      readonly expiresOn: LocalDate;
+    }[],
+  ): Html =>
+    codes.length === 0
+      ? html`Действующих ссылок нет. Новая: /invite.`
+      : joinHtml(
+          [
+            html`<b>Действующие ссылки</b>`,
+            ...codes.map(
+              (c) =>
+                html`<code>${c.code}</code> — ${c.used}/${c.maxUses}, до ${dayMonth.format(new Date(`${c.expiresOn}T00:00:00Z`))}`,
+            ),
+          ],
+          '\n',
+        ),
+  inviteRevokeButton: (code: string): string => `Отключить ${code}`,
+  inviteRevokedToast: 'Ссылка отключена',
+  inviteAlreadyRevoked: 'Ссылка уже отключена',
+  inviteNotFound: 'Ссылка не найдена',
+  // The admin's /block and /unblock <telegram id>.
+  blockUsage: html`Использование: /block 123456789 или /unblock 123456789 — числовой Telegram id.`,
+  blocked: (id: number): Html => html`Пользователь ${id} заблокирован.`,
+  alreadyBlocked: (id: number): Html => html`Пользователь ${id} уже заблокирован.`,
+  unblocked: (id: number): Html => html`Пользователь ${id} разблокирован.`,
+  notBlocked: (id: number): Html => html`Пользователь ${id} не заблокирован.`,
+  blockUserNotFound: (id: number): Html => html`Пользователь ${id} мне не писал.`,
+  blockAdmin: html`Администратора заблокировать нельзя.`,
+  // The admin's /stats: counts only.
+  stats: (view: {
+    readonly admitted: number;
+    readonly active: number;
+    readonly expenses: number;
+    readonly liveCodes: number;
+  }): Html =>
+    joinHtml(
+      [
+        html`Допущено пользователей: ${view.admitted}`,
+        html`Записывали траты за 7 дней: ${view.active}`,
+        html`Трат за 7 дней: ${view.expenses}`,
+        html`Действующих ссылок: ${view.liveCodes}`,
+      ],
+      '\n',
+    ),
+  // /delete_account (ADR-0024): what goes, what stays, and the two buttons.
+  deleteAccountPrompt: (backupKeep: number): Html =>
+    joinHtml(
+      [
+        html`<b>Удалить аккаунт?</b>`,
+        html`Удалится личный учёт: все траты, чеки, категории и бюджет, а также ваши настройки. Это нельзя отменить.`,
+        html`Останутся траты в общих учётах групп — там вы будете показаны как «${DELETED_MEMBER}», и записи о пожертвованиях: без них нельзя вернуть платёж. В резервных копиях данные хранятся ещё до ${backupKeep} дн.`,
+        html`После удаления пользоваться ботом можно будет только по новому приглашению.`,
+      ],
+      '\n\n',
+    ),
+  // /privacy: the policy itself is PRIVACY.md in the public repo.
+  privacy: joinHtml(
+    [
+      html`Я храню ваш Telegram id, траты, чеки с позициями и настройки — на сервере в ЕС, с ежедневными резервными копиями.`,
+      html`Данные видит администратор бота, кроме зашифрованного учёта. Наружу уходят только запросы чеков на налоговые сайты; рекламы и аналитики нет.`,
+      html`Удалить всё: /delete_account.`,
+      html``,
+      html`Полная политика: ${PRIVACY_URL}`,
+    ],
+    '\n',
+  ),
+  deleteAccountButton: 'Удалить всё',
+  // The author a group card names for an expense whose account was deleted.
+  deletedMember: DELETED_MEMBER,
+  accountDeleted: html`Аккаунт и личный учёт удалены.`,
+  accountDeletedToast: 'Данные удалены',
+  accountAlreadyDeleted: 'Данные уже удалены',
+  accountKept: html`Ничего не удалено.`,
   // Sent to a group once, when it is bound to a new shared ledger (ADR-0014).
   groupWelcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(
@@ -579,7 +696,7 @@ export const messages = {
   },
   groupExpenseDeleted: (view: GroupCardView): Html =>
     joinHtml([html`Удалено.`, groupExpenseLine(view)], ' '),
-  // A deep link to the author's DM card, shown only to an allowlisted author (ADR-0014).
+  // A deep link to the author's DM card, shown only to an admitted author (ADR-0014, ADR-0024).
   groupEditInDmButton: 'Изменить в личке',
   groupNotAuthor: 'Это может только тот, кто записал трату',
   // The group's /settings, for the ledger's owner: the settings open in the DM.
@@ -601,9 +718,12 @@ export const messages = {
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории и шифрование`,
       html`${menu.help} — эта подсказка`,
+      html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
       html`/cancel — отменить ввод`,
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
+      html`/privacy — какие данные хранятся и кто их видит`,
+      html`/delete_account — удалить аккаунт и личный учёт`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
       html``,
@@ -619,6 +739,7 @@ export const messages = {
       html`/today — траты группы за сегодня`,
       html`/week и /month — по категориям и по участникам`,
       html`/budget — бюджет группы: сколько осталось на сегодня и до конца периода`,
+      html`/export — все траты группы файлом CSV или Excel`,
       html`/card — ответом на сообщение с тратой: показать её карточку`,
       html`/settings — часовой пояс и валюта группы (для того, кто добавил меня)`,
       html`/help — эта подсказка`,
@@ -633,6 +754,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'budget', description: 'Бюджет группы: сколько осталось' },
+    { command: 'export', description: 'Выгрузить траты группы в CSV или Excel' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
@@ -678,6 +800,8 @@ export const messages = {
     refund: html`Это чек возврата. Возвраты пока не записываются, ничего не записано.`,
   },
   futureReceipt: html`Дата на чеке ещё не наступила. Ничего не записано.`,
+  // The daily receipt cap (ADR-0024).
+  receiptCapReached: html`Лимит чеков на сегодня исчерпан, попробуйте завтра.`,
 
   // Bank card-purchase SMS (ADR-0021): the header matched, but the body records nothing.
   bankSmsRefused: {
@@ -1067,6 +1191,56 @@ export const messages = {
       budgetStartDay: html`Похоже на трату. Сейчас я жду день месяца. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
       budgetCap: html`Похоже на трату. Сейчас я жду лимит категории. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
     },
+  },
+
+  // /export (ADR-0026): the range step, then the format step, edited in place.
+  // A sealed ledger's picker says the file is a plaintext copy.
+  exportRangePrompt: (sealed: boolean): Html =>
+    sealed
+      ? html`Что выгрузить?\n\nУчёт зашифрован, а файл — нет: копия останется в чате и на ваших устройствах.`
+      : html`Что выгрузить?`,
+  exportRangeButtons: {
+    tm: 'Этот месяц',
+    pm: 'Прошлый месяц',
+    ty: 'Этот год',
+    all: 'Всё время',
+  } satisfies Record<ExportRange, string>,
+  exportFormatPrompt: html`Формат файла?`,
+  exportCsvButton: 'CSV',
+  exportXlsxButton: 'Excel',
+  exportBackButton: '← Назад',
+  exportEmpty: html`За этот период расходов нет`,
+  // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
+  exportDone: (count: number, key: string): Html =>
+    html`Готово: ${expenseCountWords(count)} за ${exportPeriodName(key)}`,
+  // The file stems, sheet names and column headers; a file is `<stem>-<key>.csv`.
+  exportExpensesStem: 'expenses',
+  exportItemsStem: 'receipt-items',
+  exportExpensesSheet: 'Расходы',
+  exportItemsSheet: 'Позиции чеков',
+  exportColumns: (ledgerCurrency: CurrencyCode) => ({
+    date: 'Дата',
+    time: 'Время',
+    amount: 'Сумма',
+    currency: 'Валюта',
+    converted: `Сумма в ${ledgerCurrency}`,
+    category: 'Категория',
+    description: 'Описание',
+    author: 'Автор',
+    shop: 'Магазин',
+    receipt: 'Чек',
+    id: 'ID',
+    unnamedAuthor: 'участник',
+  }),
+  exportItemColumns: {
+    expenseId: 'ID расхода',
+    date: 'Дата',
+    shop: 'Магазин',
+    position: '№',
+    name: 'Наименование',
+    quantity: 'Количество',
+    amount: 'Сумма',
+    currency: 'Валюта',
   },
 
   // Navigation kit (ADR-0011). «Назад» is never a pager label.

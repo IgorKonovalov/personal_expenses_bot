@@ -27,7 +27,7 @@ import {
 import { seedLedgerCategories } from './seedCategories.js';
 import { resolveUserTimezone } from './settings.js';
 
-// Group chats bound to shared ledgers (ADR-0014): binding a group when an allowlisted user adds
+// Group chats bound to shared ledgers (ADR-0014): binding a group when an admitted user adds
 // the bot, and recording a member's message into the bound ledger. The sender's active ledger is
 // neither read nor changed here.
 
@@ -65,7 +65,7 @@ export type BindResult = {
 
 // Binds the chat to a new shared ledger named after it, owned by the adder: the adder's personal
 // currency and timezone, the preset categories, and an active binding. The caller has checked
-// the adder against the allowlist. A chat bound before returns its ledger, reactivating the
+// that the adder is admitted. A chat bound before returns its ledger, reactivating the
 // binding if the bot had been removed, and creates nothing.
 export function bindGroup(
   deps: GroupDeps,

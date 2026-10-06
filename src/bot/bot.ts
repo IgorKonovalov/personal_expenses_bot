@@ -8,21 +8,26 @@ import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
 import { clearFlowOnCommand } from './flows.js';
 import { groupComposer, isGroupChat } from './group/index.js';
+import { registerAdmin } from './handlers/admin.js';
 import { registerBudget } from './handlers/budget.js';
 import { registerCancel } from './handlers/cancel.js';
 import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import { registerDeleteAccount } from './handlers/deleteAccount.js';
 import {
   registerDonate,
   registerPreCheckout,
   registerSuccessfulPayment,
 } from './handlers/donate.js';
+import { registerExport } from './handlers/export.js';
 import { registerHelp } from './handlers/help.js';
+import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerPaySupport } from './handlers/paysupport.js';
+import { registerPrivacy } from './handlers/privacy.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
 import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
@@ -33,7 +38,8 @@ import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
-import { allowlist } from './middleware/allowlist.js';
+import { access } from './middleware/access.js';
+import { rateLimit } from './middleware/rateLimit.js';
 import { replyHtml, type Html } from './render/html.js';
 
 export interface HandlerDeps {
@@ -47,18 +53,24 @@ export interface HandlerDeps {
   readonly keys: LedgerKeyring;
 }
 
-export interface BotOptions extends HandlerDeps {
+// The handlers that check admission or serve the admin (ADR-0024).
+export interface AdminDeps extends HandlerDeps {
+  // Always admitted, and the only sender of the admin commands.
+  readonly adminTelegramId: number;
+}
+
+export interface BotOptions extends AdminDeps {
   readonly token: string;
-  readonly allowedTelegramIds: ReadonlySet<number>;
+  // BACKUP_KEEP: how long deleted data lingers in backups, as /delete_account says.
+  readonly backupKeep: number;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
   // Read on every /donate, so links created after createBot returns are seen. Absent is none.
   readonly donationLinks?: ReadonlyMap<DonationPreset, string>;
   // The external donation page behind /donate's last button. Absent hides the button.
   readonly donateUrl?: string | undefined;
-  // The admin (ADR-0013): their Telegram id, and the notifier that messages them. index.ts
-  // builds the notifier from bot.api after createBot, so it is called late-bound.
-  readonly adminTelegramId?: number;
+  // The notifier that messages the admin (ADR-0013). index.ts builds it from bot.api after
+  // createBot, so it is called late-bound.
   readonly notifyAdmin?: (body: Html) => Promise<void>;
 }
 
@@ -72,6 +84,8 @@ export function createBot(options: BotOptions): Bot {
   // Registered first so it wraps every later middleware, including handlers added after
   // createBot returns. bot.catch only sees errors under bot.start(), not handleUpdate().
   bot.use(errorBoundary(logger));
+  // Before the access check and the group branch: a flood is dropped before any DB read.
+  bot.use(rateLimit(options));
 
   // Group updates and everything else take separate composers (ADR-0014): no DM handler, flow
   // or anchor sees a group update, and the group side never falls through to the DM side.
@@ -87,7 +101,7 @@ export function createBot(options: BotOptions): Bot {
   };
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
   registerSuccessfulPayment(dm, donateDeps);
-  dm.use(allowlist(options.allowedTelegramIds, logger));
+  dm.use(access(options));
   registerPreCheckout(dm);
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
@@ -104,14 +118,20 @@ export function createBot(options: BotOptions): Bot {
   registerCategories(dm, options);
   registerBudget(dm, options);
   registerRecurring(dm, options);
+  registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);
   registerCancel(dm, options);
+  registerDeleteAccount(dm, options);
   registerHelp(dm);
   registerChangelog(dm);
+  registerPrivacy(dm);
   registerDonate(dm, donateDeps);
   registerPaySupport(dm, donateDeps);
   registerRefund(dm, donateDeps);
+  // Admin commands: from anyone else they fall through to the unknown-command reply.
+  registerInvite(dm, options);
+  registerAdmin(dm, options);
   registerUnknownCommand(dm);
   registerMenu(dm, options);
   registerCard(dm, options);

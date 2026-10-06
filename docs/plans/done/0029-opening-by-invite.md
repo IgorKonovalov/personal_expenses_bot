@@ -1,10 +1,10 @@
 # 0029: Opening by invite: invite links, abuse limits, a privacy policy and account deletion
 
-> **Status:** approved
+> **Status:** done (2026-10-06): built as planned after one fix pass, one minor fixed at close, Phase 7 deploy and open owed, v0.16.0
 > **Created:** 2026-10-01
-> **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
-> [ADR-0002](../adrs/0002-ledgers-and-identity.md) (identity)
+> **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
+> [ADR-0002](../../adrs/0002-ledgers-and-identity.md) (identity)
 
 ## TL;DR
 
@@ -25,7 +25,7 @@ hog the bot, and one user shouldn't be able to drive hundreds of requests at `su
 Strangers' financial data also brings obligations a household didn't need: a stated policy, and
 a way to delete everything. ADR-0024 records why admission moves into the database.
 
-**Prerequisites for the opening itself** (Phase 6, not for building this plan): Plan 0015
+**Prerequisites for the opening itself** (Phase 7, not for building this plan): Plan 0015
 (onboarding), Plan 0019 (encrypted ledger), Plan 0024 (export) and Plan 0028 (donations). This
 plan can land before them. With the household admitted at boot, it changes nothing they see
 until the first link goes out.
@@ -235,16 +235,27 @@ between phases. The architect reviews once at the end, in a fresh session. All n
   `/help` lists both new commands. `PRIVACY.md` names every external host the README lists under
   Receipts and Currency conversion.
 
-### Phase 6: Deploy and open
+### Phase 6: Prepare the opening
 - **Owner skill:** human
 - **What:**
   1. Fill in the contact in `PRIVACY.md`.
-  2. On the VPS, replace `ALLOWED_TELEGRAM_IDS` with `ADMIN_TELEGRAM_ID` (the old first id) and
-     `ADMIT_TELEGRAM_IDS` (the rest), before the deploy.
-  3. Push and deploy, then check that the household still records.
-  4. Test `/invite` with a second account.
-  5. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+  2. On the VPS, add `ADMIN_TELEGRAM_ID` (the admin's id) and `ADMIT_TELEGRAM_IDS` (the rest) to
+     the `.env`, and keep `ALLOWED_TELEGRAM_IDS`: the code before 0029 requires it, so every
+     deploy until 0029 ships still boots.
 - **Files touched:** `PRIVACY.md`, the VPS `.env`.
+- **Done when:** `PRIVACY.md` names a contact, and the VPS `.env` sets `ADMIN_TELEGRAM_ID` and
+  lists every other household id in `ADMIT_TELEGRAM_IDS`. This phase blocks the merge, so the
+  new keys exist before any push can deploy 0029.
+
+### Phase 7: Deploy and open
+- **Owner skill:** human
+- **Blocks merge:** no
+- **What:**
+  1. Delete `ALLOWED_TELEGRAM_IDS` from the VPS `.env`, which 0029 refuses at boot, then push
+     and deploy, and check that the household still records.
+  2. Test `/invite` with a second account.
+  3. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+- **Files touched:** the VPS `.env`.
 - **Done when:** after the deploy, every household member records `450 кофе` in private. A test
   account admitted by a fresh link records too, and `/delete_account` on it leaves the
   household's data untouched.
@@ -280,7 +291,9 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 ## Risks & open questions
 
 - **Env rename at deploy.** A deploy before the `.env` edit fails at boot, by design. The
-  household is then offline until the edit. Phase 6 orders the edit first.
+  household is then offline until the edit. Phase 6 adds the new keys, and Phase 7 deletes the old
+  one right before the push that ships 0029. Until then, a deploy of the code before 0029 needs
+  the old key, so both stay.
 - **An orphaned group ledger.** If the user who bound a group deletes their account, nobody can
   change that group's settings. Accepted for now. Handing ownership to another admitted member is
   a followup.
@@ -313,22 +326,205 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: an invite link admits a stranger | dev | not started | |
-| 2: Admin tools: list and revoke codes, block, stats | dev | not started | |
-| 3: Abuse limits: message rate and daily receipts | dev | not started | |
-| 4: Delete my account | dev | not started | |
-| 5: Privacy policy and `/privacy` | dev | not started | |
-| 6: Deploy and open | human | not started | |
+| 1: Walking skeleton: an invite link admits a stranger | dev | done | a5d3864 |
+| 2: Admin tools: list and revoke codes, block, stats | dev | done | 5e1c62b |
+| 3: Abuse limits: message rate and daily receipts | dev | done | cfd47fc |
+| 4: Delete my account | dev | done | 8b41787 |
+| 5: Privacy policy and `/privacy` | dev | done | 56b6444 |
+| 6: Prepare the opening | human | done | PRIVACY.md contact in this commit; VPS .env holds ADMIN_TELEGRAM_ID (no other household id, so no ADMIT_TELEGRAM_IDS) beside the old key |
+| 7: Deploy and open | human | owed | |
 
 ### Notes
 
+- Phase 1: the migration is `0014_admission.sql`. Redemption runs in the access middleware
+  (`src/bot/middleware/access.ts`), not in `src/bot/handlers/start.ts`, because
+  `clearFlowOnCommand` provisions the sender before any command handler; `start.ts` is unchanged
+  (it already ignores an unknown payload). Only an 11-character base64url payload is taken as a
+  code; a stranger's `/start e_…` or `gs_…` gets the invitation reply.
+- Phase 1: files changed outside `Files touched`: `src/bot/group/index.ts` (drops
+  `allowedTelegramIds` from `GroupHandlerDeps`), `src/bot/testHarness.ts` (admin = `ALLOWED_ID`;
+  `admitOnFirstDm` admits `SECOND_ALLOWED_ID` just before its first private update),
+  `src/config.test.ts`, `src/bot/bot.test.ts`, `src/bot/handlers/unlock.test.ts`,
+  `src/bot/group/group.test.ts` (two stranger deep-link cases now expect the invitation reply),
+  `src/db/ledgerKeys.test.ts` (pinned the migration list `['0012']`; now asserts 0012 runs
+  first). `src/bot/middleware/allowlist.test.ts` was removed with `allowlist.ts`; its cases
+  moved to `access.test.ts`. Added test `src/db/invites.test.ts`.
+- Phase 1: `admitAtBoot` is `admitTelegramIds(deps, ids, now)`; `src/index.ts` passes the admin
+  plus `ADMIT_TELEGRAM_IDS`. `/invite` with one argument shows the usage.
+- Phase 1: the group card's `authorAllowlisted` is renamed `authorAdmitted`.
+- Phase 2: `src/bot/bot.ts` (outside `Files touched`) registers `registerAdmin`;
+  `src/bot/callbacks.ts` is unchanged. `/stats` counts admitted users as `admitted_at` set and
+  `blocked_at` NULL, and leaves soft-deleted expenses out of both 7-day counts. `/block` on an id
+  with no user row replies that the user never wrote; on the admin it refuses. A blocked user's
+  `my_chat_member` (adding the bot) is dropped too, so the bot stays in that group unbound.
+- Phase 3: `src/bot/handlers/text.ts` (outside `Files touched`) takes `AdminDeps` so the link
+  path can exempt the admin. `recordReceipt`'s `dailyCap` is optional: absent means no cap, so
+  the existing test callers are unchanged. The cap counts the user's receipts in any ledger,
+  deleted expenses included, created within the local day of the ledger's effective timezone.
+- Phase 3 done-whens: the Belgrade cap case and the duplicate past the cap are tested on
+  `recordReceipt` (`src/services/recordReceipt.test.ts`, outside `Files touched`), not with a
+  redelivered photo through the bot: the photo path ends in the same `recordReceipt` call. The
+  injected-clock case is tested on the `RateLimiter` class; the middleware is tested through the
+  bot at a fixed clock.
+- Phase 4: files changed outside `Files touched`: `src/bot/bot.ts` (registers the handler;
+  `BotOptions.backupKeep` for the prompt's backup line), `src/index.ts`,
+  `src/bot/testHarness.ts`, `src/bot/bot.test.ts`, `src/bot/handlers/unlock.test.ts` (pass
+  `backupKeep`), and `src/bot/middleware/access.ts`: the second [Удалить всё] comes from an id
+  with no identity, so the access gate answers it with «Данные уже удалены». Listed but
+  unchanged: `src/db/receiptItems.ts` (the existing `deleteLedgerReceipts` deletes the items),
+  `src/bot/callbacks.ts`, `src/bot/group/summary.ts` (the «удалённый участник» fallback is in
+  `messages.ts`, where the report's «Без имени» was).
+- Phase 4: the sealed ledger's `ledger_keys` and `ledger_key_wraps` rows are deleted in
+  `deleteLedger` (`src/db/ledgers.ts`), not in `src/db/ledgerKeys.ts`. The group card's author
+  is «удалённый участник» on `/card` for an expense whose author is deleted.
+- Phase 5: `.env.example` was already updated in Phase 1 and is unchanged here;
+  `src/bot/handlers/help.ts` is unchanged (the help text is in `messages.ts`). Added test
+  `src/bot/handlers/privacy.test.ts`: it reads the backticked host names from the README's
+  Receipts and Currency conversion sections and checks `PRIVACY.md` names each. `/privacy` and
+  `/delete_account` are in `/help`, not in the `setMyCommands` list. The contact in `PRIVACY.md`
+  is the placeholder `TODO-CONTACT`, for Phase 6.
+- Followups noticed, not acted on: `src/services/groupChats.ts` comments still say "allowlisted
+  user" / "the allowlist" (lines 30 and 68); a stranger's callback query other than
+  [Удалить всё] is dropped without an `answerCallbackQuery`.
+- Review round 1, major 1 (donation rows missing from the policy): `PRIVACY.md` and
+  `deleteAccountPrompt` name donation records and that they outlive `/delete_account`; tests in
+  `deleteAccount.test.ts` and `privacy.test.ts`. Commit 084e6b2.
+- Review round 1, minor 1 (rate limit drops `successful_payment`): exempted in `rateLimit`, with
+  a flood-then-pay test. Commit e5f2db9.
+- Review round 1, nits 1 and 2 (misplaced `softDeleteExpense` comment, "allowlist" wording in
+  `groupChats.ts` and a `group.test.ts` title): commit 05c8a75.
+- Review round 1, minor 2 (stale `0013_admission.sql` and outstanding-phase lines in this log):
+  not changed; the fix pass edits only this Notes list.
+
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** migration `0014_admission.sql`; `src/services/admission.ts`,
+  `src/db/invites.ts`, `src/bot/middleware/access.ts` (replaces `allowlist.ts`),
+  `src/bot/middleware/rateLimit.ts`, `src/bot/handlers/invite.ts`, `admin.ts`,
+  `deleteAccount.ts`, `privacy.ts`, `src/services/deleteAccount.ts`, the receipt cap in
+  `recordReceipt`, `PRIVACY.md`. Commits a5d3864, 5e1c62b, cfd47fc, 8b41787, 56b6444.
+- **User-visible surface changed:** new commands `/invite`, `/invites`, `/block`, `/unblock`,
+  `/stats` (admin only), `/privacy`, `/delete_account`; callback data `inv:off:<code>`,
+  `acct:del`, `acct:keep`; new copy «Бот работает по приглашениям…», «Ссылка недействительна или
+  истекла.», «Лимит чеков на сегодня исчерпан, попробуйте завтра.», «удалённый участник» (was
+  «Без имени» in group reports); `/help` gains two lines. Env: `ADMIN_TELEGRAM_ID` (required),
+  `ADMIT_TELEGRAM_IDS` (optional); a set `ALLOWED_TELEGRAM_IDS` fails the boot.
+- **Gate at the tip (9152406):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 87 files, 1168 tests passed; `node scripts/check-doc-links.mjs` exit 0, 259 relative links
+  resolve.
+- **Outstanding `human` phases:** Phase 7 (deploy and open; blocks merge: no).
+
+## Close review
+
+### Plan 0029 review, round 2 (tip 9152406)
+
+**Verdict:** The round-1 major, the rate-limit minor and both nits are fixed, with tests that defend
+them, and the gate is green. One minor is left: the implementation log still names the wrong
+migration and the wrong owed phase. Nothing blocks the close.
+
+#### Gate (run in this session at 9152406)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 87 files, 1168 tests passed. That is round 1's 1166 plus the two new tests.
+- `node scripts/check-doc-links.mjs`: exit 0, 259 relative links resolve.
+- The tree is clean after the run.
+
+#### Scope of this round
+
+There has been no new merge from main since round 1 (4fd8d61). The fix commits 084e6b2, e5f2db9,
+05c8a75 and 9152406 touch only the files listed below. The round-1 grading of the Phase 1-5
+done-whens and their assertions still stands (see `0029-round-1.md`). This round re-reads the fixes.
+
+#### Round-1 findings re-checked
+
+- **Major 1 (donations missing from the policy), fixed in 084e6b2.**
+  - `PRIVACY.md` adds «Пожертвования: сколько звёзд, когда и идентификатор платежа Telegram»
+    under «Что хранится». «Роль Telegram» says that Stars payments go through Telegram.
+    «Удаление» says that donation records stay, because a refund needs them.
+  - `deleteAccountPrompt` (`src/bot/messages.ts:585`) adds the same clause to the «Останутся» line.
+  - Tests:
+    - `src/bot/handlers/deleteAccount.test.ts`: the test records a 50-Star donation before the
+      deletion and asserts that the row `{stars: 50, telegram_payment_charge_id: 'charge-1'}`
+      exists before and after the deletion.
+    - `src/bot/handlers/privacy.test.ts`: the test asserts the «- Пожертвования:» bullet, and
+      that «пожертвованиях» appears inside the «Удаление» section (sliced up to the next `## `)
+      and in the prompt.
+
+  Both tests are real assertions, not tautologies.
+- **Minor 1 (the rate limit drops `successful_payment`), fixed in e5f2db9.**
+  - `src/bot/middleware/rateLimit.ts:68` passes an update that carries a `successful_payment`
+    straight to `next()`, without counting it, as it does for the admin.
+  - `rateLimit.test.ts` sends 30 updates (the limit), then the payment as the 31st, which the
+    limiter would otherwise drop. It asserts exactly one `donations` row.
+- **Nit 1 (misplaced comment), fixed in 05c8a75.** The comment sits above `softDeleteExpense` again
+  (`src/db/expenses.ts:179`).
+- **Nit 2 ("allowlist" wording), fixed in 05c8a75.** `src/services/groupChats.ts:30` and `:68`, and
+  the `group.test.ts:436` title, now say "admitted".
+- **Minor 2 (stale log), not fixed.** The fix pass's note gives as its reason that "the fix pass
+  edits only this Notes list". `dev` owns the whole `## Implementation log`, close triggers
+  included, so that reason does not hold. It is carried below.
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+1. **The implementation log still names `0013_admission.sql` and the wrong owed phase.**
+   - **What:**
+     - Main took `0013` for donations, and the tree's migration is
+       `src/db/migrations/0014_admission.sql`. The log still says `0013_admission.sql` in the
+       Phase 1 note and in "What shipped".
+     - "Outstanding `human` phases" still describes Phase 6 as owed. The phase table marks
+       Phase 6 done and Phase 7 owed.
+     - "Gate at the tip (56b6444)" quotes numbers from before the merge.
+   - **Where:** `docs/plans/0029-opening-by-invite.md:339`, `:401`, `:412`, `:415`.
+   - **Why it matters:** the close session and later readers take the migration name and the owed
+     phase from this log.
+   - **Fix:** the close session can make this change in the plan, since it already edits the file.
+     A separate fix pass is not needed.
+     - Change both mentions to `0014_admission.sql`.
+     - Make the outstanding line read "Phase 7 (deploy and open; blocks merge: no)".
+     - Restate the gate at 9152406: 87 files, 1168 tests, 259 links.
+
+#### nit
+
+None.
+
+#### Bookkeeping owed at close
+
+- Apply minor 1 to the log.
+- Flip Status to `done` and `git mv` the plan to `docs/plans/done/`. Repair inbound and outbound
+  links, then run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0024 (`proposed` to `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Bump the minor version for this feature plan:
+  - `package.json`;
+  - a `CHANGELOG.md` entry;
+  - a `versionAnnouncements` entry in `src/bot/messages.ts`. The household sees `/privacy` and
+    `/delete_account`, and the admin commands are admin-only, so the announcement names only the
+    first two.
+- Phase 7 (human) stays owed. It does not block the merge.
+- Carry these followups:
+  - hand a group ledger to a new owner (already in `## Followups`);
+  - answer a stranger's callback queries other than [Удалить всё] with `answerCallbackQuery`.
+
+### Resolved findings from earlier rounds
+
+- Round 1, major 1 (donation records missing from `PRIVACY.md` and the deletion prompt): fixed in 084e6b2.
+- Round 1, minor 1 (the rate limit drops a `successful_payment`): fixed in e5f2db9.
+- Round 1, nit 1 (misplaced `softDeleteExpense` comment): fixed in 05c8a75.
+- Round 1, nit 2 ("allowlist" wording in `groupChats.ts` and a `group.test.ts` title): fixed in 05c8a75.
+- Round 1, minor 2 / round 2, minor 1 (stale migration name, gate and owed phase in the log): fixed at close in e720435.
+
+Phase 7 (deploy and open, human) stays owed; it does not block the merge.
 
 ## Followups
 
 - Hand a group ledger to another admitted member when its owner deletes their account.
+- Answer a stranger's callback queries other than [Удалить всё] with `answerCallbackQuery`.

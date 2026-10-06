@@ -17,6 +17,7 @@ import { createHeartbeat, heartbeatPath } from './heartbeat.js';
 import { createLogger } from './logger.js';
 import { register } from './scheduler/types.js';
 import { startScheduler } from './scheduler/worker.js';
+import { admitTelegramIds } from './services/admission.js';
 import { announceVersion } from './services/announceVersion.js';
 import { createLedgerKeyring } from './services/ledgerKeys.js';
 import { seedLedgersWithoutCategories } from './services/seedCategories.js';
@@ -32,6 +33,19 @@ const applied = runMigrations(db, new Date());
 logger.info({ node: process.version, applied }, 'migrations checked');
 const seeded = seedLedgersWithoutCategories(db, new Date());
 logger.info({ ledgers: seeded.length }, 'categories seeded');
+// The admin and ADMIT_TELEGRAM_IDS (ADR-0024). Idempotent: an admitted id keeps its admitted_at.
+const admitted = admitTelegramIds(
+  {
+    db,
+    newId: randomUUID,
+    adminTelegramId: config.adminTelegramId,
+    defaultTimezone: config.defaultTimezone,
+    defaultCurrency: config.defaultCurrency,
+  },
+  [config.adminTelegramId, ...config.admitTelegramIds],
+  new Date(),
+);
+logger.info({ admitted }, 'boot admissions checked');
 
 const backups: BackupSchedule | undefined =
   config.backupDir === undefined
@@ -53,7 +67,8 @@ const donationLinks: DonationLinks = new Map();
 
 const bot = createBot({
   token: config.botToken,
-  allowedTelegramIds: config.allowedTelegramIds,
+  adminTelegramId: config.adminTelegramId,
+  backupKeep: config.backupKeep,
   logger,
   db,
   newId: randomUUID,
@@ -63,7 +78,6 @@ const bot = createBot({
   keys,
   donationLinks,
   donateUrl: config.donateUrl,
-  adminTelegramId: config.adminTelegramId,
   // Late-bound: the notifier needs bot.api, built just below. No update is handled before
   // polling starts.
   notifyAdmin: (body) => notifyAdmin(body),

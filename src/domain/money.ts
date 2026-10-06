@@ -86,6 +86,20 @@ export function formatMoney({ amountMinor, currency }: Money): string {
   return `${sign}${grouped}${fraction} ${currency}`;
 }
 
+// The exact decimal of an amount for a file cell, with no grouping and the given separator:
+// 45000 RSD -> `450,00` with a comma, 1500 JPY -> `1500`, -5 RSD -> `-0.05` with a dot.
+export function decimalAmount({ amountMinor, currency }: Money, separator: '.' | ','): string {
+  if (!Number.isSafeInteger(amountMinor)) {
+    throw new RangeError('amountMinor must be a safe integer');
+  }
+  const exponent = currencyExponent(currency);
+  const sign = amountMinor < 0 ? '-' : '';
+  const digits = String(Math.abs(amountMinor)).padStart(exponent + 1, '0');
+  const integerDigits = digits.slice(0, digits.length - exponent);
+  const fraction = exponent === 0 ? '' : `${separator}${digits.slice(digits.length - exponent)}`;
+  return `${sign}${integerDigits}${fraction}`;
+}
+
 const INVALID: ParseAmountResult = { kind: 'invalid' };
 
 function result(amountMinor: number | undefined): ParseAmountResult {

@@ -96,6 +96,13 @@ export function clearPendingFlow(db: Db, userId: UserId): boolean {
   return changes === 1;
 }
 
+// Deletes the user's session row: anchor, pending flow and last input key.
+export function deleteFlowSession(db: Db, userId: UserId): boolean {
+  return (
+    db.prepare<[string]>('DELETE FROM flow_sessions WHERE user_id = ?').run(userId).changes > 0
+  );
+}
+
 // Clears the pending flow and records the answer that completed it, so its redelivery is
 // recognised. Returns false when no flow was pending.
 export function completePendingFlow(db: Db, userId: UserId, inputKey: string): boolean {

@@ -1,4 +1,5 @@
 import type { ReceiptCountry } from '../domain/receipts/types.js';
+import type { UtcWindow } from '../domain/time.js';
 import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
 import type { ExpenseId } from './expenses.js';
@@ -260,6 +261,20 @@ export function findReceiptAuthor(db: Db, expenseId: ExpenseId): User | undefine
         timezone: row.timezone,
         activeLedgerId: row.active_ledger_id as LedgerId | null,
       };
+}
+
+// How many receipts the user recorded within the window, in any ledger, deleted expenses
+// included: the daily receipt cap's count (ADR-0024).
+export function countReceiptsCreatedBy(db: Db, userId: UserId, window: UtcWindow): number {
+  return (
+    db
+      .prepare<[string, string, string], number>(
+        `SELECT COUNT(*) FROM receipts r JOIN expenses e ON e.id = r.expense_id
+          WHERE e.created_by = ? AND r.created_at >= ? AND r.created_at < ?`,
+      )
+      .pluck()
+      .get(userId, window.start.toISOString(), window.end.toISOString()) ?? 0
+  );
 }
 
 // Every receipt behind the ledger's expenses, deleted expenses included.

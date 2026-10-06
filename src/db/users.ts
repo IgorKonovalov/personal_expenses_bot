@@ -48,6 +48,109 @@ export function setActiveLedger(db: Db, userId: UserId, ledgerId: LedgerId): voi
   );
 }
 
+// The admission state of the user behind an identity (ADR-0024); undefined when none matches.
+export interface Admission {
+  readonly userId: UserId;
+  readonly admittedAt: Date | null;
+  readonly blockedAt: Date | null;
+}
+
+export function findAdmissionByIdentity(
+  db: Db,
+  provider: string,
+  externalId: string,
+): Admission | undefined {
+  const row = db
+    .prepare<
+      [string, string],
+      { id: string; admitted_at: string | null; blocked_at: string | null }
+    >(
+      `SELECT u.id, u.admitted_at, u.blocked_at
+         FROM auth_identities i JOIN users u ON u.id = i.user_id
+        WHERE i.provider = ? AND i.external_id = ?`,
+    )
+    .get(provider, externalId);
+  if (row === undefined) return undefined;
+  return {
+    userId: row.id as UserId,
+    admittedAt: row.admitted_at === null ? null : new Date(row.admitted_at),
+    blockedAt: row.blocked_at === null ? null : new Date(row.blocked_at),
+  };
+}
+
+// Sets `admitted_at` unless it is already set. Returns false when nothing was written.
+export function admitUser(db: Db, userId: UserId, at: Date): boolean {
+  return (
+    db
+      .prepare<[string, string]>(
+        'UPDATE users SET admitted_at = ? WHERE id = ? AND admitted_at IS NULL',
+      )
+      .run(at.toISOString(), userId).changes > 0
+  );
+}
+
+// Sets or clears `blocked_at`. Returns false when the user was already in that state.
+export function setUserBlocked(db: Db, userId: UserId, at: Date | null): boolean {
+  const sql =
+    at === null
+      ? 'UPDATE users SET blocked_at = NULL WHERE id = ? AND blocked_at IS NOT NULL'
+      : 'UPDATE users SET blocked_at = ? WHERE id = ? AND blocked_at IS NULL';
+  const params = at === null ? [userId] : [at.toISOString(), userId];
+  return db.prepare(sql).run(...params).changes > 0;
+}
+
+// The admin's /stats counts (ADR-0024): no amounts, no descriptions.
+export interface UsageCounts {
+  // Admitted and not blocked.
+  readonly admitted: number;
+  // Users who created a live expense in any ledger since `since`.
+  readonly active: number;
+  // Live expenses created since `since`.
+  readonly expenses: number;
+}
+
+export function countUsage(db: Db, since: Date): UsageCounts {
+  const admitted =
+    db
+      .prepare<[], number>(
+        'SELECT COUNT(*) FROM users WHERE admitted_at IS NOT NULL AND blocked_at IS NULL',
+      )
+      .pluck()
+      .get() ?? 0;
+  const recent = db
+    .prepare<[string], { active: number; expenses: number }>(
+      `SELECT COUNT(DISTINCT created_by) AS active, COUNT(*) AS expenses
+         FROM expenses WHERE deleted_at IS NULL AND created_at >= ?`,
+    )
+    .get(since.toISOString());
+  return { admitted, active: recent?.active ?? 0, expenses: recent?.expenses ?? 0 };
+}
+
+// Account deletion's tombstone (ADR-0024): the identity goes, so the Telegram id matches no one,
+// and the row stays for the group expenses it authored, with admission and the active ledger
+// cleared. Returns false when the user was already deleted.
+export function tombstoneUser(db: Db, userId: UserId, at: Date): boolean {
+  db.prepare<[string]>('DELETE FROM auth_identities WHERE user_id = ?').run(userId);
+  return (
+    db
+      .prepare<[string, string]>(
+        `UPDATE users SET deleted_at = ?, admitted_at = NULL, active_ledger_id = NULL
+          WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .run(at.toISOString(), userId).changes > 0
+  );
+}
+
+// Whether the user's account was deleted.
+export function isUserDeleted(db: Db, userId: UserId): boolean {
+  return (
+    db
+      .prepare<[string], number>('SELECT deleted_at IS NOT NULL FROM users WHERE id = ?')
+      .pluck()
+      .get(userId) === 1
+  );
+}
+
 // Returns false when the user already has this timezone: nothing is written.
 export function updateUserTimezone(db: Db, userId: UserId, timezone: string): boolean {
   return (

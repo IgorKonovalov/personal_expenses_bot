@@ -1,8 +1,8 @@
 # ADR-0024: Admission lives in the database, granted by admin-made invite codes
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0029](../plans/0029-opening-by-invite.md)
+> **Related plan(s):** [Plan 0029](../plans/done/0029-opening-by-invite.md)
 
 ## Context
 

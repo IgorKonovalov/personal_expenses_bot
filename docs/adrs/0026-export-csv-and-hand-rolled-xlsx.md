@@ -1,8 +1,8 @@
 # ADR-0026: Export writes CSV and a hand-rolled XLSX, with no spreadsheet dependency
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-03)
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0024 ([0024-export-and-data-ownership.md](../plans/0024-export-and-data-ownership.md))
+> **Related plan(s):** Plan 0024 ([0024-export-and-data-ownership.md](../plans/done/0024-export-and-data-ownership.md))
 
 ## Context
 

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot } from 'grammy';
+import { inflateRawSync } from 'node:zlib';
+import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
@@ -11,8 +12,10 @@ import type { CategoryId } from '../db/categories.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
+import { insertReceiptItems } from '../db/receiptItems.js';
+import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
 import type { RuleId } from '../db/recurring.js';
-import type { UserId } from '../db/users.js';
+import { findUserByIdentity, type UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
@@ -27,6 +30,7 @@ import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, registerCommands } from './bot.js';
 import { recurringProvider } from './recurringProvider.js';
 import {
@@ -388,7 +392,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /recurring, /categories, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
+  it('registers /today, /week, /month, /budget, /recurring, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -404,12 +408,13 @@ describe('command registration at boot', () => {
             { command: 'budget', description: messages.commands[3].description },
             { command: 'recurring', description: messages.commands[4].description },
             { command: 'categories', description: messages.commands[5].description },
-            { command: 'settings', description: messages.commands[6].description },
-            { command: 'unlock', description: messages.commands[7].description },
-            { command: 'lock', description: messages.commands[8].description },
-            { command: 'help', description: messages.commands[9].description },
-            { command: 'changelog', description: messages.commands[10].description },
-            { command: 'donate', description: messages.commands[11].description },
+            { command: 'export', description: messages.commands[6].description },
+            { command: 'settings', description: messages.commands[7].description },
+            { command: 'unlock', description: messages.commands[8].description },
+            { command: 'lock', description: messages.commands[9].description },
+            { command: 'help', description: messages.commands[10].description },
+            { command: 'changelog', description: messages.commands[11].description },
+            { command: 'donate', description: messages.commands[12].description },
           ],
         },
       },
@@ -536,12 +541,14 @@ describe('/changelog', () => {
     expect(messages.help).toContain('/changelog');
   });
 
-  it('answers nothing to a user outside the allow-list', async () => {
+  it('answers a user who is not admitted with the invitation reply only', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, fromId: STRANGER_ID, text: '/changelog' }));
 
-    expect(calls).toEqual([]);
+    expect(calls).toMatchObject([
+      { method: 'sendMessage', payload: { chat_id: STRANGER_ID, text: messages.invitationOnly } },
+    ]);
   });
 });
 
@@ -2331,7 +2338,8 @@ describe('/budget and the card line (ADR-0017)', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -2862,7 +2870,8 @@ describe('/week and /month', () => {
     let messageId = 99;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -3346,7 +3355,8 @@ describe('/categories screen and text flows', () => {
     let messageId = opts.firstMessageId ?? 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -3792,7 +3802,8 @@ describe('/settings hub and the timezone picker', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: createLogger('info', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -5050,7 +5061,8 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     let messageId = 100;
     const bot = createBot({
       token: '123456:test-token',
-      allowedTelegramIds: new Set([ALLOWED_ID]),
+      adminTelegramId: ALLOWED_ID,
+      backupKeep: 14,
       logger: createLogger('trace', { write: (line: string) => void logLines.push(line) }),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -5447,5 +5459,405 @@ describe('recurring expenses', () => {
     expect(calls[0]?.payload).toMatchObject({
       text: '<b>Сегодня, 1 ноября — «Личные расходы»</b>\n45 000.00 RSD',
     });
+  });
+});
+
+interface SentDocument {
+  readonly chatId: unknown;
+  readonly filename: string | undefined;
+  readonly bytes: Buffer;
+}
+
+// The documents the bot sent, alone or in an album, with the bytes each InputFile holds.
+async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]> {
+  const files = calls.flatMap((call) => {
+    if (call.method === 'sendDocument') {
+      const payload = call.payload as { chat_id: unknown; document: InputFile };
+      return [{ chatId: payload.chat_id, file: payload.document }];
+    }
+    if (call.method === 'sendMediaGroup') {
+      const payload = call.payload as { chat_id: unknown; media: { media: InputFile }[] };
+      return payload.media.map((item) => ({ chatId: payload.chat_id, file: item.media }));
+    }
+    return [];
+  });
+  return Promise.all(
+    files.map(async ({ chatId, file }) => {
+      const raw = await file.toRaw();
+      if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
+      return { chatId, filename: file.filename, bytes: Buffer.from(raw) };
+    }),
+  );
+}
+
+const EXPENSE_HEADER = 'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Магазин;Чек;ID';
+
+// The deflated bytes of a zip entry, found by its local header's name.
+function zipEntry(zip: Buffer, name: string): Buffer {
+  for (let at = 0; zip.readUInt32LE(at) === 0x04034b50;) {
+    const size = zip.readUInt32LE(at + 18);
+    const nameLength = zip.readUInt16LE(at + 26);
+    const dataAt = at + 30 + nameLength + zip.readUInt16LE(at + 28);
+    if (zip.toString('utf8', at + 30, at + 30 + nameLength) === name) {
+      return zip.subarray(dataAt, dataAt + size);
+    }
+    at = dataAt + size;
+  }
+  throw new Error(`no zip entry ${name}`);
+}
+
+// A CSV's lines after the BOM, without the final CRLF.
+function csvLines(bytes: Buffer): string[] {
+  return bytes.subarray(3).toString('utf8').split('\r\n').slice(0, -1);
+}
+
+describe('/export (ADR-0026)', () => {
+  const rangeKeyboard = {
+    inline_keyboard: [
+      [
+        { text: 'Этот месяц', callback_data: 'xp:r:tm' },
+        { text: 'Прошлый месяц', callback_data: 'xp:r:pm' },
+      ],
+      [
+        { text: 'Этот год', callback_data: 'xp:r:ty' },
+        { text: 'Всё время', callback_data: 'xp:r:all' },
+      ],
+    ],
+  };
+  const formatKeyboard = (range: string) => ({
+    inline_keyboard: [
+      [
+        { text: 'CSV', callback_data: `xp:f:${range}:csv` },
+        { text: 'Excel', callback_data: `xp:f:${range}:xlsx` },
+      ],
+      [{ text: '← Назад', callback_data: 'xp:back' }],
+    ],
+  });
+
+  async function withTwoExpenses() {
+    const harness = createTestBot();
+    await harness.bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '450 кофе' }));
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 2, messageId: 2, text: '12,50 EUR такси' }),
+    );
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('asks for the range, then the format in place, and [← Назад] goes back', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:r:pm', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:back', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'sendMessage',
+      'answerCallbackQuery',
+      'editMessageText',
+      'answerCallbackQuery',
+      'editMessageText',
+    ]);
+    expect(calls[0]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+    expect(calls[2]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Формат файла?',
+      reply_markup: formatKeyboard('pm'),
+    });
+    expect(calls[4]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+  });
+
+  const idOf = (db: Db, description: string) =>
+    db.prepare('SELECT id FROM expenses WHERE description = ?').pluck().get(description) as string;
+
+  it('sends a CSV of 450 кофе and 12,50 EUR такси for all time, then closes the picker', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:r:all', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 5, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents).toHaveLength(1);
+    const [csv] = documents;
+    expect(csv?.chatId).toBe(ALLOWED_ID);
+    expect(csv?.filename).toBe('expenses-all.csv');
+    expect([...(csv?.bytes.subarray(0, 3) ?? [])]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = csvLines(csv?.bytes ?? Buffer.alloc(0));
+    // A personal ledger: no Автор column. No EUR rate is stored, so its converted cell is empty.
+    expect(lines[0]).toBe(EXPENSE_HEADER);
+    expect(lines.slice(1)).toEqual([
+      `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      expect.stringMatching(
+        new RegExp(`^2026-09-29;23:50;12,50;EUR;;[^;]*;такси;;;${idOf(db, 'такси')}$`),
+      ),
+    ]);
+    const edits = calls.filter((call) => call.method === 'editMessageText');
+    expect(edits.at(-1)?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Готово: 2 расхода за всё время',
+    });
+    expect(edits.at(-1)?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('sends [Excel] as one expenses-all.xlsx zip, and closes the picker', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
+    // Both expenses as numeric cells in the sheet, the date as text.
+    const sheet = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet1.xml')).toString('utf8');
+    expect(sheet).toContain('<v>450.00</v>');
+    expect(sheet).toContain('<v>12.50</v>');
+    expect(sheet).toContain('<t xml:space="preserve">2026-09-29</t>');
+    expect(calls.at(-1)?.payload).toMatchObject({ text: 'Готово: 2 расхода за всё время' });
+  });
+
+  it('leaves a soft-deleted expense out of every range', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const id = db.prepare("SELECT id FROM expenses WHERE description = 'такси'").pluck().get();
+    softDeleteExpense(db, id as ExpenseId, new Date('2026-09-29T22:00:00Z'));
+
+    for (const [i, range] of ['tm', 'ty', 'all'].entries()) {
+      calls.length = 0;
+      await bot.handleUpdate(
+        callbackUpdate({ updateId: 10 + i, data: `xp:f:${range}:csv`, messageId: 20 + i }),
+      );
+      const [csv] = await sentDocuments(calls);
+      expect(csvLines(csv?.bytes ?? Buffer.alloc(0))).toEqual([
+        EXPENSE_HEADER,
+        `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      ]);
+    }
+  });
+
+  it('answers a range with no expenses with the empty text and sends no document', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    // Last month is August: both expenses are on 29 September.
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:pm:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(calls[1]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'За этот период расходов нет',
+    });
+    expect(calls[1]?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('sends one document for two format taps when the second arrives while the first builds', async () => {
+    const { bot, calls } = await withTwoExpenses();
+    const gate = Promise.withResolvers<undefined>();
+    const sending = Promise.withResolvers<undefined>();
+    bot.api.config.use(async (prev, method, payload, signal) => {
+      if (method === 'sendDocument') {
+        sending.resolve(undefined);
+        await gate.promise;
+      }
+      return prev(method, payload, signal);
+    });
+
+    const first = bot.handleUpdate(
+      callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }),
+    );
+    await sending.promise;
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+    gate.resolve(undefined);
+    await first;
+
+    expect((await sentDocuments(calls)).map((doc) => doc.filename)).toEqual(['expenses-all.csv']);
+    expect(calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(2);
+  });
+
+  // Inserts a live expense into the harness user's active ledger.
+  function insertExpense(db: Db, id: string, amountMinor: number, description: string) {
+    const owner = db.prepare('SELECT id, active_ledger_id FROM users').get() as {
+      id: string;
+      active_ledger_id: string;
+    };
+    insertExpenseOrGetExisting(db, {
+      id: id as ExpenseId,
+      ledgerId: owner.active_ledger_id as LedgerId,
+      createdBy: owner.id as UserId,
+      amountMinor,
+      currency: 'RSD',
+      description,
+      occurredAt: new Date('2026-09-29T12:00:00Z'),
+      occurredOn: '2026-09-29' as LocalDate,
+      sourceKey: `test:${id}`,
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+  }
+
+  it.each([
+    [1171234, '1171,23'],
+    [1171235, '1171,24'],
+  ])('exports 10,00 EUR at an EUR rate of %i as %s in Сумма в RSD', async (middleE4, cell) => {
+    const { bot, calls, db } = createTestBot();
+    const day = '2026-09-29' as LocalDate;
+    const fetchedAt = new Date('2026-09-29T08:00:00Z');
+    storeFxList(
+      db,
+      { listDate: day, listNumber: 1, rates: [{ currency: 'EUR', unit: 1, middleE4 }] },
+      fetchedAt,
+    );
+    setFxDay(db, day, day, fetchedAt);
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '10 EUR такси' }));
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const fields = csvLines(csv?.bytes ?? Buffer.alloc(0))[1]?.split(';');
+    expect(fields?.slice(2, 5)).toEqual(['10,00', 'EUR', cell]);
+  });
+
+  it('sends the expenses and the receipt items as one album, the items keyed by the expense ID', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    db.transaction(() => {
+      markReceiptFetched(db, receiptId, 'Test Market');
+      insertReceiptItems(db, receiptId, [
+        { name: 'Хлеб', quantity: '1', totalMinor: 9999 },
+        { name: 'Сыр', quantity: '0.535', totalMinor: 52913 },
+        { name: 'Вода', quantity: '2', totalMinor: 20000 },
+      ]);
+    })();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(1);
+    const [expenses, items] = await sentDocuments(calls);
+    expect(expenses?.filename).toBe('expenses-all.csv');
+    expect(items?.filename).toBe('receipt-items-all.csv');
+    const receiptRow = csvLines(expenses?.bytes ?? Buffer.alloc(0)).find((line) =>
+      line.endsWith(expenseId),
+    );
+    expect(receiptRow?.split(';').slice(7)).toEqual([
+      'Test Market',
+      'https://suf.example/v/?vl=synthetic',
+      expenseId,
+    ]);
+    expect(csvLines(items?.bytes ?? Buffer.alloc(0))).toEqual([
+      'ID расхода;Дата;Магазин;№;Наименование;Количество;Сумма;Валюта',
+      `${expenseId};2026-09-29;Test Market;1;Хлеб;1;99,99;RSD`,
+      `${expenseId};2026-09-29;Test Market;2;Сыр;0,535;529,13;RSD`,
+      `${expenseId};2026-09-29;Test Market;3;Вода;2;200,00;RSD`,
+    ]);
+  });
+
+  it('puts the receipt items on a second sheet of the one xlsx', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    insertReceiptItems(db, receiptId, [{ name: 'Сыр', quantity: '0.535', totalMinor: 52913 }]);
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    const workbook = inflateRawSync(zipEntry(bytes, 'xl/workbook.xml')).toString('utf8');
+    expect([...workbook.matchAll(/<sheet name="([^"]*)"/g)].map((m) => m[1])).toEqual([
+      'Расходы',
+      'Позиции чеков',
+    ]);
+    const items = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet2.xml')).toString('utf8');
+    expect(items).toContain(`<t xml:space="preserve">${expenseId}</t>`);
+    expect(items).toContain('<v>529.13</v>');
+  });
+
+  it('sends exactly one document for a range without receipts', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendDocument')).toHaveLength(1);
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(0);
+  });
+
+  it("exports a description =SUM(A1) as '=SUM(A1), and never prefixes an amount cell", async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    insertExpense(db, '00000000-0000-4000-8000-0000000000bb', 500, '=SUM(A1)');
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => row[6])).toContain("'=SUM(A1)");
+    for (const row of rows) {
+      expect(row[2]).toMatch(/^\d/);
+      expect(row[4] ?? '').not.toMatch(/^'/);
+    }
+  });
+
+  it('sends nothing for a locked sealed ledger, and the plaintext once unlocked', async () => {
+    const { bot, calls, db, keys } = await withTwoExpenses();
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db, logger: silentLogger(), keys };
+    await sealPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['sendMessage', 'answerCallbackQuery']);
+    expect(calls[0]?.payload).toMatchObject({ text: messages.ledgerLocked });
+    expect(calls[1]?.payload).toMatchObject({ text: messages.ledgerLockedToast });
+
+    await unlockPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+    calls.length = 0;
+    await bot.handleUpdate(textUpdate({ updateId: 5, messageId: 6, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 6, data: 'xp:f:all:csv', messageId: 7 }));
+
+    expect(calls[0]?.payload).toMatchObject({ text: messages.exportRangePrompt(true) });
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => [row[2], row[3], row[6]])).toEqual([
+      ['450,00', 'RSD', 'кофе'],
+      ['12,50', 'EUR', 'такси'],
+    ]);
+  });
+
+  it('is in the command menu and the help text', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('export');
+    expect(messages.help).toContain('/export');
+    expect(messages.groupHelp).toContain('/export');
   });
 });

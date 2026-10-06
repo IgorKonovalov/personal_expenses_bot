@@ -2,6 +2,33 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.16.0 (2026-10-06)
+
+From Plan 0029 (opening by invite).
+
+- Admission moves from `.env` into the database. The admin's /invite makes a `t.me` link that
+  admits a set number of people within a set number of days; /invites lists and revokes them.
+  Anyone else gets one «работает по приглашениям» reply, then silence.
+- Admin-only /block, /unblock and /stats. A per-user message rate limit and a daily cap of 20
+  receipts guard against abuse.
+- /privacy summarises the new `PRIVACY.md` policy, and /delete_account removes the personal
+  ledger and its data; group expenses stay, shown as «удалённый участник».
+- Env: `ALLOWED_TELEGRAM_IDS` is replaced by `ADMIN_TELEGRAM_ID` (required) and
+  `ADMIT_TELEGRAM_IDS` (optional); a set `ALLOWED_TELEGRAM_IDS` fails the boot.
+
+## 0.15.0 (2026-10-06)
+
+From Plan 0024 (export and data ownership).
+
+- /export, in the private chat and in a bound group, picks a period (this month, last month,
+  this year, all time) and a format, then sends the expenses as a file: CSV (plus a second CSV
+  of receipt items, as one album) or an Excel workbook with a receipt-items sheet.
+- Each row carries the date and time, the amount and currency as recorded, the amount in the
+  ledger's currency at the NBS rate, the category, the description, the author in a shared
+  ledger, and the shop and link for a receipt. Export is free.
+- A sealed ledger exports only while unlocked, and the picker says the file is an unencrypted
+  copy.
+
 ## 0.14.0 (2026-10-06)
 
 From Plan 0028 (donations).

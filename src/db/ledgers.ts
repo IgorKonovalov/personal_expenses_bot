@@ -174,6 +174,27 @@ export function updateLedgerTimezone(db: Db, ledgerId: LedgerId, timezone: strin
   );
 }
 
+// Deletes the ledger row with what hangs off it alone: its sealed key and wraps (ADR-0020), its
+// memberships, and any active-ledger pointer at it. Run it after the ledger's expenses,
+// receipts, budget, caps and categories are gone.
+export function deleteLedger(db: Db, ledgerId: LedgerId): void {
+  db.prepare<[string]>('DELETE FROM ledger_key_wraps WHERE ledger_id = ?').run(ledgerId);
+  db.prepare<[string]>('DELETE FROM ledger_keys WHERE ledger_id = ?').run(ledgerId);
+  db.prepare<[string]>('DELETE FROM ledger_members WHERE ledger_id = ?').run(ledgerId);
+  db.prepare<[string]>('UPDATE users SET active_ledger_id = NULL WHERE active_ledger_id = ?').run(
+    ledgerId,
+  );
+  db.prepare<[string]>('DELETE FROM ledgers WHERE id = ?').run(ledgerId);
+}
+
+// The user's display name in every ledger they belong to is forgotten: a group then shows them
+// as a deleted member.
+export function clearMemberDisplayNames(db: Db, userId: UserId): void {
+  db.prepare<[string]>('UPDATE ledger_members SET display_name = NULL WHERE user_id = ?').run(
+    userId,
+  );
+}
+
 function toLedger(row: LedgerRow): Ledger {
   const defaultCurrency = toCurrencyCode(row.default_currency);
   if (defaultCurrency === undefined) {

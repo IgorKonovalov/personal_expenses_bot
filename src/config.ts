@@ -3,9 +3,10 @@ import { toCurrencyCode, type CurrencyCode } from './domain/currencies.js';
 
 export interface Config {
   readonly botToken: string;
-  readonly allowedTelegramIds: ReadonlySet<number>;
-  // The first id of ALLOWED_TELEGRAM_IDS: receives the version announcements (ADR-0013).
+  // Always admitted; makes invites and receives the version announcements (ADR-0013, ADR-0024).
   readonly adminTelegramId: number;
+  // Admitted at boot if not already. Removing an id later revokes nothing (ADR-0024).
+  readonly admitTelegramIds: ReadonlySet<number>;
   readonly defaultTimezone: string;
   readonly defaultCurrency: CurrencyCode;
   readonly databasePath: string;
@@ -33,18 +34,26 @@ const LOG_LEVELS: readonly (Level | 'silent')[] = [
 export function loadConfig(env: Env): Config {
   const botToken = required(env, 'BOT_TOKEN');
 
-  const allowedTelegramIds = new Set<number>();
-  for (const raw of required(env, 'ALLOWED_TELEGRAM_IDS').split(',')) {
-    const id = raw.trim();
-    if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) {
-      throw new Error(`ALLOWED_TELEGRAM_IDS must be comma-separated Telegram user ids`);
-    }
-    allowedTelegramIds.add(Number(id));
+  if (optional(env, 'ALLOWED_TELEGRAM_IDS') !== undefined) {
+    throw new Error(
+      `ALLOWED_TELEGRAM_IDS is retired: set ADMIN_TELEGRAM_ID to the admin's id and ADMIT_TELEGRAM_IDS to the other ids, then remove ALLOWED_TELEGRAM_IDS`,
+    );
   }
-  // A Set iterates in insertion order, so this is the first id listed.
-  const [adminTelegramId] = allowedTelegramIds;
-  if (adminTelegramId === undefined) {
-    throw new Error(`ALLOWED_TELEGRAM_IDS must list at least one Telegram user id`);
+
+  const rawAdmin = required(env, 'ADMIN_TELEGRAM_ID');
+  if (!isTelegramId(rawAdmin)) {
+    throw new Error(`ADMIN_TELEGRAM_ID must be a Telegram user id`);
+  }
+  const adminTelegramId = Number(rawAdmin);
+
+  const admitTelegramIds = new Set<number>();
+  const rawAdmit = optional(env, 'ADMIT_TELEGRAM_IDS');
+  for (const raw of rawAdmit === undefined ? [] : rawAdmit.split(',')) {
+    const id = raw.trim();
+    if (!isTelegramId(id)) {
+      throw new Error(`ADMIT_TELEGRAM_IDS must be comma-separated Telegram user ids`);
+    }
+    admitTelegramIds.add(Number(id));
   }
 
   const defaultTimezone = required(env, 'DEFAULT_TIMEZONE');
@@ -77,8 +86,8 @@ export function loadConfig(env: Env): Config {
 
   return {
     botToken,
-    allowedTelegramIds,
     adminTelegramId,
+    admitTelegramIds,
     defaultTimezone,
     defaultCurrency,
     databasePath: optional(env, 'DATABASE_PATH') ?? './data/bot.sqlite',
@@ -100,6 +109,10 @@ function required(env: Env, name: string): string {
 function optional(env: Env, name: string): string | undefined {
   const value = env[name]?.trim();
   return value === undefined || value === '' ? undefined : value;
+}
+
+function isTelegramId(value: string): boolean {
+  return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
 function isIanaTimezone(tz: string): boolean {

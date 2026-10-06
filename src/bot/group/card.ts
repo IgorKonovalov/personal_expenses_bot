@@ -3,7 +3,9 @@ import type { Expense, ExpenseId } from '../../db/expenses.js';
 import type { Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { localDateOf } from '../../domain/time.js';
+import { isAdmitted } from '../../services/admission.js';
 import { showExpense } from '../../services/changeCategory.js';
+import { isAccountDeleted } from '../../services/deleteAccount.js';
 import { boundLedger } from '../../services/groupChats.js';
 import { plaintext } from '../../services/ledgerKeys.js';
 import {
@@ -32,15 +34,15 @@ import { fromPerson } from './text.js';
 
 // The group card (ADR-0014): one group expense, replied to the message that recorded it. Its
 // buttons act for the expense's author only. [Удалить] and [Вернуть] work in the group;
-// [Изменить в личке] deep-links to the author's DM card, and is shown only to an allowlisted
-// author, since the DM stays closed to everyone else.
+// [Изменить в личке] deep-links to the author's DM card, and is shown only to an admitted
+// author, since the DM stays closed to everyone else (ADR-0024).
 
 export interface GroupCardView {
   readonly expense: Expense;
   // The author's Telegram first name.
   readonly author: string;
   // Whether the author can open the bot's DM.
-  readonly authorAllowlisted: boolean;
+  readonly authorAdmitted: boolean;
 }
 
 // `https://t.me/<bot>?start=e_<uuid>`: a 38-byte payload, under Telegram's 64.
@@ -75,7 +77,7 @@ export function groupCard(
     };
   }
   const markup = new InlineKeyboard().text(messages.undoButton, groupDeleteData(id));
-  if (view.authorAllowlisted) {
+  if (view.authorAdmitted) {
     markup.url(messages.groupEditInDmButton, editInDmLink(ctx.me.username, id));
   }
   return { text: messages.groupExpenseCard(shown), markup };
@@ -124,8 +126,10 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
     const expense = plaintext(stored);
     await replyGroupCard(deps, ctx, {
       expense,
-      author: replied.from.first_name,
-      authorAllowlisted: deps.allowedTelegramIds.has(replied.from.id),
+      author: isAccountDeleted(deps, expense.createdBy)
+        ? messages.deletedMember
+        : replied.from.first_name,
+      authorAdmitted: isAdmitted(deps, replied.from.id),
       ledger,
       replyTo: replied.message_id,
     });
@@ -147,7 +151,7 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
           {
             expense: { ...result.expense, deletedAt: deps.now() },
             author: ctx.from.first_name,
-            authorAllowlisted: false,
+            authorAdmitted: false,
           },
           result.ledger,
         );
@@ -186,7 +190,7 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
         const card = groupCard(
           deps,
           ctx,
-          { expense: result.expense, author: ctx.from?.first_name ?? '', authorAllowlisted: false },
+          { expense: result.expense, author: ctx.from?.first_name ?? '', authorAdmitted: false },
           result.ledger,
         );
         await editHtml(ctx, card.text, { reply_markup: card.markup });
@@ -223,7 +227,7 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
           {
             expense: result.expense,
             author: ctx.from.first_name,
-            authorAllowlisted: deps.allowedTelegramIds.has(ctx.from.id),
+            authorAdmitted: isAdmitted(deps, ctx.from.id),
           },
           result.ledger,
         );

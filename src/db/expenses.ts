@@ -170,6 +170,12 @@ export function findExpenseById(db: Db, id: ExpenseId): StoredExpense | undefine
   return row === undefined ? undefined : toStoredExpense(row);
 }
 
+// Hard-deletes every expense of the ledger, soft-deleted ones included. Run it after the
+// ledger's receipts are gone. Returns how many.
+export function deleteLedgerExpenses(db: Db, ledgerId: LedgerId): number {
+  return db.prepare<[string]>('DELETE FROM expenses WHERE ledger_id = ?').run(ledgerId).changes;
+}
+
 // Returns false when the expense was already deleted, leaving deleted_at unchanged.
 export function softDeleteExpense(db: Db, id: ExpenseId, deletedAt: Date): boolean {
   const { changes } = db
@@ -388,6 +394,24 @@ export function listLedgerExpensesBetween(
         ORDER BY e.occurred_on, e.occurred_at, e.id`,
     )
     .all(query.memberId, query.ledgerId, query.from, query.to)
+    .map(toStoredExpense);
+}
+
+// Every non-deleted expense of one ledger, visible only to members, oldest first: the all-time
+// export.
+export function listLedgerExpenses(
+  db: Db,
+  query: { ledgerId: LedgerId; memberId: UserId },
+): StoredExpense[] {
+  return db
+    .prepare<[string, string], ExpenseRow>(
+      `SELECT ${COLUMNS}
+         FROM ${FROM}
+         JOIN ledger_members m ON m.ledger_id = e.ledger_id AND m.user_id = ?
+        WHERE e.ledger_id = ? AND e.deleted_at IS NULL
+        ORDER BY e.occurred_on, e.occurred_at, e.id`,
+    )
+    .all(query.memberId, query.ledgerId)
     .map(toStoredExpense);
 }
 
