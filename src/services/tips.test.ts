@@ -3,8 +3,9 @@ import type { CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import type { Expense } from '../db/expenses.js';
 import { runMigrations } from '../db/migrate.js';
+import { setBudgetLimit } from '../db/budgets.js';
 import { markOnboarded, setTipsOff, type User } from '../db/users.js';
-import { listTipsShown } from '../db/userTips.js';
+import { insertTipShown, listTipsShown } from '../db/userTips.js';
 import { createLogger } from '../logger.js';
 import { startFlow } from './flowSessions.js';
 import { createLedgerKeyring } from './ledgerKeys.js';
@@ -128,5 +129,29 @@ describe('takeTip', () => {
 
   it('offers nothing outside a private chat', () => {
     expect(offer(record('450 кофе', 'tg:1:1', LATE), LATE, false)).toBeUndefined();
+  });
+
+  it('counts the ledger: tipGroup on the 20th expense once the earlier tips are seen', () => {
+    const LONG_AGO = new Date('2026-09-01T10:00:00Z');
+    for (const key of ['tipOther', 'tipForeign', 'tipReceipt', 'tipFirstExpense'] as const) {
+      insertTipShown(db, user.id, key, LONG_AGO);
+    }
+    let last: Expense | undefined;
+    for (let i = 1; i <= 19; i++) last = record('450 кофе', `tg:1:${i}`, LATE);
+    expect(offer(last, LATE)).toBeUndefined();
+
+    last = record('450 кофе', 'tg:1:20', LATE);
+    expect(offer(last, LATE)?.key).toBe('tipGroup');
+  });
+
+  it('reads the budget limit for /month', () => {
+    const monthTip = () =>
+      takeTip(deps(), { user, trigger: 'monthShown', privateChat: true, now: LATE });
+    const ledgerId = record('450 кофе', 'tg:1:1', LATE).ledgerId;
+    setBudgetLimit(db, ledgerId, { limitMinor: 100_000, currency: 'RSD' }, LATE);
+    expect(monthTip()).toBeUndefined();
+
+    db.prepare('DELETE FROM ledger_budgets').run();
+    expect(monthTip()?.key).toBe('tipBudget');
   });
 });

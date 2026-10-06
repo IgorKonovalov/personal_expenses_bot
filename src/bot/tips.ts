@@ -16,7 +16,7 @@ export async function offerTip(
   deps: HandlerDeps,
   user: User,
   trigger: TipTrigger,
-  tipContext: { readonly expense?: Expense } = {},
+  tipContext: { readonly expense?: Expense; readonly fromReceipt?: boolean } = {},
 ): Promise<void> {
   const offer = takeTip(deps, {
     user,

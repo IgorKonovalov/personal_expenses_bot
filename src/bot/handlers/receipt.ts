@@ -79,7 +79,10 @@ export async function answerReceipt(
       messageId: sent.message_id,
     });
   }
-  await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
+  await offerTip(ctx, deps, user, 'expenseRecorded', {
+    expense: result.expense,
+    fromReceipt: true,
+  });
   return result.duplicate ? 'duplicate' : 'recorded';
 }
 

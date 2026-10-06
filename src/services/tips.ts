@@ -1,6 +1,7 @@
+import { findLedgerBudget } from '../db/budgets.js';
 import { findCategory } from '../db/categories.js';
-import type { Expense } from '../db/expenses.js';
-import { findActiveLedger, findLedgerById, type Ledger } from '../db/ledgers.js';
+import { countLiveExpenses, type Expense } from '../db/expenses.js';
+import { findActiveLedger, findLedgerById, findMemberRole, type Ledger } from '../db/ledgers.js';
 import { findOnboarding, setTipsOff, type User } from '../db/users.js';
 import { insertTipShown, listTipsShown } from '../db/userTips.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
@@ -8,6 +9,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { localDateOf } from '../domain/time.js';
 import { pickTip, TIPS, type TipContext, type TipKey, type TipTrigger } from '../domain/tips.js';
 import { currentFlow } from './flowSessions.js';
+import { isSealedLedger } from './ledgerKeys.js';
 import type { ServiceDeps } from './provisionUser.js';
 import { resolveUserTimezone, type TimezoneDeps } from './settings.js';
 
@@ -25,6 +27,8 @@ export interface TipInput {
   readonly privateChat: boolean;
   // For `expenseRecorded`: the expense just recorded, opened.
   readonly expense?: Expense;
+  // The expense came from a receipt.
+  readonly fromReceipt?: boolean;
   readonly now: Date;
 }
 
@@ -53,7 +57,7 @@ export function takeTip(deps: TipDeps, input: TipInput): TipOffer | undefined {
     if (shown.some((tip) => localDateOf(tip.shownAt, timezone) === today)) return undefined;
     const ledger = tipLedger(deps, user, input.expense);
     if (ledger === undefined) return undefined;
-    const ctx = tipContext(deps, ledger, input.expense);
+    const ctx = tipContext(deps, user, ledger, input);
     const key = pickTip(TIPS, input.trigger, ctx, new Set(shown.map((tip) => tip.tip)));
     if (key === undefined || !insertTipShown(db, user.id, key, now)) return undefined;
     return {
@@ -83,8 +87,14 @@ function tipLedger({ db }: TipDeps, user: User, expense: Expense | undefined): L
     : findLedgerById(db, expense.ledgerId);
 }
 
-function tipContext({ db }: TipDeps, ledger: Ledger, expense: Expense | undefined): TipContext {
+function tipContext(
+  { db }: TipDeps,
+  user: User,
+  ledger: Ledger,
+  { expense, fromReceipt = false }: TipInput,
+): TipContext {
   return {
+    ledgerKind: ledger.kind,
     ledgerCurrency: ledger.defaultCurrency,
     ...(expense === undefined
       ? {}
@@ -94,7 +104,12 @@ function tipContext({ db }: TipDeps, ledger: Ledger, expense: Expense | undefine
             fallbackCategory:
               expense.category !== null &&
               findCategory(db, ledger.id, expense.category.id)?.presetKey === FALLBACK_PRESET,
+            fromReceipt,
           },
         }),
+    ledgerExpenseCount: countLiveExpenses(db, ledger.id),
+    hasBudgetLimit: (findLedgerBudget(db, ledger.id)?.limitMinor ?? null) !== null,
+    sealed: isSealedLedger({ db }, ledger.id),
+    ownsLedger: findMemberRole(db, ledger.id, user.id) === 'owner',
   };
 }

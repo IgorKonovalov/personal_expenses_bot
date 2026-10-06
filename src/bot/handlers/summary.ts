@@ -12,6 +12,7 @@ import { SUMMARY_PAGE, summaryPageData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import { renderAnchor, requireScreen, showScreen, type ScreenView } from '../screens.js';
+import { offerTip } from '../tips.js';
 import { ensureUser } from './start.js';
 
 // /week and /month (ADR-0011 screens): a period's totals by currency and category, with a pager
@@ -44,6 +45,7 @@ export async function sendSummary(
   }
   const screen: SummaryScreen = { name: 'summary', ledgerId: summary.ledger.id };
   await showScreen(ctx, deps, user, screen, summaryView(summary));
+  if (kind === 'month') await offerTip(ctx, deps, user, 'monthShown');
 }
 
 export function registerSummary(bot: Composer<Context>, deps: HandlerDeps): void {

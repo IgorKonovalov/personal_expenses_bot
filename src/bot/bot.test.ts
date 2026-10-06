@@ -6,6 +6,7 @@ import { inflateRawSync } from 'node:zlib';
 import { Composer, type Bot, type InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setBudgetLimit } from '../db/budgets.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
@@ -34,6 +35,7 @@ import {
 } from '../domain/statements/testing/raiffeisenStatement.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import { tagHash, type TagName } from '../domain/tags.js';
+import { TIP_KEYS } from '../domain/tips.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
 import { VARIANTS } from '../fiscal/qrPixels.js';
@@ -8367,6 +8369,108 @@ describe('onboarding (Plan 0015)', () => {
       expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
       expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([]);
       expect(db.prepare('SELECT COUNT(*) FROM user_tips').pluck().get()).toBe(0);
+    });
+  });
+
+  describe('the feature tips', () => {
+    const tipsSent = (calls: readonly ApiCall[]) =>
+      sentTexts(calls).filter((text) => String(text).startsWith('💡'));
+    const BUDGET_TIP = String(messages.tips.tipBudget());
+    const ENCRYPT_TIP = String(messages.tips.tipEncrypt());
+
+    it('offers tipBudget on /month only to a ledger without a budget limit', async () => {
+      const limited = onboardingBot({ onboarding: false });
+      await limited.send('/help');
+      const ledgerId = limited.db
+        .prepare('SELECT active_ledger_id FROM users')
+        .pluck()
+        .get() as LedgerId;
+      setBudgetLimit(limited.db, ledgerId, { limitMinor: 100_000, currency: 'RSD' }, NOW);
+      await limited.send('/month');
+      expect(tipsSent(limited.calls)).toEqual([]);
+
+      const open = onboardingBot({ onboarding: false });
+      await open.send('/month');
+      expect(tipsSent(open.calls)).toEqual([BUDGET_TIP]);
+    });
+
+    it('offers tipEncrypt in the hub of an unsealed personal ledger, never a sealed or shared one', async () => {
+      const plain = onboardingBot({ onboarding: false });
+      await plain.send('/settings');
+      expect(tipsSent(plain.calls)).toEqual([ENCRYPT_TIP]);
+
+      const sealed = onboardingBot({ onboarding: false });
+      await sealed.send('/help');
+      const user = findUserByIdentity(sealed.db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      await sealPersonalLedger(
+        { db: sealed.db, logger: silentLogger(), keys: sealed.keys },
+        user,
+        NOW,
+      );
+      await sealed.send('/settings');
+      expect(sentTexts(sealed.calls).at(-1)).toMatch(/^<b>Настройки<\/b>/);
+      expect(tipsSent(sealed.calls)).toEqual([]);
+
+      const shared = onboardingBot({ onboarding: false });
+      await shared.bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 90,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      const groupLedger = shared.db
+        .prepare('SELECT ledger_id FROM ledger_chats')
+        .pluck()
+        .get() as string;
+      shared.db.prepare('UPDATE users SET active_ledger_id = ?').run(groupLedger);
+      await shared.send('/settings');
+      expect(sentTexts(shared.calls).at(-1)).toContain(
+        'Валюта по умолчанию для новых трат в «Семья»',
+      );
+      expect(tipsSent(shared.calls)).toEqual([]);
+    });
+
+    it('offers tipReceipt, not tipFirstExpense, for a recorded receipt', async () => {
+      const { send, calls, db, userId } = onboardingBot({ onboarding: false });
+      await send('/help');
+      // The receipt lands in «Другое» until its store is fetched; that tip was seen long ago.
+      db.prepare("INSERT INTO user_tips VALUES (?, 'tipOther', '2026-09-01T10:00:00.000Z')").run(
+        userId(),
+      );
+      calls.length = 0;
+
+      await send(buildRsUrl());
+
+      expect(tipsSent(calls)).toEqual([
+        '💡 Магазины я запоминаю: следующий чек из этого магазина получит ту же категорию.',
+      ]);
+    });
+
+    it('names /month and /settings in the welcome of a newly bound group', async () => {
+      const { bot, calls } = onboardingBot({ onboarding: false });
+
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 1,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+
+      const welcome = String(
+        sentTexts(calls).find((text) => String(text).startsWith('Здравствуйте')),
+      );
+      expect(welcome).toContain(
+        'Итоги: /month. Часовой пояс и валюту группы меняет тот, кто меня добавил: /settings.',
+      );
+    });
+
+    it('has a message for every registry key and a registry key for every tip message', () => {
+      expect(Object.keys(messages.tips).sort()).toEqual([...TIP_KEYS].sort());
     });
   });
 

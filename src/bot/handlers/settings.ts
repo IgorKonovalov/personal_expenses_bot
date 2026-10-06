@@ -55,7 +55,7 @@ import {
   type ScreenTap,
   type ScreenView,
 } from '../screens.js';
-import { registerTipsOff } from '../tips.js';
+import { offerTip, registerTipsOff } from '../tips.js';
 import { budgetView } from './budget.js';
 import { categoriesView } from './categories.js';
 import { ensureUser } from './start.js';
@@ -201,10 +201,12 @@ export async function sendSettings(ctx: Context, deps: HandlerDeps): Promise<voi
   const view = settingsView(deps, user);
   if (view === undefined) throw new Error('the personal settings view always exists');
   await showScreen(ctx, deps, user, { name: 'settings' }, view);
+  await offerTip(ctx, deps, user, 'settingsShown');
 }
 
 // The personal hub edited into the tapped message, which becomes the anchor: the setup check's
-// [Изменить] (ADR-0028). A repeat tap re-renders the same hub.
+// [Изменить] (ADR-0028). A repeat tap re-renders the same hub. It offers no tip: the day's one
+// tip is left for the user's first expense.
 export async function showSettingsInPlace(
   ctx: Context,
   deps: HandlerDeps,
@@ -275,6 +277,8 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     setAnchor(deps, tap.user, anchor);
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, anchor, view);
+    // The personal hub only: the scoped one is about a shared ledger.
+    if (screen.ledgerId === undefined) await offerTip(ctx, deps, tap.user, 'settingsShown');
   });
 
   bot.callbackQuery(SETTINGS_CATEGORIES, async (ctx) => {

@@ -322,8 +322,8 @@ first, Phase 1 adds that delete to its deletion service.
 |---|---|---|---|
 | 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | 8bc02c1 |
 | 2: A first message that isn't `/start` | dev | done | 52228f2 |
-| 3: The tips registry and the recording tips | dev | done | committed with this row |
-| 4: The feature tips and the group welcome | dev | not started | |
+| 3: The tips registry and the recording tips | dev | done | 8520ac7 |
+| 4: The feature tips and the group welcome | dev | done | committed with this row |
 | 5: A stranger's first contact | human | not started | |
 
 ### Notes
@@ -350,6 +350,11 @@ first, Phase 1 adds that delete to its deletion service.
   `src/bot/tips.ts`, because `src/bot/bot.ts` isn't in this phase's list. Its keyboard removal
   treats "message is not modified" as success locally. The tip ledger is the expense's ledger
   for `expenseRecorded`, otherwise the active ledger.
+- Phase 4: `settingsShown` fires after `/settings` and after `set:open` back to the personal hub.
+  It doesn't fire after the setup check's [Изменить]: a `tipEncrypt` there would take the day's
+  tip, and Phase 5 expects the first expense to bring one.
+- Phase 4: `src/bot/tips.ts` (outside this phase's list) passes `fromReceipt` through to the
+  service.
 
 ### Close triggers
 
