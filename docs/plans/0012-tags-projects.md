@@ -3,7 +3,7 @@
 > **Status:** approved
 > **Created:** 2026-09-30
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
-> [Plan 0024](0024-export-and-data-ownership.md) (export gains a tags column)
+> [Plan 0024](done/0024-export-and-data-ownership.md) (export gains a tags column)
 > **Related ADRs:** [ADR-0029](../adrs/0029-tags-on-the-expense-row.md) (tag syntax and storage),
 > [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),
 > [ADR-0008](../adrs/0008-category-suggestion-from-history.md) (learning by description),
@@ -211,6 +211,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 6: A trip in real use
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, turn on `/tag` for a few days of real spending, including a
   receipt and a foreign-currency expense, then check `/tags` and the report.
 - **Done when:** Every expense from those days carries the tag on its confirmation, and the

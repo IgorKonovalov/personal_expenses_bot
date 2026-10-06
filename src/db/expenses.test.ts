@@ -5,6 +5,7 @@ import { openDatabase, type Db } from './connection.js';
 import {
   findHistoryCategory,
   insertExpenseOrGetExisting,
+  listLedgerExpenses,
   listLedgerExpensesBetween,
   listLedgerExpensesOn,
   restoreDeletedExpense,
@@ -208,6 +209,34 @@ describe('expenses repository', () => {
     expect(
       listLedgerExpensesBetween(db, { ledgerId: LEDGER_A, memberId: USER_B, ...range }),
     ).toEqual([]);
+  });
+
+  it('lists every live expense of a ledger by date, time and id, to members only', () => {
+    const add = (id: string, occurredOn: string, occurredAt: string) =>
+      insertExpenseOrGetExisting(db, {
+        id: id as ExpenseId,
+        ledgerId: LEDGER_A,
+        createdBy: USER_A,
+        amountMinor: 45000,
+        currency: 'RSD',
+        description: 'coffee',
+        occurredAt: new Date(occurredAt),
+        occurredOn: occurredOn as LocalDate,
+        sourceKey: `tg:${id}`,
+        createdAt: NOW,
+      });
+    add('late', '2026-09-30', '2026-09-30T18:00:00Z');
+    add('b-early', '2026-09-30', '2026-09-30T08:00:00Z');
+    add('a-early', '2026-09-30', '2026-09-30T08:00:00Z');
+    add('old', '2024-01-01', '2024-01-01T08:00:00Z');
+    add('deleted', '2025-05-05', '2025-05-05T08:00:00Z');
+    softDeleteExpense(db, 'deleted' as ExpenseId, NOW);
+    addExpense('elsewhere', LEDGER_B, USER_B, 'tg:9:9');
+
+    expect(
+      listLedgerExpenses(db, { ledgerId: LEDGER_A, memberId: USER_A }).map((e) => e.id),
+    ).toEqual(['old', 'a-early', 'b-early', 'late']);
+    expect(listLedgerExpenses(db, { ledgerId: LEDGER_A, memberId: USER_B })).toEqual([]);
   });
 
   it('edits amount, description and date by compare-and-set, stamping updated_at', () => {

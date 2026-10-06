@@ -4,6 +4,7 @@ import type { AdminDeps } from '../bot.js';
 import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
 import { registerGroupCard } from './card.js';
+import { registerGroupExport } from './export.js';
 import { registerGroupHelp } from './help.js';
 import { registerGroupSettings } from './settings.js';
 import { registerGroupSummary } from './summary.js';
@@ -41,6 +42,7 @@ export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   registerActivation(group, deps);
   registerGroupCard(group, deps);
   registerGroupSummary(group, deps);
+  registerGroupExport(group, deps);
   registerGroupHelp(group, deps);
   registerGroupSettings(group, deps);
   registerGroupText(group, deps);

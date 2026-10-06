@@ -1,5 +1,6 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { ExportRange } from '../domain/export/rows.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { LocalDate } from '../domain/time.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
@@ -249,6 +250,8 @@ function amountOnly(money: Money): string {
 
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
 
+const helpDonateLine = html`Бот бесплатный. Поддержать: /donate`;
+
 // What a converted report was converted from, and what it could not convert (ADR-0022). Empty
 // when nothing was foreign.
 function conversionNotes(
@@ -339,6 +342,24 @@ function itemCount(n: number): string {
   return `${n} позиций`;
 }
 
+// `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
+function expenseCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} расходов`;
+  if (ones === 1) return `${n} расход`;
+  if (ones >= 2 && ones <= 4) return `${n} расхода`;
+  return `${n} расходов`;
+}
+
+// An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
+function exportPeriodName(key: string): string {
+  if (key === 'all') return 'всё время';
+  if (/^\d{4}$/.test(key)) return `${key} год`;
+  const month = MONTHS[Number(key.slice(5, 7)) - 1] ?? '';
+  return `${month.toLowerCase()} ${key.slice(0, 4)}`;
+}
+
 // `Test Market · 12 позиций` once fetched, a note once the fetch gave up, nothing while pending.
 function receiptLine({ state, sellerName, itemCount: n }: ReceiptLineView): Html[] {
   if (state === 'fetched' && sellerName !== null) {
@@ -424,15 +445,19 @@ function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
   return html`${author}${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
-// Telegram rejects messages over 4096 characters. The /changelog entries get at most this many
-// UTF-16 units of HTML, counted with their separators; the rest of the 4096 holds the header and
-// the truncation line. Markup counts too, so the visible text is shorter still.
-const CHANGELOG_BUDGET = 3900;
-const CHANGELOG_SEPARATOR = '\n\n';
+// /changelog shows this many versions, newest first; older ones are behind a link to the full
+// CHANGELOG.md. A fixed count keeps the reply well under Telegram's 4096 characters as releases
+// accumulate (messages.test.ts caps each announcement's length).
+export const CHANGELOG_RECENT = 5;
+const CHANGELOG_URL =
+  'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/CHANGELOG.md';
 
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.15.0': html`/export присылает траты за выбранный период файлом CSV или Excel, в личном чате и в группе.`,
+  '0.14.0': html`Бот остаётся бесплатным для всех, без платных функций. Если хотите поддержать его, /donate принимает Telegram Stars, а пожертвование ничего не открывает. Вернуть пожертвование можно через /paysupport.`,
+  '0.13.0': html`Бледный или мятый QR-код на фото чека бот теперь пробует прочитать ещё раз. Если не вышло, подскажет, как переснять.`,
   '0.12.0': html`Личный учёт можно зашифровать в /settings. Траты записываются как обычно, а итоги видны после /unlock с паролем. /lock закрывает учёт.`,
   '0.11.1': html`Исправление. После обновления бота курсы НБС загружаются сначала для последних дней с тратами, поэтому итоги /week и /month пересчитываются в одну валюту сразу, а не через несколько часов.`,
   '0.11.0': html`Итоги в разных валютах сводятся в одну сумму. /today, /week и /month показывают общий итог в валюте учёта: траты в EUR, USD и других валютах пересчитываются по среднему курсу НБС на день траты, а итог помечается «≈». Бюджет тоже учитывает такие траты. Валюты, которых нет в курсе НБС, например KZT, показываются отдельно.`,
@@ -475,11 +500,13 @@ export const messages = {
     { command: 'month', description: 'Траты за месяц по категориям' },
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
+    { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
     { command: 'unlock', description: 'Открыть зашифрованный учёт' },
     { command: 'lock', description: 'Закрыть зашифрованный учёт' },
     { command: 'help', description: 'Как записать трату' },
     { command: 'changelog', description: 'Что нового в боте' },
+    { command: 'donate', description: 'Поддержать бота' },
   ],
 
   welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
@@ -622,6 +649,7 @@ export const messages = {
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории и шифрование`,
       html`${menu.help} — эта подсказка`,
+      html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
       html`/cancel — отменить ввод`,
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
@@ -629,6 +657,8 @@ export const messages = {
       html`/delete_account — удалить аккаунт и личный учёт`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
+      html``,
+      helpDonateLine,
     ],
     '\n',
   ),
@@ -640,6 +670,7 @@ export const messages = {
       html`/today — траты группы за сегодня`,
       html`/week и /month — по категориям и по участникам`,
       html`/budget — бюджет группы: сколько осталось на сегодня и до конца периода`,
+      html`/export — все траты группы файлом CSV или Excel`,
       html`/card — ответом на сообщение с тратой: показать её карточку`,
       html`/settings — часовой пояс и валюта группы (для того, кто добавил меня)`,
       html`/help — эта подсказка`,
@@ -654,6 +685,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'budget', description: 'Бюджет группы: сколько осталось' },
+    { command: 'export', description: 'Выгрузить траты группы в CSV или Excel' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
@@ -735,8 +767,11 @@ export const messages = {
     pages.push(page);
     return pages;
   },
-  // A photo or image file without a readable receipt QR code (ADR-0019).
-  receiptPhotoHint: html`Не нашёл QR-код чека на изображении. Сфотографируйте QR-код крупнее, отправьте фото файлом без сжатия или вставьте ссылку из QR-кода.`,
+  // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
+  // image too large to download (ADR-0019, ADR-0034).
+  receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
+  // A photo where a QR symbol was located but no pass read it (ADR-0034).
+  receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.
@@ -1089,6 +1124,56 @@ export const messages = {
     },
   },
 
+  // /export (ADR-0026): the range step, then the format step, edited in place.
+  // A sealed ledger's picker says the file is a plaintext copy.
+  exportRangePrompt: (sealed: boolean): Html =>
+    sealed
+      ? html`Что выгрузить?\n\nУчёт зашифрован, а файл — нет: копия останется в чате и на ваших устройствах.`
+      : html`Что выгрузить?`,
+  exportRangeButtons: {
+    tm: 'Этот месяц',
+    pm: 'Прошлый месяц',
+    ty: 'Этот год',
+    all: 'Всё время',
+  } satisfies Record<ExportRange, string>,
+  exportFormatPrompt: html`Формат файла?`,
+  exportCsvButton: 'CSV',
+  exportXlsxButton: 'Excel',
+  exportBackButton: '← Назад',
+  exportEmpty: html`За этот период расходов нет`,
+  // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
+  exportDone: (count: number, key: string): Html =>
+    html`Готово: ${expenseCountWords(count)} за ${exportPeriodName(key)}`,
+  // The file stems, sheet names and column headers; a file is `<stem>-<key>.csv`.
+  exportExpensesStem: 'expenses',
+  exportItemsStem: 'receipt-items',
+  exportExpensesSheet: 'Расходы',
+  exportItemsSheet: 'Позиции чеков',
+  exportColumns: (ledgerCurrency: CurrencyCode) => ({
+    date: 'Дата',
+    time: 'Время',
+    amount: 'Сумма',
+    currency: 'Валюта',
+    converted: `Сумма в ${ledgerCurrency}`,
+    category: 'Категория',
+    description: 'Описание',
+    author: 'Автор',
+    shop: 'Магазин',
+    receipt: 'Чек',
+    id: 'ID',
+    unnamedAuthor: 'участник',
+  }),
+  exportItemColumns: {
+    expenseId: 'ID расхода',
+    date: 'Дата',
+    shop: 'Магазин',
+    position: '№',
+    name: 'Наименование',
+    quantity: 'Количество',
+    amount: 'Сумма',
+    currency: 'Валюта',
+  },
+
   // Navigation kit (ADR-0011). «Назад» is never a pager label.
   backButton: '« Назад',
   pagerPrev: '◀',
@@ -1169,25 +1254,95 @@ export const messages = {
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
 
+  // Donations in Telegram Stars (ADR-0027): a donation unlocks nothing.
+  donate: html`Бот бесплатный для всех и таким останется: платных функций нет. Пожертвование ничего не открывает, оно помогает оплачивать сервер. Если хотите поддержать, выберите сумму:`,
+  donateUnavailable: html`Пожертвования временно недоступны.`,
+  donateStarsButton: (stars: number): string => `⭐ ${stars}`,
+  // The invoice behind each Stars button: title at most 32 characters, description at most 255.
+  // Plain text.
+  donateInvoiceTitle: 'Поддержать бота',
+  donateInvoiceDescription:
+    'Пожертвование на оплату сервера. Бот остаётся бесплатным, пожертвование ничего не открывает.',
+  donateInvoiceLabel: 'Пожертвование',
+  // Shown by Telegram on the payment sheet when the pre-checkout is refused. Plain text.
+  donateRejected: 'Эта сумма больше не принимается. Откройте /donate заново.',
+  donateThanks: html`Спасибо! Бот остаётся бесплатным для всех.`,
+  // The button to DONATE_URL, after the Stars buttons.
+  donateExternal: 'Ko-fi',
+  // The private help's last line.
+  helpDonateLine,
+  // To the admin, once per recorded donation. No Telegram name or username.
+  adminDonation: ({
+    stars,
+    userId,
+    chargeId,
+  }: {
+    stars: number;
+    userId: string;
+    chargeId: string;
+  }): Html =>
+    joinHtml(
+      [
+        html`⭐ Пожертвование: ${stars} Stars`,
+        html`Пользователь: <code>${userId}</code>`,
+        html`Платёж: <code>${chargeId}</code>`,
+      ],
+      '\n',
+    ),
+
+  // /paysupport, which Telegram requires of a bot taking payments.
+  paySupport: html`Пожертвование ничего не открывает: бот одинаково бесплатный для всех. Чтобы попросить вернуть пожертвование, отправьте /paysupport и текст просьбы одним сообщением, например: «/paysupport верните, пожалуйста, пожертвование».`,
+  paySupportSent: html`Просьба передана. Ответ придёт в этот чат.`,
+  // To the admin: the request, the user's internal id and their newest donations. `on` is the
+  // donation's date in the admin's timezone. The text is user text.
+  adminPaySupport: ({
+    userId,
+    text,
+    donations,
+  }: {
+    userId: string;
+    text: string;
+    donations: readonly { chargeId: string; stars: number; on: LocalDate; refunded: boolean }[];
+  }): Html =>
+    joinHtml(
+      [
+        html`💬 /paysupport от <code>${userId}</code>`,
+        html`${text}`,
+        donations.length === 0
+          ? html`Пожертвований нет.`
+          : joinHtml(
+              [
+                html`Пожертвования:`,
+                ...donations.map(
+                  (d) =>
+                    html`<code>${d.chargeId}</code> · ${d.stars} Stars · ${dayMonth.format(new Date(`${d.on}T00:00:00Z`))} ${d.on.slice(0, 4)}${d.refunded ? ' · возвращено' : ''}`,
+                ),
+              ],
+              '\n',
+            ),
+      ],
+      '\n\n',
+    ),
+  // The admin's /refund <charge id>.
+  refundUsage: html`Укажите платёж: /refund и его id из уведомления о пожертвовании.`,
+  refundDone: (stars: number): Html => html`Возвращено: ${stars} Stars.`,
+  refundNotFound: html`Пожертвование с таким id не найдено.`,
+  refundAlreadyRefunded: html`Это пожертвование уже возвращено.`,
+  refundFailed: (reason: string): Html =>
+    html`Telegram не вернул Stars: ${reason}. Пожертвование не отмечено возвращённым.`,
+
   versionAnnouncements,
   // The message the admin gets at boot on a new version.
   versionAnnouncement: (version: string, body: Html): Html =>
     joinHtml([html`🆕 Версия ${version}`, body, html`Все изменения: /changelog`], '\n\n'),
-  // /changelog: newest version first, by number. Older entries past the budget are dropped
-  // whole and the reply says so.
+  // /changelog: the CHANGELOG_RECENT newest versions, by number, then a link to the rest.
   changelog: (announcements: Readonly<Record<string, Html>>): Html => {
     const entries = Object.entries(announcements)
       .sort(([a], [b]) => compareVersions(b, a))
       .map(([version, body]) => joinHtml([html`<b>${version}</b>`, body], '\n'));
-    const shown: Html[] = [];
-    let used = 0;
-    for (const entry of entries) {
-      used += entry.length + CHANGELOG_SEPARATOR.length;
-      if (used > CHANGELOG_BUDGET) break;
-      shown.push(entry);
-    }
-    const parts = [html`<b>Что нового</b>`, ...shown];
-    if (shown.length < entries.length) parts.push(html`Более ранние версии не поместились.`);
-    return joinHtml(parts, CHANGELOG_SEPARATOR);
+    const parts = [html`<b>Что нового</b>`, ...entries.slice(0, CHANGELOG_RECENT)];
+    if (entries.length > CHANGELOG_RECENT)
+      parts.push(html`Более ранние версии: <a href="${CHANGELOG_URL}">CHANGELOG.md</a>`);
+    return joinHtml(parts, '\n\n');
   },
 } as const;

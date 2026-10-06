@@ -14,6 +14,8 @@ export interface Config {
   // Unset means no backups (local dev).
   readonly backupDir: string | undefined;
   readonly backupKeep: number;
+  // An external donation page, shown as a /donate button (ADR-0027). Unset hides the button.
+  readonly donateUrl: string | undefined;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -77,6 +79,11 @@ export function loadConfig(env: Env): Config {
     throw new Error(`BACKUP_KEEP must be a positive whole number of daily backups to keep`);
   }
 
+  const donateUrl = optional(env, 'DONATE_URL');
+  if (donateUrl !== undefined && !isHttpsUrl(donateUrl)) {
+    throw new Error(`DONATE_URL must be an https: URL, such as https://ko-fi.com/example`);
+  }
+
   return {
     botToken,
     adminTelegramId,
@@ -87,6 +94,7 @@ export function loadConfig(env: Env): Config {
     logLevel,
     backupDir: optional(env, 'BACKUP_DIR'),
     backupKeep: Number(backupKeep),
+    donateUrl,
   };
 }
 
@@ -111,6 +119,14 @@ function isIanaTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en', { timeZone: tz });
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
   } catch {
     return false;
   }

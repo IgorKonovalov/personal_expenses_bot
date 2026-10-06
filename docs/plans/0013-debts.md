@@ -233,6 +233,7 @@ logged above debug.
 
 ### Phase 6: Real debts and a real group
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** Record a real loan and a partial repayment, split one real bill with `/N`, and run
   `/settle` in the family group after a week of shared spending.
 - **Done when:** The balances match what everyone agrees they owe, and [Перевёл] squares the

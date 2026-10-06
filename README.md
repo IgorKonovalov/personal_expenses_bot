@@ -32,10 +32,13 @@ when an amount could be read two ways.
 | `/budget`                            | The ledger's budget: the limit, the period with its day number, what's left for today and for the period, with spending in other currencies converted into the budget's currency, and any spending with no rate listed as not counted. [Задать лимит] sets the limit for a period, [День начала периода] moves the period start to your payday (1 to 31), [Считать все] / [Только необязательные] picks whether essential categories count, and [Лимиты по категориям] caps single categories. Once set, every expense card gains `Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD`, and a capped category's line `Кафе и рестораны: 450.00 из 5 000.00 RSD`. Yesterday's leftover or overspend carries into today |
 | `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта], [Категории] and [Шифрование] (see [Encrypted ledger](#encrypted-ledger)). The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `/export`                            | Asks for a period («Этот месяц», «Прошлый месяц», «Этот год», «Всё время») and a format, then sends the active ledger's expenses as a file: [CSV] (UTF-8, `;`, decimal comma; receipt items as a second file) or [Excel] (an `.xlsx` with a second sheet for receipt items). Every row has the date, time, amount and currency, the amount in the ledger's currency at the NBS rate, the category, the description, the shop and receipt link, and the expense ID. Free, any time. A sealed ledger exports only while unlocked, and the file is a plaintext copy                                                                                                                                                   |
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `/changelog`                         | What's new: one entry per version, newest first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/changelog`                         | What's new: the five newest versions, then a link to CHANGELOG.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `/privacy`                           | A three-line summary of what is stored and who sees it, and a link to [PRIVACY.md](PRIVACY.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/delete_account`                    | Says what goes (the personal ledger with every expense, receipt, category and budget, and your settings) and what stays (your expenses in group ledgers, shown as «удалённый участник», and backups for up to `BACKUP_KEEP` days), with [Удалить всё] / [Отмена]. After deleting, the same Telegram account needs a new invite                                                                                                                                                                                                                                                                                                                                                                                                |
+| `/donate`                            | The bot is free and a donation unlocks nothing. Offers [⭐ 50] [⭐ 150] [⭐ 500], each opening Telegram's Stars payment sheet, and [Ko-fi] when `DONATE_URL` is set. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `/paysupport`                        | Says a donation unlocks nothing. `/paysupport <текст>` relays a refund request to the admin, with your internal user id and your newest donations. See [Donations](#donations) |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
@@ -86,6 +89,7 @@ The bot can keep a group's shared books, such as a family's, next to everyone's 
 | `/today`, `/week`, `/month` | The group ledger's totals, by category and by person, one total in the group ledger's currency, foreign amounts converted. The pager works for anyone in the group                                                             |
 | `/settings`                 | For the person who added the bot: a link to the group ledger's timezone and currency in the private chat, where [Бюджет] sets the group ledger's budget. Your own timezone doesn't change. Anyone else gets a one-line refusal |
 | `/budget`                   | The group ledger's budget, read-only: what's left for today and for the period, in the ledger's timezone. Expense reactions carry no budget line                                                                               |
+| `/export`                   | Any member: the group ledger's expenses as a CSV or Excel file sent to the group, like `/export` in private, with an «Автор» column naming who recorded each one                                                           |
 | `/help`                     | The group's help text                                                                                                                                                                                                          |
 
 Other chatter, stickers and other bots' commands get no reply. Expenses you send the bot in
@@ -109,8 +113,10 @@ code, the photo as a file, or the link the QR code holds (`https://suf.purs.gov.
 - The same receipt sent again, as a photo or as a link, records nothing and answers «Уже
   записано» with the existing card. Refunds, copies, pro-forma and advance invoices are refused.
 - QR codes are decoded with [zxing-wasm](https://github.com/Sec-ant/zxing-wasm), loaded from
-  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). If a photo doesn't
-  decode, send it as a file or paste the link.
+  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). A JPEG that doesn't
+  decode is retried on preprocessed pixels
+  ([ADR-0034](docs/adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md)). If that fails too, the
+  bot says whether it found the code at all and how to retake the photo, or to paste the link.
 
 Besides Telegram, these are the only hosts the bot connects to, and only to fetch a receipt's
 shop and items:
@@ -184,6 +190,23 @@ passphrase or the code is deleted as soon as it arrives.
 
 A worker fetches the rate lists at boot and then hourly, so the bot needs outbound HTTPS to
 `webappcenter.nbs.rs`. If NBS can't be reached, reports fall back to per-currency blocks.
+
+### Donations
+
+The bot is free for everyone, with no paid tier
+([ADR-0027](docs/adrs/0027-donations-only-funding.md)). `/donate` works in a private chat only.
+
+- At boot the bot creates one Telegram Stars invoice link per preset amount. A preset whose link
+  can't be created is left out. With no link and no `DONATE_URL`, `/donate` says donations are
+  unavailable.
+- A payment is checked before Telegram takes it: the currency must be Stars and the amount must
+  match the button's preset.
+- A completed payment is stored once per Telegram charge id: the Stars amount, the donor's
+  internal user id and the time. The donor gets one thank-you, and the admin one notice with the
+  amount, the internal user id and the charge id, never a name.
+- The private `/help` ends with a line pointing to `/donate`.
+- The admin's `/refund <charge id>` returns the Stars through Telegram and marks the donation
+  refunded. A second `/refund` of the same charge id doesn't call Telegram.
 
 ### Amount rules
 

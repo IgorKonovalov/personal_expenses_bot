@@ -3,7 +3,7 @@
 > **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the encryption tip),
-> [Plan 0024](0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
+> [Plan 0024](done/0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
 > (`/start <code>`, `/privacy`)
 > **Related ADRs:** [ADR-0028](../adrs/0028-contextual-tips-registry.md) (the tips registry),
 > [ADR-0011](../adrs/0011-navigation-model.md) (menu and screens),
@@ -229,6 +229,7 @@ bot UI.
 
 ### Phase 5: A stranger's first contact
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** From a second Telegram account set to a different city than the env default, open a
   fresh invite link (Plan 0029). Go through the setup check with [Изменить], record an expense,
   then a EUR expense the next day.

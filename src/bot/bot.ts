@@ -2,6 +2,7 @@ import { Bot, Composer, type Context, type MiddlewareFn } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import type { DonationPreset } from '../domain/donations.js';
 import type { Logger } from '../logger.js';
 import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
@@ -15,12 +16,20 @@ import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
 import { registerDeleteAccount } from './handlers/deleteAccount.js';
+import {
+  registerDonate,
+  registerPreCheckout,
+  registerSuccessfulPayment,
+} from './handlers/donate.js';
+import { registerExport } from './handlers/export.js';
 import { registerHelp } from './handlers/help.js';
 import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
+import { registerPaySupport } from './handlers/paysupport.js';
 import { registerPrivacy } from './handlers/privacy.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
+import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerSummary } from './handlers/summary.js';
@@ -30,7 +39,7 @@ import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
 import { rateLimit } from './middleware/rateLimit.js';
-import { replyHtml } from './render/html.js';
+import { replyHtml, type Html } from './render/html.js';
 
 export interface HandlerDeps {
   readonly db: Db;
@@ -55,6 +64,13 @@ export interface BotOptions extends AdminDeps {
   readonly backupKeep: number;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;
+  // Read on every /donate, so links created after createBot returns are seen. Absent is none.
+  readonly donationLinks?: ReadonlyMap<DonationPreset, string>;
+  // The external donation page behind /donate's last button. Absent hides the button.
+  readonly donateUrl?: string | undefined;
+  // The notifier that messages the admin (ADR-0013). index.ts builds it from bot.api after
+  // createBot, so it is called late-bound.
+  readonly notifyAdmin?: (body: Html) => Promise<void>;
 }
 
 export function createBot(options: BotOptions): Bot {
@@ -75,7 +91,17 @@ export function createBot(options: BotOptions): Bot {
   const dm = new Composer<Context>();
   bot.branch(isGroupChat, groupComposer(options), dm);
 
+  const donateDeps = {
+    ...options,
+    donationLinks: options.donationLinks ?? new Map<DonationPreset, string>(),
+    donateUrl: options.donateUrl,
+    adminTelegramId: options.adminTelegramId,
+    notifyAdmin: options.notifyAdmin ?? (() => Promise.resolve()),
+  };
+  // A completed payment is recorded whatever the payer's access is now (ADR-0027).
+  registerSuccessfulPayment(dm, donateDeps);
   dm.use(access(options));
+  registerPreCheckout(dm);
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.
   dm.use(callbackDispatcher());
@@ -90,6 +116,7 @@ export function createBot(options: BotOptions): Bot {
   registerSummary(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);
+  registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);
   registerCancel(dm, options);
@@ -97,6 +124,9 @@ export function createBot(options: BotOptions): Bot {
   registerHelp(dm);
   registerChangelog(dm);
   registerPrivacy(dm);
+  registerDonate(dm, donateDeps);
+  registerPaySupport(dm, donateDeps);
+  registerRefund(dm, donateDeps);
   // Admin commands: from anyone else they fall through to the unknown-command reply.
   registerInvite(dm, options);
   registerAdmin(dm, options);

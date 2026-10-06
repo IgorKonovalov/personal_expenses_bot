@@ -1,12 +1,12 @@
 # 0024: Export and data ownership: every expense out as CSV or XLSX, free
 
-> **Status:** approved
+> **Status:** done (2026-10-03): built as planned, one minor and two nits open, Phase 5 real-apps check owed, v0.15.0
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
-> **Related ADRs:** [ADR-0026](../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted amounts),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed-ledger read seam that Phase 4 goes through)
+> **Related ADRs:** [ADR-0026](../../adrs/0026-export-csv-and-hand-rolled-xlsx.md) (CSV and a hand-rolled XLSX),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted amounts),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers)
 
 ## TL;DR
 
@@ -216,6 +216,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 5: Open the files in real apps
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, export «Всё время» from a personal ledger with a receipt on
   record, in both formats. Open the `.xlsx` in Excel (desktop or phone), Google Sheets and
   LibreOffice or Numbers. Open the `.csv` in Excel with a Russian or Serbian locale.
@@ -294,14 +295,210 @@ for an XLSX `<v>`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | not started | |
-| 2: Every column, the items file, and a formula-safe CSV | dev | not started | |
-| 3: The XLSX writer and the [Excel] button | dev | not started | |
-| 4: Groups, sealed ledgers, help and docs | dev | not started | |
-| 5: Open the files in real apps | human | not started | |
+| 1: Walking skeleton: `/export` sends a CSV of the expenses | dev | done | `f77bea0` |
+| 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
+| 3: The XLSX writer and the [Excel] button | dev | done | `440e551` |
+| 4: Groups, sealed ledgers, help and docs | dev | done | `ad7f90d` |
+| 5: Open the files in real apps | human | owed | (no commit) |
 
 ### Notes
 
+- Phase 1: `src/domain/periods.ts` is unchanged. The ranges and file keys are `exportSpan` in
+  `src/domain/export/rows.ts`, built on `monthOf` and `previous`.
+- Phase 1: the Belgrade 00:30 done-when is asserted in `src/services/exportLedger.test.ts` (the
+  service the handler calls) and `rows.test.ts`, not through the bot harness, whose clock is fixed
+  at 2026-09-29T22:10Z.
+- Phase 1: the double-tap guard is `createTapGuard` in `src/bot/callbacks.ts`. The dropped tap is
+  answered silently by the dispatcher.
+- Phase 1: the column headers, sheet name and file stem live in `messages` and are passed to
+  `expensesTable`, so the domain holds no copy. `/export` sits after `/categories` in
+  `messages.commands`; the pinned `registerCommands` test is updated.
+- Phase 1: a format tap on a locked sealed ledger already answers `ledgerLockedToast` and sends
+  nothing, since the read goes through `openExpenses`.
+- Phase 2: `src/db/receipts.ts` is unchanged: the service reads the existing
+  `listLedgerReceipts` and keeps the exported expenses' receipts. The items come from a new
+  `listLedgerReceiptItems` in `src/db/receiptItems.ts`, one query per export.
+- Phase 2: for all time the rates are read over the first to the last exported `occurred_on`.
+  The Время column is formatted in the service with `date-fns` and `@date-fns/tz` (both already
+  dependencies), since `src/domain/time.ts` is outside the phase's files.
+- Phase 2: the `1171,23` / `1171,24` done-when runs through the bot harness with a stored rate;
+  the same pair is asserted on the service. A Phase 1 bot test now expects the full Phase 2
+  header, so the Phase 1 header line `Дата;Сумма;Валюта;Категория;Описание` is no longer
+  asserted anywhere.
+- Phase 2: the item columns № and Количество are text cells, so the formula guard also applies
+  to a quantity such as `-1`.
+- Phase 3: `xlsx.ts` exports `xlsxParts` (the parts before zipping) beside `writeXlsx`; the
+  sheet, style and escaping done-whens are asserted on the parts, and the zip round trip on
+  `writeZip`. The number formats are custom ids from 164 (`0`, `0.00`), one per exponent used.
+  Every zip entry carries the fixed date 1980-01-01, so the bytes depend only on the parts.
+- Phase 3: the XLSX keeps № and Количество as text cells, the same cells as the CSV.
+  `messages.exportSoon` is removed with the placeholder.
+- Phase 4: both `src/bot/group/export.ts` (the handlers) and `src/bot/group/index.ts` (one
+  registration line) are touched. The group picker reuses `rangeStep`, `showFormatStep`,
+  `showRangeStep` and `sendExport` exported from `src/bot/handlers/export.ts`.
+- Phase 4: while locked, `/export` replies `ledgerLocked`; a tap on an old picker (format or
+  [← Назад]) answers the toast `ledgerLockedToast`, as Plan 0019's other taps do. The service
+  gains `activeExportState` for the picker. A sealed, unlocked ledger's range step carries one
+  line saying the file is an unencrypted copy (`exportRangePrompt(true)`).
+- Phase 4: a sealed ledger's receipts were folded into its rows' payloads when it was sealed, so
+  the export reads shop, link and items through `foldedReceipt`: one more decryption per row.
+- Phase 4: the "after `/unlock`" done-when unlocks through `unlockPersonalLedger` (the service
+  `/unlock` calls) on the harness keyring, not by sending `/unlock` and the passphrase through
+  the harness.
+- Followup (not acted on): in the XLSX, № and Количество are text cells, so a spreadsheet can't
+  sum or sort the quantities as numbers. A numeric cell kind for a non-money decimal would fix it.
+- Followup (not acted on): the 45 MB check runs per file; an export over it throws into the
+  generic apology, whose copy talks about recording an expense.
+
 ### Close triggers
 
+- **What shipped:** `src/domain/export/` (`rows.ts`: the ranges, the export tables and their
+  cells; `csv.ts`: the ADR-0026 CSV with the formula guard; `zip.ts`: deflate, CRC-32 and a
+  central directory with no Zip64; `xlsx.ts`: the workbook parts); `decimalAmount` in
+  `src/domain/money.ts`; `listLedgerExpenses` in `src/db/expenses.ts`; `listLedgerReceiptItems` in
+  `src/db/receiptItems.ts`; `src/services/exportLedger.ts` (`exportActiveLedger`,
+  `exportGroupLedger`, `activeExportState`); `src/bot/handlers/export.ts`,
+  `src/bot/group/export.ts`; `createTapGuard` in `src/bot/callbacks.ts`; the `xp:` callback data.
+  No new dependency, no migration.
+- **User-visible surface changed:** new `/export` in private chats and bound groups (in both
+  command lists and both help texts): a range step, a format step, then `expenses-<range>.csv`
+  (plus `receipt-items-<range>.csv` as one album) or `expenses-<range>.xlsx`, and the picker
+  edited to «Готово: N расходов за …». A sealed ledger's picker warns the file is an unencrypted
+  copy; while locked, `/export` answers locked. README's command tables gain `/export`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 75 files,
+  1049 tests; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0, 240 links.
+- **Outstanding `human` phases:** Phase 5 (open the CSV and XLSX in Excel, Google Sheets and
+  LibreOffice or Numbers on the deployed bot).
+
+## Close review
+
+Round 1, at tip `c525fc3`, in a fresh session. No earlier round, so no fix commits to record.
+Phase 5 (human, `Blocks merge: no`) stays **owed** after the merge.
+
+# Plan 0024 review, round 1 (tip c525fc3)
+
+**Verdict:** Clean: all four dev phases deliver what the plan asked, the named tests assert the
+done-whens, and the gate is green, with one minor lock-check gap and two nits that don't block the
+close.
+
+## Gate (run in this session at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 75 files, 1052 tests (the log says 1049. The merge from main since then
+  explains the difference)
+- `node scripts/check-doc-links.mjs`: exit 0, 245 links
+
+## Lens 1: alignment
+
+- Phases 1 to 4 each have one commit (`f77bea0`, `8d09bcf`, `440e551`, `ad7f90d`), and each
+  phase has one in-vocabulary owner tag. Phase 5 (`human`, `Blocks merge: no`) is owed, and the
+  log says so.
+- Done-whens checked against the assertions:
+  - P1 BOM, header and data rows: `src/bot/bot.test.ts` "sends a CSV of 450 кофе and 12,50 EUR
+    такси" asserts the bytes `EF BB BF`, then the full row strings `450,00;RSD;…` and
+    `12,50;EUR;…`. The header asserted is the Phase 2 header, and the log discloses that the
+    Phase 1 header went with the Phase 2 change. The plan grows that table in Phase 2, so this
+    is not a finding.
+  - P1 RFC 4180 round trip: `src/domain/export/csv.test.ts` has a real test-only parser, and
+    `a;b "c"\r\nd\ne` reads back equal.
+  - P1 Belgrade 00:30: `src/services/exportLedger.test.ts` (NOW `2026-09-30T22:30Z`) checks that
+    `tm` is `['oct1']`, that `pm` is `['sep1','sep30']`, and that sep30 is absent from `tm`. It
+    runs at the service level, as the log discloses, because the harness clock is fixed. That is
+    acceptable.
+  - P1 soft-delete, empty range and double-tap: asserted in `bot.test.ts`. The double-tap test
+    gates `sendDocument` to hold the first tap in flight, which is a real concurrency probe.
+  - P2 `1171,23` / `1171,24`: asserted through the harness on cells 2..4, and also on the
+    service.
+  - P2 receipt rows, `ID расхода` equal to `ID`, `0,535`, album with two files, one document
+    without receipts, `'=SUM(A1)`, and no Автор for a personal ledger: all asserted on exact
+    lines.
+  - P3 zip: the test-only reader walks the central directory, inflates each entry and compares
+    its CRC with `zlib.crc32`, and `entryCount` from the end record equals the number of parts.
+    Sheet names, `<v>450.00</v>` with `0.00`, `<v>1500</v>` with `0`, escaping, the U+0001 drop
+    and well-formedness (with checker self-tests) are all asserted.
+  - P4 group: B's export goes to `GROUP_ID` with both rows' Автор names. An unbound group gets
+    no calls. Both command lists are asserted. Sealed: locked gets `ledgerLocked` and the toast
+    with no document, and after unlock the file holds plaintext amounts and descriptions. The
+    unlock goes through `unlockPersonalLedger`, as the log discloses.
+- No ADR reversed. ADR-0026 (CSV shape, hand-rolled XLSX, no Zip64) is followed, and ADR-0022's
+  `convert` is used once per expense.
+
+## Lens 2: layering
+
+- grammY is imported only under `src/bot/`. `src/domain/export/` imports `node:zlib` only, and
+  the plan names it. Copy, headers, stems and sheet names live in `messages.ts`.
+
+## Lens 3: correctness
+
+- Money: `decimalAmount` lives in the money module and works on integer digits. No float
+  arithmetic on amounts.
+- Time: `now` is injected. Ranges and Время use `effectiveTimezone` in private and the ledger's
+  timezone in a group.
+- Idempotency: export writes nothing, and the tap guard covers the double-tap.
+- Privacy: the info log carries ledgerId, range, format, rows and bytes only. Fixtures are
+  synthetic.
+- Telegram limits: callback data is at most 13 bytes, and the album is two documents.
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+1. **A range tap on an old picker skips the lock check.**
+   - **Where:** `src/bot/handlers/export.ts:159`.
+   - **What:** `bot.callbackQuery(EXPORT_RANGE, …)` calls `showFormatStep` without
+     `pickerState`. On a sealed ledger that is locked, tapping «Этот месяц» on an old picker
+     edits the message to «Формат файла?» instead of answering `ledgerLockedToast`.
+   - **Why it matters:** Phase 4 says "a tap on an old picker answer[s] with Plan 0019's locked
+     message". [← Назад] and the format tap honour it, but the range tap doesn't. No data leaks,
+     because the format tap still refuses.
+   - **Fix:** In the DM handler, check `pickerState(ctx.from.id)` first, answer
+     `ledgerLockedToast` when it reads locked, as `EXPORT_BACK` does, and add a harness case for
+     it.
+
+### nit
+
+1. **The group timezone is resolved twice.**
+   - **Where:** `src/services/exportLedger.ts:67-70`.
+   - **What:** The code repeats the ledger-timezone resolution that `boundGroupLedger` already
+     does (`src/services/periodSummary.ts:100-103`).
+   - **Fix:** Have `boundGroupLedger` also return its `timezone`, and use it.
+2. **The `/help` line is out of place.**
+   - **Where:** `src/bot/messages.ts`, the private help list.
+   - **What:** The `/export` line sits after «… — эта подсказка» rather than with the other
+     reports.
+   - **Fix:** Move it above `${menu.help}`. This is cosmetic.
+
+## Bookkeeping owed at close
+
+- Flip the plan to `done` and `git mv` it to `docs/plans/done/`, then repair the links (inbound
+  and the plan's own `../adrs/` links) and re-run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0026 (`proposed` to `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Make a minor version bump (a feature plan): `package.json`, `CHANGELOG.md`, and the
+  `versionAnnouncements` entry for `/export`.
+- Phase 5 (human, opening the files in real apps) stays owed after the merge, and the close
+  should record it as outstanding.
+- The two followups in the log (numeric quantity cells in the XLSX, and an over-45-MB export
+  falling into the expense-recording apology) go to `## Followups`.
+
 ## Followups
+
+- The round-1 minor: a range tap on an old picker of a locked sealed ledger shows the format step
+  instead of `ledgerLockedToast` (`src/bot/handlers/export.ts`).
+- The round-1 nits: the group timezone resolved twice in `src/services/exportLedger.ts`, and the
+  `/export` line placed after the `/help` line in the private help list.
+- In the XLSX, № and Количество are text cells, so a spreadsheet can't sum or sort quantities as
+  numbers. A numeric cell kind for a non-money decimal would fix it.
+- An export over the 45 MB check throws into the generic apology, whose copy talks about
+  recording an expense.
+- Phase 5 (human): open both formats in Excel, Google Sheets and LibreOffice or Numbers on the
+  deployed bot.

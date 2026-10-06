@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot } from 'grammy';
+import { inflateRawSync } from 'node:zlib';
+import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
@@ -10,7 +11,9 @@ import type { CategoryId } from '../db/categories.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
-import type { UserId } from '../db/users.js';
+import { insertReceiptItems } from '../db/receiptItems.js';
+import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
+import { findUserByIdentity, type UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
@@ -19,9 +22,11 @@ import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
+import { VARIANTS } from '../fiscal/qrPixels.js';
 import { createLogger } from '../logger.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, registerCommands } from './bot.js';
 import {
   BUDGET_CAP,
@@ -50,9 +55,10 @@ import {
   summaryPageData,
   undoExpenseData,
 } from './callbackData.js';
-import { messages } from './messages.js';
+import { CHANGELOG_RECENT, messages } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
+  ADMIN_ID,
   ALLOWED_ID,
   GROUP_ID,
   SECOND_ALLOWED_ID,
@@ -60,8 +66,11 @@ import {
   callbackUpdate,
   createTestBot,
   groupTextUpdate,
+  invoiceLink,
   logContent,
   myChatMemberUpdate,
+  preCheckoutUpdate,
+  successfulPaymentUpdate,
   textUpdate,
   type ApiCall,
 } from './testHarness.js';
@@ -373,7 +382,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help and /changelog from messages', async () => {
+  it('registers /today, /week, /month, /budget, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -388,11 +397,13 @@ describe('command registration at boot', () => {
             { command: 'month', description: messages.commands[2].description },
             { command: 'budget', description: messages.commands[3].description },
             { command: 'categories', description: messages.commands[4].description },
-            { command: 'settings', description: messages.commands[5].description },
-            { command: 'unlock', description: messages.commands[6].description },
-            { command: 'lock', description: messages.commands[7].description },
-            { command: 'help', description: messages.commands[8].description },
-            { command: 'changelog', description: messages.commands[9].description },
+            { command: 'export', description: messages.commands[5].description },
+            { command: 'settings', description: messages.commands[6].description },
+            { command: 'unlock', description: messages.commands[7].description },
+            { command: 'lock', description: messages.commands[8].description },
+            { command: 'help', description: messages.commands[9].description },
+            { command: 'changelog', description: messages.commands[10].description },
+            { command: 'donate', description: messages.commands[11].description },
           ],
         },
       },
@@ -454,9 +465,10 @@ describe('command registration at boot', () => {
 });
 
 describe('/changelog', () => {
-  const TRUNCATED = 'Более ранние версии не поместились.';
+  const OLDER =
+    '\n\nБолее ранние версии: <a href="https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/CHANGELOG.md">CHANGELOG.md</a>';
 
-  it('lists every announced version, newest first', async () => {
+  it('lists the five newest announced versions, newest first, then links the rest', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/changelog' }));
@@ -465,19 +477,24 @@ describe('/changelog', () => {
     const newestFirst = Object.keys(messages.versionAnnouncements).sort((x, y) =>
       compareVersions(y, x),
     );
-    const sections = newestFirst.map(
-      (v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`,
-    );
+    expect(newestFirst.length).toBeGreaterThan(CHANGELOG_RECENT);
+    const sections = newestFirst
+      .slice(0, 5)
+      .map((v) => `<b>${v}</b>\n${String(messages.versionAnnouncements[v])}`);
+    const text = `<b>Что нового</b>\n\n${sections.join('\n\n')}${OLDER}`;
     expect(calls).toEqual([
       {
         method: 'sendMessage',
         payload: {
           chat_id: ALLOWED_ID,
-          text: `<b>Что нового</b>\n\n${sections.join('\n\n')}`,
+          text,
+          link_preview_options: { is_disabled: true },
           ...htmlParseMode,
         },
       },
     ]);
+    expect(text).not.toContain(`<b>${String(newestFirst[5])}</b>`);
+    expect(text.length).toBeLessThan(4096);
   });
 
   it('sorts by version number, not by insertion order', () => {
@@ -486,31 +503,26 @@ describe('/changelog', () => {
     expect(text).toBe('<b>Что нового</b>\n\n<b>0.10.0</b>\nдесять\n\n<b>0.9.0</b>\nдевять');
   });
 
-  it('keeps the newest entries under 4096 characters and ends with the truncation line', () => {
-    const body = html`${'я'.repeat(300)}`;
+  it('shows 0.39.0 down to 0.35.0 of forty versions, and the link', () => {
     const announcements = Object.fromEntries(
-      Array.from({ length: 40 }, (_, i) => [`0.${String(i)}.0`, body]),
+      Array.from({ length: 40 }, (_, i) => [`0.${String(i)}.0`, html`версия ${i}`]),
     );
 
     const text = messages.changelog(announcements);
 
-    expect(text.length).toBeLessThan(4096);
-    expect(text.startsWith(`<b>Что нового</b>\n\n<b>0.39.0</b>\n${body}\n\n<b>0.38.0</b>`)).toBe(
-      true,
+    expect(text).toBe(
+      `<b>Что нового</b>\n\n${[39, 38, 37, 36, 35]
+        .map((i) => `<b>0.${String(i)}.0</b>\nверсия ${String(i)}`)
+        .join('\n\n')}${OLDER}`,
     );
-    expect(text.endsWith(`\n\n${TRUNCATED}`)).toBe(true);
-    expect(text).not.toContain('<b>0.0.0</b>');
-    // Only whole entries are dropped: every shown body is complete.
-    expect(
-      text
-        .split('\n\n')
-        .slice(1, -1)
-        .every((entry) => entry.endsWith(body)),
-    ).toBe(true);
   });
 
-  it('has no truncation line when everything fits', () => {
-    expect(messages.changelog(messages.versionAnnouncements)).not.toContain(TRUNCATED);
+  it('has no link line when every version fits in the five', () => {
+    const announcements = Object.fromEntries(
+      Array.from({ length: 5 }, (_, i) => [`0.${String(i)}.0`, html`версия ${i}`]),
+    );
+
+    expect(messages.changelog(announcements)).not.toContain('Более ранние версии');
   });
 
   it('is in the command menu and the help text', () => {
@@ -526,6 +538,507 @@ describe('/changelog', () => {
     expect(calls).toMatchObject([
       { method: 'sendMessage', payload: { chat_id: STRANGER_ID, text: messages.invitationOnly } },
     ]);
+  });
+});
+
+describe('donations (ADR-0027)', () => {
+  function donationRows(db: Db): unknown[] {
+    return db
+      .prepare('SELECT user_id, stars, telegram_payment_charge_id, refunded_at FROM donations')
+      .all();
+  }
+
+  function userIdOf(db: Db, telegramId: number): unknown {
+    return db
+      .prepare('SELECT user_id FROM auth_identities WHERE external_id = ?')
+      .pluck()
+      .get(String(telegramId));
+  }
+
+  const starsKeyboard = [
+    [
+      { text: '⭐ 50', url: invoiceLink('donate:50') },
+      { text: '⭐ 150', url: invoiceLink('donate:150') },
+      { text: '⭐ 500', url: invoiceLink('donate:500') },
+    ],
+  ];
+
+  it('creates one XTR invoice link per preset at boot, with an empty provider token', async () => {
+    const { calls, prepareDonations } = createTestBot();
+
+    await prepareDonations();
+
+    expect(calls).toEqual(
+      [50, 150, 500].map((stars) => ({
+        method: 'createInvoiceLink',
+        payload: {
+          title: messages.donateInvoiceTitle,
+          description: messages.donateInvoiceDescription,
+          payload: `donate:${String(stars)}`,
+          provider_token: '',
+          currency: 'XTR',
+          prices: [{ label: messages.donateInvoiceLabel, amount: stars }],
+        },
+      })),
+    );
+  });
+
+  it('answers /donate with the text and one URL button per cached link', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.donate,
+          reply_markup: { inline_keyboard: starsKeyboard },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('answers donateUnavailable when every link creation failed and logs each at warn', async () => {
+    const { bot, calls, logLines, prepareDonations } = createTestBot({
+      logLevel: 'info',
+      failMethods: ['createInvoiceLink'],
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(sentTexts(calls)).toEqual([messages.donateUnavailable]);
+    expect(
+      logLines
+        .filter((line) => line.includes('createInvoiceLink failed'))
+        .map((line) => {
+          const { level, stars } = JSON.parse(line) as { level: number; stars: number };
+          return { level, stars };
+        }),
+    ).toEqual([
+      { level: 40, stars: 50 },
+      { level: 40, stars: 150 },
+      { level: 40, stars: 500 },
+    ]);
+  });
+
+  it('gets no reply to /donate in a bound group', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 1,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(groupTextUpdate({ updateId: 2, text: '/donate' }));
+
+    expect(calls).toEqual([]);
+  });
+
+  it('is in the private command menu and not in the group one', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('donate');
+    expect(messages.groupCommands.map((c) => c.command)).not.toContain('donate');
+  });
+
+  it.each([
+    ['XTR', 150, 'donate:150', true],
+    ['XTR', 50, 'donate:150', false],
+    ['USD', 150, 'donate:150', false],
+  ] as const)(
+    'answers a pre-checkout of %s, %d, %s with ok %s',
+    async (currency, totalAmount, payload, ok) => {
+      const { bot, calls, db } = createTestBot();
+
+      await bot.handleUpdate(preCheckoutUpdate({ updateId: 1, currency, totalAmount, payload }));
+
+      expect(calls).toEqual([
+        {
+          method: 'answerPreCheckoutQuery',
+          payload: ok
+            ? { pre_checkout_query_id: 'pcq-1', ok: true }
+            : { pre_checkout_query_id: 'pcq-1', ok: false, error_message: messages.donateRejected },
+        },
+      ]);
+      expect(donationRows(db)).toEqual([]);
+    },
+  );
+
+  it('does not answer a pre-checkout from a user outside the allow-list', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(
+      preCheckoutUpdate({
+        updateId: 1,
+        currency: 'XTR',
+        totalAmount: 150,
+        payload: 'donate:150',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(calls).toEqual([]);
+  });
+
+  it('records, thanks and notifies the admin once when the update is delivered twice', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    calls.length = 0;
+
+    const payment = successfulPaymentUpdate({
+      updateId: 2,
+      stars: 150,
+      chargeId: 'charge-1',
+      fromId: SECOND_ALLOWED_ID,
+    });
+    await bot.handleUpdate(payment);
+    await bot.handleUpdate(payment);
+
+    const userId = userIdOf(db, SECOND_ALLOWED_ID);
+    expect(donationRows(db)).toEqual([
+      { user_id: userId, stars: 150, telegram_payment_charge_id: 'charge-1', refunded_at: null },
+    ]);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.donateThanks, ...htmlParseMode },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ADMIN_ID,
+          text: `⭐ Пожертвование: 150 Stars\nПользователь: <code>${String(userId)}</code>\nПлатёж: <code>charge-1</code>`,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    // No Telegram name in the notice.
+    expect(sentTexts(calls)[1]).not.toContain('Test');
+  });
+
+  it('still thanks the donor when the admin notice is refused', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    bot.api.config.use((prev, method, payload, signal) =>
+      method === 'sendMessage' && (payload as { chat_id: number }).chat_id === ADMIN_ID
+        ? Promise.reject(new Error('Forbidden: bot was blocked by the user'))
+        : prev(method, payload, signal),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 2,
+        stars: 50,
+        chargeId: 'charge-2',
+        fromId: SECOND_ALLOWED_ID,
+      }),
+    );
+
+    expect(sentTexts(calls)).toEqual([messages.donateThanks]);
+    expect(donationRows(db)).toHaveLength(1);
+  });
+
+  it('adds a last [Ko-fi] URL button when DONATE_URL is set', async () => {
+    const { bot, calls, prepareDonations } = createTestBot({
+      donateUrl: 'https://ko-fi.com/example',
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
+      .reply_markup;
+    const buttons = markup.inline_keyboard.flat();
+    expect(buttons).toHaveLength(4);
+    expect(buttons[3]).toEqual({ text: messages.donateExternal, url: 'https://ko-fi.com/example' });
+    expect(markup.inline_keyboard).toEqual([
+      ...starsKeyboard,
+      [{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }],
+    ]);
+  });
+
+  it('has three buttons without DONATE_URL', async () => {
+    const { bot, calls, prepareDonations } = createTestBot();
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
+      .reply_markup;
+    expect(markup.inline_keyboard.flat()).toHaveLength(3);
+  });
+
+  it('shows only [Ko-fi] when every link creation failed and DONATE_URL is set', async () => {
+    const { bot, calls, prepareDonations } = createTestBot({
+      donateUrl: 'https://ko-fi.com/example',
+      failMethods: ['createInvoiceLink'],
+    });
+    await prepareDonations();
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/donate' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.donate,
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('ends the private /help with the donate line, and keeps /donate out of the group help', async () => {
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 1,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help' }));
+    await bot.handleUpdate(groupTextUpdate({ updateId: 3, text: '/help' }));
+
+    const [privateHelp, groupHelp] = sentTexts(calls);
+    expect(String(privateHelp).endsWith('\nБот бесплатный. Поддержать: /donate')).toBe(true);
+    expect(messages.helpDonateLine).toBe('Бот бесплатный. Поддержать: /donate');
+    expect(groupHelp).toBe(messages.groupHelp);
+    expect(String(groupHelp)).not.toContain('/donate');
+  });
+
+  it('records a payment from a user the access middleware would refuse', async () => {
+    const { bot, db } = createTestBot();
+    // A user admitted earlier and dropped from the allow-list since the pre-checkout.
+    db.prepare("INSERT INTO users (id, timezone, created_at) VALUES ('u-gone', 'UTC', 'x')").run();
+    db.prepare(
+      "INSERT INTO auth_identities (provider, external_id, user_id) VALUES ('telegram', ?, 'u-gone')",
+    ).run(String(STRANGER_ID));
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 1,
+        stars: 50,
+        chargeId: 'charge-9',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(donationRows(db)).toEqual([
+      { user_id: 'u-gone', stars: 50, telegram_payment_charge_id: 'charge-9', refunded_at: null },
+    ]);
+  });
+
+  it('thanks a payer with no user, records nothing and logs the charge id at warn', async () => {
+    const { bot, calls, db, logLines } = createTestBot({ logLevel: 'info' });
+
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 1,
+        stars: 50,
+        chargeId: 'charge-7',
+        fromId: STRANGER_ID,
+      }),
+    );
+
+    expect(donationRows(db)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.donateThanks]);
+    expect(
+      logLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((l) => l.level === 40),
+    ).toMatchObject([{ chargeId: 'charge-7' }]);
+  });
+});
+
+describe('/paysupport and /refund', () => {
+  // SECOND_ALLOWED_ID donates 50 (charge-a) and then 150 (charge-b); ADMIN_ID is the admin.
+  async function withTwoDonations(options: { failMethods?: readonly string[] } = {}) {
+    const harness = createTestBot(options);
+    const { bot, calls } = harness;
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    for (const [i, [stars, chargeId]] of [
+      [50, 'charge-a'],
+      [150, 'charge-b'],
+    ].entries()) {
+      await bot.handleUpdate(
+        successfulPaymentUpdate({
+          updateId: 2 + i,
+          stars: Number(stars),
+          chargeId: String(chargeId),
+          fromId: SECOND_ALLOWED_ID,
+        }),
+      );
+    }
+    calls.length = 0;
+    return harness;
+  }
+
+  function refundedAt(db: Db, chargeId: string): unknown {
+    return db
+      .prepare('SELECT refunded_at FROM donations WHERE telegram_payment_charge_id = ?')
+      .pluck()
+      .get(chargeId);
+  }
+
+  function refundCalls(calls: readonly ApiCall[]): unknown[] {
+    return calls.filter((c) => c.method === 'refundStarPayment').map((c) => c.payload);
+  }
+
+  // The texts of the messages sent, leaving out the refundStarPayment call.
+  function replies(calls: readonly ApiCall[]): unknown[] {
+    return sentTexts(calls.filter((c) => c.method === 'sendMessage'));
+  }
+
+  it('explains, with no text, that a donation unlocks nothing and how to ask for a refund', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, text: '/paysupport', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.paySupport, ...htmlParseMode },
+      },
+    ]);
+    expect(messages.paySupport).toContain('ничего не открывает');
+    expect(messages.paySupport).toContain('/paysupport');
+  });
+
+  it('relays the request with both charge ids to the admin once and confirms to the user', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(
+      textUpdate({
+        updateId: 10,
+        text: '/paysupport верните пожалуйста',
+        fromId: SECOND_ALLOWED_ID,
+      }),
+    );
+
+    const userId = String(
+      db.prepare("SELECT user_id FROM auth_identities WHERE external_id = '1003'").pluck().get(),
+    );
+    // The harness clock is 2026-09-29T22:10Z: already the 30th in the admin's default zone.
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ADMIN_ID,
+          text:
+            `💬 /paysupport от <code>${userId}</code>\n\nверните пожалуйста\n\nПожертвования:\n` +
+            '<code>charge-b</code> · 150 Stars · 30 сентября 2026\n' +
+            '<code>charge-a</code> · 50 Stars · 30 сентября 2026',
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: SECOND_ALLOWED_ID, text: messages.paySupportSent, ...htmlParseMode },
+      },
+    ]);
+  });
+
+  it('caps the relayed donations at the ten newest', async () => {
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start', fromId: SECOND_ALLOWED_ID }));
+    for (let i = 0; i < 12; i++) {
+      await bot.handleUpdate(
+        successfulPaymentUpdate({
+          updateId: 2 + i,
+          stars: 50,
+          chargeId: `charge-${String(i).padStart(2, '0')}`,
+          fromId: SECOND_ALLOWED_ID,
+        }),
+      );
+    }
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 20, text: '/paysupport вопрос', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    const relayed = String(sentTexts(calls)[0]);
+    expect(relayed.match(/<code>charge-/g)).toHaveLength(10);
+    expect(relayed).toContain('charge-11');
+    expect(relayed).not.toContain('charge-01');
+    expect(relayed).not.toContain('charge-00');
+  });
+
+  it('refunds once with the payer’s Telegram id, then answers already-refunded without Telegram', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-a' }));
+
+    expect(refundCalls(calls)).toEqual([
+      { user_id: SECOND_ALLOWED_ID, telegram_payment_charge_id: 'charge-a' },
+    ]);
+    expect(refundedAt(db, 'charge-a')).toBe('2026-09-29T22:10:00.000Z');
+    expect(refundedAt(db, 'charge-b')).toBeNull();
+    expect(replies(calls)).toEqual([messages.refundDone(50)]);
+    expect(messages.refundDone(50)).toBe('Возвращено: 50 Stars.');
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 11, text: '/refund charge-a' }));
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.refundAlreadyRefunded]);
+  });
+
+  it('answers not-found for an unknown charge id', async () => {
+    const { bot, calls } = await withTwoDonations();
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-x' }));
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(sentTexts(calls)).toEqual([messages.refundNotFound]);
+  });
+
+  it('leaves refunded_at NULL and reports a refundStarPayment error to the admin', async () => {
+    const { bot, calls, db } = await withTwoDonations({ failMethods: ['refundStarPayment'] });
+
+    await bot.handleUpdate(textUpdate({ updateId: 10, text: '/refund charge-b' }));
+
+    expect(refundCalls(calls)).toHaveLength(1);
+    expect(refundedAt(db, 'charge-b')).toBeNull();
+    const [reply] = replies(calls);
+    expect(String(reply)).toMatch(/^Telegram не вернул Stars: .*Bad Request: test/);
+    expect(calls.at(-1)?.payload).toMatchObject({ chat_id: ADMIN_ID });
+  });
+
+  it('treats a non-admin’s /refund as an unknown command', async () => {
+    const { bot, calls, db } = await withTwoDonations();
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 10, text: '/refund charge-a', fromId: SECOND_ALLOWED_ID }),
+    );
+
+    expect(refundCalls(calls)).toEqual([]);
+    expect(refundedAt(db, 'charge-a')).toBeNull();
+    expect(sentTexts(calls)).toEqual([messages.help]);
   });
 });
 
@@ -4036,23 +4549,105 @@ describe('fiscal receipts', () => {
     it.each([
       ['no QR', 'no-qr.jpg'],
       ['a QR that is not a receipt', 'example.png'],
-    ])('answers a photo with %s with the hint and records nothing', async (_name, fileId) => {
+    ])('answers a photo with %s with the no-QR hint and records nothing', async (_name, fileId) => {
       const { sendPhoto, calls, db } = receiptBot();
 
       await sendPhoto(fileId);
 
       expect(expenseCount(db)).toEqual({ n: 0 });
-      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
     });
 
-    it('does not download an image file over 20 MB and answers with the hint', async () => {
+    it('logs why a located receipt QR did not decode, with the unreadable hint and nothing recorded', async () => {
+      const { sendPhoto, calls, db, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt-damaged.jpg');
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoUnreadable]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        level: 30,
+        source: 'photo',
+        bytes: 200_000,
+        width: 1280,
+        height: 1280,
+        outcome: 'noQr',
+        detected: { error: 'ChecksumError', version: '23', ecLevel: 'M', modulePx: 4 },
+      });
+    });
+
+    it('logs a read receipt photo without its QR text', async () => {
+      const { sendPhoto, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt.jpg');
+
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'receipt',
+        qrCount: 1,
+        pass: 'plain',
+      });
+      for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
+    });
+
+    it('records a dot-gain receipt photo through a pixel retry and logs its pass', async () => {
+      const { sendPhoto, calls, db, logLines } = receiptBot({ logLevel: 'info' });
+
+      await sendPhoto('rs-receipt-dotgain.jpg');
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 82912, currency: 'RSD' },
+      ]);
+      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'receipt',
+        qrCount: 1,
+        pass: VARIANTS[0]?.name,
+      });
+      expect(VARIANTS[0]?.name).toBe('blur3-lmt21-3');
+      for (const line of logLines) expect(line).not.toContain('suf.purs.gov.rs');
+    });
+
+    it('logs a pixel decode refused over the limit, with the no-QR hint', async () => {
+      const { sendPhoto, calls, logLines } = receiptBot({ logLevel: 'info' });
+      // rs-receipt.jpg with its baseline frame header (FF C0 at byte 89) claiming 20000x20000.
+      const bytes = readFileSync(new URL('../fiscal/qr.fixtures/rs-receipt.jpg', import.meta.url));
+      expect([bytes[89], bytes[90]]).toEqual([0xff, 0xc0]);
+      bytes.writeUInt16BE(20000, 89 + 5);
+      bytes.writeUInt16BE(20000, 89 + 7);
+      globalThis.fetch = () => Promise.resolve(new Response(bytes));
+
+      await sendPhoto('huge.jpg');
+
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
+      const reads = logLines.filter((line) => line.includes('receipt image read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        outcome: 'noQr',
+        pixelDecode: 'overLimit',
+      });
+    });
+
+    it('does not download an image file over 20 MB and answers with the no-QR hint', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 
       await sendDocument('rs-receipt.jpg', 'image/jpeg', 25_000_000);
 
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
-      expect(sentTexts(calls)).toEqual([messages.receiptPhotoHint]);
+      expect(sentTexts(calls)).toEqual([messages.receiptPhotoNoQr]);
+    });
+
+    it('suggests an uncompressed file in no message', () => {
+      // The source, so copy built by message functions is covered too.
+      const source = readFileSync(new URL('./messages.ts', import.meta.url), 'utf8');
+      expect(source).toContain('receiptPhotoUnreadable');
+      expect(source).not.toContain('без сжатия');
     });
 
     it('does not download a non-image file and keeps the help reply', async () => {
@@ -4532,5 +5127,405 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     for (const line of logLines) {
       for (const secret of secrets) expect(line, secret).not.toContain(secret);
     }
+  });
+});
+
+interface SentDocument {
+  readonly chatId: unknown;
+  readonly filename: string | undefined;
+  readonly bytes: Buffer;
+}
+
+// The documents the bot sent, alone or in an album, with the bytes each InputFile holds.
+async function sentDocuments(calls: readonly ApiCall[]): Promise<SentDocument[]> {
+  const files = calls.flatMap((call) => {
+    if (call.method === 'sendDocument') {
+      const payload = call.payload as { chat_id: unknown; document: InputFile };
+      return [{ chatId: payload.chat_id, file: payload.document }];
+    }
+    if (call.method === 'sendMediaGroup') {
+      const payload = call.payload as { chat_id: unknown; media: { media: InputFile }[] };
+      return payload.media.map((item) => ({ chatId: payload.chat_id, file: item.media }));
+    }
+    return [];
+  });
+  return Promise.all(
+    files.map(async ({ chatId, file }) => {
+      const raw = await file.toRaw();
+      if (!(raw instanceof Uint8Array)) throw new Error('document is not in memory');
+      return { chatId, filename: file.filename, bytes: Buffer.from(raw) };
+    }),
+  );
+}
+
+const EXPENSE_HEADER = 'Дата;Время;Сумма;Валюта;Сумма в RSD;Категория;Описание;Магазин;Чек;ID';
+
+// The deflated bytes of a zip entry, found by its local header's name.
+function zipEntry(zip: Buffer, name: string): Buffer {
+  for (let at = 0; zip.readUInt32LE(at) === 0x04034b50;) {
+    const size = zip.readUInt32LE(at + 18);
+    const nameLength = zip.readUInt16LE(at + 26);
+    const dataAt = at + 30 + nameLength + zip.readUInt16LE(at + 28);
+    if (zip.toString('utf8', at + 30, at + 30 + nameLength) === name) {
+      return zip.subarray(dataAt, dataAt + size);
+    }
+    at = dataAt + size;
+  }
+  throw new Error(`no zip entry ${name}`);
+}
+
+// A CSV's lines after the BOM, without the final CRLF.
+function csvLines(bytes: Buffer): string[] {
+  return bytes.subarray(3).toString('utf8').split('\r\n').slice(0, -1);
+}
+
+describe('/export (ADR-0026)', () => {
+  const rangeKeyboard = {
+    inline_keyboard: [
+      [
+        { text: 'Этот месяц', callback_data: 'xp:r:tm' },
+        { text: 'Прошлый месяц', callback_data: 'xp:r:pm' },
+      ],
+      [
+        { text: 'Этот год', callback_data: 'xp:r:ty' },
+        { text: 'Всё время', callback_data: 'xp:r:all' },
+      ],
+    ],
+  };
+  const formatKeyboard = (range: string) => ({
+    inline_keyboard: [
+      [
+        { text: 'CSV', callback_data: `xp:f:${range}:csv` },
+        { text: 'Excel', callback_data: `xp:f:${range}:xlsx` },
+      ],
+      [{ text: '← Назад', callback_data: 'xp:back' }],
+    ],
+  });
+
+  async function withTwoExpenses() {
+    const harness = createTestBot();
+    await harness.bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '450 кофе' }));
+    await harness.bot.handleUpdate(
+      textUpdate({ updateId: 2, messageId: 2, text: '12,50 EUR такси' }),
+    );
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('asks for the range, then the format in place, and [← Назад] goes back', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:r:pm', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:back', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'sendMessage',
+      'answerCallbackQuery',
+      'editMessageText',
+      'answerCallbackQuery',
+      'editMessageText',
+    ]);
+    expect(calls[0]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+    expect(calls[2]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Формат файла?',
+      reply_markup: formatKeyboard('pm'),
+    });
+    expect(calls[4]?.payload).toMatchObject({
+      text: 'Что выгрузить?',
+      reply_markup: rangeKeyboard,
+    });
+  });
+
+  const idOf = (db: Db, description: string) =>
+    db.prepare('SELECT id FROM expenses WHERE description = ?').pluck().get(description) as string;
+
+  it('sends a CSV of 450 кофе and 12,50 EUR такси for all time, then closes the picker', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:r:all', messageId: 5 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 5, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents).toHaveLength(1);
+    const [csv] = documents;
+    expect(csv?.chatId).toBe(ALLOWED_ID);
+    expect(csv?.filename).toBe('expenses-all.csv');
+    expect([...(csv?.bytes.subarray(0, 3) ?? [])]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = csvLines(csv?.bytes ?? Buffer.alloc(0));
+    // A personal ledger: no Автор column. No EUR rate is stored, so its converted cell is empty.
+    expect(lines[0]).toBe(EXPENSE_HEADER);
+    expect(lines.slice(1)).toEqual([
+      `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      expect.stringMatching(
+        new RegExp(`^2026-09-29;23:50;12,50;EUR;;[^;]*;такси;;;${idOf(db, 'такси')}$`),
+      ),
+    ]);
+    const edits = calls.filter((call) => call.method === 'editMessageText');
+    expect(edits.at(-1)?.payload).toMatchObject({
+      message_id: 5,
+      text: 'Готово: 2 расхода за всё время',
+    });
+    expect(edits.at(-1)?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('sends [Excel] as one expenses-all.xlsx zip, and closes the picker', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
+    // Both expenses as numeric cells in the sheet, the date as text.
+    const sheet = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet1.xml')).toString('utf8');
+    expect(sheet).toContain('<v>450.00</v>');
+    expect(sheet).toContain('<v>12.50</v>');
+    expect(sheet).toContain('<t xml:space="preserve">2026-09-29</t>');
+    expect(calls.at(-1)?.payload).toMatchObject({ text: 'Готово: 2 расхода за всё время' });
+  });
+
+  it('leaves a soft-deleted expense out of every range', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const id = db.prepare("SELECT id FROM expenses WHERE description = 'такси'").pluck().get();
+    softDeleteExpense(db, id as ExpenseId, new Date('2026-09-29T22:00:00Z'));
+
+    for (const [i, range] of ['tm', 'ty', 'all'].entries()) {
+      calls.length = 0;
+      await bot.handleUpdate(
+        callbackUpdate({ updateId: 10 + i, data: `xp:f:${range}:csv`, messageId: 20 + i }),
+      );
+      const [csv] = await sentDocuments(calls);
+      expect(csvLines(csv?.bytes ?? Buffer.alloc(0))).toEqual([
+        EXPENSE_HEADER,
+        `2026-09-29;23:50;450,00;RSD;450,00;Кафе и рестораны;кофе;;;${idOf(db, 'кофе')}`,
+      ]);
+    }
+  });
+
+  it('answers a range with no expenses with the empty text and sends no document', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    // Last month is August: both expenses are on 29 September.
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:pm:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(calls[1]?.payload).toMatchObject({
+      message_id: 5,
+      text: 'За этот период расходов нет',
+    });
+    expect(calls[1]?.payload).not.toHaveProperty('reply_markup');
+  });
+
+  it('sends one document for two format taps when the second arrives while the first builds', async () => {
+    const { bot, calls } = await withTwoExpenses();
+    const gate = Promise.withResolvers<undefined>();
+    const sending = Promise.withResolvers<undefined>();
+    bot.api.config.use(async (prev, method, payload, signal) => {
+      if (method === 'sendDocument') {
+        sending.resolve(undefined);
+        await gate.promise;
+      }
+      return prev(method, payload, signal);
+    });
+
+    const first = bot.handleUpdate(
+      callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }),
+    );
+    await sending.promise;
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+    gate.resolve(undefined);
+    await first;
+
+    expect((await sentDocuments(calls)).map((doc) => doc.filename)).toEqual(['expenses-all.csv']);
+    expect(calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(2);
+  });
+
+  // Inserts a live expense into the harness user's active ledger.
+  function insertExpense(db: Db, id: string, amountMinor: number, description: string) {
+    const owner = db.prepare('SELECT id, active_ledger_id FROM users').get() as {
+      id: string;
+      active_ledger_id: string;
+    };
+    insertExpenseOrGetExisting(db, {
+      id: id as ExpenseId,
+      ledgerId: owner.active_ledger_id as LedgerId,
+      createdBy: owner.id as UserId,
+      amountMinor,
+      currency: 'RSD',
+      description,
+      occurredAt: new Date('2026-09-29T12:00:00Z'),
+      occurredOn: '2026-09-29' as LocalDate,
+      sourceKey: `test:${id}`,
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+  }
+
+  it.each([
+    [1171234, '1171,23'],
+    [1171235, '1171,24'],
+  ])('exports 10,00 EUR at an EUR rate of %i as %s in Сумма в RSD', async (middleE4, cell) => {
+    const { bot, calls, db } = createTestBot();
+    const day = '2026-09-29' as LocalDate;
+    const fetchedAt = new Date('2026-09-29T08:00:00Z');
+    storeFxList(
+      db,
+      { listDate: day, listNumber: 1, rates: [{ currency: 'EUR', unit: 1, middleE4 }] },
+      fetchedAt,
+    );
+    setFxDay(db, day, day, fetchedAt);
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '10 EUR такси' }));
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const fields = csvLines(csv?.bytes ?? Buffer.alloc(0))[1]?.split(';');
+    expect(fields?.slice(2, 5)).toEqual(['10,00', 'EUR', cell]);
+  });
+
+  it('sends the expenses and the receipt items as one album, the items keyed by the expense ID', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    db.transaction(() => {
+      markReceiptFetched(db, receiptId, 'Test Market');
+      insertReceiptItems(db, receiptId, [
+        { name: 'Хлеб', quantity: '1', totalMinor: 9999 },
+        { name: 'Сыр', quantity: '0.535', totalMinor: 52913 },
+        { name: 'Вода', quantity: '2', totalMinor: 20000 },
+      ]);
+    })();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(1);
+    const [expenses, items] = await sentDocuments(calls);
+    expect(expenses?.filename).toBe('expenses-all.csv');
+    expect(items?.filename).toBe('receipt-items-all.csv');
+    const receiptRow = csvLines(expenses?.bytes ?? Buffer.alloc(0)).find((line) =>
+      line.endsWith(expenseId),
+    );
+    expect(receiptRow?.split(';').slice(7)).toEqual([
+      'Test Market',
+      'https://suf.example/v/?vl=synthetic',
+      expenseId,
+    ]);
+    expect(csvLines(items?.bytes ?? Buffer.alloc(0))).toEqual([
+      'ID расхода;Дата;Магазин;№;Наименование;Количество;Сумма;Валюта',
+      `${expenseId};2026-09-29;Test Market;1;Хлеб;1;99,99;RSD`,
+      `${expenseId};2026-09-29;Test Market;2;Сыр;0,535;529,13;RSD`,
+      `${expenseId};2026-09-29;Test Market;3;Вода;2;200,00;RSD`,
+    ]);
+  });
+
+  it('puts the receipt items on a second sheet of the one xlsx', async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    const expenseId = '00000000-0000-4000-8000-0000000000aa';
+    const receiptId = 'receipt-1' as ReceiptId;
+    insertExpense(db, expenseId, 82912, 'Чек');
+    insertReceipt(db, {
+      id: receiptId,
+      expenseId: expenseId as ExpenseId,
+      country: 'RS',
+      fiscalId: 'F1',
+      merchantKey: 'rs:1',
+      verifyUrl: 'https://suf.example/v/?vl=synthetic',
+      issuedAt: new Date('2026-09-29T12:00:00Z'),
+      createdAt: new Date('2026-09-29T12:00:00Z'),
+    });
+    insertReceiptItems(db, receiptId, [{ name: 'Сыр', quantity: '0.535', totalMinor: 52913 }]);
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:xlsx', messageId: 5 }));
+
+    const documents = await sentDocuments(calls);
+    expect(documents.map((doc) => doc.filename)).toEqual(['expenses-all.xlsx']);
+    const bytes = documents[0]?.bytes ?? Buffer.alloc(0);
+    const workbook = inflateRawSync(zipEntry(bytes, 'xl/workbook.xml')).toString('utf8');
+    expect([...workbook.matchAll(/<sheet name="([^"]*)"/g)].map((m) => m[1])).toEqual([
+      'Расходы',
+      'Позиции чеков',
+    ]);
+    const items = inflateRawSync(zipEntry(bytes, 'xl/worksheets/sheet2.xml')).toString('utf8');
+    expect(items).toContain(`<t xml:space="preserve">${expenseId}</t>`);
+    expect(items).toContain('<v>529.13</v>');
+  });
+
+  it('sends exactly one document for a range without receipts', async () => {
+    const { bot, calls } = await withTwoExpenses();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.filter((call) => call.method === 'sendDocument')).toHaveLength(1);
+    expect(calls.filter((call) => call.method === 'sendMediaGroup')).toHaveLength(0);
+  });
+
+  it("exports a description =SUM(A1) as '=SUM(A1), and never prefixes an amount cell", async () => {
+    const { bot, calls, db } = await withTwoExpenses();
+    insertExpense(db, '00000000-0000-4000-8000-0000000000bb', 500, '=SUM(A1)');
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'xp:f:all:csv', messageId: 5 }));
+
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => row[6])).toContain("'=SUM(A1)");
+    for (const row of rows) {
+      expect(row[2]).toMatch(/^\d/);
+      expect(row[4] ?? '').not.toMatch(/^'/);
+    }
+  });
+
+  it('sends nothing for a locked sealed ledger, and the plaintext once unlocked', async () => {
+    const { bot, calls, db, keys } = await withTwoExpenses();
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db, logger: silentLogger(), keys };
+    await sealPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+
+    await bot.handleUpdate(textUpdate({ updateId: 3, messageId: 3, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 4, data: 'xp:f:all:csv', messageId: 5 }));
+
+    expect(calls.map((call) => call.method)).toEqual(['sendMessage', 'answerCallbackQuery']);
+    expect(calls[0]?.payload).toMatchObject({ text: messages.ledgerLocked });
+    expect(calls[1]?.payload).toMatchObject({ text: messages.ledgerLockedToast });
+
+    await unlockPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+    calls.length = 0;
+    await bot.handleUpdate(textUpdate({ updateId: 5, messageId: 6, text: '/export' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 6, data: 'xp:f:all:csv', messageId: 7 }));
+
+    expect(calls[0]?.payload).toMatchObject({ text: messages.exportRangePrompt(true) });
+    const [csv] = await sentDocuments(calls);
+    const rows = csvLines(csv?.bytes ?? Buffer.alloc(0))
+      .slice(1)
+      .map((line) => line.split(';'));
+    expect(rows.map((row) => [row[2], row[3], row[6]])).toEqual([
+      ['450,00', 'RSD', 'кофе'],
+      ['12,50', 'EUR', 'такси'],
+    ]);
+  });
+
+  it('is in the command menu and the help text', () => {
+    expect(messages.commands.map((c) => c.command)).toContain('export');
+    expect(messages.help).toContain('/export');
+    expect(messages.groupHelp).toContain('/export');
   });
 });

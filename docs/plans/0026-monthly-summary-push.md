@@ -3,7 +3,7 @@
 > **Status:** approved
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0025](0025-recurring-expenses-and-reminders.md) (the scheduler),
-> [Plan 0019](done/0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](0028-donations.md) (`/donate`)
+> [Plan 0019](done/0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](done/0028-donations.md) (`/donate`)
 > **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (scheduler),
 > [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods),
 > [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals),
@@ -181,6 +181,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 
 ### Phase 5: A real month's push
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** Leave the bot running over a month boundary, or over a payday boundary for a ledger
   with a budget, with the weekly push on for one week.
 - **Done when:** Each push arrives once, at 09:00 local. Its figures match `/month` (or `/budget`)

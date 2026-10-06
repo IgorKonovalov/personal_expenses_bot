@@ -5,7 +5,9 @@ services:
     env_file: .env
     # The droplet's RAM is shared with sibling bots, each capped the same way, so a spike here
     # can't push the kernel into OOM-killing one of them. Standalone compose honours mem_limit.
-    mem_limit: 256m
+    # A 2560 px receipt photo's QR retry peaks at up to 315 MiB (src/fiscal/qrPixels.ts has the
+    # numbers per size), so 384m leaves about 70 MiB of headroom; 256m OOM-kills a 2560x2560 one.
+    mem_limit: 384m
     # Overrides .env: the database and the heartbeat always land on the bot-data volume, and the
     # backups in the bind-mounted host directory.
     environment:

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { adminNotifier } from './bot/adminNotifier.js';
 import { createBot, registerCommands } from './bot/bot.js';
+import { createDonationLinks, type DonationLinks } from './bot/handlers/donate.js';
 import { messages } from './bot/messages.js';
 import { startReceiptWorker } from './bot/receiptWorker.js';
 import { loadConfig } from './config.js';
@@ -58,6 +59,9 @@ if (backups === undefined) logger.info('backups off: BACKUP_DIR unset');
 // Unlocked sealed-ledger keys live only in this process: a restart locks every ledger.
 const keys = createLedgerKeyring(() => new Date());
 
+// Filled once the bot's API exists; /donate reads it on every call.
+const donationLinks: DonationLinks = new Map();
+
 const bot = createBot({
   token: config.botToken,
   adminTelegramId: config.adminTelegramId,
@@ -69,9 +73,17 @@ const bot = createBot({
   defaultTimezone: config.defaultTimezone,
   defaultCurrency: config.defaultCurrency,
   keys,
+  donationLinks,
+  donateUrl: config.donateUrl,
+  // Late-bound: the notifier needs bot.api, built just below. No update is handled before
+  // polling starts.
+  notifyAdmin: (body) => notifyAdmin(body),
 });
+const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 
 await registerCommands(bot, logger);
+// The Stars invoice links (ADR-0027). A failed preset is left out, and boot continues.
+await createDonationLinks(bot.api, logger, donationLinks);
 
 // Receipt line items arrive from the tax sites in the background (ADR-0018).
 const receiptWorker = startReceiptWorker(
@@ -97,7 +109,6 @@ const rateWorker = startRateWorker({
 });
 
 // Not awaited: a slow or refused send must not delay polling. announceVersion never rejects.
-const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 void announceVersion(
   {
     db,

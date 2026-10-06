@@ -5,8 +5,16 @@
 //   degrees, noised and saved as JPEG q75 on a 1280 px canvas, roughly a Telegram photo.
 // - rs-receipt-wrapped.jpg: the same treatment for buildRsUrl()'s link printed with a `:443`
 //   host and the base64 wrapped every 76 characters by `%0A`, as some printers do.
+// - rs-receipt-damaged.jpg: rs-receipt.jpg with two white patches over the data modules, so the
+//   symbol is located but fails its Reed-Solomon checksum, as a smudged print does.
+// - rs-receipt-dotgain.jpg: buildRsUrl()'s QR at EC level L and 7 px per module, its dark
+//   modules grown by 2 px and blurred, as thermal dot gain prints them. ZXing's plain pass reads
+//   no valid QR from it; the first preprocessing retry in qrPixels.ts does.
 // - example.png: a QR holding https://example.com, not a receipt.
 // - no-qr.jpg: noise on a canvas, no barcode at all.
+// - blank-<w>x<h>-<sampling>.jpg: a plain white colour JPEG with no barcode, at a Telegram photo's
+//   largest sizes and chroma subsamplings (420 is 4:2:0, 444 is 4:4:4), to pin which of them the
+//   pixel decode's memory limit in qrPixels.ts admits.
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -21,8 +29,12 @@ prepareZXingModule({
   overrides: { wasmBinary: wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) },
 });
 
-async function qrPng(text: string, path: string): Promise<void> {
-  const result = await writeBarcode(text, { format: 'QRCode', scale: 1, options: 'ecLevel=M' });
+async function qrPng(text: string, path: string, ecLevel = 'M'): Promise<void> {
+  const result = await writeBarcode(text, {
+    format: 'QRCode',
+    scale: 1,
+    options: `ecLevel=${ecLevel}`,
+  });
   if (result.image === null) throw new Error(result.error);
   await writeFile(path, Buffer.from(await result.image.arrayBuffer()));
 }
@@ -62,6 +74,50 @@ async function receiptPhoto(text: string, name: string): Promise<void> {
 
 await receiptPhoto(buildRsUrl(), 'rs-receipt');
 await receiptPhoto(buildRsUrl({}, { wrap: '%0A', port: true }), 'rs-receipt-wrapped');
+magick(
+  `${here}rs-receipt.jpg`,
+  '-fill',
+  'white',
+  '-draw',
+  'rectangle 500,500 640,780',
+  '-draw',
+  'rectangle 700,400 800,560',
+  '-quality',
+  '75',
+  `${here}rs-receipt-damaged.jpg`,
+);
+
+const dotGainPng = `${here}rs-receipt-dotgain.src.png`;
+await qrPng(buildRsUrl(), dotGainPng, 'L');
+magick(
+  dotGainPng,
+  '-sample',
+  '700%',
+  // Erode shrinks the light areas, so the dark modules bleed into their light neighbours.
+  '-morphology',
+  'Erode',
+  'Disk:2',
+  '-blur',
+  '0x2',
+  '-background',
+  'white',
+  '-rotate',
+  '1.7',
+  '-gravity',
+  'center',
+  '-extent',
+  '1280x1280',
+  '-seed',
+  '7',
+  '-attenuate',
+  '0.4',
+  '+noise',
+  'Gaussian',
+  '-quality',
+  '75',
+  `${here}rs-receipt-dotgain.jpg`,
+);
+execFileSync('rm', [dotGainPng]);
 
 const examplePng = `${here}example.src.png`;
 await qrPng('https://example.com', examplePng);
@@ -82,3 +138,23 @@ magick(
   '75',
   `${here}no-qr.jpg`,
 );
+
+for (const [size, sampling, suffix] of [
+  ['2560x1920', '4:2:0', '420'],
+  ['2560x2560', '4:2:0', '420'],
+  ['2560x2560', '4:4:4', '444'],
+] as const) {
+  // TrueColor keeps three components: a white canvas would otherwise be written as greyscale.
+  magick(
+    '-size',
+    size,
+    'xc:white',
+    '-type',
+    'TrueColor',
+    '-sampling-factor',
+    sampling,
+    '-quality',
+    '75',
+    `${here}blank-${size}-${suffix}.jpg`,
+  );
+}

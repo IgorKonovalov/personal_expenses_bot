@@ -397,6 +397,24 @@ export function listLedgerExpensesBetween(
     .map(toStoredExpense);
 }
 
+// Every non-deleted expense of one ledger, visible only to members, oldest first: the all-time
+// export.
+export function listLedgerExpenses(
+  db: Db,
+  query: { ledgerId: LedgerId; memberId: UserId },
+): StoredExpense[] {
+  return db
+    .prepare<[string, string], ExpenseRow>(
+      `SELECT ${COLUMNS}
+         FROM ${FROM}
+         JOIN ledger_members m ON m.ledger_id = e.ledger_id AND m.user_id = ?
+        WHERE e.ledger_id = ? AND e.deleted_at IS NULL
+        ORDER BY e.occurred_on, e.occurred_at, e.id`,
+    )
+    .all(query.memberId, query.ledgerId)
+    .map(toStoredExpense);
+}
+
 function toStoredExpense(row: ExpenseRow): StoredExpense {
   if (row.sealed === null) return toExpense(row);
   const currency = toCurrencyCode(row.currency);

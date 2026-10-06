@@ -1,8 +1,8 @@
 # ADR-0027: The bot is funded by donations only: no paid tier, and a donation unlocks nothing
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06, at the close of Plan 0028)
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0028 ([0028-donations.md](../plans/0028-donations.md))
+> **Related plan(s):** Plan 0028 ([0028-donations.md](../plans/done/0028-donations.md))
 
 ## Context
 
