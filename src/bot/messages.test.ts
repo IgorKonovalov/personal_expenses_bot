@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { LocalDate } from '../domain/time.js';
 import { compareVersions, parseVersion } from '../domain/version.js';
 import { readAppVersion } from '../version.js';
 import { messages } from './messages.js';
@@ -14,6 +15,42 @@ describe('/help', () => {
     expect(messages.help).toContain('/cancel — отменить ввод');
     // HTML length bounds the visible length Telegram counts.
     expect(messages.help.length).toBeLessThan(4096);
+  });
+});
+
+describe('periodSummary folds its category lines (ADR-0038)', () => {
+  const week = {
+    ledger: { kind: 'personal', name: '' },
+    period: { kind: 'week', from: '2026-10-05' as LocalDate, to: '2026-10-11' as LocalDate },
+  } as const;
+
+  it('puts the bold total above one expandable quote holding the categories by amount', () => {
+    const text = messages.periodSummary({
+      ...week,
+      currencies: [
+        {
+          currency: 'RSD',
+          totalMinor: 113298,
+          lines: [
+            { name: 'Еда', amountMinor: 61398 },
+            { name: 'Дом', amountMinor: 39900 },
+            { name: 'Транспорт', amountMinor: 12000 },
+          ],
+        },
+      ],
+    });
+
+    expect(text).toBe(
+      '<b>Неделя, 5–11 октября — «Личные расходы»</b>\n\n' +
+        '<b>1 132.98 RSD</b>\n' +
+        '<blockquote expandable>Еда: 613.98\nДом: 399.00\nТранспорт: 120.00</blockquote>',
+    );
+  });
+
+  it('renders a period with no expenses as the header and the no-expenses line', () => {
+    expect(messages.periodSummary({ ...week, currencies: [] })).toBe(
+      '<b>Неделя, 5–11 октября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+    );
   });
 });
 

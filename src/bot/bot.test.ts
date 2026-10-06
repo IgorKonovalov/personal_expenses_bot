@@ -2321,7 +2321,9 @@ describe('editing an expense from its card', () => {
     await say('/today', 11);
     await say('/week', 12);
     expect(sentTexts(calls)[0]).toContain('Трат нет.');
-    expect(sentTexts(calls)[1]).toContain('<b>450.00 RSD</b>\nКафе и рестораны: 450.00');
+    expect(sentTexts(calls)[1]).toContain(
+      '<b>450.00 RSD</b>\n<blockquote expandable>Кафе и рестораны: 450.00</blockquote>',
+    );
   });
 
   it('sets the button date after local midnight, and a second tap writes nothing', async () => {
@@ -3068,14 +3070,14 @@ describe('/week and /month', () => {
   const button = (text: string, callback_data: string) => ({ text, callback_data });
   const SEPTEMBER =
     '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n' +
-    '<b>2 220.00 RSD</b>\nПродукты: 1 200.00\nКафе и рестораны: 750.00\nТранспорт: 200.00\n' +
-    'Без категории: 70.00\n\n' +
-    '<b>12.50 EUR</b>\nТранспорт: 12.50\n\n' +
+    '<b>2 220.00 RSD</b>\n<blockquote expandable>Продукты: 1 200.00\nКафе и рестораны: 750.00\n' +
+    'Транспорт: 200.00\nБез категории: 70.00</blockquote>\n\n' +
+    '<b>12.50 EUR</b>\n<blockquote expandable>Транспорт: 12.50</blockquote>\n\n' +
     'Без курса НБС, не пересчитано: EUR.';
   const THIS_WEEK =
     '<b>Неделя, 28 сентября – 4 октября — «Личные расходы»</b>\n\n' +
-    '<b>370.00 RSD</b>\nКафе и рестораны: 300.00\nБез категории: 70.00\n\n' +
-    '<b>12.50 EUR</b>\nТранспорт: 12.50\n\n' +
+    '<b>370.00 RSD</b>\n<blockquote expandable>Кафе и рестораны: 300.00\nБез категории: 70.00</blockquote>\n\n' +
+    '<b>12.50 EUR</b>\n<blockquote expandable>Транспорт: 12.50</blockquote>\n\n' +
     'Без курса НБС, не пересчитано: EUR.';
 
   // 3 420.00 RSD Другое, 450.00 RSD Кафе, 107.40 EUR Связь and 6.00 USD Другое, all on the 28th.
@@ -3092,8 +3094,8 @@ describe('/week and /month', () => {
 
   const WEEK_28_HEADER = '<b>Неделя, 28 сентября – 4 октября — «Личные расходы»</b>';
   const CONVERTED_WEEK_28 =
-    '<b>≈ 17 108.49 RSD</b>\nСвязь и интернет: 12 619.42\nДругое: 4 039.07\n' +
-    'Кафе и рестораны: 450.00';
+    '<b>≈ 17 108.49 RSD</b>\n<blockquote expandable>Связь и интернет: 12 619.42\nДругое: 4 039.07\n' +
+    'Кафе и рестораны: 450.00</blockquote>';
 
   it('converts the week into one RSD total at the NBS rate of each day', async () => {
     const { say, calls } = await convertedWeekBot({ rates: true });
@@ -3113,7 +3115,7 @@ describe('/week and /month', () => {
 
     expect((calls[0]?.payload as { text: string }).text).toBe(
       `${WEEK_28_HEADER}\n\n${CONVERTED_WEEK_28}\n\n` +
-        '<b>5 000.00 KZT</b>\nДругое: 5 000.00\n\n' +
+        '<b>5 000.00 KZT</b>\n<blockquote expandable>Другое: 5 000.00</blockquote>\n\n' +
         'Включая 107.40 EUR, 6.00 USD по курсу НБС на день траты.\n' +
         'Без курса НБС, не пересчитано: KZT.',
     );
@@ -3126,9 +3128,9 @@ describe('/week and /month', () => {
 
     expect((calls[0]?.payload as { text: string }).text).toBe(
       `${WEEK_28_HEADER}\n\n` +
-        '<b>3 870.00 RSD</b>\nДругое: 3 420.00\nКафе и рестораны: 450.00\n\n' +
-        '<b>107.40 EUR</b>\nСвязь и интернет: 107.40\n\n' +
-        '<b>6.00 USD</b>\nДругое: 6.00\n\n' +
+        '<b>3 870.00 RSD</b>\n<blockquote expandable>Другое: 3 420.00\nКафе и рестораны: 450.00</blockquote>\n\n' +
+        '<b>107.40 EUR</b>\n<blockquote expandable>Связь и интернет: 107.40</blockquote>\n\n' +
+        '<b>6.00 USD</b>\n<blockquote expandable>Другое: 6.00</blockquote>\n\n' +
         'Без курса НБС, не пересчитано: EUR, USD.',
     );
   });
@@ -3229,9 +3231,11 @@ describe('/week and /month', () => {
 
     expect(calls).toEqual([
       { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
-      editOf(101, '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\nПродукты: 100.00', [
-        [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-      ]),
+      editOf(
+        101,
+        '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\n<blockquote expandable>Продукты: 100.00</blockquote>',
+        [[button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')]],
+      ),
     ]);
   });
 
@@ -3245,7 +3249,7 @@ describe('/week and /month', () => {
     expect(calls[1]).toEqual(
       editOf(
         101,
-        '<b>Неделя, 21–27 сентября — «Личные расходы»</b>\n\n<b>200.00 RSD</b>\nТранспорт: 200.00',
+        '<b>Неделя, 21–27 сентября — «Личные расходы»</b>\n\n<b>200.00 RSD</b>\n<blockquote expandable>Транспорт: 200.00</blockquote>',
         [
           [
             button('◀ 14–20 сен', 'sum:w:2026-09-14'),
@@ -3276,7 +3280,7 @@ describe('/week and /month', () => {
 
     expect(calls[1]).toMatchObject({
       payload: {
-        text: '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\nПродукты: 100.00',
+        text: '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\n<blockquote expandable>Продукты: 100.00</blockquote>',
       },
     });
   });
@@ -3335,7 +3339,7 @@ describe('/week and /month', () => {
 
     await say('/week', 2);
 
-    expect(sentTexts(calls)[0]).toContain('\nКафе &lt;b&gt;&amp;&lt;/b&gt;: 300.00\n');
+    expect(sentTexts(calls)[0]).toContain('>Кафе &lt;b&gt;&amp;&lt;/b&gt;: 300.00\n');
   });
 
   it('shows the header and the no-expenses line for an empty period', async () => {
@@ -3357,7 +3361,7 @@ describe('/week and /month', () => {
     await tap('sum:m:2026-08', 102);
 
     expect(sentTexts(calls)[0]).toBe(
-      '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n<b>450.00 RSD</b>\nКафе и рестораны: 450.00',
+      '<b>Сентябрь 2026 — «Личные расходы»</b>\n\n<b>450.00 RSD</b>\n<blockquote expandable>Кафе и рестораны: 450.00</blockquote>',
     );
     expect(calls[2]).toMatchObject({
       method: 'editMessageText',

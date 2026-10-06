@@ -301,8 +301,8 @@ page), and one key for the tidy switch in the `set:` family.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: card items collapsed | dev | done | committed with this row |
-| 2: summary categories folded | dev | not started | |
+| 1: card items collapsed | dev | done | 371a6f9 |
+| 2: summary categories folded | dev | done | committed with this row |
 | 3: period items on /week, /month | dev | not started | |
 | 4: period items on /today | dev | not started | |
 | 5: tidy chat | dev | not started | |
@@ -316,6 +316,9 @@ page), and one key for the tidy switch in the `set:` family.
   `messages.test.ts` case was added; the card's HTML is asserted in `bot.test.ts`.
 - Phase 1: the fold check reserves room for the `Уже записано.` line, so a duplicate's card that
   fits without it but not with it keeps [Позиции].
+- Phase 2: touched `src/bot/bot.test.ts`, outside the phase's `Files touched`, to update the
+  existing /week and /month expectations to the folded form. Group summaries share
+  `messages.periodSummary` and fold too; `group.test.ts` derives its expectations from it.
 
 ### Close triggers
 

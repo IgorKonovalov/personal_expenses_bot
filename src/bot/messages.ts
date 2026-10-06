@@ -1729,7 +1729,7 @@ export const messages = {
     );
   },
 
-  // /week and /month: per currency a bold total, then its categories by amount. The first block
+  // /week and /month: per currency a bold total, then its categories by amount, folded. The first block
   // is `≈` when it holds converted spending, and the conversion notes close the message. A
   // summary too long for one message shows the totals alone, with a note.
   periodSummary: ({
@@ -1748,14 +1748,21 @@ export const messages = {
     if (currencies.length === 0) return joinHtml([header, noExpenses], '\n');
     const total = (c: SummaryView['currencies'][number], index: number) =>
       html`<b>${index === 0 && convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;
+    // The category lines fold under their currency's total (ADR-0038).
     const blocks = currencies.map((c, index) =>
       joinHtml(
         [
           total(c, index),
-          ...c.lines.map(
-            (line) =>
-              html`${line.name ?? 'Без категории'}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
-          ),
+          ...(c.lines.length === 0
+            ? []
+            : [
+                expandableQuote(
+                  c.lines.map(
+                    (line) =>
+                      html`${line.name ?? 'Без категории'}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
+                  ),
+                ),
+              ]),
         ],
         '\n',
       ),
