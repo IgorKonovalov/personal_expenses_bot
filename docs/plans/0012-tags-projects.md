@@ -273,7 +273,7 @@ const MAX_TAGS_PER_EXPENSE = 5;
 | 3: The sticky trip tag | dev | done | 43bdd58 |
 | 4: Editing tags, the card, and groups | dev | done | 22559ac |
 | 5: Sealed ledgers, export, help | dev | done | f5c0c7d |
-| 6: A trip in real use | human | not started | |
+| 6: A trip in real use | human | owed | |
 
 ### Notes
 
