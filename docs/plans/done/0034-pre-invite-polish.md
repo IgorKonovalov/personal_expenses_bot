@@ -1,7 +1,7 @@
 # 0034: Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once
 
 > **Status:** done (2026-10-06): built as planned, one minor fixed at close in a8af824, one minor
-> open as a followup, Phase 5 live check owed, v0.21.0
+> open as a followup, Phase 5 live check passed, v0.21.0
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0037](../../adrs/0037-first-time-notices-and-transient-replies.md) (notices
 > shown once, transient replies), [ADR-0011](../../adrs/0011-navigation-model.md) (the menu bar),
@@ -248,7 +248,7 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 | 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | e6a8e4d |
 | 3: A recorded receipt deletes its photo | dev | done, see Notes | 4419af7 |
 | 4: Notices shown once, and short replies that clean up after themselves | dev | done, see Notes | ee37e65 |
-| 5: Live check | human | not started, owed after the deploy | |
+| 5: Live check | human | done: passed on v0.21.0 (2026-10-06) | |
 
 ### Notes
 
@@ -302,7 +302,7 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 ## Close review
 
 The review at tip 8ce4f75, in a fresh session. Minor 1 and both nits were fixed in a8af824 and
-re-verified at that tip. Minor 2 stays open. Phase 5 (`human`) is owed.
+re-verified at that tip. Minor 2 stays open. Phase 5 (`human`) passed on v0.21.0 after the deploy.
 
 **Verdict:** Phases 1-4 are built as planned, every done-when has a test with a real assertion,
 and every deviation is disclosed in the log. No blockers or majors.
@@ -348,4 +348,4 @@ still matches.
 
 - Minor 2: confirm the paysupport answer before relaying it, or end an argument prompt on a
   menu-bar tap. A future plan.
-- Phase 5 (`human`): the live check, owed after the deploy.
+- Phase 5 (`human`): the live check passed on v0.21.0 (2026-10-06): the `/` menu, every [☰ Ещё] button, a receipt photo deleted after its card, and a second sticker's reply gone within a minute.
