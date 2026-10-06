@@ -302,7 +302,7 @@ interface StatementPurchase {
 | 1: Walking skeleton: a statement PDF records its card purchases | dev | done | 0685667 |
 | 2: Already recorded, and sending the file twice | dev | done | d39404f |
 | 3: Paging, limits, errors and categories | dev | done | 0141854 |
-| 4: Sealed ledgers, help and docs | dev | done | committed with this row |
+| 4: Sealed ledgers, help and docs | dev | done | 712d76e |
 | 5: A real statement | human | not started | |
 
 ### Notes
@@ -359,8 +359,23 @@ interface StatementPurchase {
 - Phase 4: the no-disk-write done-when is tested on a bot whose database file is in a temporary
   data directory. After a preview and [Записать все], the directory holds only `bot.db*` files,
   and none of them contains `%PDF-`.
+- Followup, not acted on: the preview's callback data carries no statement id. A tap on an older
+  preview acts on whichever statement is pending now.
+- Followup, not acted on: the pending flow holds the purchases (merchant, amount, date) as
+  plaintext JSON in `flow_sessions` for its 10-minute TTL, in a sealed ledger too.
+- Followup, not acted on: `pdf.ts` passes pdf.js no standard-font data. Text extraction worked on
+  the synthetic Helvetica PDFs. A real statement's fonts are Phase 5's check.
 
 ### Close triggers
+
+- Phases 1-4 done in 0685667, d39404f, 0141854 and 712d76e. Phase 5 (`human`, does not block
+  merge) has not started.
+- Gate on the tip (712d76e): `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm test` exit 0
+  (96 files, 1322 tests), `pnpm build` exit 0, `node scripts/check-doc-links.mjs` exit 0
+  (261 relative links resolve).
+- New runtime dependency: `pdfjs-dist` 6.3.289, with the optional `@napi-rs/canvas` 1.0.9.
+- No migration. New callback data: `stm:all`, `stm:dup`, `stm:x`, `stm:p:<page>`.
+- `/help` and README.md changed. CLAUDE.md gained the `src/statements/` line.
 
 ## Followups
 
