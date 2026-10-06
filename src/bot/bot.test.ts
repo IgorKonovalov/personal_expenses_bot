@@ -5154,7 +5154,7 @@ describe('recurring expenses', () => {
     return { ...harness, clock, tap, send, tick };
   }
 
-  it('[Повторять] offers «Каждый месяц, 1-го» from the expense date, with [« Назад]', async () => {
+  it('[Повторять] offers monthly, weekly and yearly from Thursday 1 October, with [« Назад]', async () => {
     const { tap, calls } = await rentBot();
     calls.length = 0;
 
@@ -5167,6 +5167,8 @@ describe('recurring expenses', () => {
       reply_markup: {
         inline_keyboard: [
           [{ text: 'Каждый месяц, 1-го', callback_data: `rec:s:${EXPENSE_ID}:m` }],
+          [{ text: 'Каждую неделю, по четвергам', callback_data: `rec:s:${EXPENSE_ID}:w` }],
+          [{ text: 'Каждый год, 01.10', callback_data: `rec:s:${EXPENSE_ID}:y` }],
           [{ text: messages.backButton, callback_data: `exp:show:${EXPENSE_ID}` }],
         ],
       },
@@ -5185,6 +5187,18 @@ describe('recurring expenses', () => {
       'Повторяется: каждый месяц, 1-го. Следующая запись — 1 ноября. Все правила: /recurring',
     );
     expect(db.prepare('SELECT COUNT(*) FROM recurring_rules').pluck().get()).toBe(1);
+  });
+
+  it('a weekly choice says so under the card', async () => {
+    const { tap, calls } = await rentBot();
+    calls.length = 0;
+
+    await tap(`rec:s:${EXPENSE_ID}:w`);
+
+    const edit = calls.find((c) => c.method === 'editMessageText')?.payload as { text: string };
+    expect(edit.text).toContain(
+      'Повторяется: каждую неделю, по четвергам. Следующая запись — 8 октября.',
+    );
   });
 
   it('[Повторять] on someone else’s expense records no rule', async () => {

@@ -307,8 +307,8 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | committed with this row |
-| 2: Weekly and yearly, short months, DST and catch-up | dev | not started | |
+| 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | 7c51ef7 |
+| 2: Weekly and yearly, short months, DST and catch-up | dev | done | committed with this row |
 | 3: Ask mode and managing rules | dev | not started | |
 | 4: Reminders | dev | not started | |
 | 5: Group ledgers | dev | not started | |
@@ -325,6 +325,10 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 - Phase 1: [Повторять] is offered only on a personal, unsealed ledger's card until Phases 5 and 6.
 - Phase 1: `nextOccurrence` already clamps a monthly day to the month's last day.
 - Phase 1: `src/bot/callbacks.ts` needed no change.
+- Phase 2: `src/db/recurring.ts` (not in Files touched) maps the weekly and yearly schedule
+  columns. `src/bot/handlers/card.ts` needed no change: the picker lists the service's choices.
+- Phase 2: the catch-up cap and the per-date transaction landed in Phase 1's `fireRule`;
+  Phase 2 adds the choices and the tests.
 
 ### Close triggers
 

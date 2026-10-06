@@ -432,8 +432,38 @@ function recurringMonthly(day: number): string {
   return `Каждый месяц, ${day}-го`;
 }
 
+// The by-day form, ISO order: `по средам`.
+const WEEKDAYS_BY_DAY = [
+  'понедельникам',
+  'вторникам',
+  'средам',
+  'четвергам',
+  'пятницам',
+  'субботам',
+  'воскресеньям',
+] as const;
+
+// `weekday` is ISO: Monday 1.
+function recurringWeekly(weekday: number): string {
+  return `Каждую неделю, по ${WEEKDAYS_BY_DAY[weekday - 1] ?? ''}`;
+}
+
+// `dayMonth` is `DD.MM`.
+function recurringYearly(dayMonth: string): string {
+  return `Каждый год, ${dayMonth}`;
+}
+
 function scheduleLabel(schedule: Schedule): string {
-  return recurringMonthly(schedule.day);
+  switch (schedule.kind) {
+    case 'monthly':
+      return recurringMonthly(schedule.day);
+    case 'weekly':
+      return recurringWeekly(schedule.weekday);
+    case 'yearly':
+      return recurringYearly(
+        `${String(schedule.day).padStart(2, '0')}.${String(schedule.month).padStart(2, '0')}`,
+      );
+  }
 }
 
 // `аренда — 45 000.00 RSD` over `Каждый месяц, 1-го · следующая 1 ноября`.
@@ -1120,6 +1150,8 @@ export const messages = {
   // A schedule as a button label and in lists: `Каждый месяц, 15-го`.
   scheduleLabel,
   recurringMonthly,
+  recurringWeekly,
+  recurringYearly,
   // Under the card once the rule exists. `today` is the ledger's local date.
   recurringCreated: ({
     schedule,

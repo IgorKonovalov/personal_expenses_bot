@@ -174,3 +174,86 @@ describe('firing a monthly rule', () => {
     }
   });
 });
+
+function recordedDates(): unknown[] {
+  return db
+    .prepare("SELECT occurred_on FROM expenses WHERE source_key LIKE 'rec:%' ORDER BY occurred_on")
+    .pluck()
+    .all();
+}
+
+// `500 кино` on Saturday 17 October, repeated weekly on Tuesday 20 October.
+function saturdayRule(): RuleId {
+  const expenseId = record(alice, '500 кино', new Date('2026-10-17T10:00:00Z'), 'tg:1001:2');
+  const made = createRuleFromExpense(deps, {
+    user: alice,
+    expenseId,
+    choice: 'w',
+    now: new Date('2026-10-20T10:00:00Z'),
+  });
+  if (made.kind !== 'created') throw new Error('rule not made');
+  return made.rule.id;
+}
+
+describe('weekly and yearly rules', () => {
+  it('a weekly rule and a yearly rule are due on the expense weekday and day', () => {
+    const expenseId = record(alice, '500 кино', new Date('2026-10-17T10:00:00Z'), 'tg:1001:2');
+    const now = new Date('2026-10-20T10:00:00Z');
+    const weekly = createRuleFromExpense(deps, { user: alice, expenseId, choice: 'w', now });
+    const yearly = createRuleFromExpense(deps, { user: alice, expenseId, choice: 'y', now });
+
+    expect(weekly).toMatchObject({
+      rule: { schedule: { kind: 'weekly', weekday: 6 }, nextDueOn: '2026-10-24' },
+    });
+    expect(yearly).toMatchObject({
+      rule: { schedule: { kind: 'yearly', day: 17, month: 10 }, nextDueOn: '2027-10-17' },
+    });
+  });
+});
+
+describe('DST, catch-up and a timezone change', () => {
+  it('a Saturday rule fires at 07:00Z on 24 October (CEST) and 08:00Z on 31 October (CET)', () => {
+    saturdayRule();
+
+    tick('2026-10-24T06:59:00Z');
+    expect(recordedDates()).toEqual([]);
+    tick('2026-10-24T07:00:00Z');
+    expect(recordedDates()).toEqual(['2026-10-24']);
+    tick('2026-10-31T07:59:00Z');
+    expect(recordedDates()).toEqual(['2026-10-24']);
+    tick('2026-10-31T08:00:00Z');
+    expect(recordedDates()).toEqual(['2026-10-24', '2026-10-31']);
+  });
+
+  it('after downtime from 31 October to 2 December, records 1 November and 1 December once each', () => {
+    const id = rentRule();
+
+    tick('2026-12-02T10:00:00Z');
+    tick('2026-12-02T10:01:00Z');
+
+    expect(recordedDates()).toEqual(['2026-11-01', '2026-12-01']);
+    expect(findRule(db, id)?.nextDueOn).toBe('2027-01-01');
+  });
+
+  it('records at most 31 missed occurrences a tick; the rest follow on the next', () => {
+    const id = saturdayRule();
+
+    tick('2027-08-01T10:00:00Z');
+    expect(recordedDates()).toHaveLength(31);
+    expect(findRule(db, id)?.nextDueOn).toBe('2027-05-29');
+
+    tick('2027-08-01T10:01:00Z');
+    expect(recordedDates()).toHaveLength(41);
+    expect(findRule(db, id)?.nextDueOn).toBe('2027-08-07');
+  });
+
+  it('a user who moved from Belgrade to Asia/Almaty gets the next occurrence at 04:00Z', () => {
+    rentRule();
+    db.prepare('UPDATE users SET timezone = ? WHERE id = ?').run('Asia/Almaty', alice.id);
+
+    tick('2026-11-01T03:59:00Z');
+    expect(recordedDates()).toEqual([]);
+    tick('2026-11-01T04:00:00Z');
+    expect(recordedDates()).toEqual(['2026-11-01']);
+  });
+});

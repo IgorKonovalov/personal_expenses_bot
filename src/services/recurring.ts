@@ -20,7 +20,14 @@ import {
 } from '../db/recurring.js';
 import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
-import { dueInstant, monthlyOn, nextOccurrence, type Schedule } from '../domain/schedule.js';
+import {
+  dueInstant,
+  monthlyOn,
+  nextOccurrence,
+  weeklyOn,
+  yearlyOn,
+  type Schedule,
+} from '../domain/schedule.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import { isLocked, isSealedLedger, openExpense, type KeyDeps, type Locked } from './ledgerKeys.js';
 import { effectiveTimezone, storeExpense, type RecordDeps } from './recordExpense.js';
@@ -34,10 +41,12 @@ import { resolveUserTimezone } from './settings.js';
 export type RecurringDeps = RecordDeps & Pick<KeyDeps, 'keys'>;
 
 // The schedules [Повторять] offers, by their callback letter.
-export type ScheduleChoice = 'm';
+export type ScheduleChoice = 'm' | 'w' | 'y';
 
 const SCHEDULE_FOR: Record<ScheduleChoice, (date: LocalDate) => Schedule> = {
   m: monthlyOn,
+  w: weeklyOn,
+  y: yearlyOn,
 };
 
 export function scheduleFor(choice: ScheduleChoice, date: LocalDate): Schedule {
@@ -62,7 +71,7 @@ export interface Repeatable {
   readonly schedules: readonly { readonly choice: ScheduleChoice; readonly schedule: Schedule }[];
 }
 
-const CHOICES: readonly ScheduleChoice[] = ['m'];
+const CHOICES: readonly ScheduleChoice[] = ['m', 'w', 'y'];
 
 // [Повторять] on a card: only the expense's author, on a live expense.
 export function repeatOptions(

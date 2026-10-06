@@ -233,11 +233,24 @@ function scheduleColumns(schedule: Schedule): {
   weekday: number | null;
   month: number | null;
 } {
-  return { day: schedule.day, weekday: null, month: null };
+  switch (schedule.kind) {
+    case 'monthly':
+      return { day: schedule.day, weekday: null, month: null };
+    case 'weekly':
+      return { day: null, weekday: schedule.weekday, month: null };
+    case 'yearly':
+      return { day: schedule.day, weekday: null, month: schedule.month };
+  }
 }
 
 function toSchedule(row: RuleRow): Schedule {
   if (row.schedule === 'monthly' && row.day !== null) return { kind: 'monthly', day: row.day };
+  if (row.schedule === 'weekly' && row.weekday !== null) {
+    return { kind: 'weekly', weekday: row.weekday };
+  }
+  if (row.schedule === 'yearly' && row.day !== null && row.month !== null) {
+    return { kind: 'yearly', day: row.day, month: row.month };
+  }
   throw new Error(`rule ${row.id} has an unknown schedule`);
 }
 
