@@ -1,13 +1,13 @@
 # 0026: Monthly summary push: last period's report arrives on its own
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned, one minor and one nit open, Phase 5 real month owed, v0.24.0
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0025](done/0025-recurring-expenses-and-reminders.md) (the scheduler),
-> [Plan 0019](done/0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](done/0028-donations.md) (`/donate`)
-> **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (scheduler),
-> [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals),
-> [ADR-0027](../adrs/0027-donations-only-funding.md) (where donations are mentioned)
+> **Depends on:** [Plan 0025](0025-recurring-expenses-and-reminders.md) (the scheduler),
+> [Plan 0019](0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](0028-donations.md) (`/donate`)
+> **Related ADRs:** [ADR-0031](../../adrs/0031-local-time-scheduler.md) (scheduler),
+> [ADR-0017](../../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals),
+> [ADR-0027](../../adrs/0027-donations-only-funding.md) (where donations are mentioned)
 
 ## TL;DR
 
@@ -298,5 +298,131 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 116 files,
   1675 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (283 links).
 - **Outstanding `human` phases:** Phase 5 (a real month's push), not started.
+
+## Close review
+
+Closed 2026-10-06 on the round 1 review below, with no fix round. Both findings stay open. Phase 5
+(a real month's push) is owed.
+
+### Plan 0026 review, round 1 (tip 19c7ef31d242a7694f712839de81cfba8de2b316)
+
+**Verdict:** Plan 0026 is implemented as planned. All four dev phases landed with their
+done-whens defended by real assertions, the gate is green, and the only findings are a test
+blind spot (minor) and README churn (nit). It is ready to close, with Phase 5 (human) owed after
+the merge.
+
+#### Gate (run in this session at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 116 files, 1675 tests passed
+- `node scripts/check-doc-links.mjs`: exit 0, 283 relative links resolve
+
+#### Lens 1: alignment with the plan
+
+- Phase-to-commit map: Phase 1 c11768c, Phase 2 a839502, Phase 3 5060242, Phase 4 c8822f3,
+  then log commits 064fe76 and 19c7ef3. Every phase has one in-vocabulary owner tag. Phase 5 is
+  `human` with `Blocks merge: no` and is marked owed.
+- Each disclosed deviation checks out against the tree and is within the plan's intent:
+  - the `sum:off` and `sum:show` handlers live in `src/bot/summaryProvider.ts` (`registerSummaryPush`), not `callbacks.ts`;
+  - `src/services/deleteAccount.ts` deletes `summary_pushes` rows, which is the Risks bullet on Plan 0029;
+  - a week's `period_key` is its Monday, where Data shapes showed `2026-W40` as illustrative only;
+  - a budget with start day 1 gets the calendar-month push;
+  - category lines take the TL;DR's «(+3 100.00, +33%)» form.
+- Done-whens, assertions read:
+  - P1 08:59/09:00/once: `src/bot/summaryProvider.test.ts:101` asserts the exact payload,
+    including «(+3 100.00, +33%)», and that ticks at 07:01Z and 21:00Z send nothing.
+  - P1 decrease and «новое»: `summaryProvider.test.ts:138` asserts «−3 100.00, −25%» and
+    «(новое)». `src/domain/deltas.test.ts` asserts 33, −25 and half-away-from-zero both ways
+    (200→201 = 1, 200→199 = −1).
+  - P1 7-day window: `summaryProvider.test.ts:155` (9 Oct, no send, 0 rows) and `:165` (8 Oct
+    exactly 7 days, sends).
+  - P1 [Отключить]: `summaryProvider.test.ts:187` asserts `monthly_push = 0`, the toast and the
+    keyboard edit, and that 1 November sends nothing.
+  - P1 empty: `summaryProvider.test.ts:174` asserts no calls and exactly one `empty` row.
+  - P2 start day 15: `summaryProvider.test.ts:363` asserts nothing on 1 Oct or at 06:59Z on 15 Oct,
+    the title «Итоги периода 15.09–14.10», a comparison against 15.08–14.09 (boundary expenses on
+    14.08/15.08/14.09/15.09/14.10/15.10 prove both ends) and key `2026-09-15`.
+  - P2 budget: `:395` «перерасход 2 500.00 RSD» and `:407` «осталось 10 000.00 RSD».
+  - P2 top 3: `:419` asserts the EUR expense ranked first by its converted 1 175.00 RSD, and that
+    the description is escaped.
+  - P2 footer: `:450` asserts the monthly push ends on `pushDonateLine`. The weekly payload at
+    `:265` is asserted in full and has no footer.
+  - P3 weekly: `:265` (Mon 5 Oct, 28.09–04.10, once, `sum:off:w`), `:307` (off by default, no
+    row), `:319` ([Отключить] turns weekly off and leaves monthly on), `:343` (both pushes as two
+    messages, each once). `src/bot/bot.test.ts` asserts the `set:pw`/`set:pm` hub toggles and
+    re-render.
+  - P4 locked: `summaryProvider.test.ts:469` asserts the exact payload and `not.toMatch(/\d/)` and
+    no `тайн`. `:520` asserts [Показать] after unlock edits in exactly the unsealed ledger's text.
+    `bot.test.ts` asserts `sum:show:m:2026-09` is 18 bytes.
+- No ADR is reversed. ADR-0031's claim-before-send holds: `claimSummary` inserts the row in a
+  transaction before `sendHtml`.
+- The implementation log is shorter than the phases section.
+
+#### Lens 2: layering
+
+- grammY is imported only in `src/bot/`. `src/domain/deltas.ts` is pure, and SQL lives only in
+  `src/db/`.
+- All copy is in `src/bot/messages.ts`, and the handlers hardcode none.
+- The `html` tag escapes the interpolated category names and the descriptions go through
+  `shownDescription`, so nothing user-typed reaches the HTML unescaped.
+
+#### Lens 3: correctness
+
+- Money: `percentChange` runs in BigInt with one rounding. Deltas are integer subtraction, and
+  `collapseTail` guards the safe-integer range. There is no float, `parseFloat` or `toFixed`.
+- Time: the due instant is `dueInstant(addDays(period.to, 1), effectiveTimezone(...))`. The CET
+  case is covered at `summaryProvider.test.ts:214`.
+- Idempotency: the `summary_pushes` primary key plus `ON CONFLICT DO NOTHING` inside a
+  transaction. `sum:off` is set-to-value. The hub rows toggle, the same way the existing
+  tips/tidy rows do, and the plan asked for a toggle.
+- Privacy: the logs carry ledger id, kind, period key, outcome and error name only. A locked
+  ledger's push carries no figure.
+- Telegram limits: callback data is at most 21 bytes, and the categories collapse past 10 per
+  currency.
+
+##### minor
+
+1. **No test probes a user whose timezone differs from the default.** (open)
+   - **What:** every push test runs a `Europe/Belgrade` user under `defaultTimezone: 'Europe/Belgrade'`.
+   - **Where:** `src/bot/summaryProvider.test.ts:22` and `src/services/periodReport.test.ts:42`.
+   - **Why it matters:** if `dueSummaries` resolved the zone from `deps.defaultTimezone` or the
+     server clock instead of `effectiveTimezone(user, ledger)`, every test would still pass. The
+     plan's core time rule is "09:00 in the user's timezone", and the skill flags exactly this
+     dev-setup blind spot.
+   - **Suggested fix:** add one `dueSummaries` case for a user set to, say, `Asia/Tokyo` (UTC+9,
+     no DST) under the Belgrade default. Assert that `2026-09-30T23:59:00Z` (08:59 JST on
+     1 October) is not due and `2026-10-01T00:00:00Z` (09:00 JST) is due for `2026-09`.
+
+##### nit
+
+1. **README churn outside the plan's rows.** (open)
+   - **What:** the README diff re-pads the cell whitespace of unrelated table rows (`/today`,
+     `/week`, `/tag`, `/export`, group `/tags`, `/tag`).
+   - **Where:** `README.md:27-41` and `README.md:125-126`.
+   - **Why it matters:** these rows only add diff noise. No content changed.
+   - **Suggested fix:** none required. Leave them, or let the formatter own the table.
+
+#### Lens 4: docs and bookkeeping
+
+- `/help` gains the push line (asserted in `bot.test.ts`), and the `/settings` help line names
+  «итоги». The README gains `### Summary pushes`, the `/settings` row and the sealed-ledger note.
+  The plan adds no env or config key, so `.env.example` needs nothing.
+- No new top-level directory, so `CLAUDE.md`'s "Where things live" still holds. The plan's
+  mermaid diagram matches the module split, with `summaryProvider` in `src/bot/` as the scheduler
+  provider.
+
+#### Bookkeeping owed at close
+
+- Flip the plan's Status to `done` with the date and verdict, `git mv` it to `docs/plans/done/`,
+  repair the links and run `node scripts/check-doc-links.mjs`.
+- No paired ADR is `proposed` (the plan cites accepted ADR-0031, -0017, -0022 and -0027).
+- Refresh `docs/plans/README.md`: the row goes to recently closed.
+- Version: a minor bump, since this is a feature. That means `package.json`, `CHANGELOG.md` and a
+  `versionAnnouncements` entry (ADR-0013).
+- Phase 5 (human) stays owed after the merge: a real month boundary.
+- Followups from the log for a future plan: a push read slides the sealed ledger's idle lock, and
+  the deploy sends September's push if it lands by 8 October 09:00 local.
+- The minor above can ride the close or go to a later fix. It does not block.
 
 ## Followups

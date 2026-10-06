@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.24.0 (2026-10-06)
+
+From Plan 0026 (monthly summary push).
+
+- The morning after a month closes, at 09:00 local time, the bot sends «Итоги <месяца>»: the
+  total and each category with its change against the month before, the budget's end, the three
+  largest expenses and a `/donate` line. A ledger with a budget gets its payday period instead.
+- An opt-in Monday push summarises last week.
+- [Отключить] on a push switches it off; `/settings` gains [Итоги месяца] and [Итоги недели].
+- A locked encrypted ledger's push carries no figures, only [Показать].
+
 ## 0.23.0 (2026-10-06)
 
 From Plan 0035 (collapsed lists, period items, tidy chat).
