@@ -278,8 +278,8 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: /prices skeleton | dev | done | committed with this row |
-| 2: amount and unit price | dev | not started | |
+| 1: /prices skeleton | dev | done | 878daa4 |
+| 2: amount and unit price | dev | done | committed with this row |
 | 3: review and corrections | dev | not started | |
 | 4: user products | dev | not started | |
 | 5: coverage report | dev | not started | |
@@ -293,6 +293,16 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
   [← Назад]. It returns to page 1 of the list.
 - Phase 1: no `catalog.test.ts`. The catalog-key check (unique, at most 24 ASCII characters)
   is in `src/domain/products/match.test.ts`.
+- Phase 2: also touched `src/bot/handlers/prices.ts` (passes the product view to messages as
+  is) and `src/bot/bot.test.ts` (the Phase 1 product text now carries litres and the unit
+  price). Both are outside the phase's list.
+- Phase 2: a piece price is `total * 10^3 / amount_milli`, since a piece is already the base
+  unit. Litres and kilograms use `10^6` as stated.
+- Phase 2: the arithmetic gate is a test in `src/services/productPrices.test.ts`, not in
+  `amount.test.ts`: lint forbids `node:fs` in the domain. It also forbids `BigInt(`, which
+  only `amount.ts` uses.
+- Phase 2: a size in another dimension than the product's unit (`180G` on a litre product)
+  counts as no size.
 
 ### Close triggers
 

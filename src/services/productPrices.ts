@@ -9,8 +9,16 @@ import { listLedgerDatedItems } from '../db/receiptItems.js';
 import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
+import { amountOf, type Unit } from '../domain/products/amount.js';
 import { catalogProduct } from '../domain/products/catalog.js';
 import { matchProduct } from '../domain/products/match.js';
+import {
+  monthLines,
+  totalLines,
+  type MonthLine,
+  type PriceLine,
+  type PricedItem,
+} from '../domain/products/monthly.js';
 import { normalize } from '../domain/products/normalize.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
@@ -53,24 +61,20 @@ export interface ProductList {
   readonly products: readonly ProductSummary[];
 }
 
-export interface Spend {
-  readonly currency: CurrencyCode;
-  readonly spentMinor: number;
-}
-
-export interface MonthSpend extends Spend {
-  // `YYYY-MM`.
-  readonly month: string;
-}
-
 export interface ProductView {
   readonly ledger: Ledger;
   readonly ref: ProductRef;
   readonly name: string;
+  readonly unit: Unit;
   // Newest month first; in a month, the default currency first, then by code.
-  readonly months: readonly MonthSpend[];
+  readonly months: readonly MonthLine[];
   // All time, ordered as in a month.
-  readonly totals: readonly Spend[];
+  readonly totals: readonly PriceLine[];
+}
+
+interface Product {
+  readonly name: string;
+  readonly unit: Unit;
 }
 
 function refOf(nameKey: string): ProductRef | undefined {
@@ -78,8 +82,8 @@ function refOf(nameKey: string): ProductRef | undefined {
   return product === undefined ? undefined : `b:${product.key}`;
 }
 
-function nameOf(ref: ProductRef): string | undefined {
-  return catalogProduct(ref.slice(2))?.name;
+function productOf(ref: ProductRef): Product | undefined {
+  return catalogProduct(ref.slice(2));
 }
 
 // The viewer's items in the ledger, oldest first, or `locked` for a sealed ledger without its key.
@@ -125,7 +129,7 @@ function listOf(deps: Deps, user: User, ledger: Ledger, now: Date): ProductList 
     recent.set(ref, (recent.get(ref) ?? 0) + (counts ? item.totalMinor : 0));
   }
   const products = [...recent].flatMap(([ref, recentMinor]) => {
-    const name = nameOf(ref);
+    const name = productOf(ref)?.name;
     return name === undefined ? [] : [{ ref, name, recentMinor }];
   });
   products.sort((a, b) => b.recentMinor - a.recentMinor || a.name.localeCompare(b.name, 'ru'));
@@ -149,9 +153,11 @@ export function ledgerProductList(
   return listOf(deps, input.user, ledger, input.now);
 }
 
+// The ledger's default currency first, then by code.
 function byCurrency(ledger: Ledger) {
-  const rank = (spend: Spend) => (spend.currency === ledger.defaultCurrency ? 0 : 1);
-  return (a: Spend, b: Spend): number => rank(a) - rank(b) || a.currency.localeCompare(b.currency);
+  const rank = (line: PriceLine) => (line.currency === ledger.defaultCurrency ? 0 : 1);
+  return (a: PriceLine, b: PriceLine): number =>
+    rank(a) - rank(b) || a.currency.localeCompare(b.currency);
 }
 
 // One product of the screen's ledger. Undefined for a non-member, an unknown ref, or a product
@@ -165,26 +171,26 @@ export function ledgerProduct(
   const items = ownItems(deps, input.user, ledger);
   if (!Array.isArray(items)) return items;
   const ref = items.map((item) => refOf(item.nameKey)).find((r) => r === input.ref);
-  const name = ref === undefined ? undefined : nameOf(ref);
-  if (ref === undefined || name === undefined) return undefined;
+  const product = ref === undefined ? undefined : productOf(ref);
+  if (ref === undefined || product === undefined) return undefined;
 
-  const months = new Map<string, MonthSpend>();
-  const totals = new Map<CurrencyCode, Spend>();
-  for (const item of items) {
-    if (refOf(item.nameKey) !== ref) continue;
-    const month = item.occurredOn.slice(0, 7);
-    const key = `${month} ${item.currency}`;
-    const spent = (months.get(key)?.spentMinor ?? 0) + item.totalMinor;
-    months.set(key, { month, currency: item.currency, spentMinor: spent });
-    const total = (totals.get(item.currency)?.spentMinor ?? 0) + item.totalMinor;
-    totals.set(item.currency, { currency: item.currency, spentMinor: total });
-  }
+  const priced: PricedItem[] = items
+    .filter((item) => refOf(item.nameKey) === ref)
+    .map((item) => ({
+      occurredOn: item.occurredOn,
+      currency: item.currency,
+      totalMinor: item.totalMinor,
+      amount: amountOf(item.nameKey, item.quantity, product.unit),
+    }));
   const order = byCurrency(ledger);
   return {
     ledger,
     ref,
-    name,
-    months: [...months.values()].sort((a, b) => b.month.localeCompare(a.month) || order(a, b)),
-    totals: [...totals.values()].sort(order),
+    name: product.name,
+    unit: product.unit,
+    months: monthLines(priced, product.unit).sort(
+      (a, b) => b.month.localeCompare(a.month) || order(a, b),
+    ),
+    totals: totalLines(priced, product.unit).sort(order),
   };
 }

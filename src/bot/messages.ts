@@ -3,6 +3,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
 import { formatMoney, type Money } from '../domain/money.js';
+import { formatAmount, type Unit } from '../domain/products/amount.js';
 import type { Schedule } from '../domain/schedule.js';
 import type { LocalDate } from '../domain/time.js';
 import type { TipKey } from '../domain/tips.js';
@@ -462,6 +463,31 @@ function capLine({ name, spentMinor, capMinor }: CapView, currency: CurrencyCode
 }
 
 // `1 позиция`, `2 позиции`, `5 позиций`, `21 позиция`.
+// A product's spend in one currency (ADR-0039): what the sized items bought, in l, kg or pieces.
+interface PriceLineView {
+  readonly currency: CurrencyCode;
+  readonly spentMinor: number;
+  readonly amount: bigint;
+  readonly unsized: number;
+  readonly unitPriceMinor: number | undefined;
+}
+
+const UNIT_LABELS: Readonly<Record<Unit, string>> = { l: 'л', kg: 'кг', pcs: 'шт.' };
+
+// `457.00 RSD · 2 л · 153.50 RSD/л · 1 позиция без размера`, each part only when it applies.
+function priceLine(line: PriceLineView, unit: Unit): string {
+  const label = UNIT_LABELS[unit];
+  const parts = [formatMoney({ amountMinor: line.spentMinor, currency: line.currency })];
+  if (line.unitPriceMinor !== undefined) {
+    parts.push(`${formatAmount(line.amount, unit)} ${label}`);
+    parts.push(
+      `${formatMoney({ amountMinor: line.unitPriceMinor, currency: line.currency })}/${label}`,
+    );
+  }
+  if (line.unsized > 0) parts.push(`${itemCount(line.unsized)} без размера`);
+  return parts.join(' · ');
+}
+
 function itemCount(n: number): string {
   const tens = n % 100;
   const ones = n % 10;
@@ -1443,27 +1469,30 @@ export const messages = {
       '\n',
     ),
   productButton: (name: string): string => name,
-  // One product: per month, newest first, then all time.
+  // One product: per month, newest first, then all time, each per currency: spent, what the
+  // sized items bought and its price per unit, and how many items had no size.
   productView: ({
     ledger,
     name,
+    unit,
     months,
     totals,
   }: {
     readonly ledger: LedgerRef;
     readonly name: string;
-    readonly months: readonly (Money & { readonly month: string })[];
-    readonly totals: readonly Money[];
+    readonly unit: Unit;
+    readonly months: readonly (PriceLineView & { readonly month: string })[];
+    readonly totals: readonly PriceLineView[];
   }): Html =>
     joinHtml(
       [
         html`<b>${name} — «${ledgerName(ledger)}»</b>`,
         ...months.map(
           (m) =>
-            html`${MONTHS[Number(m.month.slice(5, 7)) - 1] ?? ''} ${m.month.slice(0, 4)}: ${formatMoney(m)}`,
+            html`${MONTHS[Number(m.month.slice(5, 7)) - 1] ?? ''} ${m.month.slice(0, 4)}: ${priceLine(m, unit)}`,
         ),
         html``,
-        html`Всего: ${totals.map(formatMoney).join(', ')}`,
+        ...totals.map((t) => html`Всего: ${priceLine(t, unit)}`),
       ],
       '\n',
     ),

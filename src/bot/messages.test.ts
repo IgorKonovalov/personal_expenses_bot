@@ -56,23 +56,33 @@ describe('periodSummary folds its category lines (ADR-0038)', () => {
 
 describe('/prices (ADR-0039)', () => {
   it('renders a product by month, newest first, with every currency, then all time', () => {
+    const line = (
+      currency: 'RSD' | 'EUR',
+      spentMinor: number,
+      amount: bigint,
+      unsized: number,
+      unitPriceMinor: number | undefined,
+    ) => ({ currency, spentMinor, amount, unsized, unitPriceMinor });
+
     const text = messages.productView({
       ledger: { kind: 'shared', name: 'Семья' },
       name: 'Молоко',
+      unit: 'l',
       months: [
-        { month: '2026-10', amountMinor: 45700, currency: 'RSD' },
-        { month: '2026-10', amountMinor: 250, currency: 'EUR' },
-        { month: '2025-12', amountMinor: 27800, currency: 'RSD' },
+        { month: '2026-10', ...line('RSD', 45700, 2_000_000n, 1, 15350) },
+        { month: '2026-10', ...line('EUR', 250, 0n, 2, undefined) },
+        { month: '2025-12', ...line('RSD', 27800, 2_200_000n, 0, 12636) },
       ],
-      totals: [
-        { amountMinor: 73500, currency: 'RSD' },
-        { amountMinor: 250, currency: 'EUR' },
-      ],
+      totals: [line('RSD', 73500, 4_200_000n, 1, 14238), line('EUR', 250, 0n, 2, undefined)],
     });
 
     expect(text).toBe(
-      '<b>Молоко — «Семья»</b>\nОктябрь 2026: 457.00 RSD\nОктябрь 2026: 2.50 EUR\n' +
-        'Декабрь 2025: 278.00 RSD\n\nВсего: 735.00 RSD, 2.50 EUR',
+      '<b>Молоко — «Семья»</b>\n' +
+        'Октябрь 2026: 457.00 RSD · 2 л · 153.50 RSD/л · 1 позиция без размера\n' +
+        'Октябрь 2026: 2.50 EUR · 2 позиции без размера\n' +
+        'Декабрь 2025: 278.00 RSD · 2.2 л · 126.36 RSD/л\n\n' +
+        'Всего: 735.00 RSD · 4.2 л · 142.38 RSD/л · 1 позиция без размера\n' +
+        'Всего: 2.50 EUR · 2 позиции без размера',
     );
   });
 

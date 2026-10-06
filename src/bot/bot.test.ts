@@ -8267,8 +8267,10 @@ describe('/prices (Plan 0036)', () => {
       chat_id: ALLOWED_ID,
       message_id: anchor(),
       text:
-        '<b>Молоко — «Личные расходы»</b>\nОктябрь 2026: 457.00 RSD\nСентябрь 2026: 278.00 RSD\n\n' +
-        'Всего: 735.00 RSD',
+        '<b>Молоко — «Личные расходы»</b>\n' +
+        'Октябрь 2026: 457.00 RSD · 2 л · 153.50 RSD/л · 1 позиция без размера\n' +
+        'Сентябрь 2026: 278.00 RSD · 2 л · 139.00 RSD/л\n\n' +
+        'Всего: 735.00 RSD · 4 л · 146.25 RSD/л · 1 позиция без размера',
       reply_markup: { inline_keyboard: [[{ text: '« Назад', callback_data: 'prc:p:1' }]] },
       ...htmlParseMode,
     });

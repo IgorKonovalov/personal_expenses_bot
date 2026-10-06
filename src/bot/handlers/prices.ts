@@ -120,16 +120,7 @@ export function registerPrices(bot: Composer<Context>, deps: HandlerDeps): void 
     }
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, {
-      text: messages.productView({
-        ledger: product.ledger,
-        name: product.name,
-        months: product.months.map((m) => ({
-          month: m.month,
-          amountMinor: m.spentMinor,
-          currency: m.currency,
-        })),
-        totals: product.totals.map((t) => ({ amountMinor: t.spentMinor, currency: t.currency })),
-      }),
+      text: messages.productView(product),
       markup: InlineKeyboard.from([backRow(pricesPageData(1))]),
     });
   });

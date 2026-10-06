@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { softDeleteExpense, type ExpenseId } from '../db/expenses.js';
@@ -113,6 +115,8 @@ function view(value: ProductView | Locked | undefined): ProductView {
   return value;
 }
 
+const spent = (product: ProductView) => product.totals.map((t) => [t.currency, t.spentMinor]);
+
 const ranking = (products: ProductList) =>
   products.products.map((p) => [p.name, p.recentMinor] as const);
 
@@ -139,17 +143,61 @@ describe('activeProductList', () => {
 });
 
 describe('ledgerProduct', () => {
-  it('shows Молоко: October 45700, September 27800, all time 73500', () => {
+  it('shows Молоко: October 45700 at 153.50/l, September 27800 at 139.00/l, all time 146.25/l', () => {
     fixture();
 
     const milk = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:milk' }));
 
     expect(milk.name).toBe('Молоко');
+    expect(milk.unit).toBe('l');
+    // October: items 2 and 3 are 30700 over 2000 ml; item 7 has no size, so spend only.
     expect(milk.months).toEqual([
-      { month: '2026-10', currency: 'RSD', spentMinor: 45700 },
-      { month: '2026-09', currency: 'RSD', spentMinor: 27800 },
+      {
+        month: '2026-10',
+        currency: 'RSD',
+        spentMinor: 45700,
+        sizedMinor: 30700,
+        amount: 2_000_000n,
+        unsized: 1,
+        unitPriceMinor: 15350,
+      },
+      {
+        month: '2026-09',
+        currency: 'RSD',
+        spentMinor: 27800,
+        sizedMinor: 27800,
+        amount: 2_000_000n,
+        unsized: 0,
+        unitPriceMinor: 13900,
+      },
     ]);
-    expect(milk.totals).toEqual([{ currency: 'RSD', spentMinor: 73500 }]);
+    expect(milk.totals).toEqual([
+      {
+        currency: 'RSD',
+        spentMinor: 73500,
+        sizedMinor: 58500,
+        amount: 4_000_000n,
+        unsized: 1,
+        unitPriceMinor: 14625,
+      },
+    ]);
+  });
+
+  it('weighs the bananas: 1245 g at 200.00 per kg', () => {
+    fixture();
+
+    const bananas = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:bananas' }));
+
+    expect(bananas.totals).toEqual([
+      {
+        currency: 'RSD',
+        spentMinor: 24900,
+        sizedMinor: 24900,
+        amount: 1_245_000n,
+        unsized: 0,
+        unitPriceMinor: 20000,
+      },
+    ]);
   });
 
   it('counts no deleted expense', () => {
@@ -158,7 +206,7 @@ describe('ledgerProduct', () => {
 
     const milk = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:milk' }));
 
-    expect(milk.totals).toEqual([{ currency: 'RSD', spentMinor: 73500 }]);
+    expect(spent(milk)).toEqual([['RSD', 73500]]);
   });
 
   it('answers undefined for a product with no items, an unknown ref, or a non-member', () => {
@@ -192,12 +240,37 @@ describe('a shared ledger', () => {
 
     const milk = view(ledgerProduct(deps, { user, ledgerId: shared, ref: 'b:milk' }));
 
-    expect(milk.totals).toEqual([{ currency: 'RSD', spentMinor: 73500 }]);
+    expect(spent(milk)).toEqual([['RSD', 73500]]);
     expect(ranking(list(ledgerProductList(deps, { user, ledgerId: shared, now: NOW })))).toEqual([
       ['Молоко', 73500],
       ['Бананы', 24900],
       ['Хлеб', 6500],
     ]);
+  });
+});
+
+describe('the arithmetic gate (ADR-0039)', () => {
+  // Quantities are read and amounts divided in src/domain/products/amount.ts only: elsewhere in
+  // the products code, outside comments, no parseFloat, Number(...), BigInt(...) or division.
+  const files = [
+    ...readdirSync('src/domain/products')
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && f !== 'amount.ts')
+      .map((f) => join('src/domain/products', f)),
+    'src/services/productPrices.ts',
+  ];
+
+  it('covers the products modules', () => {
+    expect(files).toEqual(expect.arrayContaining(['src/domain/products/monthly.ts']));
+  });
+
+  it.each(files)('%s', (file) => {
+    const code = readFileSync(file, 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+    expect(code).not.toMatch(/parseFloat|Number\(|BigInt\(/);
+    expect(code).not.toMatch(/\s\/\s/);
   });
 });
 
@@ -212,6 +285,6 @@ describe('a sealed ledger', () => {
 
     await unlockPersonalLedger(deps, user, NOW);
     const milk = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:milk' }));
-    expect(milk.totals).toEqual([{ currency: 'RSD', spentMinor: 73500 }]);
+    expect(spent(milk)).toEqual([['RSD', 73500]]);
   });
 });
