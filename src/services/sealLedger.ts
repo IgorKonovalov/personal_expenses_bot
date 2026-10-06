@@ -1,5 +1,13 @@
 import type { Db } from '../db/connection.js';
 import {
+  listPlaintextDebtOps,
+  listPlaintextDebtPeople,
+  sealDebtOpInPlace,
+  sealDebtPersonInPlace,
+  type DebtOpId,
+  type DebtPersonId,
+} from '../db/debts.js';
+import {
   listLedgerPlaintextExpenses,
   rekeyContentSourceKeys,
   sealExpenseInPlace,
@@ -9,13 +17,19 @@ import type { LedgerId } from '../db/ledgers.js';
 import { listReceiptItems } from '../db/receiptItems.js';
 import { listLedgerPlaintextRules, sealRuleTemplateInPlace, type RuleId } from '../db/recurring.js';
 import { deleteLedgerReceipts, listLedgerReceipts } from '../db/receipts.js';
-import type { SealedPayloadV1, SealedReceipt } from '../domain/sealing.js';
+import type { UserId } from '../db/users.js';
+import type {
+  SealedDebtOpV1,
+  SealedDebtPersonV1,
+  SealedPayloadV1,
+  SealedReceipt,
+} from '../domain/sealing.js';
 
 // Sealing a ledger that has history (ADR-0020): every plaintext row, deleted ones included, is
 // sealed in place, and a receipt's seller, link and items fold into its row's payload before
 // the receipt rows are deleted. Source keys derived from content (a bank SMS fingerprint, a
 // receipt's fiscal id) become `sealed:<expenseId>`, since a guess could be checked against them.
-// The ledger's recurring rule templates are sealed with the rows.
+// The ledger's recurring rule templates, and its owner's debts, are sealed with the rows.
 // Afterwards the freed pages are scrubbed from the file and WAL.
 
 // True while any receipt of the ledger is still being fetched: its items would arrive after
@@ -84,6 +98,41 @@ export function sealLedgerRules(
     }
   }
   return rules.length;
+}
+
+// Seals every plaintext debt person's name, and every plaintext debt operation's kind, amount and
+// currency, deleted operations included, of the personal ledger's owner (ADR-0030), and clears
+// those columns. Run it in the same transaction as sealLedgerRows. Returns the number of people
+// and operations sealed.
+export function sealUserDebts(
+  db: Db,
+  userId: UserId,
+  seal: {
+    readonly person: (personId: DebtPersonId, payload: SealedDebtPersonV1) => Buffer;
+    readonly op: (opId: DebtOpId, payload: SealedDebtOpV1) => Buffer;
+  },
+): { readonly people: number; readonly ops: number } {
+  const people = listPlaintextDebtPeople(db, userId);
+  for (const person of people) {
+    if (
+      !sealDebtPersonInPlace(db, person.id, seal.person(person.id, { v: 1, name: person.name }))
+    ) {
+      throw new Error(`debt person ${String(person.id)} was sealed concurrently`);
+    }
+  }
+  const ops = listPlaintextDebtOps(db, userId);
+  for (const op of ops) {
+    const payload: SealedDebtOpV1 = {
+      v: 1,
+      kind: op.kind,
+      amountMinor: op.amountMinor,
+      currency: op.currency,
+    };
+    if (!sealDebtOpInPlace(db, op.id, seal.op(op.id, payload))) {
+      throw new Error(`debt operation ${op.id} was sealed concurrently`);
+    }
+  }
+  return { people: people.length, ops: ops.length };
 }
 
 // Outside any transaction: the WAL's old frames go into the file and the WAL is emptied, then

@@ -105,9 +105,13 @@ export function debtsLocked(deps: ReadDeps, user: User): boolean {
   return debtSeal(deps, user).kind === 'locked';
 }
 
-// A row recorded before the ledger was sealed stays plaintext, and passes through.
+// Sealing the ledger seals its owner's debts too, so a sealed ledger holds no plaintext row and a
+// plain one no sealed row.
 function openPerson(s: DebtSeal, stored: StoredDebtPerson): DebtPerson {
-  if (!('sealed' in stored)) return stored;
+  if (!('sealed' in stored)) {
+    if (s.kind === 'sealed') throw new Error(`plaintext debt person ${String(stored.id)}`);
+    return stored;
+  }
   if (s.kind !== 'sealed') throw new Error(`sealed debt person ${String(stored.id)} unopened`);
   const { name } = decodeDebtPerson(
     open(stored.sealed, s.privateKey, debtPersonBinding(s.ledgerId, stored.id)),
@@ -116,7 +120,10 @@ function openPerson(s: DebtSeal, stored: StoredDebtPerson): DebtPerson {
 }
 
 function openOp(s: DebtSeal, stored: StoredDebtOp): DebtOp {
-  if (!('sealed' in stored)) return stored;
+  if (!('sealed' in stored)) {
+    if (s.kind === 'sealed') throw new Error(`plaintext debt operation ${stored.id}`);
+    return stored;
+  }
   if (s.kind !== 'sealed') throw new Error(`sealed debt operation ${stored.id} unopened`);
   const { sealed, ...rest } = stored;
   const payload = decodeDebtOp(open(sealed, s.privateKey, debtOpBinding(s.ledgerId, stored.id)));

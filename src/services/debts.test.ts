@@ -186,11 +186,34 @@ describe('in a sealed personal ledger (ADR-0020)', () => {
     ]);
   });
 
-  it('keeps a debt recorded before sealing readable next to a sealed one', async () => {
+  it('seals the debts recorded before sealing, deleted ones included, and still reads them', async () => {
     lendTo('Петя', '5000', 1);
+    const deleted = lendTo('Петя', '700', 3);
+    if (deleted.kind !== 'recorded') throw new Error('setup');
+    deleteDebtOp(deps, { user: alice, opId: deleted.op.id, now: NOW });
     await sealed();
-    lendTo('Петя', '1000', 3);
 
+    const people = db.prepare('SELECT name, name_key, sealed FROM debt_people').all() as {
+      name: string | null;
+      name_key: string | null;
+      sealed: Buffer | null;
+    }[];
+    expect(people).toHaveLength(1);
+    expect(people[0]).toMatchObject({ name: null, name_key: null });
+    expect(people[0]?.sealed?.includes(Buffer.from('Петя', 'utf8'))).toBe(false);
+    expect(
+      db
+        .prepare('SELECT kind, amount_minor, currency, sealed IS NOT NULL AS sealed FROM debt_ops')
+        .all(),
+    ).toEqual([
+      { kind: null, amount_minor: null, currency: null, sealed: 1 },
+      { kind: null, amount_minor: null, currency: null, sealed: 1 },
+    ]);
+    expect(debtLines(deps, alice)).toEqual([
+      expect.objectContaining({ name: 'Петя', amountMinor: 500000, currency: 'RSD' }),
+    ]);
+
+    lendTo('петя', '1000', 5);
     expect(db.prepare('SELECT COUNT(*) FROM debt_people').pluck().get()).toBe(1);
     expect(debtLines(deps, alice)).toEqual([
       expect.objectContaining({ name: 'Петя', amountMinor: 600000, currency: 'RSD' }),

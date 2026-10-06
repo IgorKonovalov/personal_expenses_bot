@@ -255,6 +255,44 @@ export function softDeleteDebtOp(db: Db, id: DebtOpId, deletedAt: Date): boolean
   return changes === 1;
 }
 
+// The user's people whose name is still plaintext: what sealing the personal ledger seals.
+export function listPlaintextDebtPeople(db: Db, userId: UserId): DebtPerson[] {
+  return listDebtPeople(db, userId).filter((p): p is DebtPerson => !('sealed' in p));
+}
+
+// Returns false when the person was sealed already.
+export function sealDebtPersonInPlace(db: Db, id: DebtPersonId, sealed: Buffer): boolean {
+  const { changes } = db
+    .prepare<[Buffer, number]>(
+      `UPDATE debt_people SET sealed = ?, name = NULL, name_key = NULL
+        WHERE id = ? AND sealed IS NULL`,
+    )
+    .run(sealed, id);
+  return changes === 1;
+}
+
+// The user's plaintext operations, deleted ones included: what sealing the personal ledger seals.
+export function listPlaintextDebtOps(db: Db, userId: UserId): DebtOp[] {
+  return db
+    .prepare<[string], OpRow>(
+      `SELECT ${OP_COLUMNS} FROM debt_ops WHERE user_id = ? AND sealed IS NULL ORDER BY rowid`,
+    )
+    .all(userId)
+    .map(toOp)
+    .filter((op): op is DebtOp => !('sealed' in op));
+}
+
+// Returns false when the operation was sealed already.
+export function sealDebtOpInPlace(db: Db, id: DebtOpId, sealed: Buffer): boolean {
+  const { changes } = db
+    .prepare<[Buffer, string]>(
+      `UPDATE debt_ops SET sealed = ?, kind = NULL, amount_minor = NULL, currency = NULL
+        WHERE id = ? AND sealed IS NULL`,
+    )
+    .run(sealed, id);
+  return changes === 1;
+}
+
 function toPerson(row: PersonRow): StoredDebtPerson {
   const ids = { id: row.id as DebtPersonId, userId: row.user_id as UserId };
   if (row.name !== null) return { ...ids, name: row.name };

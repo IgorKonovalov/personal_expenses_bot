@@ -23,9 +23,13 @@ import { findPersonalLedger, type Ledger, type LedgerId } from '../db/ledgers.js
 import type { RuleId, RuleTemplate, SealedRuleTemplate } from '../db/recurring.js';
 import type { User } from '../db/users.js';
 import {
+  debtOpBinding,
+  debtPersonBinding,
   decodePayload,
   deriveRecoveryKey,
   derivePassphraseKey,
+  encodeDebtOp,
+  encodeDebtPerson,
   encodePayload,
   expenseBinding,
   formatRecoveryCode,
@@ -50,6 +54,7 @@ import {
   scrubFreedPages,
   sealLedgerRows,
   sealLedgerRules,
+  sealUserDebts,
 } from './sealLedger.js';
 
 // Sealed ledgers (ADR-0020): a personal ledger's owner switches encryption on with a passphrase.
@@ -250,7 +255,22 @@ export async function enableEncryption(
     const rules = sealLedgerRules(db, ledger.id, (ruleId, template) =>
       sealRuleTemplate(publicKey, { ledgerId: ledger.id, ruleId }, template),
     );
-    logger.info({ ledgerId: ledger.id, userId: user.id, rows: sealed, rules }, 'ledger sealed');
+    const debts = sealUserDebts(db, user.id, {
+      person: (personId, payload) =>
+        seal(publicKey, encodeDebtPerson(payload), debtPersonBinding(ledger.id, personId)),
+      op: (opId, payload) => seal(publicKey, encodeDebtOp(payload), debtOpBinding(ledger.id, opId)),
+    });
+    logger.info(
+      {
+        ledgerId: ledger.id,
+        userId: user.id,
+        rows: sealed,
+        rules,
+        debtPeople: debts.people,
+        debtOps: debts.ops,
+      },
+      'ledger sealed',
+    );
     return { kind: 'enabled', ledger, recoveryCode: formatRecoveryCode(code) };
   })();
   if (result.kind === 'enabled') scrubAfterSealing(deps, ledger.id);
