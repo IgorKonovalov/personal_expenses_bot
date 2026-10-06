@@ -182,6 +182,12 @@ Deliver the review in the conversation. Open with a one-sentence verdict. Group 
 suggested fix. Then list the bookkeeping owed. Blockers and majors go back to `dev` (the user runs
 a `/dev` fix pass) before you close.
 
+**When findings go back to `dev`, hand over a ready prompt.** Write a self-contained fix-pass
+prompt to the scratchpad: first line `/dev fix the review findings on plan NNNN`, then each
+finding to fix with its where, trigger, fix and test, then what's out of scope. Copy it with
+`wl-copy < <file>` (or `xclip -selection clipboard` / `pbcopy`) and say in one line that it's on
+the clipboard. The `dev` session is fresh and can't see this review.
+
 ### Close ceremony (after a clean review)
 
 Commit by explicit path, in this order:
