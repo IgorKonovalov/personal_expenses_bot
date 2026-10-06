@@ -1,6 +1,6 @@
 # 0025: Recurring expenses and reminders: rent and subscriptions recorded on their day
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
 > **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler),
@@ -307,7 +307,7 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: monthly rent recorded on the 1st | dev | not started | |
+| 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | committed with this row |
 | 2: Weekly and yearly, short months, DST and catch-up | dev | not started | |
 | 3: Ask mode and managing rules | dev | not started | |
 | 4: Reminders | dev | not started | |
@@ -316,6 +316,15 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | 7: A real month | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/render/html.ts` (not in Files touched) gained an optional `extra` on
+  `sendHtml`, so the provider can send a notice with a keyboard; the lint gate forbids
+  `sendMessage` outside `render/`.
+- Phase 1: the migration adds `recurring_rules.source_key` (`exp:<expenseId>:<m|w|y>`, a partial
+  unique index over live rules), not in Data shapes, so a double tap on a schedule makes one rule.
+- Phase 1: [Повторять] is offered only on a personal, unsealed ledger's card until Phases 5 and 6.
+- Phase 1: `nextOccurrence` already clamps a monthly day to the month's last day.
+- Phase 1: `src/bot/callbacks.ts` needed no change.
 
 ### Close triggers
 

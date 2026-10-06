@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,9 +22,12 @@ import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
 import { VARIANTS } from '../fiscal/qrPixels.js';
 import { createLogger } from '../logger.js';
+import { register } from '../scheduler/types.js';
+import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import { createBot, registerCommands } from './bot.js';
+import { recurringProvider } from './recurringProvider.js';
 import {
   BUDGET_CAP,
   BUDGET_CAP_CLEAR,
@@ -76,13 +80,14 @@ function silentLogger() {
 }
 
 const EXPENSE_ID = '00000000-0000-4000-8000-000000000003';
-// The recorded card's keyboard: [Категория] [Изменить] above [Удалить].
+// The recorded card's keyboard: [Категория] [Изменить], then [Повторять], above [Удалить].
 const undoKeyboard = {
   inline_keyboard: [
     [
       { text: 'Категория', callback_data: `exp:cat:${EXPENSE_ID}` },
       { text: 'Изменить', callback_data: `exp:edit:${EXPENSE_ID}` },
     ],
+    [{ text: 'Повторять', callback_data: `rec:new:${EXPENSE_ID}` }],
     [{ text: messages.undoButton, callback_data: `exp:undo:${EXPENSE_ID}` }],
   ],
 };
@@ -378,7 +383,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /categories, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
+  it('registers /today, /week, /month, /budget, /recurring, /categories, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -392,13 +397,14 @@ describe('command registration at boot', () => {
             { command: 'week', description: messages.commands[1].description },
             { command: 'month', description: messages.commands[2].description },
             { command: 'budget', description: messages.commands[3].description },
-            { command: 'categories', description: messages.commands[4].description },
-            { command: 'settings', description: messages.commands[5].description },
-            { command: 'unlock', description: messages.commands[6].description },
-            { command: 'lock', description: messages.commands[7].description },
-            { command: 'help', description: messages.commands[8].description },
-            { command: 'changelog', description: messages.commands[9].description },
-            { command: 'donate', description: messages.commands[10].description },
+            { command: 'recurring', description: messages.commands[4].description },
+            { command: 'categories', description: messages.commands[5].description },
+            { command: 'settings', description: messages.commands[6].description },
+            { command: 'unlock', description: messages.commands[7].description },
+            { command: 'lock', description: messages.commands[8].description },
+            { command: 'help', description: messages.commands[9].description },
+            { command: 'changelog', description: messages.commands[10].description },
+            { command: 'donate', description: messages.commands[11].description },
           ],
         },
       },
@@ -4298,6 +4304,7 @@ describe('fiscal receipts', () => {
           { text: 'Категория', callback_data: `exp:cat:${expenseId}` },
           { text: 'Изменить', callback_data: `exp:edit:${expenseId}` },
         ],
+        [{ text: 'Повторять', callback_data: `rec:new:${expenseId}` }],
         [{ text: messages.undoButton, callback_data: `exp:undo:${expenseId}` }],
       ],
     };
@@ -4701,6 +4708,7 @@ describe('fiscal receipts', () => {
               { text: 'Категория', callback_data: `exp:cat:${String(expenseId)}` },
               { text: 'Изменить', callback_data: `exp:edit:${String(expenseId)}` },
             ],
+            [{ text: 'Повторять', callback_data: `rec:new:${String(expenseId)}` }],
             [{ text: 'Позиции', callback_data: `exp:items:${String(expenseId)}:1` }],
             [{ text: 'Удалить', callback_data: `exp:undo:${String(expenseId)}` }],
           ],
@@ -4879,6 +4887,7 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
           { text: 'Категория', callback_data: `exp:cat:${id}` },
           { text: 'Изменить', callback_data: `exp:edit:${id}` },
         ],
+        [{ text: 'Повторять', callback_data: `rec:new:${id}` }],
         [{ text: messages.undoButton, callback_data: `exp:undo:${id}` }],
       ],
     };
@@ -5115,5 +5124,102 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     for (const line of logLines) {
       for (const secret of secrets) expect(line, secret).not.toContain(secret);
     }
+  });
+});
+
+describe('recurring expenses', () => {
+  // `45000 аренда` sent on 1 October; the clock reads 2 October 12:00 CEST until moved.
+  async function rentBot() {
+    const clock = new Date('2026-10-02T10:00:00Z');
+    const harness = createTestBot({ now: clock });
+    let updateId = 0;
+    const tap = (data: string) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data }));
+    const send = (text: string) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, text, date: new Date('2026-10-01T10:00:00Z') }),
+      );
+    await send('45000 аренда');
+    const deps = {
+      db: harness.db,
+      logger: silentLogger(),
+      newId: randomUUID,
+      now: () => clock,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD' as CurrencyCode,
+      keys: harness.keys,
+    };
+    const providers = [register(recurringProvider(deps, harness.bot.api))];
+    const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
+    return { ...harness, clock, tap, send, tick };
+  }
+
+  it('[Повторять] offers «Каждый месяц, 1-го» from the expense date, with [« Назад]', async () => {
+    const { tap, calls } = await rentBot();
+    calls.length = 0;
+
+    await tap(`rec:new:${EXPENSE_ID}`);
+
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text:
+        'Записано в «Личные расходы»: <b>45 000.00 RSD</b> — аренда\n' +
+        'Как повторять? В этот день в 09:00 я сам запишу такую же трату.',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Каждый месяц, 1-го', callback_data: `rec:s:${EXPENSE_ID}:m` }],
+          [{ text: messages.backButton, callback_data: `exp:show:${EXPENSE_ID}` }],
+        ],
+      },
+    });
+  });
+
+  it('a schedule makes the rule and says so under the card; a second tap makes none', async () => {
+    const { tap, calls, db } = await rentBot();
+    calls.length = 0;
+
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+
+    const edit = calls.find((c) => c.method === 'editMessageText')?.payload as { text: string };
+    expect(edit.text).toContain(
+      'Повторяется: каждый месяц, 1-го. Следующая запись — 1 ноября. Все правила: /recurring',
+    );
+    expect(db.prepare('SELECT COUNT(*) FROM recurring_rules').pluck().get()).toBe(1);
+  });
+
+  it('[Повторять] on someone else’s expense records no rule', async () => {
+    const { bot, db } = await rentBot();
+
+    await bot.handleUpdate(
+      callbackUpdate({ updateId: 50, fromId: SECOND_ALLOWED_ID, data: `rec:s:${EXPENSE_ID}:m` }),
+    );
+
+    expect(db.prepare('SELECT COUNT(*) FROM recurring_rules').pluck().get()).toBe(0);
+  });
+
+  it('/recurring lists the rule with its money, schedule and next date', async () => {
+    const { tap, send, calls } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    calls.length = 0;
+
+    await send('/recurring');
+
+    expect(calls[0]?.payload).toMatchObject({
+      text: '<b>Регулярные траты</b>\n\nаренда — 45 000.00 RSD\nКаждый месяц, 1-го · следующая 1 ноября',
+    });
+  });
+
+  it('/today on 1 November includes the rent recorded at 09:00', async () => {
+    const { tap, send, calls, clock, tick } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    await tick('2026-11-01T08:00:00Z');
+    clock.setTime(new Date('2026-11-01T10:00:00Z').getTime());
+    calls.length = 0;
+
+    await send('/today');
+
+    expect(calls[0]?.payload).toMatchObject({
+      text: '<b>Сегодня, 1 ноября — «Личные расходы»</b>\n45 000.00 RSD',
+    });
   });
 });

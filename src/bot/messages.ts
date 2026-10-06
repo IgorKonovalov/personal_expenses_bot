@@ -1,6 +1,7 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney, type Money } from '../domain/money.js';
+import type { Schedule } from '../domain/schedule.js';
 import type { LocalDate } from '../domain/time.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { compareVersions } from '../domain/version.js';
@@ -419,6 +420,33 @@ function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
   return html`${author}${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// A recurring rule in /recurring: what it records, and when.
+interface RuleListView {
+  readonly description: string;
+  readonly money: Money;
+  readonly schedule: Schedule;
+  readonly nextDueOn: LocalDate;
+}
+
+function recurringMonthly(day: number): string {
+  return `Каждый месяц, ${day}-го`;
+}
+
+function scheduleLabel(schedule: Schedule): string {
+  return recurringMonthly(schedule.day);
+}
+
+// `аренда — 45 000.00 RSD` over `Каждый месяц, 1-го · следующая 1 ноября`.
+function recurringRuleLines(rule: RuleListView, today: LocalDate): Html {
+  return joinHtml(
+    [
+      html`${shownDescription(rule.description)} — ${formatMoney(rule.money)}`,
+      html`${scheduleLabel(rule.schedule)} · следующая ${shownDate(rule.nextDueOn, today)}`,
+    ],
+    '\n',
+  );
+}
+
 // /changelog shows this many versions, newest first; older ones are behind a link to the full
 // CHANGELOG.md. A fixed count keeps the reply well under Telegram's 4096 characters as releases
 // accumulate (messages.test.ts caps each announcement's length).
@@ -472,6 +500,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям' },
     { command: 'month', description: 'Траты за месяц по категориям' },
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
+    { command: 'recurring', description: 'Регулярные траты' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
     { command: 'unlock', description: 'Открыть зашифрованный учёт' },
@@ -1078,6 +1107,60 @@ export const messages = {
       '\n\n',
     );
   },
+  // Recurring expenses (Plan 0025, ADR-0031). Occurrences fire at 09:00 in the ledger's zone.
+  repeatButton: 'Повторять',
+  repeatPicker: (view: ExpenseView): Html =>
+    joinHtml(
+      [
+        expenseLine('Записано в', view),
+        html`Как повторять? В этот день в 09:00 я сам запишу такую же трату.`,
+      ],
+      '\n',
+    ),
+  // A schedule as a button label and in lists: `Каждый месяц, 15-го`.
+  scheduleLabel,
+  recurringMonthly,
+  // Under the card once the rule exists. `today` is the ledger's local date.
+  recurringCreated: ({
+    schedule,
+    nextDueOn,
+    today,
+  }: {
+    schedule: Schedule;
+    nextDueOn: LocalDate;
+    today: LocalDate;
+  }): Html =>
+    html`Повторяется: ${scheduleLabel(schedule).toLowerCase()}. Следующая запись — ${shownDate(nextDueOn, today)}. Все правила: /recurring`,
+  repeatForbidden: 'Повторять трату может только тот, кто её записал',
+  repeatUnavailable: 'Эту трату пока нельзя повторять',
+  // An occurrence the scheduler recorded: the usual confirmation, marked as recurring.
+  recurringRecorded: (view: RecordedView): Html => {
+    const { occurredOn, category } = view.expense;
+    const line = joinHtml(
+      [
+        expenseLine(
+          'Записано в',
+          view,
+          occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
+        ),
+        html`(регулярная)`,
+      ],
+      ' ',
+    );
+    return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+  },
+  // /recurring. `today` is the user's local date, for the year of a next date.
+  recurringList: ({ rules, today }: { rules: readonly RuleListView[]; today: LocalDate }): Html => {
+    const title = html`<b>Регулярные траты</b>`;
+    if (rules.length === 0) {
+      return joinHtml(
+        [title, html`Пока ничего нет. Чтобы трата записывалась сама, нажмите «Повторять» под ней.`],
+        '\n',
+      );
+    }
+    return joinHtml([title, ...rules.map((rule) => recurringRuleLines(rule, today))], '\n\n');
+  },
+
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
 

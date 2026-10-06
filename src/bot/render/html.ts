@@ -50,9 +50,17 @@ export function replyHtml(ctx: Context, body: Html, extra: ReplyOther = {}): Pro
   return ctx.reply(body, { ...extra, ...htmlParseMode });
 }
 
-// Sends outside any update, e.g. at boot. A private chat's id is the user's Telegram id.
-export function sendHtml(api: Api, chatId: number, body: Html): Promise<Message> {
-  return api.sendMessage(chatId, body, htmlParseMode);
+type SendOther = Omit<NonNullable<Parameters<Api['sendMessage']>[2]>, 'parse_mode'>;
+
+// Sends outside any update, e.g. at boot or from the scheduler. A private chat's id is the
+// user's Telegram id.
+export function sendHtml(
+  api: Api,
+  chatId: number,
+  body: Html,
+  extra: SendOther = {},
+): Promise<Message> {
+  return api.sendMessage(chatId, body, { ...extra, ...htmlParseMode });
 }
 
 // Telegram answers an edit to identical text and markup with 400 "message is not modified".

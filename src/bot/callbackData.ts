@@ -219,3 +219,16 @@ export function budgetCapClearData(categoryId: CategoryId): string {
 
 // [Отмена] on a text prompt (ADR-0009).
 export const FLOW_CANCEL = 'flow:cancel';
+
+// Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the
+// schedules from the expense's date; `rec:s:<uuid>:<m>` (44 bytes) makes the rule on one.
+export const REPEAT_EXPENSE = /^rec:new:([0-9a-f-]{36})$/;
+export const REPEAT_SCHEDULE = /^rec:s:([0-9a-f-]{36}):([m])$/;
+
+export function repeatExpenseData(expenseId: ExpenseId): string {
+  return assertCallbackData(`rec:new:${expenseId}`);
+}
+
+export function repeatScheduleData(expenseId: ExpenseId, choice: 'm'): string {
+  return assertCallbackData(`rec:s:${expenseId}:${choice}`);
+}

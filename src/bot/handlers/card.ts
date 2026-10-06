@@ -8,6 +8,7 @@ import { memberBudgetStatus } from '../../services/budget.js';
 import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
 import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
+import { canHoldRule } from '../../services/recurring.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   RESTORE_EXPENSE,
@@ -16,6 +17,7 @@ import {
   editExpenseData,
   receiptItemsData,
   receiptRetryData,
+  repeatExpenseData,
   restoreExpenseData,
   undoExpenseData,
 } from '../callbackData.js';
@@ -43,6 +45,9 @@ export interface CardView {
   readonly cap?: CardCap;
   // The receipt behind the expense: absent for a deleted expense or one typed in.
   readonly receipt?: ReceiptSummary;
+  // The viewer is the author and the ledger can hold a recurring rule: the card offers
+  // [Повторять].
+  readonly repeatable?: boolean;
 }
 
 export interface CardCap {
@@ -75,6 +80,7 @@ export function cardView(
     expense,
     ledger,
     sentOn: localDateOf(expense.occurredAt, effectiveTimezone(deps, user, ledger)),
+    repeatable: expense.createdBy === user.id && canHoldRule(deps, ledger),
   };
   if (expense.deletedAt !== null) return view;
   const receipt = receiptSummary(deps, expense.id) ?? foldedReceiptSummary(deps, expense.id);
@@ -109,14 +115,15 @@ function foldedReceiptSummary(deps: HandlerDeps, expenseId: ExpenseId): ReceiptS
 }
 
 // [Категория] [Изменить] above [Удалить]: the destructive button gets its own row (ADR-0011).
-// A receipt expense adds [Позиции] once fetched, or [Повторить] once the fetch gave up, on a row
-// between them.
+// The author's card adds [Повторять] on a row between them, and a receipt expense adds
+// [Позиции] once fetched, or [Повторить] once the fetch gave up, on the next.
 export function recordedCard(view: CardView): Card {
   const id = view.expense.id;
   const markup = new InlineKeyboard()
     .text(messages.categoryButton, categoryPickerData(id))
     .text(messages.editButton, editExpenseData(id))
     .row();
+  if (view.repeatable === true) markup.text(messages.repeatButton, repeatExpenseData(id)).row();
   if (view.receipt?.state === 'fetched') {
     markup.text(messages.receiptItemsButton, receiptItemsData(id, 1)).row();
   } else if (view.receipt?.state === 'failed') {

@@ -24,6 +24,7 @@ import { registerMenu } from './handlers/menu.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerPaySupport } from './handlers/paysupport.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
+import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
@@ -102,6 +103,7 @@ export function createBot(options: BotOptions): Bot {
   registerSummary(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);
+  registerRecurring(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);
   registerCancel(dm, options);
