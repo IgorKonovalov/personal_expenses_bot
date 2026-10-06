@@ -323,7 +323,7 @@ against the decrypted list. That always works, because debts are only recorded w
 | 2: Borrowing, the person card, and repayments | dev | done | be1fc27 |
 | 3: Splitting a bill with `/N` | dev | done | 828bb5e |
 | 4: Group settle-up | dev | done | f64bc9b |
-| 5: Sealed debts, help and docs | dev | done | committed with this row |
+| 5: Sealed debts, help and docs | dev | done | a8b23ff |
 | 6: Real debts and a real group | human | not started | |
 
 ### Notes
@@ -391,5 +391,17 @@ against the decrypted list. That always works, because debts are only recorded w
   plaintext in `flow_sessions` for up to `FLOW_TTL_MS`, sealed ledger or not.
 
 ### Close triggers
+
+- Phases 1-5 done in 3ddc64e, be1fc27, 828bb5e, f64bc9b and a8b23ff. Phase 6 (`human`, does not
+  block merge) has not started.
+- Gate on the tip (a8b23ff): `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm test` exit 0
+  (100 files, 1389 tests), `pnpm build` exit 0, `node scripts/check-doc-links.mjs` exit 0
+  (261 relative links resolve).
+- No new dependency. Migrations `0017_debts.sql` and `0018_settle_up.sql`.
+- New commands: `/debts` (private, in `messages.commands`) and `/settle` (groups, in
+  `messages.groupCommands`). New callback data: `dbt:new:<l|b>`, `dbt:pick:<id>`, `dbt:pp:<page>`,
+  `dbt:del:<uuid>`, `dbt:p:<id>`, `dbt:list`, `dbt:rp:<id>:<t|i>`, `dbt:rc:<id>:<CUR>`, `dbt:all`,
+  `dbt:sp:<id>`, `dbt:spok`, `dbt:spx`, `stl:t:<i>:<8 hex>`, `stl:join`, `stl:del:<uuid>`.
+- `/N` in an expense text is read as a split. `/help`, the group help and README.md changed.
 
 ## Followups
