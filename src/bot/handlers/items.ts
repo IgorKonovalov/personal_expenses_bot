@@ -1,12 +1,27 @@
 import type { Composer, Context } from 'grammy';
 import { parsePeriod, type Period } from '../../domain/periods.js';
+import { parseLocalDate } from '../../domain/time.js';
 import { isLocked } from '../../services/ledgerKeys.js';
-import { ledgerPeriodItems, type PeriodItems } from '../../services/periodItems.js';
+import {
+  activePeriodItems,
+  ledgerPeriodItems,
+  type PeriodItems,
+} from '../../services/periodItems.js';
 import type { HandlerDeps } from '../bot.js';
-import { PERIOD_ITEMS, periodItemsData, summaryPageData } from '../callbackData.js';
+import {
+  DAY_ITEMS,
+  PERIOD_ITEMS,
+  TODAY_SHOW,
+  dayItemsData,
+  periodItemsData,
+  summaryPageData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
+import { editHtml } from '../render/html.js';
 import { renderAnchor, requireScreen, type ScreenView } from '../screens.js';
+import { ensureUser } from './start.js';
+import { todayReply } from './today.js';
 
 // [Позиции] (ADR-0038): a period's receipt items by category, edited in place with a pager of
 // rendered pages and [« Назад] to where it was opened from. On /week and /month it is a state of
@@ -64,5 +79,47 @@ export function registerItems(bot: Composer<Context>, deps: HandlerDeps): void {
       summaryPageData(period),
     );
     if (view !== undefined) await renderAnchor(ctx, tap.anchor, view);
+  });
+
+  // /today is a plain reply, not a screen: its [Позиции] reads the active ledger at tap time and
+  // edits the tapped message, and [« Назад] edits it back into today's /today.
+  bot.callbackQuery(DAY_ITEMS, async (ctx) => {
+    const date = parseLocalDate(ctx.match[1] ?? '');
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const items =
+      date === undefined
+        ? undefined
+        : activePeriodItems(deps, { user, range: { from: date, to: date } });
+    if (isLocked(items)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
+    // An unparseable date is answered silently and edits nothing.
+    await ctx.answerCallbackQuery();
+    if (items === undefined || date === undefined) return;
+    const view = itemsView(
+      items,
+      { kind: 'day', from: date, to: date },
+      Number(ctx.match[2]),
+      (page) => dayItemsData(date, page),
+      TODAY_SHOW,
+    );
+    if (view !== undefined) await editHtml(ctx, view.text, { reply_markup: view.markup });
+  });
+
+  bot.callbackQuery(TODAY_SHOW, async (ctx) => {
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const reply = todayReply(deps, user, now);
+    if (isLocked(reply)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await editHtml(
+      ctx,
+      reply.text,
+      reply.markup === undefined ? {} : { reply_markup: reply.markup },
+    );
   });
 }

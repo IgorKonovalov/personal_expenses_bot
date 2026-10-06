@@ -248,7 +248,7 @@ describe('activePeriodItems', () => {
     fixture();
     const day = '2026-10-06' as LocalDate;
 
-    const items = open(activePeriodItems(deps, { user, range: { from: day, to: day }, now: NOW }));
+    const items = open(activePeriodItems(deps, { user, range: { from: day, to: day } }));
 
     expect(shape(items)).toEqual([
       { name: 'Дом', totals: [39900], items: ['Средство 06.10'] },

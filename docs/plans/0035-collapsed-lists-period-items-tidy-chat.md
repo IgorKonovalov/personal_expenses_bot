@@ -303,8 +303,8 @@ page), and one key for the tidy switch in the `set:` family.
 |---|---|---|---|
 | 1: card items collapsed | dev | done | 371a6f9 |
 | 2: summary categories folded | dev | done | b381ba3 |
-| 3: period items on /week, /month | dev | done | committed with this row |
-| 4: period items on /today | dev | not started | |
+| 3: period items on /week, /month | dev | done | 9b8f76b |
+| 4: period items on /today | dev | done | committed with this row |
 | 5: tidy chat | dev | not started | |
 | 6: live check | human | not started | |
 
@@ -332,6 +332,13 @@ page), and one key for the tidy switch in the `set:` family.
   line (`Только чеки, которые записали вы.`) has no test.
 - Phase 3: items of a sealed row take their position from their order in the folded payload.
   The group without a category sorts after named groups that lack the default currency.
+- Phase 4: touched `src/services/periodItems.ts` and its test, outside the phase's `Files
+  touched`. `activePeriodItems` no longer takes `now` or refuses a range after today: resolving
+  the zone a second time on /today logged a second warn for a corrupt stored zone, which the
+  existing settings test pins at one. A well-formed future date in `itm:d:` now edits into an
+  empty items view instead of nothing.
+- Phase 4: the back key is `itm:today` (`TODAY_SHOW`). `todayReply` in `handlers/today.ts`
+  builds /today's text and keyboard for both the command and the back tap.
 
 ### Close triggers
 

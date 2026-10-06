@@ -3688,6 +3688,58 @@ describe('[Позиции]: receipt items of a period by category (ADR-0038)', (
     expect(listed).toEqual(items.map((item) => item.name.slice(0, 3)));
   });
 
+  it('offers [Позиции] on /today; the day lists Дом above Еда without dates, and [« Назад] returns', async () => {
+    const { say, tap, calls, fixture } = await itemsBot();
+    fixture();
+
+    await say('/today');
+
+    const today = calls.find((c) => c.method === 'sendMessage')?.payload as {
+      text: string;
+      reply_markup?: unknown;
+    };
+    expect(today.reply_markup).toEqual({
+      inline_keyboard: [[{ text: 'Позиции', callback_data: 'itm:d:2026-10-06:1' }]],
+    });
+    calls.length = 0;
+
+    await tap('itm:d:2026-10-06:1', 7);
+
+    const edit = calls.find((c) => c.method === 'editMessageText');
+    expect(edit?.payload).toMatchObject({
+      message_id: 7,
+      text:
+        '<b>Позиции чеков · 6 октября — «Личные расходы»</b>\n\n' +
+        '<b>Дом</b> · 399.00 RSD · 1 позиция\n<blockquote expandable>Средство — 399.00 RSD</blockquote>\n' +
+        '<b>Еда</b> · 84.99 RSD · 1 позиция\n<blockquote expandable>Хлеб — 84.99 RSD</blockquote>',
+      reply_markup: { inline_keyboard: [[{ text: '« Назад', callback_data: 'itm:today' }]] },
+    });
+    calls.length = 0;
+
+    await tap('itm:today', 7);
+
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      message_id: 7,
+      text: today.text,
+      reply_markup: today.reply_markup,
+    });
+  });
+
+  it('shows no [Позиции] on /today for a day with expenses but no receipts', async () => {
+    const { say, calls } = await itemsBot();
+    await say('450 кофе');
+    calls.length = 0;
+
+    await say('/today');
+
+    const today = calls.find((c) => c.method === 'sendMessage')?.payload as {
+      text: string;
+      reply_markup?: unknown;
+    };
+    expect(today.text).toContain('450.00 RSD');
+    expect(today.reply_markup).toBeUndefined();
+  });
+
   it('keeps the longest items callback data within 64 bytes', () => {
     const data = dayItemsData('2026-10-06' as LocalDate, 99);
 

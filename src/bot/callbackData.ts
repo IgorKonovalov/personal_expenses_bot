@@ -218,6 +218,9 @@ export function dayItemsData(date: LocalDate, page: number): string {
   return assertCallbackData(`itm:d:${date}:${page}`);
 }
 
+// [« Назад] under /today's items: edits the message back into /today for the current day.
+export const TODAY_SHOW = 'itm:today';
+
 // The /budget screen (ADR-0017). Only the current screen anchor accepts these, and they act on
 // the anchor's ledger, so none carries a ledger id. `bud:open` shows the screen in the anchor;
 // `bud:lim` asks for the limit, `bud:day` for the period start day.

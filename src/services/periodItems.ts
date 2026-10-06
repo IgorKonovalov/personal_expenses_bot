@@ -43,32 +43,26 @@ export function ledgerPeriodItems(
 ): PeriodItems | Locked | undefined {
   const ledger = findLedgerForMember(deps.db, input.ledgerId, input.user.id);
   if (ledger === undefined) return undefined;
-  return itemsOf(deps, input.user, ledger, input.range, input.now);
+  const today = localDateOf(input.now, effectiveTimezone(deps, input.user, ledger));
+  if (input.range.from > today) return undefined;
+  return itemsOf(deps, input.user, ledger, input.range);
 }
 
-// A range of the user's active ledger at the moment of asking. Undefined for a range that starts
-// after the ledger's today.
+// A range of the user's active ledger at the moment of asking. It reads no clock: a range after
+// today holds no expenses, so it lists nothing.
 export function activePeriodItems(
   deps: Deps,
-  input: { readonly user: User; readonly range: Range; readonly now: Date },
-): PeriodItems | Locked | undefined {
+  input: { readonly user: User; readonly range: Range },
+): PeriodItems | Locked {
   const ledger = findActiveLedger(deps.db, input.user.id);
   if (ledger === undefined) throw new Error(`user ${input.user.id} has no active ledger`);
-  return itemsOf(deps, input.user, ledger, input.range, input.now);
+  return itemsOf(deps, input.user, ledger, input.range);
 }
 
 // Expenses by their stored local occurred_on, never a UTC date. Plaintext rows read their items
 // from receipt_items; a sealed row from the receipt folded into its payload (ADR-0020).
-function itemsOf(
-  deps: Deps,
-  user: User,
-  ledger: Ledger,
-  range: Range,
-  now: Date,
-): PeriodItems | Locked | undefined {
+function itemsOf(deps: Deps, user: User, ledger: Ledger, range: Range): PeriodItems | Locked {
   const { db } = deps;
-  const today = localDateOf(now, effectiveTimezone(deps, user, ledger));
-  if (range.from > today) return undefined;
   const rows = listLedgerExpensesBetween(db, {
     ledgerId: ledger.id,
     memberId: user.id,
