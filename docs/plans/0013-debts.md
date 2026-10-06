@@ -322,7 +322,7 @@ against the decrypted list. That always works, because debts are only recorded w
 | 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | 3ddc64e |
 | 2: Borrowing, the person card, and repayments | dev | done | be1fc27 |
 | 3: Splitting a bill with `/N` | dev | done | 828bb5e |
-| 4: Group settle-up | dev | done | committed with this row |
+| 4: Group settle-up | dev | done | f64bc9b |
 | 5: Sealed debts, help and docs | dev | not started | |
 | 6: Real debts and a real group | human | not started | |
 
@@ -373,6 +373,14 @@ against the decrypted list. That always works, because debts are only recorded w
   them. A stale [Перевёл] gets the `staleScreen` toast and the `/settle` message is re-rendered.
   [Удалить] under a transfer edits it to `messages.transferDeleted` and does not re-render
   `/settle`.
+- Phase 5 not started: the conductor session ran out of budget after Phase 4 and parked. Things
+  for the resuming `dev`, none of them acted on:
+  - `/delete_account` (`src/services/deleteAccount.ts`) doesn't delete `debt_people` or
+    `debt_ops`, so a deleted user's debts survive. No phase lists that file.
+  - Switching encryption on (`src/services/sealLedger.ts`) doesn't seal debts recorded before.
+    No phase lists that file either.
+  - The person step's flow payload (`debtPerson`) holds the amount and currency in plaintext in
+    `flow_sessions` for up to `FLOW_TTL_MS`.
 
 ### Close triggers
 
