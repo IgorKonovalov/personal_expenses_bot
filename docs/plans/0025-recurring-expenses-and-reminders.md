@@ -312,7 +312,7 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | 3: Ask mode and managing rules | dev | done | 9c1b7d8 |
 | 4: Reminders | dev | done | 33b0e97 |
 | 5: Group ledgers | dev | done | 5a3194b |
-| 6: Sealed ledgers, help and docs | dev | done | committed with this row |
+| 6: Sealed ledgers, help and docs | dev | done | 6da3312 |
 | 7: A real month | human | not started | |
 
 ### Notes
@@ -376,5 +376,22 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   with foreign keys on. Not run.
 
 ### Close triggers
+
+- **What shipped:** `src/scheduler/` (the ADR-0031 worker), migrations `0015_recurring.sql` and
+  `0016_expense_sealed_rule.sql`, `src/domain/schedule.ts`, `src/db/recurring.ts`,
+  `src/services/recurring.ts`, `src/bot/recurringProvider.ts`, `src/bot/handlers/recurring.ts`,
+  the rule binding in `src/domain/sealing.ts` and `src/services/ledgerKeys.ts`, and rule sealing
+  in `src/services/sealLedger.ts`. Commits 7c51ef7, e271825, 9c1b7d8, 33b0e97, 5a3194b, 6da3312.
+- **User-visible surface changed:** new command `/recurring` (in `messages.commands`); [Повторять]
+  on the author's expense card, in personal, group (via [Изменить в личке]) and sealed ledgers;
+  callback data `rec:new:<uuid>`, `rec:s:<uuid>:<m|w|y>`, `rec:r:<uuid>`, `rec:mode:<a|k>`,
+  `rec:del`, `rec:delok`, `rec:list`, `rec:rem`, `rec:rs:<m|w|y>`, `rec:rx`,
+  `rec:ok|amt|skip:<uuid>:<date>`; scheduler posts at 09:00 local (recorded notice, ask prompt,
+  reminder); `/help` gains a recurring paragraph and a `/recurring` line; the README lists
+  [Повторять] and `/recurring`.
+- **Gate at the tip (6da3312):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  92 files, 1246 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0,
+  259 relative links resolve.
+- **Outstanding `human` phases:** Phase 7 (a real month; blocks merge: no).
 
 ## Followups
