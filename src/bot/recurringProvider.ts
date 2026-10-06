@@ -10,7 +10,8 @@ import {
   type FireResult,
 } from '../services/recurring.js';
 import type { HandlerDeps } from './bot.js';
-import { REMINDER_EXPENSE } from './callbackData.js';
+import { listMemberNames } from '../db/ledgers.js';
+import { REMINDER_EXPENSE, groupDeleteData } from './callbackData.js';
 import { askCard, recurringRecordedCard } from './handlers/recurring.js';
 import { messages } from './messages.js';
 import { sendHtml, type Html } from './render/html.js';
@@ -44,14 +45,25 @@ function notice(
   now: Date,
 ): ScreenView | undefined {
   const { user } = result.author;
+  const inGroup = result.groupChatId !== undefined;
   switch (fired.kind) {
-    case 'recorded':
-      return recurringRecordedCard(deps, user, fired, now);
+    case 'recorded': {
+      if (!inGroup) return recurringRecordedCard(deps, user, fired, now);
+      // The group card (ADR-0014): [Удалить] acts for the author only.
+      const { expense, ledger } = fired;
+      const author = listMemberNames(deps.db, ledger.id).get(user.id) ?? '';
+      const sentOn = localDateOf(now, effectiveTimezone(deps, user, ledger));
+      return {
+        text: messages.groupExpenseCard({ author, expense, sentOn }),
+        markup: new InlineKeyboard().text(messages.undoButton, groupDeleteData(expense.id)),
+      };
+    }
     case 'asked': {
       const { template } = result.rule;
       if (template === null) return undefined;
       const today = localDateOf(now, effectiveTimezone(deps, user, fired.ledger));
-      return askCard({ rule: result.rule, template }, fired.dueOn, today);
+      // [Другая сумма] needs a typed answer, which a group's flows don't take.
+      return askCard({ rule: result.rule, template }, fired.dueOn, today, !inGroup);
     }
     case 'reminded':
       return {
@@ -73,7 +85,7 @@ async function send(
   try {
     await sendHtml(
       api,
-      result.author.telegramId,
+      result.groupChatId ?? result.author.telegramId,
       text,
       view === undefined ? {} : { reply_markup: view.markup },
     );

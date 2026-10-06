@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Bot } from 'grammy';
 import type { InlineKeyboardMarkup, Update } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +15,9 @@ import { changeCategory } from '../../services/changeCategory.js';
 import { openEdit, startEdit } from '../../services/editExpense.js';
 import { setAnchor } from '../../services/flowSessions.js';
 import { undoExpense } from '../../services/recordExpense.js';
+import { register } from '../../scheduler/types.js';
+import { runTick } from '../../scheduler/worker.js';
+import { recurringProvider } from '../recurringProvider.js';
 import {
   assertCallbackData,
   editFieldData,
@@ -601,6 +605,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
                 { text: messages.categoryButton, callback_data: `exp:cat:${a}` },
                 { text: messages.editButton, callback_data: `exp:edit:${a}` },
               ],
+              [{ text: messages.repeatButton, callback_data: `rec:new:${a}` }],
               [{ text: messages.undoButton, callback_data: `exp:undo:${a}` }],
             ],
           },
@@ -1237,5 +1242,94 @@ describe('budgets on group ledgers (ADR-0017)', () => {
       '<b>Бюджет «Семья»</b>\nБюджет не задан. Его настраивает в личной переписке со мной тот, ' +
         'кто добавил меня в группу: /settings в группе, затем «Бюджет».',
     );
+  });
+});
+
+describe('recurring rules on group ledgers (Plan 0025)', () => {
+  // A records «45000 аренда» in the bound group on 30 September and repeats it monthly from the
+  // DM card; the group's zone is Asia/Almaty while A's is Belgrade.
+  async function groupRule() {
+    const test = await bound();
+    await test.say(ALLOWED_ID, '45000 аренда', 10);
+    const ledgerId = groupLedgerId(test.db);
+    test.db.prepare("UPDATE ledgers SET timezone = 'Asia/Almaty' WHERE id = ?").run(ledgerId);
+    const expenseId = test.db.prepare('SELECT id FROM expenses').pluck().get() as string;
+    await test.tap(ALLOWED_ID, `rec:s:${expenseId}:m`);
+    const deps = {
+      db: test.db,
+      logger: createLogger('silent'),
+      newId: randomUUID,
+      now: () => NOW,
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD' as const,
+      keys: test.keys,
+    };
+    const providers = [register(recurringProvider(deps, test.bot.api))];
+    const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
+    const ruleId = test.db.prepare('SELECT id FROM recurring_rules').pluck().get() as string;
+    const recorded = () =>
+      test.db.prepare("SELECT COUNT(*) FROM expenses WHERE source_key LIKE 'rec:%'").pluck().get();
+    const sends = () =>
+      test.calls
+        .filter((c) => c.method === 'sendMessage')
+        .map((c) => (c.payload as { chat_id: number }).chat_id);
+    test.calls.length = 0;
+    return { ...test, ledgerId, ruleId, tick, recorded, sends };
+  }
+
+  it("the author's DM card of a group expense makes a rule of the group ledger", async () => {
+    const { db, ledgerId } = await groupRule();
+
+    expect(db.prepare('SELECT ledger_id, next_due_on FROM recurring_rules').get()).toEqual({
+      ledger_id: ledgerId,
+      next_due_on: '2026-10-30',
+    });
+  });
+
+  it("fires once into the bound chat at 09:00 in the group's zone", async () => {
+    const { tick, recorded, sends } = await groupRule();
+
+    await tick('2026-10-30T03:59:00Z');
+    expect(recorded()).toBe(0);
+    await tick('2026-10-30T04:00:00Z');
+    await tick('2026-10-30T04:01:00Z');
+
+    expect(recorded()).toBe(1);
+    expect(sends()).toEqual([GROUP_ID]);
+  });
+
+  it("a non-author's tap on [Записать] records nothing", async () => {
+    const { db, tick, tap, ruleId, recorded, calls } = await groupRule();
+    db.prepare("UPDATE recurring_rules SET mode = 'ask'").run();
+    await tick('2026-10-30T04:00:00Z');
+    calls.length = 0;
+
+    await tap(SECOND_ALLOWED_ID, `rec:ok:${ruleId}:2026-10-30`, { chatId: GROUP_ID });
+
+    expect(recorded()).toBe(0);
+    expect(calls).toContainEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: expect.any(String) as string, text: messages.groupNotAuthor },
+    });
+  });
+
+  it('with the chat unbound, records and tells the author in private', async () => {
+    const { db, tick, recorded, sends } = await groupRule();
+    db.prepare('UPDATE ledger_chats SET active = 0').run();
+
+    await tick('2026-10-30T04:00:00Z');
+
+    expect(recorded()).toBe(1);
+    expect(sends()).toEqual([ALLOWED_ID]);
+  });
+
+  it('pauses the rule once its author left the ledger, and records nothing', async () => {
+    const { db, tick, recorded, ledgerId } = await groupRule();
+    db.prepare('DELETE FROM ledger_members WHERE ledger_id = ?').run(ledgerId);
+
+    await tick('2026-10-30T04:00:00Z');
+
+    expect(recorded()).toBe(0);
+    expect(db.prepare('SELECT paused_at IS NOT NULL FROM recurring_rules').pluck().get()).toBe(1);
   });
 });

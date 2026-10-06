@@ -310,8 +310,8 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | 7c51ef7 |
 | 2: Weekly and yearly, short months, DST and catch-up | dev | done | e271825 |
 | 3: Ask mode and managing rules | dev | done | 9c1b7d8 |
-| 4: Reminders | dev | done | committed with this row |
-| 5: Group ledgers | dev | not started | |
+| 4: Reminders | dev | done | 33b0e97 |
+| 5: Group ledgers | dev | done | committed with this row |
 | 6: Sealed ledgers, help and docs | dev | not started | |
 | 7: A real month | human | not started | |
 
@@ -342,6 +342,13 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   so a second tap makes nothing. A reminder's screen has no mode button.
 - Phase 4: Phase 4 added no tests to `src/db/recurring.test.ts`, `src/services/recurring.test.ts`
   or `src/bot/recurringProvider.test.ts`. Its done-whens are tested in `src/bot/bot.test.ts`.
+- Phase 5: outside Files touched: `src/db/recurring.ts` (`pauseRule`), `src/db/ledgerChats.ts`
+  (`findActiveChatOfLedger`), `src/bot/handlers/recurring.ts` (`askCard` can leave out
+  [Другая сумма]). `src/bot/handlers/card.ts` needed no change: `canHoldRule` decides.
+- Phase 5: the group's ask prompt has no [Другая сумма], because a group takes no typed flow
+  answers. It offers [Записать] and [Пропустить] only.
+- Phase 5: membership is checked when the rule fires. A rule whose author left is paused then,
+  not at the moment they leave.
 
 ### Close triggers
 

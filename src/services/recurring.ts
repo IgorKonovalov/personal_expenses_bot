@@ -5,6 +5,7 @@ import {
   type ExpenseCategory,
   type ExpenseId,
 } from '../db/expenses.js';
+import { findActiveChatOfLedger } from '../db/ledgerChats.js';
 import { findLedgerById, findLedgerForMember, type Ledger, type LedgerId } from '../db/ledgers.js';
 import {
   advanceRule,
@@ -16,6 +17,7 @@ import {
   insertRuleOrGetExisting,
   listRulesDueBy,
   listUserRules,
+  pauseRule,
   setRuleMode,
   softDeleteRule,
   type OccurrenceOutcome,
@@ -111,7 +113,7 @@ export function repeatOptions(
 
 // Whether an expense of this ledger may be made recurring.
 export function canHoldRule(deps: Pick<RecurringDeps, 'db'>, ledger: Ledger): boolean {
-  return ledger.kind === 'personal' && !isSealedLedger(deps, ledger.id);
+  return !isSealedLedger(deps, ledger.id);
 }
 
 export type CreateRuleResult =
@@ -251,6 +253,8 @@ export interface FireResult {
   readonly author: { readonly user: User; readonly telegramId: number };
   // What happened, oldest first. Empty when another tick claimed every date first.
   readonly fired: readonly Fired[];
+  // The group chat a shared ledger is bound to: where the notices go. Absent: the author's DM.
+  readonly groupChatId?: number;
 }
 
 // Runs a due rule's dates in order, each in its own transaction: the rule must still be live
@@ -265,6 +269,15 @@ export function fireRule(deps: RecurringDeps, due: DueRule, now: Date): FireResu
     const reminded = fireReminder(deps, due);
     return { rule: due.rule, author, fired: reminded === undefined ? [] : [reminded] };
   }
+  // A shared ledger's rule (ADR-0014) fires only while its author is a member, and its notices
+  // go to the ledger's bound chat, else to the author's private chat.
+  const { ledgerId } = due.rule;
+  if (ledgerId !== null && findLedgerForMember(db, ledgerId, due.rule.userId) === undefined) {
+    if (pauseRule(db, due.rule.id, now)) logger.info({ ruleId: due.rule.id }, 'rule paused');
+    return { rule: due.rule, author, fired: [] };
+  }
+  const chat = ledgerId === null ? undefined : findActiveChatOfLedger(db, ledgerId);
+  const groupChatId = chat === undefined ? {} : { groupChatId: Number(chat) };
   const asked = due.dates.length - ASK_CATCH_UP;
   const fired: Fired[] = [];
   for (const [index, dueOn] of due.dates.entries()) {
@@ -309,7 +322,7 @@ export function fireRule(deps: RecurringDeps, due: DueRule, now: Date): FireResu
     );
     fired.push(one);
   }
-  return { rule: due.rule, author, fired };
+  return { rule: due.rule, author, fired, ...groupChatId };
 }
 
 // A reminder's latest due date: the rule moves from the next due date it was read with to the

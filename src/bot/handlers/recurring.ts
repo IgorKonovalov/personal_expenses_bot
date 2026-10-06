@@ -226,11 +226,13 @@ export function recurringScreenFor(
   return rule ?? recurringListView(deps, user);
 }
 
-// An `ask` occurrence's prompt: [Записать <money>], [Другая сумма], [Пропустить].
+// An `ask` occurrence's prompt: [Записать <money>], [Другая сумма] unless `withAmount` is
+// false, [Пропустить].
 export function askCard(
   target: Pick<AskTarget, 'rule' | 'template'>,
   dueOn: LocalDate,
   today: LocalDate,
+  withAmount = true,
 ): ScreenView {
   const { rule, template } = target;
   const money = { amountMinor: template.amountMinor, currency: template.currency };
@@ -239,7 +241,9 @@ export function askCard(
     markup: InlineKeyboard.from([
       [InlineKeyboard.text(messages.askRecordButton(money), askData('ok', rule.id, dueOn))],
       [
-        InlineKeyboard.text(messages.askAmountButton, askData('amt', rule.id, dueOn)),
+        ...(withAmount
+          ? [InlineKeyboard.text(messages.askAmountButton, askData('amt', rule.id, dueOn))]
+          : []),
         InlineKeyboard.text(messages.askSkipButton, askData('skip', rule.id, dueOn)),
       ],
     ]),

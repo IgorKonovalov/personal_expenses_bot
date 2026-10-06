@@ -54,6 +54,16 @@ export function findLedgerChat(
   return row === undefined ? undefined : toLedgerChat(row);
 }
 
+// The chat a ledger is actively bound to, if any.
+export function findActiveChatOfLedger(db: Db, ledgerId: LedgerId): string | undefined {
+  return db
+    .prepare<[string], string>(
+      'SELECT chat_id FROM ledger_chats WHERE ledger_id = ? AND active = 1',
+    )
+    .pluck()
+    .get(ledgerId);
+}
+
 // Turns the binding on or off; the ledger and its expenses are untouched. Returns false when it
 // was already in that state.
 export function setLedgerChatActive(

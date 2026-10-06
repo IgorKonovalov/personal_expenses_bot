@@ -13,7 +13,17 @@ import {
   restoreExpense,
   undoExpense,
 } from '../../services/recordExpense.js';
-import { GROUP_DELETE, GROUP_RESTORE, groupDeleteData, groupRestoreData } from '../callbackData.js';
+import type { RuleId } from '../../db/recurring.js';
+import { parseLocalDate } from '../../domain/time.js';
+import { answerAsk } from '../../services/recurring.js';
+import {
+  ASK_RECORD,
+  ASK_SKIP,
+  GROUP_DELETE,
+  GROUP_RESTORE,
+  groupDeleteData,
+  groupRestoreData,
+} from '../callbackData.js';
 import { expenseIdOf, type Card } from '../handlers/card.js';
 import { messages } from '../messages.js';
 import { editHtml, replyHtml } from '../render/html.js';
@@ -155,6 +165,47 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
         return;
     }
   });
+
+  // An `ask` occurrence's prompt in the group: only the rule's author answers it.
+  const answerAskInGroup = async (
+    ctx: Context & { match: string | RegExpMatchArray },
+    answer: { readonly kind: 'record' } | { readonly kind: 'skip' },
+  ) => {
+    const ruleId = ctx.match[1] as RuleId | undefined;
+    const dueOn = parseLocalDate(ctx.match[2] ?? '');
+    const user = ctx.from === undefined ? undefined : findTelegramUser(deps, ctx.from.id);
+    if (ruleId === undefined || dueOn === undefined) return;
+    if (user === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.groupNotAuthor });
+      return;
+    }
+    const result = answerAsk(deps, { user, ruleId, dueOn, now: deps.now(), answer });
+    switch (result.kind) {
+      case 'recorded': {
+        await ctx.answerCallbackQuery({ text: messages.askRecordedToast });
+        const card = groupCard(
+          deps,
+          ctx,
+          { expense: result.expense, author: ctx.from?.first_name ?? '', authorAllowlisted: false },
+          result.ledger,
+        );
+        await editHtml(ctx, card.text, { reply_markup: card.markup });
+        return;
+      }
+      case 'skipped':
+        await ctx.answerCallbackQuery();
+        await editHtml(ctx, messages.recurringSkipped(result.rule.template?.description ?? ''));
+        return;
+      case 'answered':
+        await ctx.answerCallbackQuery({ text: messages.askAnswered });
+        return;
+      default:
+        await ctx.answerCallbackQuery({ text: messages.groupNotAuthor });
+        return;
+    }
+  };
+  group.callbackQuery(ASK_RECORD, (ctx) => answerAskInGroup(ctx, { kind: 'record' }));
+  group.callbackQuery(ASK_SKIP, (ctx) => answerAskInGroup(ctx, { kind: 'skip' }));
 
   group.callbackQuery(GROUP_RESTORE, async (ctx) => {
     const tap = authorTap(deps, ctx);

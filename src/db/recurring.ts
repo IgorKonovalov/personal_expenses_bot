@@ -244,6 +244,18 @@ export function setRuleMode(db: Db, id: RuleId, mode: RuleMode): boolean {
   return changes === 1;
 }
 
+// Stops a rule from firing, e.g. once its author left the ledger. Returns false when it was
+// already paused or deleted.
+export function pauseRule(db: Db, id: RuleId, pausedAt: Date): boolean {
+  const { changes } = db
+    .prepare<[string, string]>(
+      `UPDATE recurring_rules SET paused_at = ?
+        WHERE id = ? AND paused_at IS NULL AND deleted_at IS NULL`,
+    )
+    .run(pausedAt.toISOString(), id);
+  return changes === 1;
+}
+
 // Returns false when the rule was already deleted. Its recorded expenses stay.
 export function softDeleteRule(db: Db, id: RuleId, deletedAt: Date): boolean {
   const { changes } = db
