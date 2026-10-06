@@ -126,6 +126,9 @@ export function registerText(bot: Composer<Context>, deps: AdminDeps): void {
       case 'invalid':
         await replyHtml(ctx, messages.invalidAmount);
         return;
+      case 'tooManyTags':
+        await replyHtml(ctx, messages.tooManyTags);
+        return;
       case 'notExpense':
         // A late answer to an expired prompt: say so once, and drop the flow.
         if (route.expiredFlow) {

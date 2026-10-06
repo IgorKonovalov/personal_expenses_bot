@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { archiveCategory, type CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
-import { findHistoryCategory, type ExpenseId } from '../db/expenses.js';
+import { findHistoryCategory, setExpenseCategory, type ExpenseId } from '../db/expenses.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
@@ -161,6 +161,23 @@ describe('recordExpense', () => {
     expect(recordExpense(deps, { ...input, text: '450 lunch', reading: 'thousands' })).toEqual({
       kind: 'readingUnavailable',
     });
+    expect(expenseRows()).toEqual([]);
+  });
+
+  it('stores the tags and returns them on the expense', () => {
+    const result = record(alice, '450 такси #Отпуск #рим');
+
+    expect(result).toMatchObject({
+      kind: 'recorded',
+      expense: { description: 'такси', tags: ['отпуск', 'рим'] },
+    });
+    expect(db.prepare('SELECT description, tags FROM expenses').all()).toEqual([
+      { description: 'такси', tags: 'отпуск рим' },
+    ]);
+  });
+
+  it('records nothing for six distinct tags', () => {
+    expect(record(alice, '450 кофе #a #b #c #d #e #f')).toEqual({ kind: 'tooManyTags' });
     expect(expenseRows()).toEqual([]);
   });
 
@@ -394,6 +411,27 @@ describe('recordExpense picks a category', () => {
       kind: 'recorded',
       expense: { category: cafe },
     });
+  });
+
+  it('learns by the description without its tags: 450 кофе #отпуск is keyed кофе', () => {
+    const cafeId = db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'cafe'")
+      .pluck()
+      .get(alice.activeLedgerId) as CategoryId;
+    // No keyword rule knows `зюзя`: only the history step can file it under Кафе.
+    const first = record(alice, '450 зюзя', 'tg:1001:10');
+    if (first.kind !== 'recorded') throw new Error('not recorded');
+    setExpenseCategory(db, first.expense.id, cafeId, PROCESSED);
+
+    expect(presetOf('450 зюзя #отпуск', 'tg:1001:11')).toBe('cafe');
+    expect(presetOf('450 кофе #отпуск', 'tg:1001:12')).toBe('cafe');
+    expect(
+      db.prepare('SELECT description, description_key, tags FROM expenses ORDER BY rowid').all(),
+    ).toEqual([
+      { description: 'зюзя', description_key: 'зюзя', tags: null },
+      { description: 'зюзя', description_key: 'зюзя', tags: 'отпуск' },
+      { description: 'кофе', description_key: 'кофе', tags: 'отпуск' },
+    ]);
   });
 
   it('falls through to other once cafe is archived', () => {

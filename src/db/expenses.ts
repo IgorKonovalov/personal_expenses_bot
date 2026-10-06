@@ -1,4 +1,5 @@
 import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
+import { decodeTags, encodeTags, type TagName } from '../domain/tags.js';
 import type { LocalDate } from '../domain/time.js';
 import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
@@ -21,6 +22,8 @@ export interface Expense {
   readonly deletedAt: Date | null;
   // NULL for expenses recorded before categories existed (ADR-0007).
   readonly category: ExpenseCategory | null;
+  // Normalized, first-written order; empty for none (ADR-0029).
+  readonly tags: readonly TagName[];
 }
 
 // A row of a sealed ledger (ADR-0020): amount, description and category live only inside
@@ -51,8 +54,10 @@ export interface ExpenseCategory {
   readonly name: string;
 }
 
-export type NewExpense = Omit<Expense, 'deletedAt' | 'category'> & {
+export type NewExpense = Omit<Expense, 'deletedAt' | 'category' | 'tags'> & {
   readonly createdAt: Date;
+  // None when absent.
+  readonly tags?: readonly TagName[];
   readonly categoryId?: CategoryId;
   // descriptionKey(description), the key the category is learned under (ADR-0008).
   readonly descriptionKey?: string;
@@ -79,11 +84,12 @@ interface ExpenseRow {
   category_name: string | null;
   sealed: Buffer | null;
   sealed_rule_id: string | null;
+  tags: string | null;
 }
 
 const COLUMNS = `e.id, e.ledger_id, e.created_by, e.amount_minor, e.currency, e.description,
   e.occurred_at, e.occurred_on, e.source_key, e.deleted_at,
-  e.category_id, c.name AS category_name, e.sealed, e.sealed_rule_id`;
+  e.category_id, c.name AS category_name, e.sealed, e.sealed_rule_id, e.tags`;
 const FROM = 'expenses e LEFT JOIN categories c ON c.id = e.category_id';
 
 // Inserts unless an expense with the same source_key exists; either way returns the stored row.
@@ -108,12 +114,13 @@ export function insertExpenseOrGetExisting(
         number | null,
         string | null,
         string | null,
+        string | null,
       ]
     >(
       `INSERT INTO expenses (id, ledger_id, created_by, amount_minor, currency, description,
                              occurred_at, occurred_on, source_key, created_at, category_id,
-                             description_key, category_set_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             description_key, category_set_at, tags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (source_key) DO NOTHING`,
     )
     .run(
@@ -130,6 +137,7 @@ export function insertExpenseOrGetExisting(
       expense.categoryId ?? null,
       expense.descriptionKey ?? null,
       expense.categoryId === undefined ? null : expense.createdAt.toISOString(),
+      encodeTags(expense.tags ?? []),
     );
   const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
@@ -480,5 +488,6 @@ function toExpense(row: ExpenseRow): Expense {
       row.category_id === null || row.category_name === null
         ? null
         : { id: row.category_id as CategoryId, name: row.category_name },
+    tags: decodeTags(row.tags),
   };
 }

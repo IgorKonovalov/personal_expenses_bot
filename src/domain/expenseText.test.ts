@@ -14,7 +14,7 @@ describe('parseExpenseText (ledger default RSD)', () => {
       { amountMinor: 45000, currency: 'RSD', description: 'coffee to go' },
     ],
   ])('%j -> %j', (text, expected) => {
-    expect(parseExpenseText(text, 'RSD')).toEqual({ kind: 'expense', ...expected });
+    expect(parseExpenseText(text, 'RSD')).toEqual({ kind: 'expense', ...expected, tags: [] });
   });
 
   it('coffee 450 is not an expense', () => {
@@ -30,6 +30,7 @@ describe('parseExpenseText (ledger default RSD)', () => {
       ],
       currency: 'RSD',
       description: 'lunch',
+      tags: [],
     });
   });
 
@@ -44,7 +45,13 @@ describe('parseExpenseText (ledger default RSD)', () => {
 describe('parseExpenseText with a date suffix (today 2026-09-29, default RSD)', () => {
   const TODAY = '2026-09-29' as LocalDate;
   const parse = (text: string) => parseExpenseText(text, 'RSD', TODAY);
-  const taxi = { kind: 'expense', amountMinor: 45000, currency: 'RSD', description: 'такси' };
+  const taxi = {
+    kind: 'expense',
+    amountMinor: 45000,
+    currency: 'RSD',
+    description: 'такси',
+    tags: [],
+  };
 
   it.each([
     ['450 такси вчера', '2026-09-28'],
@@ -108,6 +115,7 @@ describe('parseExpenseText: a /N split word', () => {
       currency: 'RSD',
       description: 'кафе',
       split: 3,
+      tags: [],
     });
     expect(parseExpenseText('1000 кафе /3 вчера', 'RSD', today)).toEqual({
       kind: 'expense',
@@ -116,6 +124,7 @@ describe('parseExpenseText: a /N split word', () => {
       description: 'кафе',
       date: '2026-10-01',
       split: 3,
+      tags: [],
     });
   });
 
@@ -123,5 +132,71 @@ describe('parseExpenseText: a /N split word', () => {
     for (const text of ['1000 кафе /1', '1000 кафе /21', '1000 кафе /3 /2']) {
       expect(parseExpenseText(text, 'RSD', today), text).toEqual({ kind: 'invalid' });
     }
+  });
+});
+
+describe('parseExpenseText: #tag words (ADR-0029)', () => {
+  const today = '2026-10-01' as LocalDate;
+  const parse = (text: string) => parseExpenseText(text, 'RSD', today);
+
+  it('takes the tags out of the description before the date word is read', () => {
+    expect(parse('450 такси #Отпуск #рим вчера')).toStrictEqual({
+      kind: 'expense',
+      amountMinor: 45000,
+      currency: 'RSD',
+      description: 'такси',
+      date: '2026-09-30',
+      tags: ['отпуск', 'рим'],
+    });
+  });
+
+  it('keeps each normalized name once, in first-seen order', () => {
+    expect(parse('450 кофе #отпуск #ОТПУСК')).toMatchObject({
+      kind: 'expense',
+      description: 'кофе',
+      tags: ['отпуск'],
+    });
+    expect(parse('450 #рим кофе #отпуск #Рим')).toMatchObject({
+      description: 'кофе',
+      tags: ['рим', 'отпуск'],
+    });
+  });
+
+  it('composes a decomposed letter before matching', () => {
+    expect(parse('450 кофе #йод')).toMatchObject({ tags: ['йод'] });
+  });
+
+  it.each([
+    ['450 кофе#отпуск', 'кофе#отпуск'],
+    ['450 кофе #', 'кофе #'],
+    ['450 кофе #a-b', 'кофе #a-b'],
+    [`450 кофе #${'я'.repeat(33)}`, `кофе #${'я'.repeat(33)}`],
+  ])('%j has no tags: the description is %j', (text, description) => {
+    expect(parse(text)).toMatchObject({ kind: 'expense', description, tags: [] });
+  });
+
+  it('takes a 32-letter Cyrillic tag', () => {
+    expect(parse(`450 кофе #${'я'.repeat(32)}`)).toMatchObject({ tags: ['я'.repeat(32)] });
+  });
+
+  it('is invalid when only tags follow the amount', () => {
+    expect(parse('450 #отпуск')).toStrictEqual({ kind: 'invalid' });
+    expect(parse('450 EUR #отпуск вчера')).toStrictEqual({ kind: 'invalid' });
+  });
+
+  it('refuses more than 5 distinct tags, and takes 5', () => {
+    expect(parse('450 кофе #a #b #c #d #e #f')).toStrictEqual({ kind: 'tooManyTags' });
+    expect(parse('450 кофе #a #b #c #d #e #A')).toMatchObject({
+      kind: 'expense',
+      tags: ['a', 'b', 'c', 'd', 'e'],
+    });
+  });
+
+  it('carries the tags on an ambiguous amount', () => {
+    expect(parse('1.200 обед #рим')).toMatchObject({
+      kind: 'ambiguous',
+      description: 'обед',
+      tags: ['рим'],
+    });
   });
 });

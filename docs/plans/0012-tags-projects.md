@@ -1,6 +1,6 @@
 # 0012: Tags for projects: `#отпуск` on an expense, and a report per tag
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-09-30
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
 > [Plan 0024](done/0024-export-and-data-ownership.md) (export gains a tags column)
@@ -268,7 +268,7 @@ const MAX_TAGS_PER_EXPENSE = 5;
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | not started | |
+| 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | committed with this row |
 | 2: The per-tag report | dev | not started | |
 | 3: The sticky trip tag | dev | not started | |
 | 4: Editing tags, the card, and groups | dev | not started | |
@@ -276,6 +276,15 @@ const MAX_TAGS_PER_EXPENSE = 5;
 | 6: A trip in real use | human | not started | |
 
 ### Notes
+
+- Phase 1: outside `Files touched`, `src/services/ledgerKeys.ts` (`openRow`) sets `tags: []` on
+  an opened sealed row, because `Expense` gained a required `tags`.
+- Phase 1: `src/bot/callbacks.ts` (listed) is unchanged. `/tags` joined `messages.commands`, so
+  the command-registration test in `bot.test.ts` lists it. The `tag:l:<page>` pager is
+  stateless: a tap reads the viewer's active ledger again, with no screen anchor.
+- Phase 1: the description-key done-when is tested with `450 зюзя`, which no keyword rule knows,
+  filed under Кафе, then `450 зюзя #отпуск`. `450 кофе #отпуск` is checked too, but keyword rules
+  alone would give it Кафе.
 
 ### Close triggers
 

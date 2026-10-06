@@ -376,6 +376,14 @@ export function settleDeleteData(transferId: string): string {
   return assertCallbackData(`stl:del:${transferId}`);
 }
 
+// /tags (ADR-0029): `tag:l:<page>` (at most 10 bytes) shows a 1-based page of the list. It
+// reads the viewer's ledger at tap time, so it carries no ledger id.
+export const TAG_LIST_PAGE = /^tag:l:(\d{1,4})$/;
+
+export function tagListPageData(page: number): string {
+  return assertCallbackData(`tag:l:${page}`);
+}
+
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
 // sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
 // the active ledger in a DM, the chat's binding in a group.

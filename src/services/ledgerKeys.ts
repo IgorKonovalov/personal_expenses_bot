@@ -638,5 +638,6 @@ function openRow(
     sourceKey: row.sourceKey,
     deletedAt: row.deletedAt,
     category: categoryOf(payload.categoryId),
+    tags: [],
   };
 }

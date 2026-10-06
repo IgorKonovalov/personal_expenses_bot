@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { TagName } from '../domain/tags.js';
 import type { LocalDate } from '../domain/time.js';
 import { insertCategoriesOrIgnore, type CategoryId } from './categories.js';
 import { openDatabase, type Db } from './connection.js';
@@ -69,6 +70,32 @@ function addExpense(id: string, ledgerId: LedgerId, createdBy: UserId, sourceKey
     createdAt: NOW,
   });
 }
+
+describe('tags (ADR-0029)', () => {
+  it('stores the names space-joined and reads them back in order; none is NULL', () => {
+    insertExpenseOrGetExisting(db, {
+      id: 'exp-t' as ExpenseId,
+      ledgerId: LEDGER_A,
+      createdBy: USER_A,
+      amountMinor: 45000,
+      currency: 'RSD',
+      description: 'кофе',
+      occurredAt: NOW,
+      occurredOn: DAY,
+      sourceKey: 'tg:1:1',
+      createdAt: NOW,
+      tags: ['отпуск', 'рим'] as TagName[],
+    });
+    addExpense('exp-n', LEDGER_A, USER_A, 'tg:1:2');
+
+    expect(db.prepare('SELECT id, tags FROM expenses ORDER BY id').all()).toEqual([
+      { id: 'exp-n', tags: null },
+      { id: 'exp-t', tags: 'отпуск рим' },
+    ]);
+    expect(findExpenseById(db, 'exp-t' as ExpenseId)).toMatchObject({ tags: ['отпуск', 'рим'] });
+    expect(findExpenseById(db, 'exp-n' as ExpenseId)).toMatchObject({ tags: [] });
+  });
+});
 
 describe('statement source keys', () => {
   it('finds which keys are taken, deleted rows included', () => {

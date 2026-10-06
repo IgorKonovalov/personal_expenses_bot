@@ -36,6 +36,7 @@ import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerStatement } from './handlers/statement.js';
 import { registerSummary } from './handlers/summary.js';
+import { registerTags } from './handlers/tags.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
@@ -121,6 +122,7 @@ export function createBot(options: BotOptions): Bot {
   registerBudget(dm, options);
   registerRecurring(dm, options);
   registerDebts(dm, options);
+  registerTags(dm, options);
   registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);

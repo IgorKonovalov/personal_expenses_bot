@@ -22,6 +22,8 @@ interface ExpenseView {
   readonly expense: Money & {
     readonly description: string;
     readonly category: { readonly name: string } | null;
+    // Normalized names without `#`; none when absent.
+    readonly tags?: readonly string[];
   };
   readonly ledger: LedgerRef;
 }
@@ -104,6 +106,13 @@ interface GroupCardView {
   readonly author: string;
   readonly expense: RecordedView['expense'];
   readonly sentOn: LocalDate;
+}
+
+// A tag on /tags: its total in the ledger's currency, and per currency what had no rate.
+interface TagTotalView {
+  readonly name: string;
+  readonly converted: Money | undefined;
+  readonly unconverted: readonly Money[];
 }
 
 interface AmbiguousView {
@@ -520,6 +529,18 @@ function expenseLine(verb: string, { expense, ledger }: ExpenseView, date?: stri
   return html`${verb} «${ledgerName(ledger)}»${when}: <b>${formatMoney(expense)}</b> — ${shownDescription(expense.description)}`;
 }
 
+// `#отпуск #рим`.
+function tagWords(tags: readonly string[]): string {
+  return tags.map((tag) => `#${tag}`).join(' ');
+}
+
+// A tag's converted total, then what had no rate: `1 914.04 RSD`, `450.00 RSD, 10.00 KZT`.
+function tagTotals({ converted, unconverted }: TagTotalView): string {
+  return [...(converted === undefined ? [] : [converted]), ...unconverted]
+    .map(formatMoney)
+    .join(', ');
+}
+
 // `Ира: <b>2.00 RSD</b> — минуты буду`, or `Ира за 28 сентября: …` with a date.
 function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
   const when = expense.occurredOn === sentOn ? '' : ` за ${shownDate(expense.occurredOn, sentOn)}`;
@@ -655,6 +676,7 @@ export const messages = {
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'recurring', description: 'Регулярные траты' },
     { command: 'debts', description: 'Долги: кто кому должен' },
+    { command: 'tags', description: 'Метки: траты по поездкам и проектам' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
@@ -854,10 +876,28 @@ export const messages = {
     { command: 'help', description: 'Как записать трату группы' },
   ],
   editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
+  tooManyTags: html`Больше 5 меток на одну трату не бывает. Ничего не записано. Отправьте, например, «450 кофе #отпуск #рим».`,
+  // /tags (ADR-0029): one page of the ledger's tags, most recently used first.
+  tagsEmpty: html`Меток пока нет. Добавьте метку словом с #, например «450 кофе #отпуск».`,
+  tagList: ({
+    ledger,
+    tags,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly tags: readonly TagTotalView[];
+  }): Html =>
+    joinHtml(
+      [
+        html`<b>Метки — «${ledgerName(ledger)}»</b>`,
+        ...tags.map((tag) => html`#${tag.name} — ${tagTotals(tag)}`),
+      ],
+      '\n',
+    ),
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
   futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
 
-  // `… — кофе · Кафе и рестораны`. An expense from before categories existed has none to show.
+  // `… — кофе · Кафе и рестораны · #отпуск`. An expense from before categories existed has none
+  // to show.
   expenseRecorded: (view: RecordedView): Html => {
     const { occurredOn } = view.expense;
     const line = expenseLine(
@@ -865,8 +905,15 @@ export const messages = {
       view,
       occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
     );
-    const { category } = view.expense;
-    const card = category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+    const { category, tags = [] } = view.expense;
+    const card = joinHtml(
+      [
+        line,
+        ...(category === null ? [] : [html`${category.name}`]),
+        ...(tags.length === 0 ? [] : [html`${tagWords(tags)}`]),
+      ],
+      ' · ',
+    );
     const { budget, cap, receipt } = view;
     return joinHtml(
       [

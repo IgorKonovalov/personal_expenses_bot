@@ -404,7 +404,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /recurring, /debts, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
+  it('registers /today, /week, /month, /budget, /recurring, /debts, /tags, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -420,14 +420,15 @@ describe('command registration at boot', () => {
             { command: 'budget', description: messages.commands[3].description },
             { command: 'recurring', description: messages.commands[4].description },
             { command: 'debts', description: messages.commands[5].description },
-            { command: 'categories', description: messages.commands[6].description },
-            { command: 'export', description: messages.commands[7].description },
-            { command: 'settings', description: messages.commands[8].description },
-            { command: 'unlock', description: messages.commands[9].description },
-            { command: 'lock', description: messages.commands[10].description },
-            { command: 'help', description: messages.commands[11].description },
-            { command: 'changelog', description: messages.commands[12].description },
-            { command: 'donate', description: messages.commands[13].description },
+            { command: 'tags', description: messages.commands[6].description },
+            { command: 'categories', description: messages.commands[7].description },
+            { command: 'export', description: messages.commands[8].description },
+            { command: 'settings', description: messages.commands[9].description },
+            { command: 'unlock', description: messages.commands[10].description },
+            { command: 'lock', description: messages.commands[11].description },
+            { command: 'help', description: messages.commands[12].description },
+            { command: 'changelog', description: messages.commands[13].description },
+            { command: 'donate', description: messages.commands[14].description },
           ],
         },
       },
@@ -7033,5 +7034,139 @@ describe('bank statements (Plan 0027)', () => {
     } finally {
       vi.doUnmock('pdfjs-dist/legacy/build/pdf.mjs');
     }
+  });
+});
+
+describe('tags (Plan 0012)', () => {
+  // The harness's messages are sent 23:50 local on 2026-09-29.
+  const DAY = '2026-09-29' as LocalDate;
+
+  function storeEurRate(db: Db) {
+    const fetchedAt = new Date('2026-09-29T08:00:00Z');
+    storeFxList(
+      db,
+      { listDate: DAY, listNumber: 185, rates: [{ currency: 'EUR', unit: 1, middleE4: 1171234 }] },
+      fetchedAt,
+    );
+    setFxDay(db, DAY, DAY, fetchedAt);
+  }
+
+  function tagBot() {
+    const harness = createTestBot();
+    let updateId = 0;
+    const say = (text: string, messageId: number, date?: Date) =>
+      harness.bot.handleUpdate(
+        textUpdate({
+          updateId: ++updateId,
+          messageId,
+          text,
+          ...(date === undefined ? {} : { date }),
+        }),
+      );
+    const tap = (data: string, messageId = 50) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    return { ...harness, say, tap };
+  }
+
+  const lastText = (calls: readonly ApiCall[]) =>
+    (calls.at(-1)?.payload as { text?: string } | undefined)?.text;
+
+  it('confirms 450 кофе #отпуск with the tag after the category', async () => {
+    const { say, calls, db } = tagBot();
+
+    await say('450 кофе #отпуск', 1);
+
+    expect(lastText(calls)).toBe(
+      'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны · #отпуск',
+    );
+    expect(db.prepare('SELECT description, tags FROM expenses').all()).toEqual([
+      { description: 'кофе', tags: 'отпуск' },
+    ]);
+  });
+
+  it('refuses six distinct tags and records nothing', async () => {
+    const { say, calls, db } = tagBot();
+
+    await say('450 кофе #a #b #c #d #e #f', 1);
+
+    expect(lastText(calls)).toBe(messages.tooManyTags);
+    expect(expenseCount(db)).toEqual({ n: 0 });
+  });
+
+  it('refuses 450 #отпуск as an expense with no description', async () => {
+    const { say, calls, db } = tagBot();
+
+    await say('450 #отпуск', 1);
+
+    expect(lastText(calls)).toBe(messages.invalidAmount);
+    expect(expenseCount(db)).toEqual({ n: 0 });
+  });
+
+  it('lists #отпуск at 1 914.04 RSD: 450 RSD plus 12.50 EUR at 117.1234', async () => {
+    const { say, calls, db } = tagBot();
+    storeEurRate(db);
+    await say('450 кофе #отпуск', 1);
+    await say('12,50 EUR такси #отпуск', 2);
+    await say('300 хлеб', 3);
+
+    await say('/tags', 4);
+
+    expect(calls.at(-1)).toEqual({
+      method: 'sendMessage',
+      payload: {
+        chat_id: ALLOWED_ID,
+        text: '<b>Метки — «Личные расходы»</b>\n#отпуск — 1 914.04 RSD',
+        reply_markup: { inline_keyboard: [] },
+        ...htmlParseMode,
+      },
+    });
+  });
+
+  it('drops a deleted expense from /tags, and answers tagsEmpty once none is left', async () => {
+    const { say, tap, calls } = tagBot();
+    await say('450 кофе #отпуск', 1);
+    await say('300 такси #рим', 2);
+    // The second expense's id: /start is not sent, so the ids run 1, 2 per expense.
+    const second = '00000000-0000-4000-8000-000000000004';
+    await tap(`exp:undo:${second}`);
+
+    await say('/tags', 3);
+    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
+
+    await tap(`exp:undo:00000000-0000-4000-8000-000000000003`);
+    await say('/tags', 4);
+    expect(lastText(calls)).toBe(messages.tagsEmpty);
+  });
+
+  it('pages nine tags eight to a page, most recently used first', async () => {
+    const { say, tap, calls } = tagBot();
+    for (let i = 1; i <= 9; i++) {
+      await say(`100 кофе #t${i}`, i, new Date(Date.UTC(2026, 8, 29, 10, i)));
+    }
+
+    await say('/tags', 20);
+
+    const first = calls.at(-1)?.payload as { text: string; reply_markup: unknown };
+    expect(first.text).toBe(
+      [
+        '<b>Метки — «Личные расходы»</b>',
+        ...[9, 8, 7, 6, 5, 4, 3, 2].map((i) => `#t${i} — 100.00 RSD`),
+      ].join('\n'),
+    );
+    expect(first.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          { text: '1/2', callback_data: 'tag:l:1' },
+          { text: messages.pagerNext, callback_data: 'tag:l:2' },
+        ],
+      ],
+    });
+
+    await tap('tag:l:2');
+
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: { text: '<b>Метки — «Личные расходы»</b>\n#t1 — 100.00 RSD' },
+    });
   });
 });

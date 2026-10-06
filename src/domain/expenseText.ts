@@ -1,6 +1,7 @@
 import { toCurrencyCode, type CurrencyCode } from './currencies.js';
 import { parseDateSuffix } from './dateText.js';
 import { parseAmount, type AmountReading } from './money.js';
+import { MAX_TAGS_PER_EXPENSE, tagOfWord, uniqueTags, type TagName } from './tags.js';
 import type { LocalDate } from './time.js';
 
 export type ExpenseTextResult =
@@ -13,6 +14,8 @@ export type ExpenseTextResult =
       readonly date?: LocalDate;
       // A `/N` word: the amount is split N ways.
       readonly split?: number;
+      // The `#tag` words, normalized, first-seen order, each once (ADR-0029).
+      readonly tags: readonly TagName[];
     }
   | {
       readonly kind: 'ambiguous';
@@ -21,15 +24,18 @@ export type ExpenseTextResult =
       readonly description: string;
       readonly date?: LocalDate;
       readonly split?: number;
+      readonly tags: readonly TagName[];
     }
   // Starts like an amount but is not a valid one, or has no description.
   | { readonly kind: 'invalid' }
+  // More than MAX_TAGS_PER_EXPENSE distinct tags.
+  | { readonly kind: 'tooManyTags' }
   // Names a literal date after today.
   | { readonly kind: 'futureDate'; readonly date: LocalDate }
   // Does not start with an amount at all.
   | { readonly kind: 'notExpense' };
 
-// `<amount> [CUR] <description> [date]`. The amount token runs over every digit, grouping space
+// `<amount> [CUR] <description> [#tag…] [date]`. The amount token runs over every digit, grouping space
 // and `.`/`,` at the start, so `1 20 coffee` fails as an amount instead of recording 1 "20 coffee".
 const AMOUNT_TOKEN = /^\d+(?:[ \u00A0\u2009\u202F]\d+)*(?:[.,]\d+)*/;
 
@@ -69,7 +75,10 @@ export function parseExpenseText(
   const split = splitWords[0] === undefined ? undefined : Number(splitWords[0].slice(1));
   if (split !== undefined && (split < MIN_SPLIT || split > MAX_SPLIT)) return { kind: 'invalid' };
   const splitPart = split === undefined ? {} : { split };
-  const descriptionWords = afterCurrency.filter((word) => !SPLIT_WORD.test(word));
+  // `#tag` words come out before the date suffix is read, so `450 такси #рим вчера` is dated.
+  const restWords = afterCurrency.filter((word) => !SPLIT_WORD.test(word));
+  const tags = uniqueTags(restWords.flatMap((word) => tagOfWord(word) ?? []));
+  const descriptionWords = restWords.filter((word) => tagOfWord(word) === undefined);
 
   const lastWord = descriptionWords.at(-1);
   const suffix =
@@ -80,6 +89,7 @@ export function parseExpenseText(
     suffix.kind === 'none' ? descriptionWords : descriptionWords.slice(0, -1)
   ).join(' ');
   if (description === '') return { kind: 'invalid' };
+  if (tags.length > MAX_TAGS_PER_EXPENSE) return { kind: 'tooManyTags' };
   if (suffix.kind === 'future') return { kind: 'futureDate', date: suffix.date };
   const dated = suffix.kind === 'date' ? { date: suffix.date } : {};
 
@@ -93,6 +103,7 @@ export function parseExpenseText(
         description,
         ...dated,
         ...splitPart,
+        tags,
       };
     case 'ambiguous':
       return {
@@ -102,6 +113,7 @@ export function parseExpenseText(
         description,
         ...dated,
         ...splitPart,
+        tags,
       };
     case 'invalid':
       return { kind: 'invalid' };

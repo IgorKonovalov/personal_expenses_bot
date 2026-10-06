@@ -124,6 +124,8 @@ export type RecordExpenseResult =
   // and nothing about it can be shown.
   | { readonly kind: 'sealedDuplicate' }
   | { readonly kind: 'invalid' }
+  // More than MAX_TAGS_PER_EXPENSE distinct tags; nothing is recorded.
+  | { readonly kind: 'tooManyTags' }
   // The text names a date after today; nothing is recorded.
   | { readonly kind: 'futureDate' }
   | { readonly kind: 'notExpense' }
@@ -195,6 +197,7 @@ export function recordExpense(
     createdAt: input.now,
     category: { id: category.id, name: category.name },
     descriptionKey: key,
+    tags: parsed.tags,
   });
   if (stored.kind === 'sealedDuplicate') return stored;
   const { expense, created } = stored;
@@ -277,6 +280,7 @@ export function storeExpense(
       sourceKey: fields.sourceKey,
       deletedAt: null,
       category,
+      tags: fields.tags ?? [],
     };
     return { kind: 'stored', expense: shown, created: true };
   }
@@ -350,6 +354,7 @@ function resolveReading(
     currency: parsed.currency,
     description: parsed.description,
     ...(parsed.date === undefined ? {} : { date: parsed.date }),
+    tags: parsed.tags,
   };
 }
 
