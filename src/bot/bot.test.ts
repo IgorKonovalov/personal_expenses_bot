@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -9,7 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
-import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import {
+  insertExpenseOrGetExisting,
+  listLedgerExpensesBetween,
+  softDeleteExpense,
+  type ExpenseId,
+} from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
@@ -35,7 +40,7 @@ import { createLogger } from '../logger.js';
 import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
-import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, registerCommands } from './bot.js';
 import { recurringProvider } from './recurringProvider.js';
@@ -6383,6 +6388,151 @@ describe('bank statements (Plan 0027)', () => {
         expect(content).not.toMatch(
           /PRIMER|EXAMPLE|AMSTERDAM|OSLOBO|\b(?:450|45000|1,234\.56|123456|1500|15\.00|175685|2,000\.00|200000)\b|0{13}/,
         );
+      }
+    });
+  });
+
+  describe('sealed ledgers and the file on disk', () => {
+    async function sealed() {
+      const harness = statementBot();
+      await harness.send('/start');
+      const user = findUserByIdentity(harness.db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const keyDeps = { db: harness.db, logger: silentLogger(), keys: harness.keys };
+      const ledger = await sealPersonalLedger(keyDeps, user, SENT);
+      harness.calls.length = 0;
+      return { ...harness, user, keyDeps, ledger };
+    }
+
+    it('answers a statement to a locked sealed ledger with the locked message and keeps nothing', async () => {
+      const { sendPdf, calls, db } = await sealed();
+
+      await sendPdf(TWO_PAGE_PDF);
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.ledgerLocked,
+      ]);
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(db.prepare('SELECT kind FROM flow_sessions').pluck().all()).not.toContain(
+        'statementImport',
+      );
+    });
+
+    it('after /unlock previews the same file and records sealed rows that open to its amounts', async () => {
+      const { sendPdf, tap, calls, db, keys, user, keyDeps, ledger } = await sealed();
+      await sendPdf(TWO_PAGE_PDF);
+      await unlockPersonalLedger(keyDeps, user, SENT);
+      calls.length = 0;
+
+      await sendPdf(TWO_PAGE_PDF);
+      await tap('stm:all');
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([PREVIEW]);
+      expect(
+        db
+          .prepare(
+            'SELECT COUNT(*) AS n FROM expenses WHERE sealed IS NOT NULL AND amount_minor IS NULL',
+          )
+          .get(),
+      ).toEqual({ n: 6 });
+      const opened = openExpenses(
+        { db, keys },
+        ledger.id,
+        listLedgerExpensesBetween(db, {
+          ledgerId: ledger.id,
+          memberId: user.id,
+          from: '2026-09-01' as LocalDate,
+          to: '2026-09-30' as LocalDate,
+        }),
+      );
+      if (opened.kind !== 'open') throw new Error('expected the ledger open');
+      expect(opened.expenses.map((e) => [e.occurredOn, e.amountMinor, e.currency])).toEqual([
+        ['2026-09-02', 45000, 'RSD'],
+        ['2026-09-05', 123456, 'RSD'],
+        ['2026-09-07', 1500, 'USD'],
+        ['2026-09-07', 30, 'EUR'],
+        ['2026-09-14', 200000, 'RSD'],
+        ['2026-09-20', 45000, 'RSD'],
+      ]);
+    });
+
+    it('never writes the downloaded file under the data directory', async () => {
+      // A bot on a database file in its own data directory, as in production.
+      const dataDir = mkdtempSync(join(tmpdir(), 'peb-statement-'));
+      try {
+        const db = openDatabase(join(dataDir, 'bot.db'));
+        runMigrations(db, SENT);
+        let n = 0;
+        const bot = createBot({
+          db,
+          logger: silentLogger(),
+          newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
+          now: () => SENT,
+          defaultTimezone: 'Europe/Belgrade',
+          defaultCurrency: 'RSD',
+          keys: createLedgerKeyring(() => SENT),
+          adminTelegramId: ALLOWED_ID,
+          token: '123456:test-token',
+          backupKeep: 14,
+          botInfo: {
+            id: 42,
+            is_bot: true,
+            first_name: 'Test Bot',
+            username: 'test_bot',
+            can_join_groups: false,
+            can_read_all_group_messages: false,
+            supports_inline_queries: false,
+            can_connect_to_business: false,
+            has_main_web_app: false,
+            has_topics_enabled: false,
+            allows_users_to_create_topics: false,
+            can_manage_bots: false,
+            supports_join_request_queries: false,
+          },
+        });
+        const sent: string[] = [];
+        bot.api.config.use((_prev, method, payload) => {
+          if (method === 'getFile') {
+            const { file_id } = payload as { file_id: string };
+            return Promise.resolve({
+              ok: true,
+              result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+            });
+          }
+          if (method === 'sendMessage') sent.push((payload as { text: string }).text);
+          return Promise.resolve({ ok: true, result: true as never });
+        });
+        files.set('izvod', TWO_PAGE_PDF);
+
+        await bot.handleUpdate({
+          update_id: 1,
+          message: {
+            message_id: 1,
+            date: Math.floor(SENT.getTime() / 1000),
+            chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+            from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+            document: {
+              file_id: 'izvod',
+              file_unique_id: 'izvod',
+              file_name: 'izvod.pdf',
+              mime_type: 'application/pdf',
+              file_size: TWO_PAGE_PDF.length,
+            },
+          },
+        });
+        await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'stm:all' }));
+        db.close();
+
+        expect(sent).toEqual([PREVIEW]);
+        expect(fetched).toHaveLength(1);
+        const names = readdirSync(dataDir).sort();
+        expect(names.every((name) => name.startsWith('bot.db'))).toBe(true);
+        const header = Buffer.from('%PDF-');
+        for (const name of names) {
+          expect(readFileSync(join(dataDir, name)).includes(header)).toBe(false);
+        }
+      } finally {
+        rmSync(dataDir, { recursive: true, force: true });
       }
     });
   });

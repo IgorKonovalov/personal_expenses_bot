@@ -1,13 +1,7 @@
 import { createHash } from 'node:crypto';
 import { TZDate } from '@date-fns/tz';
 import { listActiveCategories } from '../db/categories.js';
-import {
-  findTakenSourceKeys,
-  isSealed,
-  listLedgerExpensesBetween,
-  type Expense,
-  type ExpenseId,
-} from '../db/expenses.js';
+import { findTakenSourceKeys, listLedgerExpensesBetween, type ExpenseId } from '../db/expenses.js';
 import {
   findActiveLedger,
   findLedgerForMember,
@@ -22,7 +16,15 @@ import { RAIFFEISEN_RS } from '../domain/statements/raiffeisenRs.js';
 import type { StatementPeriod, StatementPurchase } from '../domain/statements/types.js';
 import type { LocalDate } from '../domain/time.js';
 import { cancelFlow, pendingStatementFlow, startStatementFlow } from './flowSessions.js';
-import type { KeyDeps } from './ledgerKeys.js';
+import {
+  isLocked,
+  isSealedLedger,
+  ledgerIsLocked,
+  LOCKED,
+  openExpenses,
+  type KeyDeps,
+  type Locked,
+} from './ledgerKeys.js';
 import { historyCategory, storeExpense, type RecordDeps } from './recordExpense.js';
 
 // Bank statement import (Plan 0027): a parsed statement's card purchases are previewed and held
@@ -39,7 +41,7 @@ export const MAX_STATEMENT_BYTES = 5 * 1024 * 1024;
 export const MAX_STATEMENT_PAGES = 30;
 export const MAX_STATEMENT_PURCHASES = 1000;
 
-type ImportDeps = RecordDeps & Partial<Pick<KeyDeps, 'keys'>>;
+type ImportDeps = RecordDeps & Pick<KeyDeps, 'keys'>;
 
 export interface StatementPreview {
   readonly kind: 'preview';
@@ -59,13 +61,14 @@ type RowState = 'fresh' | 'matched' | 'imported';
 
 // A row whose source key is stored was imported before, and its own expense is no candidate for
 // another row. The rest are matched against the ledger's other live expenses within a day of
-// the statement's dates (ADR-0032).
+// the statement's dates (ADR-0032). Matching reads amounts, so a sealed ledger's rows are opened,
+// and while it is locked nothing can be classified.
 function classify(
   deps: ImportDeps,
   user: User,
   ledgerId: LedgerId,
   purchases: readonly StatementPurchase[],
-): RowState[] {
+): RowState[] | Locked {
   const { db } = deps;
   const keys = purchases.map((purchase) => statementSourceKey(purchase, ledgerId));
   const taken = findTakenSourceKeys(db, keys);
@@ -73,13 +76,21 @@ function classify(
   const dates = purchases.map((purchase) => purchase.date).sort();
   const [first] = dates;
   const last = dates.at(-1);
-  if (first === undefined || last === undefined) return [];
-  const candidates = listLedgerExpensesBetween(db, {
+  if (first === undefined || last === undefined) {
+    return ledgerIsLocked(deps, ledgerId) ? LOCKED : [];
+  }
+  const opened = openExpenses(
+    deps,
     ledgerId,
-    memberId: user.id,
-    from: shiftDays(first, -1),
-    to: shiftDays(last, 1),
-  }).filter((expense): expense is Expense => !isSealed(expense) && !own.has(expense.sourceKey));
+    listLedgerExpensesBetween(db, {
+      ledgerId,
+      memberId: user.id,
+      from: shiftDays(first, -1),
+      to: shiftDays(last, 1),
+    }),
+  );
+  if (isLocked(opened)) return opened;
+  const candidates = opened.expenses.filter((expense) => !own.has(expense.sourceKey));
 
   const open = purchases.flatMap((purchase, index) =>
     taken.has(keys[index] ?? '') ? [] : [purchase],
@@ -108,9 +119,10 @@ function describePreview(
     readonly period: StatementPeriod | undefined;
     readonly purchases: readonly StatementPurchase[];
   },
-): StatementPreview {
+): StatementPreview | Locked {
   const { period, purchases } = statement;
   const states = classify(deps, user, ledger.id, purchases);
+  if (isLocked(states)) return states;
   return {
     kind: 'preview',
     ledger,
@@ -123,7 +135,8 @@ function describePreview(
 }
 
 // Holds the statement's purchases for the active ledger and describes the preview. A statement
-// over the purchase cap is refused and nothing is held.
+// over the purchase cap, or one for a sealed ledger that is locked (Plan 0019), is refused and
+// nothing is held.
 export function previewStatement(
   deps: ImportDeps,
   input: {
@@ -132,13 +145,17 @@ export function previewStatement(
     readonly purchases: readonly StatementPurchase[];
     readonly now: Date;
   },
-): StatementPreview | { readonly kind: 'tooLong' } {
+): StatementPreview | Locked | { readonly kind: 'tooLong' } {
   const { db, logger } = deps;
   const { user, period, purchases } = input;
   if (purchases.length > MAX_STATEMENT_PURCHASES) return { kind: 'tooLong' };
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
   const preview = describePreview(deps, user, ledger, { period, purchases });
+  if (isLocked(preview)) {
+    logger.info({ userId: user.id, ledgerId: ledger.id }, 'statement refused: ledger locked');
+    return preview;
+  }
   startStatementFlow(deps, user, { ledgerId: ledger.id, period, purchases }, input.now);
   logger.info(
     {
@@ -159,7 +176,7 @@ export function previewStatement(
 export function pendingStatementPreview(
   deps: ImportDeps,
   input: { readonly user: User; readonly now: Date },
-): StatementPreview | { readonly kind: 'expired' } {
+): StatementPreview | Locked | { readonly kind: 'expired' } {
   const { user, now } = input;
   const flow = pendingStatementFlow(deps, user, now);
   if (flow === undefined) return { kind: 'expired' };
@@ -178,7 +195,9 @@ export type RecordStatementResult =
       readonly totals: readonly Money[];
     }
   // No statement is pending: it expired, was recorded or cancelled, or another flow replaced it.
-  | { readonly kind: 'expired' };
+  | { readonly kind: 'expired' }
+  // The sealed ledger was locked after the preview: nothing is recorded, the statement stays held.
+  | Locked;
 
 // Records the pending statement's new rows, and with `withMatched` the rows a live expense
 // already covers, into the ledger it was previewed for. The rows are classified again inside
@@ -196,8 +215,10 @@ export function recordStatement(
   const ledger = findLedgerForMember(db, flow.ledgerId, user.id);
   if (ledger === undefined) return { kind: 'expired' };
 
-  const recorded = db.transaction(() => {
+  const recorded = db.transaction((): StatementPurchase[] | Locked => {
     const states = classify(deps, user, ledger.id, flow.purchases);
+    if (isLocked(states)) return states;
+    const sealed = isSealedLedger(deps, ledger.id);
     const chosen = flow.purchases.filter(
       (_, index) =>
         states[index] === 'fresh' || (input.withMatched === true && states[index] === 'matched'),
@@ -211,8 +232,12 @@ export function recordStatement(
         categories,
         historyCategoryId: historyCategory(deps, ledger.id, key),
       });
+      const id = deps.newId() as ExpenseId;
+      // A sealed row's key carries no content (ADR-0020): a fingerprint would let a file holder
+      // confirm a guessed purchase. There the match on the opened amounts is what keeps a
+      // re-sent statement from recording twice.
       const stored = storeExpense(deps, {
-        id: deps.newId() as ExpenseId,
+        id,
         ledgerId: ledger.id,
         createdBy: user.id,
         amountMinor: purchase.amountMinor,
@@ -220,7 +245,7 @@ export function recordStatement(
         description: purchase.merchant,
         occurredAt: stampOf(purchase),
         occurredOn: purchase.date,
-        sourceKey: statementSourceKey(purchase, ledger.id),
+        sourceKey: sealed ? `sealed:${id}` : statementSourceKey(purchase, ledger.id),
         createdAt: now,
         category: { id: category.id, name: category.name },
         descriptionKey: key,
@@ -230,6 +255,7 @@ export function recordStatement(
     cancelFlow(deps, user);
     return created;
   })();
+  if (isLocked(recorded)) return recorded;
 
   logger.info(
     { userId: user.id, ledgerId: ledger.id, recorded: recorded.length },

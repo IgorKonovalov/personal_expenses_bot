@@ -142,6 +142,11 @@ export function registerStatement(
       await replyHtml(ctx, messages.statementTooLong);
       return;
     }
+    // A sealed ledger takes a statement only while unlocked (Plan 0019): nothing is held.
+    if (preview.kind === 'locked') {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
     const view = previewView(preview, 1);
     await replyHtml(ctx, view.text, { reply_markup: view.markup });
   });
@@ -150,6 +155,10 @@ export function registerStatement(
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
     const preview = pendingStatementPreview(deps, { user, now });
+    if (preview.kind === 'locked') {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
     await ctx.answerCallbackQuery();
     if (preview.kind === 'expired') {
       await editHtml(ctx, messages.flowExpired);
@@ -170,6 +179,10 @@ export function registerStatement(
       if (result.kind === 'expired') {
         await ctx.answerCallbackQuery();
         await editHtml(ctx, messages.flowExpired);
+        return;
+      }
+      if (result.kind === 'locked') {
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
         return;
       }
       await ctx.answerCallbackQuery({ text: messages.statementRecordedToast });

@@ -301,8 +301,8 @@ interface StatementPurchase {
 |---|---|---|---|
 | 1: Walking skeleton: a statement PDF records its card purchases | dev | done | 0685667 |
 | 2: Already recorded, and sending the file twice | dev | done | d39404f |
-| 3: Paging, limits, errors and categories | dev | done | committed with this row |
-| 4: Sealed ledgers, help and docs | dev | not started | |
+| 3: Paging, limits, errors and categories | dev | done | 0141854 |
+| 4: Sealed ledgers, help and docs | dev | done | committed with this row |
 | 5: A real statement | human | not started | |
 
 ### Notes
@@ -347,6 +347,18 @@ interface StatementPurchase {
   `previewStatement`, which then holds no flow.
 - Phase 3: the expired-button done-when is tested by moving the session's `expires_at` into the
   past, since the harness clock is fixed.
+- Phase 4: in a sealed ledger a recorded row's source key is `sealed:<expenseId>`, not the
+  `stmt:` fingerprint the Decision names. ADR-0020 says a sealed row's key carries no content.
+  So in a sealed ledger a re-sent statement is caught by matching on the opened amounts (all rows
+  read «уже записано»), not by the source key. A test covers this.
+- Phase 4: a statement for a locked sealed ledger is downloaded and parsed before the lock is
+  checked, so a non-statement PDF still gets the help reply. A tap on a held statement after the
+  ledger locks again answers `ledgerLockedToast` and keeps the statement held.
+- Phase 4: the `/help` paragraph sits after the NBS line. An existing test pins the SMS line and
+  the NBS line as adjacent. The README also lists `statements/` in its layout tree.
+- Phase 4: the no-disk-write done-when is tested on a bot whose database file is in a temporary
+  data directory. After a preview and [Записать все], the directory holds only `bot.db*` files,
+  and none of them contains `%PDF-`.
 
 ### Close triggers
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { listActiveCategories } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
-import { setExpenseCategory, type ExpenseId } from '../db/expenses.js';
+import { listLedgerExpensesBetween, setExpenseCategory, type ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
@@ -16,7 +16,9 @@ import {
 } from '../domain/statements/testing/raiffeisenStatement.js';
 import type { StatementPurchase } from '../domain/statements/types.js';
 import { createLogger } from '../logger.js';
-import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
+import type { LocalDate } from '../domain/time.js';
+import { createLedgerKeyring, openExpenses, type LedgerKeyring } from './ledgerKeys.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 import { pendingStatementPreview, previewStatement, recordStatement } from './importStatement.js';
 import { provisionUser } from './provisionUser.js';
 import { recordBankSms } from './recordBankSms.js';
@@ -214,6 +216,67 @@ describe('limits and categories', () => {
     expect(
       pendingStatementPreview(deps, { user: alice, now: new Date(NOW.getTime() + 11 * 60_000) }),
     ).toEqual({ kind: 'expired' });
+  });
+});
+
+describe('sealed ledgers (Plan 0019)', () => {
+  it('refuses a statement while the sealed ledger is locked and holds nothing', async () => {
+    await sealPersonalLedger(deps, alice, NOW);
+    const parsed = parseRaiffeisenRs(statementLines(TWO_PAGE_ROWS, { rowsPerPage: 6 }));
+    if (parsed.kind !== 'statement') throw new Error('setup');
+
+    expect(previewStatement(deps, { user: alice, ...parsed, now: NOW })).toEqual({
+      kind: 'locked',
+    });
+    expect(db.prepare('SELECT kind FROM flow_sessions').pluck().all()).not.toContain(
+      'statementImport',
+    );
+    expect(stored()).toEqual([]);
+  });
+
+  it('records sealed rows with content-free keys once unlocked, and they open to the amounts', async () => {
+    const ledger = await sealPersonalLedger(deps, alice, NOW);
+    await unlockPersonalLedger(deps, alice, NOW);
+    const purchases = purchasesOf(TWO_PAGE_ROWS);
+    preview();
+
+    expect(recordStatement(deps, { user: alice, now: NOW })).toMatchObject({ count: 6 });
+
+    expect(
+      db
+        .prepare('SELECT amount_minor, description, sealed IS NOT NULL AS sealed FROM expenses')
+        .all(),
+    ).toEqual(purchases.map(() => ({ amount_minor: null, description: null, sealed: 1 })));
+    for (const key of db.prepare('SELECT source_key FROM expenses').pluck().all()) {
+      expect(key).toMatch(/^sealed:[0-9a-f-]{36}$/);
+    }
+    const opened = openExpenses(
+      deps,
+      ledger.id,
+      listLedgerExpensesBetween(db, {
+        ledgerId: ledger.id,
+        memberId: alice.id,
+        from: '2026-09-01' as LocalDate,
+        to: '2026-09-30' as LocalDate,
+      }),
+    );
+    if (opened.kind !== 'open') throw new Error('expected the ledger open');
+    expect(
+      opened.expenses.map((e) => [e.occurredOn, e.amountMinor, e.currency, e.description]),
+    ).toEqual(purchases.map((p) => [p.date, p.amountMinor, p.currency, p.merchant]));
+  });
+
+  it('matches a re-sent statement against the sealed rows, so it records nothing new', async () => {
+    await sealPersonalLedger(deps, alice, NOW);
+    await unlockPersonalLedger(deps, alice, NOW);
+    preview();
+    recordStatement(deps, { user: alice, now: NOW });
+
+    const again = preview();
+
+    expect([again.fresh.length, again.matched.length]).toEqual([0, 6]);
+    expect(recordStatement(deps, { user: alice, now: NOW })).toMatchObject({ count: 0 });
+    expect(stored()).toHaveLength(6);
   });
 });
 
