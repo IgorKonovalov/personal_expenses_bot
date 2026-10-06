@@ -1,5 +1,6 @@
 import type { FetchedItem } from '../domain/receipts/types.js';
 import type { Db } from './connection.js';
+import type { ExpenseId } from './expenses.js';
 import type { LedgerId } from './ledgers.js';
 import type { ReceiptId } from './receipts.js';
 
@@ -57,6 +58,50 @@ export function listLedgerReceiptItems(db: Db, ledgerId: LedgerId): LedgerReceip
       quantity: row.quantity,
       totalMinor: row.total_minor,
     }));
+}
+
+export interface ExpenseReceiptItems {
+  readonly expenseId: ExpenseId;
+  // By position; empty for a fetched receipt that listed none.
+  readonly items: readonly (FetchedItem & { readonly position: number })[];
+}
+
+// The items of the fetched receipts behind these expenses, one entry per expense that has one.
+// An expense whose receipt is pending or failed, or that has none, gets no entry.
+export function listFetchedReceiptItems(
+  db: Db,
+  expenseIds: readonly ExpenseId[],
+): ExpenseReceiptItems[] {
+  if (expenseIds.length === 0) return [];
+  const rows = db
+    .prepare<
+      [string],
+      {
+        expense_id: string;
+        position: number | null;
+        name: string | null;
+        quantity: string | null;
+        total_minor: number | null;
+      }
+    >(
+      `SELECT r.expense_id, i.position, i.name, i.quantity, i.total_minor
+         FROM receipts r
+         LEFT JOIN receipt_items i ON i.receipt_id = r.id
+        WHERE r.fetch_state = 'fetched' AND r.expense_id IN (SELECT value FROM json_each(?))
+        ORDER BY r.expense_id, i.position`,
+    )
+    .all(JSON.stringify(expenseIds));
+  const byExpense = new Map<ExpenseId, (FetchedItem & { readonly position: number })[]>();
+  for (const row of rows) {
+    const expenseId = row.expense_id as ExpenseId;
+    const items = byExpense.get(expenseId) ?? [];
+    byExpense.set(expenseId, items);
+    // The LEFT JOIN's one empty row for a receipt that listed no items.
+    const { position, name, quantity, total_minor: totalMinor } = row;
+    if (position === null || name === null || quantity === null || totalMinor === null) continue;
+    items.push({ position, name, quantity, totalMinor });
+  }
+  return [...byExpense].map(([expenseId, items]) => ({ expenseId, items }));
 }
 
 export function countReceiptItems(db: Db, receiptId: ReceiptId): number {

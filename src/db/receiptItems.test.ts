@@ -7,10 +7,11 @@ import { runMigrations } from './migrate.js';
 import {
   countReceiptItems,
   insertReceiptItems,
+  listFetchedReceiptItems,
   listLedgerReceiptItems,
   listReceiptItems,
 } from './receiptItems.js';
-import { insertReceipt, type ReceiptId } from './receipts.js';
+import { insertReceipt, markReceiptFetched, type ReceiptId } from './receipts.js';
 import { insertUser, type UserId } from './users.js';
 
 const NOW = new Date('2026-10-01T08:00:00Z');
@@ -80,6 +81,35 @@ describe('receipt items', () => {
       { receiptId: RECEIPT, position: 2, name: 'Sir', quantity: '0.535', totalMinor: 4010 },
     ]);
     expect(listLedgerReceiptItems(db, 'ledger-b' as LedgerId)).toEqual([]);
+  });
+
+  it('lists the fetched receipts’ items of the given expenses only, by position', () => {
+    insertReceiptItems(db, RECEIPT, [
+      { name: 'Hljeb', quantity: '2', totalMinor: 240 },
+      { name: 'Sir', quantity: '0.535', totalMinor: 4010 },
+    ]);
+    const ids = ['expense-1', 'expense-none'] as ExpenseId[];
+
+    expect(listFetchedReceiptItems(db, ids)).toEqual([]);
+    markReceiptFetched(db, RECEIPT, 'Market');
+    expect(listFetchedReceiptItems(db, ids)).toEqual([
+      {
+        expenseId: 'expense-1',
+        items: [
+          { position: 1, name: 'Hljeb', quantity: '2', totalMinor: 240 },
+          { position: 2, name: 'Sir', quantity: '0.535', totalMinor: 4010 },
+        ],
+      },
+    ]);
+    expect(listFetchedReceiptItems(db, [])).toEqual([]);
+  });
+
+  it('gives a fetched receipt with no items an empty entry', () => {
+    markReceiptFetched(db, RECEIPT, 'Market');
+
+    expect(listFetchedReceiptItems(db, ['expense-1' as ExpenseId])).toEqual([
+      { expenseId: 'expense-1', items: [] },
+    ]);
   });
 
   it('rejects a second insert of the same positions', () => {

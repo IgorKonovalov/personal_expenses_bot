@@ -43,6 +43,7 @@ import { createLogger } from '../logger.js';
 import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
+import { recordReceipt } from '../services/recordReceipt.js';
 import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, privateComposer, registerCommands } from './bot.js';
@@ -68,11 +69,13 @@ import {
   budgetScopeData,
   categoryPageData,
   categoryPickerData,
+  dayItemsData,
   debtDeleteData,
   editExpenseData,
   editFieldData,
   receiptItemsData,
   askData,
+  periodItemsData,
   receiptRetryData,
   repeatExpenseData,
   repeatScheduleData,
@@ -85,7 +88,7 @@ import {
   tagShowData,
   undoExpenseData,
 } from './callbackData.js';
-import { CHANGELOG_RECENT, messages } from './messages.js';
+import { CHANGELOG_RECENT, messages, visibleLength } from './messages.js';
 import { editHtml, html, htmlParseMode } from './render/html.js';
 import {
   ADMIN_ID,
@@ -3159,7 +3162,12 @@ describe('/week and /month', () => {
         payload: {
           chat_id: ALLOWED_ID,
           text: SEPTEMBER,
-          reply_markup: { inline_keyboard: [[button('◀ Август', 'sum:m:2026-08')]] },
+          reply_markup: {
+            inline_keyboard: [
+              [button('◀ Август', 'sum:m:2026-08')],
+              [button('Позиции', 'itm:m:2026-09:1')],
+            ],
+          },
           ...htmlParseMode,
         },
       },
@@ -3177,7 +3185,12 @@ describe('/week and /month', () => {
         payload: {
           chat_id: ALLOWED_ID,
           text: THIS_WEEK,
-          reply_markup: { inline_keyboard: [[button('◀ 21–27 сен', 'sum:w:2026-09-21')]] },
+          reply_markup: {
+            inline_keyboard: [
+              [button('◀ 21–27 сен', 'sum:w:2026-09-21')],
+              [button('Позиции', 'itm:w:2026-09-28:1')],
+            ],
+          },
           ...htmlParseMode,
         },
       },
@@ -3234,7 +3247,10 @@ describe('/week and /month', () => {
       editOf(
         101,
         '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\n<blockquote expandable>Продукты: 100.00</blockquote>',
-        [[button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')]],
+        [
+          [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
+          [button('Позиции', 'itm:m:2026-08:1')],
+        ],
       ),
     ]);
   });
@@ -3255,6 +3271,7 @@ describe('/week and /month', () => {
             button('◀ 14–20 сен', 'sum:w:2026-09-14'),
             button('28 сен – 4 окт ▶', 'sum:w:2026-09-28'),
           ],
+          [button('Позиции', 'itm:w:2026-09-21:1')],
         ],
       ),
     );
@@ -3450,6 +3467,235 @@ describe('/week and /month', () => {
       expect(text).toContain('Категория с длинным именем 00000');
       expect(text).not.toContain('Категорий слишком много');
     });
+  });
+});
+
+describe('[Позиции]: receipt items of a period by category (ADR-0038)', () => {
+  // Tuesday 6 October 2026, 12:00 in Belgrade. The week runs Monday 5 to Sunday 11.
+  const OCT6 = new Date('2026-10-06T10:00:00Z');
+
+  async function itemsBot() {
+    const harness = createTestBot({ now: OCT6 });
+    withMessageIds(harness.bot, 100);
+    const { bot, db } = harness;
+    let updateId = 0;
+    const say = (text: string, date = OCT6) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: updateId, text, date }));
+    const tap = (data: string, messageId: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    await say('/start');
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('user not provisioned');
+    const ledgerId = db
+      .prepare('SELECT active_ledger_id FROM users WHERE id = ?')
+      .pluck()
+      .get(user.id) as LedgerId;
+    const categoryOf = (preset: string) =>
+      db
+        .prepare('SELECT id FROM categories WHERE ledger_id = ? AND preset_key = ?')
+        .pluck()
+        .get(ledgerId, preset) as CategoryId;
+    const food = categoryOf('groceries');
+    const home = categoryOf('housing');
+    db.prepare("UPDATE categories SET name = 'Еда' WHERE id = ?").run(food);
+    db.prepare("UPDATE categories SET name = 'Дом' WHERE id = ?").run(home);
+    const deps = {
+      db,
+      logger: silentLogger(),
+      newId: () => randomUUID(),
+      defaultTimezone: 'Europe/Belgrade',
+    };
+    let fiscal = 0;
+    // A receipt issued at `issuedAt`, fetched with `items` and put in `category`.
+    const receipt = (
+      issuedAt: string,
+      category: CategoryId,
+      items: readonly (readonly [string, number])[],
+    ): ExpenseId => {
+      const instant = new Date(issuedAt);
+      const result = recordReceipt(deps, {
+        user,
+        receipt: {
+          country: 'RS',
+          fiscalId: `FISCAL-${++fiscal}`,
+          merchantKey: 'rs:test',
+          totalMinor: items.reduce((sum, [, minor]) => sum + minor, 0),
+          currency: 'RSD',
+          issuedAt: instant,
+          verifyUrl: `https://example.test/v/${fiscal}`,
+        },
+        placeholder: 'Чек',
+        occurredAt: instant,
+        now: OCT6,
+      });
+      if (result.kind !== 'recorded') throw new Error(`receipt not recorded: ${result.kind}`);
+      markReceiptFetched(db, result.receipt.id, 'Test Market');
+      insertReceiptItems(
+        db,
+        result.receipt.id,
+        items.map(([name, totalMinor]) => ({ name, quantity: '1', totalMinor })),
+      );
+      db.prepare('UPDATE expenses SET category_id = ? WHERE id = ?').run(
+        category,
+        result.expense.id,
+      );
+      return result.expense.id;
+    };
+    // The plan's fixture, A to F.
+    const fixture = () => {
+      receipt('2026-10-05T09:00:00Z', food, [
+        ['Хлеб', 7999],
+        ['Молоко', 14900],
+      ]);
+      receipt('2026-10-06T08:00:00Z', food, [['Хлеб', 8499]]);
+      receipt('2026-10-06T09:00:00Z', home, [['Средство', 39900]]);
+      receipt('2026-10-04T09:00:00Z', food, [['Хлеб', 7599]]);
+      softDeleteExpense(db, receipt('2026-10-06T09:30:00Z', food, [['Сыр', 50000]]), OCT6);
+      receipt('2026-10-06T22:30:00Z', food, [['Кофе', 30000]]);
+    };
+    const anchor = () =>
+      db.prepare('SELECT anchor_message_id FROM flow_sessions').pluck().get() as number;
+    harness.calls.length = 0;
+    return { ...harness, say, tap, fixture, anchor };
+  }
+
+  const editText = (calls: readonly ApiCall[]) =>
+    (calls.find((c) => c.method === 'editMessageText')?.payload as { text: string } | undefined)
+      ?.text;
+
+  it('edits the week screen into its items by category, and [« Назад] restores the week', async () => {
+    const { say, tap, calls, fixture, anchor } = await itemsBot();
+    fixture();
+    await say('/week');
+    const week = sentTexts(calls)[0];
+    calls.length = 0;
+
+    await tap('itm:w:2026-10-05:1', anchor());
+
+    const edit = calls.find((c) => c.method === 'editMessageText');
+    expect(edit?.payload).toMatchObject({
+      message_id: anchor(),
+      text:
+        '<b>Позиции чеков · Неделя, 5–11 октября — «Личные расходы»</b>\n\n' +
+        '<b>Еда</b> · 613.98 RSD · 4 позиции\n<blockquote expandable>' +
+        '07.10 Кофе — 300.00 RSD\n05.10 Молоко — 149.00 RSD\n05.10 Хлеб — 79.99 RSD\n' +
+        '06.10 Хлеб — 84.99 RSD</blockquote>\n' +
+        '<b>Дом</b> · 399.00 RSD · 1 позиция\n<blockquote expandable>06.10 Средство — 399.00 RSD</blockquote>',
+      reply_markup: {
+        inline_keyboard: [[{ text: '« Назад', callback_data: 'sum:w:2026-10-05' }]],
+      },
+    });
+
+    calls.length = 0;
+    await tap('sum:w:2026-10-05', anchor());
+
+    expect(editText(calls)).toBe(week);
+    expect(week).toContain('<b>1 012.98 RSD</b>');
+  });
+
+  it('lists October with Хлеб of 04.10 and ends a week with a typed expense on Трат без чека', async () => {
+    const { say, tap, calls, fixture, anchor } = await itemsBot();
+    fixture();
+    await say('450 кофе', new Date('2026-10-06T08:30:00Z'));
+    await say('/month');
+    calls.length = 0;
+
+    await tap('itm:m:2026-10:1', anchor());
+
+    const month = editText(calls);
+    expect(month).toContain(
+      '<b>Еда</b> · 689.97 RSD · 5 позиций\n<blockquote expandable>' +
+        '07.10 Кофе — 300.00 RSD\n05.10 Молоко — 149.00 RSD\n04.10 Хлеб — 75.99 RSD\n' +
+        '05.10 Хлеб — 79.99 RSD\n06.10 Хлеб — 84.99 RSD</blockquote>',
+    );
+    expect(month).not.toContain('Сыр');
+    expect(month?.endsWith('\n\nТрат без чека: 1')).toBe(true);
+  });
+
+  it('toasts staleScreen when the tapped message is not the anchor', async () => {
+    const { say, tap, calls, fixture, anchor } = await itemsBot();
+    fixture();
+    await say('/week');
+    calls.length = 0;
+
+    await tap('itm:w:2026-10-05:1', anchor() - 1);
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+      },
+    ]);
+  });
+
+  it('answers a locked sealed ledger with the locked toast and edits nothing', async () => {
+    const { say, tap, calls, db, keys, fixture, anchor } = await itemsBot();
+    fixture();
+    await say('/week');
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('user not provisioned');
+    const deps = { db, keys, logger: silentLogger(), newId: () => randomUUID() };
+    const ledger = await sealPersonalLedger(deps, user, OCT6);
+    keys.lock(ledger.id);
+    calls.length = 0;
+
+    await tap('itm:w:2026-10-05:1', anchor());
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: {
+          callback_query_id: expect.any(String) as string,
+          text: messages.ledgerLockedToast,
+        },
+      },
+    ]);
+  });
+
+  it('pages on whole lines within 4096 visible characters, repeating a cut category marked', () => {
+    const items = Array.from({ length: 150 }, (_, i) => ({
+      name: `${String(i + 1).padStart(3, '0')} ${'я'.repeat(40)}`,
+      quantity: '1',
+      totalMinor: 100,
+      currency: 'RSD' as const,
+      occurredOn: '2026-10-05' as LocalDate,
+    }));
+
+    const pages = messages.periodItemPages({
+      ledger: { kind: 'personal', name: '' },
+      range: { kind: 'week', from: '2026-10-05' as LocalDate, to: '2026-10-11' as LocalDate },
+      groups: [
+        {
+          categoryName: 'Еда',
+          totals: [{ amountMinor: 15000, currency: 'RSD' }],
+          items,
+        },
+      ],
+      withoutReceipt: 0,
+    });
+
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) expect(visibleLength(page)).toBeLessThanOrEqual(4096);
+    expect(pages[0]?.split('\n')[2]).toBe('<b>Еда</b> · 150.00 RSD · 150 позиций');
+    expect(pages[1]?.split('\n')[2]).toBe('<b>Еда</b> (продолжение) · 150.00 RSD · 150 позиций');
+    const listed = pages.flatMap((page) =>
+      page
+        .replace(/<\/?blockquote[^>]*>/g, '')
+        .split('\n')
+        .filter((line) => line.startsWith('05.10 '))
+        .map((line) => line.slice(6, 9)),
+    );
+    expect(listed).toEqual(items.map((item) => item.name.slice(0, 3)));
+  });
+
+  it('keeps the longest items callback data within 64 bytes', () => {
+    const data = dayItemsData('2026-10-06' as LocalDate, 99);
+
+    expect(data).toBe('itm:d:2026-10-06:99');
+    expect(assertCallbackData(data)).toBe(data);
+    expect(Buffer.byteLength(data, 'utf8')).toBeLessThanOrEqual(64);
+    expect(periodItemsData(weekOf('2026-10-06' as LocalDate), 99)).toBe('itm:w:2026-10-05:99');
+    expect(periodItemsData(monthOf('2026-10-06' as LocalDate), 99)).toBe('itm:m:2026-10:99');
   });
 });
 

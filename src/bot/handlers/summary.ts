@@ -8,7 +8,7 @@ import {
   type PeriodSummary,
 } from '../../services/periodSummary.js';
 import type { HandlerDeps } from '../bot.js';
-import { SUMMARY_PAGE, summaryPageData } from '../callbackData.js';
+import { SUMMARY_PAGE, periodItemsData, summaryPageData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import { renderAnchor, requireScreen, showScreen, type ScreenView } from '../screens.js';
@@ -17,7 +17,8 @@ import { ensureUser } from './start.js';
 
 // /week and /month (ADR-0011 screens): a period's totals by currency and category, with a pager
 // that names the neighbouring periods and pages in place. Paging reads the ledger the screen
-// was opened on.
+// was opened on. [Позиции] under the pager turns the screen into the period's receipt items
+// (handlers/items.ts).
 
 function summaryView(summary: PeriodSummary): ScreenView {
   const row = [
@@ -26,7 +27,13 @@ function summaryView(summary: PeriodSummary): ScreenView {
       ? []
       : [InlineKeyboard.text(messages.periodNext(summary.next), summaryPageData(summary.next))]),
   ];
-  return { text: messages.periodSummary(summary), markup: InlineKeyboard.from([row]) };
+  return {
+    text: messages.periodSummary(summary),
+    markup: InlineKeyboard.from([
+      row,
+      [InlineKeyboard.text(messages.periodItemsButton, periodItemsData(summary.period, 1))],
+    ]),
+  };
 }
 
 // Shared by /week, /month and their menu labels.

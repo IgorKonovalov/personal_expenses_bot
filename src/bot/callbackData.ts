@@ -199,6 +199,25 @@ export function summaryPageData(period: Period): string {
   return assertCallbackData(`sum:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }
 
+// [Позиции] on /week and /month and its pager (ADR-0038): `itm:w:<Monday YYYY-MM-DD>:<page>`,
+// `itm:m:<YYYY-MM>:<page>`, 1-based pages (at most 19 bytes). They act on the summary screen's
+// ledger, so only its anchor accepts them.
+export const PERIOD_ITEMS = /^itm:([mw]):([0-9-]{1,10}):(\d{1,4})$/;
+
+export function periodItemsData(period: Period, page: number): string {
+  return assertCallbackData(
+    `itm:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}:${page}`,
+  );
+}
+
+// [Позиции] under /today: `itm:d:<YYYY-MM-DD>:<page>` (at most 21 bytes). It acts on the active
+// ledger at tap time, on whichever message carries it.
+export const DAY_ITEMS = /^itm:d:(\d{4}-\d{2}-\d{2}):(\d{1,4})$/;
+
+export function dayItemsData(date: LocalDate, page: number): string {
+  return assertCallbackData(`itm:d:${date}:${page}`);
+}
+
 // The /budget screen (ADR-0017). Only the current screen anchor accepts these, and they act on
 // the anchor's ledger, so none carries a ledger id. `bud:open` shows the screen in the anchor;
 // `bud:lim` asks for the limit, `bud:day` for the period start day.

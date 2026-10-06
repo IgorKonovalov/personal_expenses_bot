@@ -302,8 +302,8 @@ page), and one key for the tidy switch in the `set:` family.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: card items collapsed | dev | done | 371a6f9 |
-| 2: summary categories folded | dev | done | committed with this row |
-| 3: period items on /week, /month | dev | not started | |
+| 2: summary categories folded | dev | done | b381ba3 |
+| 3: period items on /week, /month | dev | done | committed with this row |
 | 4: period items on /today | dev | not started | |
 | 5: tidy chat | dev | not started | |
 | 6: live check | human | not started | |
@@ -319,6 +319,19 @@ page), and one key for the tidy switch in the `set:` family.
 - Phase 2: touched `src/bot/bot.test.ts`, outside the phase's `Files touched`, to update the
   existing /week and /month expectations to the folded form. Group summaries share
   `messages.periodSummary` and fold too; `group.test.ts` derives its expectations from it.
+- Phase 3: the back button is the existing `messages.backButton` (`« Назад`), not `← Назад`.
+  [Позиции] shows on every private /week and /month screen, empty periods included; an empty
+  view says `В чеках за этот период позиций нет.`
+- Phase 3: `dayItemsData` and `DAY_ITEMS` (Phase 4's key) were added to `callbackData.ts` in this
+  phase, so the 64-byte done-when for `itm:d:2026-10-06:99` is asserted here.
+- Phase 3: `visibleLength` in `messages.ts` is now exported, for the page-length assertion.
+- Phase 3: the done-whens are split between `src/services/periodItems.test.ts` (the week and
+  month groups, the shared-ledger exclusion, `withoutReceipt`, the sealed ledger locked then
+  unlocked) and `src/bot/bot.test.ts` (the harness tap, back, paging, callback length).
+  `itemGroups.test.ts` covers ordering and totals on hand-built items. The shared ledger's header
+  line (`Только чеки, которые записали вы.`) has no test.
+- Phase 3: items of a sealed row take their position from their order in the folded payload.
+  The group without a category sorts after named groups that lack the default currency.
 
 ### Close triggers
 

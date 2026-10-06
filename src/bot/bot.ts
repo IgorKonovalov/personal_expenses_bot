@@ -36,6 +36,7 @@ import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
 import { registerStatement } from './handlers/statement.js';
+import { registerItems } from './handlers/items.js';
 import { registerSummary } from './handlers/summary.js';
 import { registerTags } from './handlers/tags.js';
 import { registerText } from './handlers/text.js';
@@ -135,6 +136,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
+  registerItems(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);
   registerRecurring(dm, options);

@@ -205,6 +205,31 @@ interface SummaryView {
   readonly people?: PeopleView | undefined;
 }
 
+// A period's receipt items by category (ADR-0038): the viewer's own receipts only. A day range
+// is /today's and its lines carry no date.
+interface PeriodItemsView {
+  readonly ledger: LedgerRef;
+  readonly range: {
+    readonly kind: 'day' | 'week' | 'month';
+    readonly from: LocalDate;
+    readonly to: LocalDate;
+  };
+  readonly groups: readonly {
+    // Null: the expenses without a category.
+    readonly categoryName: string | null;
+    readonly totals: readonly Money[];
+    readonly items: readonly {
+      readonly name: string;
+      readonly quantity: string;
+      readonly totalMinor: number;
+      readonly currency: CurrencyCode;
+      readonly occurredOn: LocalDate;
+    }[];
+  }[];
+  // The viewer's expenses in the range with no fetched receipt.
+  readonly withoutReceipt: number;
+}
+
 // A bank statement's preview (Plan 0027): the new purchases a tap would record, and one page of
 // the listed rows. Merchants are bank text and go through `html`.
 interface StatementPreviewView {
@@ -300,7 +325,7 @@ function periodLabel(period: PeriodRef): string {
 // entity escapes don't count.
 const MAX_VISIBLE_CHARS = 4096;
 
-function visibleLength(text: Html): number {
+export function visibleLength(text: Html): number {
   return text.replace(/<[^>]*>/g, '').replace(/&(?:lt|gt|amp|quot);/g, '_').length;
 }
 
@@ -527,6 +552,86 @@ function foldsReceiptItems(view: RecordedView): boolean {
   if (items.length === 0) return false;
   const reserve = visibleLength(alreadyRecordedLine) + 1;
   return visibleLength(recordedCardText(view, true)) + reserve <= MAX_VISIBLE_CHARS;
+}
+
+type ItemGroupView = PeriodItemsView['groups'][number];
+
+// `05.10 Хлеб × 0.535 — 79.99 RSD`, or without the date in a day's view. The quantity only when
+// it isn't 1, as on a receipt.
+function periodItemLine(item: ItemGroupView['items'][number], withDate: boolean): Html {
+  const date = withDate ? `${item.occurredOn.slice(8, 10)}.${item.occurredOn.slice(5, 7)} ` : '';
+  const quantity = /^1(?:\.0*)?$/.test(item.quantity) ? '' : ` × ${item.quantity}`;
+  return html`${date}${shownDescription(item.name)}${quantity} — ${formatMoney({ amountMinor: item.totalMinor, currency: item.currency })}`;
+}
+
+// `<b>Еда</b> · 613.98 RSD · 4 позиции`, with ` (продолжение)` after the name on a later page.
+function itemGroupLine(group: ItemGroupView, continued: boolean): Html {
+  return html`<b>${group.categoryName ?? 'Без категории'}</b>${continued ? ' (продолжение)' : ''} · ${group.totals.map(formatMoney).join(' + ')} · ${itemCount(group.items.length)}`;
+}
+
+// The items view's pages: the header on each, then per category its line and its items in an
+// expandable quote, cut on whole lines so each page's visible text fits one message. A category
+// cut across pages repeats its line, marked. `Трат без чека: N` closes the last page.
+function periodItemPages({ ledger, range, groups, withoutReceipt }: PeriodItemsView): Html[] {
+  const title =
+    range.kind === 'month'
+      ? `${MONTHS[dateParts(range.from).month] ?? ''} ${dateParts(range.from).year}`
+      : range.kind === 'week'
+        ? `Неделя, ${weekRange(range, GENITIVE_MONTHS)}`
+        : dayMonth.format(new Date(`${range.from}T00:00:00Z`));
+  const header = joinHtml(
+    [
+      html`<b>Позиции чеков · ${title} — «${ledgerName(ledger)}»</b>`,
+      ...(ledger.kind === 'shared' ? [html`Только чеки, которые записали вы.`] : []),
+    ],
+    '\n',
+  );
+  const footer = withoutReceipt === 0 ? [] : [html`Трат без чека: ${withoutReceipt}`];
+  if (groups.length === 0) {
+    return [joinHtml([header, html`В чеках за этот период позиций нет.`, ...footer], '\n\n')];
+  }
+
+  interface Chunk {
+    readonly head: Html;
+    readonly lines: Html[];
+  }
+  const render = (chunks: readonly Chunk[], tail: readonly Html[] = []): Html =>
+    joinHtml(
+      [
+        header,
+        joinHtml(
+          chunks.map((c) => joinHtml([c.head, expandableQuote(c.lines)], '\n')),
+          '\n',
+        ),
+        ...tail,
+      ],
+      '\n\n',
+    );
+  const fits = (text: Html): boolean => visibleLength(text) <= MAX_VISIBLE_CHARS;
+
+  const pages: Html[] = [];
+  let chunks: Chunk[] = [];
+  for (const group of groups) {
+    let chunk: Chunk = { head: itemGroupLine(group, false), lines: [] };
+    chunks.push(chunk);
+    for (const item of group.items) {
+      const line = periodItemLine(item, range.kind !== 'day');
+      chunk.lines.push(line);
+      if (fits(render(chunks))) continue;
+      chunk.lines.pop();
+      const continued = chunk.lines.length > 0;
+      if (!continued) chunks.pop();
+      pages.push(render(chunks));
+      chunk = { head: itemGroupLine(group, continued), lines: [line] };
+      chunks = [chunk];
+    }
+  }
+  if (!fits(render(chunks, footer))) {
+    pages.push(render(chunks));
+    chunks = [];
+  }
+  pages.push(chunks.length === 0 ? joinHtml([header, ...footer], '\n\n') : render(chunks, footer));
+  return pages;
 }
 
 function budgetLine({ currency, todayLeftMinor, periodLeftMinor, to }: BudgetLineView): Html {
@@ -1229,6 +1334,9 @@ export const messages = {
     pages.push(page);
     return pages;
   },
+  // [Позиции] under /today, /week and /month: the period's receipt items by category.
+  periodItemsButton: 'Позиции',
+  periodItemPages,
   // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
   // image too large to download (ADR-0019, ADR-0034).
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
