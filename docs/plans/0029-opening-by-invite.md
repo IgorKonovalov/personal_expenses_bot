@@ -239,23 +239,23 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 - **Owner skill:** human
 - **What:**
   1. Fill in the contact in `PRIVACY.md`.
-  2. On the VPS, replace `ALLOWED_TELEGRAM_IDS` with `ADMIN_TELEGRAM_ID` (the admin's id) and
-     `ADMIT_TELEGRAM_IDS` (the rest) in the `.env`. The running container keeps its old
-     environment until the next deploy recreates it, so the live bot is unaffected.
+  2. On the VPS, add `ADMIN_TELEGRAM_ID` (the admin's id) and `ADMIT_TELEGRAM_IDS` (the rest) to
+     the `.env`, and keep `ALLOWED_TELEGRAM_IDS`: the code before 0029 requires it, so every
+     deploy until 0029 ships still boots.
 - **Files touched:** `PRIVACY.md`, the VPS `.env`.
-- **Done when:** `PRIVACY.md` names a contact, and the VPS `.env` sets `ADMIN_TELEGRAM_ID`, sets
-  no `ALLOWED_TELEGRAM_IDS`, and lists every other household id in `ADMIT_TELEGRAM_IDS`. This
-  phase blocks the merge: once 0029 is on main, any push deploys a config that refuses
-  `ALLOWED_TELEGRAM_IDS`.
+- **Done when:** `PRIVACY.md` names a contact, and the VPS `.env` sets `ADMIN_TELEGRAM_ID` and
+  lists every other household id in `ADMIT_TELEGRAM_IDS`. This phase blocks the merge, so the
+  new keys exist before any push can deploy 0029.
 
 ### Phase 7: Deploy and open
 - **Owner skill:** human
 - **Blocks merge:** no
 - **What:**
-  1. Push and deploy, then check that the household still records.
+  1. Delete `ALLOWED_TELEGRAM_IDS` from the VPS `.env`, which 0029 refuses at boot, then push
+     and deploy, and check that the household still records.
   2. Test `/invite` with a second account.
   3. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
-- **Files touched:** none.
+- **Files touched:** the VPS `.env`.
 - **Done when:** after the deploy, every household member records `450 кофе` in private. A test
   account admitted by a fresh link records too, and `/delete_account` on it leaves the
   household's data untouched.
@@ -291,7 +291,9 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 ## Risks & open questions
 
 - **Env rename at deploy.** A deploy before the `.env` edit fails at boot, by design. The
-  household is then offline until the edit. Phase 6 orders the edit first.
+  household is then offline until the edit. Phase 6 adds the new keys, and Phase 7 deletes the old
+  one right before the push that ships 0029. Until then, a deploy of the code before 0029 needs
+  the old key, so both stay.
 - **An orphaned group ledger.** If the user who bound a group deletes their account, nobody can
   change that group's settings. Accepted for now. Handing ownership to another admitted member is
   a followup.
