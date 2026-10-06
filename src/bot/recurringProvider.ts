@@ -1,4 +1,4 @@
-import { InlineKeyboard, type Api } from 'grammy';
+import type { Api } from 'grammy';
 import { localDateOf } from '../domain/time.js';
 import type { Provider } from '../scheduler/types.js';
 import { effectiveTimezone } from '../services/recordExpense.js';
@@ -10,13 +10,14 @@ import {
   type FireResult,
 } from '../services/recurring.js';
 import type { HandlerDeps } from './bot.js';
-import { undoExpenseData } from './callbackData.js';
+import { askCard, recurringRecordedCard } from './handlers/recurring.js';
 import { messages } from './messages.js';
-import { sendHtml } from './render/html.js';
+import { sendHtml, type Html } from './render/html.js';
+import type { ScreenView } from './screens.js';
 
-// The scheduler's provider for recurring rules (ADR-0031). The service records each due
-// occurrence and commits; the notices are sent afterwards. A failed send is logged and not
-// retried: the expense stays recorded and shows in /today.
+// The scheduler's provider for recurring rules (ADR-0031). The service records or claims each
+// due occurrence and commits; the notices are sent afterwards. A failed send is logged and not
+// retried: an `auto` expense stays recorded and shows in /today.
 
 export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule> {
   return {
@@ -25,36 +26,54 @@ export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule
     fire: async (due, now) => {
       const result = fireRule(deps, due, now);
       if (result === undefined) return;
-      for (const fired of result.fired) await notify(deps, api, result, fired, now);
+      const skipped = result.fired.filter((f) => f.kind === 'skipped').length;
+      if (skipped > 0) await send(deps, api, result, messages.recurringAskMissed(skipped));
+      for (const fired of result.fired) {
+        const view = notice(deps, result, fired, now);
+        if (view !== undefined) await send(deps, api, result, view.text, view);
+      }
     },
   };
 }
 
-async function notify(
+function notice(
   deps: HandlerDeps,
-  api: Api,
   result: FireResult,
   fired: Fired,
   now: Date,
+): ScreenView | undefined {
+  const { user } = result.author;
+  switch (fired.kind) {
+    case 'recorded':
+      return recurringRecordedCard(deps, user, fired, now);
+    case 'asked': {
+      const { template } = result.rule;
+      if (template === null) return undefined;
+      const today = localDateOf(now, effectiveTimezone(deps, user, fired.ledger));
+      return askCard({ rule: result.rule, template }, fired.dueOn, today);
+    }
+    case 'skipped':
+      return undefined;
+  }
+}
+
+async function send(
+  deps: HandlerDeps,
+  api: Api,
+  result: FireResult,
+  text: Html,
+  view?: ScreenView,
 ): Promise<void> {
-  const { expense, ledger } = fired;
-  const sentOn = localDateOf(now, effectiveTimezone(deps, result.author.user, ledger));
   try {
     await sendHtml(
       api,
       result.author.telegramId,
-      messages.recurringRecorded({ expense, ledger, sentOn }),
-      {
-        reply_markup: new InlineKeyboard().text(messages.undoButton, undoExpenseData(expense.id)),
-      },
+      text,
+      view === undefined ? {} : { reply_markup: view.markup },
     );
   } catch (error) {
     deps.logger.warn(
-      {
-        ruleId: result.rule.id,
-        expenseId: expense.id,
-        err: error instanceof Error ? error.name : typeof error,
-      },
+      { ruleId: result.rule.id, err: error instanceof Error ? error.name : typeof error },
       'recurring notice failed',
     );
   }

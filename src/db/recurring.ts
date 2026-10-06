@@ -201,6 +201,59 @@ export function insertOccurrenceOrIgnore(
   return changes === 1;
 }
 
+export function findOccurrenceOutcome(
+  db: Db,
+  ruleId: RuleId,
+  dueOn: LocalDate,
+): OccurrenceOutcome | undefined {
+  return db
+    .prepare<[string, string], OccurrenceOutcome>(
+      'SELECT outcome FROM recurring_occurrences WHERE rule_id = ? AND due_on = ?',
+    )
+    .pluck()
+    .get(ruleId, dueOn);
+}
+
+// Answers an `asked` occurrence. Returns false when it was answered already.
+export function answerAskedOccurrence(
+  db: Db,
+  occurrence: {
+    readonly ruleId: RuleId;
+    readonly dueOn: LocalDate;
+    readonly outcome: 'recorded' | 'skipped';
+    readonly expenseId: ExpenseId | null;
+  },
+): boolean {
+  const { changes } = db
+    .prepare<[string, string | null, string, string]>(
+      `UPDATE recurring_occurrences SET outcome = ?, expense_id = ?
+        WHERE rule_id = ? AND due_on = ? AND outcome = 'asked'`,
+    )
+    .run(occurrence.outcome, occurrence.expenseId, occurrence.ruleId, occurrence.dueOn);
+  return changes === 1;
+}
+
+// Returns false when the rule is deleted or already in that mode.
+export function setRuleMode(db: Db, id: RuleId, mode: RuleMode): boolean {
+  const { changes } = db
+    .prepare<[string, string, string]>(
+      `UPDATE recurring_rules SET mode = ?
+        WHERE id = ? AND deleted_at IS NULL AND mode <> ? AND kind = 'expense'`,
+    )
+    .run(mode, id, mode);
+  return changes === 1;
+}
+
+// Returns false when the rule was already deleted. Its recorded expenses stay.
+export function softDeleteRule(db: Db, id: RuleId, deletedAt: Date): boolean {
+  const { changes } = db
+    .prepare<[string, string]>(
+      'UPDATE recurring_rules SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+    )
+    .run(deletedAt.toISOString(), id);
+  return changes === 1;
+}
+
 // A rule's author, and the Telegram id their private chat has. Undefined for a user with no
 // Telegram identity.
 export function findRuleAuthor(

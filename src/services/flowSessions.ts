@@ -9,7 +9,9 @@ import {
   saveScreenAnchor,
 } from '../db/flowSessions.js';
 import type { LedgerId } from '../db/ledgers.js';
+import type { RuleId } from '../db/recurring.js';
 import type { User } from '../db/users.js';
+import type { LocalDate } from '../domain/time.js';
 
 // ADR-0009's session row, typed: the user's screen anchor (ADR-0011) and at most one pending
 // text flow. It lives in SQLite, so both survive a restart.
@@ -53,8 +55,29 @@ export interface BudgetScreen {
   readonly fromSettings?: true;
 }
 
+// /recurring (Plan 0025): the rule list, one rule's screen with `ruleId`, or the reminder
+// schedule picker holding the reminder text typed for it.
+export interface RecurringScreen {
+  readonly name: 'recurring';
+  readonly ruleId?: RuleId;
+  readonly reminderText?: string;
+}
+
+// An `ask` occurrence's prompt holding [Другая сумма]'s amount prompt: the flow's anchor.
+export interface RecurringAskScreen {
+  readonly name: 'recurringAsk';
+  readonly ruleId: RuleId;
+  readonly dueOn: LocalDate;
+}
+
 export type Screen =
-  CategoriesScreen | SummaryScreen | ExpenseScreen | SettingsScreen | BudgetScreen;
+  | CategoriesScreen
+  | SummaryScreen
+  | ExpenseScreen
+  | SettingsScreen
+  | BudgetScreen
+  | RecurringScreen
+  | RecurringAskScreen;
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -134,7 +157,26 @@ export function isSecretFlow(flow: Flow): flow is SecretFlow {
   return isSecretKind(flow.kind);
 }
 
-export type Flow = CategoryFlow | EditFlow | TimezoneFlow | BudgetFlow | SecretFlow;
+// [Другая сумма] under an `ask` occurrence's prompt: the amount to record for it.
+export interface RecurringAmountFlow {
+  readonly kind: 'recurringAmount';
+  readonly ruleId: RuleId;
+  readonly dueOn: LocalDate;
+}
+
+// [Добавить напоминание] on /recurring: the reminder's text.
+export interface ReminderTextFlow {
+  readonly kind: 'reminderText';
+}
+
+export type Flow =
+  | CategoryFlow
+  | EditFlow
+  | TimezoneFlow
+  | BudgetFlow
+  | SecretFlow
+  | RecurringAmountFlow
+  | ReminderTextFlow;
 
 type Deps = { readonly db: Db };
 
@@ -239,6 +281,20 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
     return { name, expenseId: parsed.expenseId as ExpenseId };
   }
+  if (name === 'recurring' && parsed !== undefined) {
+    return {
+      name,
+      ...(typeof parsed.ruleId === 'string' ? { ruleId: parsed.ruleId as RuleId } : {}),
+      ...(typeof parsed.reminderText === 'string' ? { reminderText: parsed.reminderText } : {}),
+    };
+  }
+  if (
+    name === 'recurringAsk' &&
+    typeof parsed?.ruleId === 'string' &&
+    typeof parsed.dueOn === 'string'
+  ) {
+    return { name, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
+  }
   if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
@@ -261,6 +317,14 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   ) {
     return { kind, expenseId: parsed.expenseId as ExpenseId };
   }
+  if (
+    kind === 'recurringAmount' &&
+    typeof parsed?.ruleId === 'string' &&
+    typeof parsed.dueOn === 'string'
+  ) {
+    return { kind, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
+  }
+  if (kind === 'reminderText' && parsed !== undefined) return { kind };
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
   if (isSecretKind(kind)) return { kind, ledgerId };

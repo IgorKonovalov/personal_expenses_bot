@@ -1,5 +1,6 @@
 import type { CategoryId } from '../db/categories.js';
 import type { ExpenseId } from '../db/expenses.js';
+import type { RuleId } from '../db/recurring.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { periodKey, type Period } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
@@ -232,4 +233,34 @@ export function repeatExpenseData(expenseId: ExpenseId): string {
 
 export function repeatScheduleData(expenseId: ExpenseId, choice: 'm' | 'w' | 'y'): string {
   return assertCallbackData(`rec:s:${expenseId}:${choice}`);
+}
+
+// The /recurring screen (ADR-0011). Only the current anchor accepts these. `rec:list` shows the
+// list, `rec:r:<uuid>` (42 bytes) a rule's screen; `rec:mode:<a|k>` sets the mode it names on the
+// anchor's rule (auto or ask), `rec:del` asks to delete it and `rec:delok` deletes it.
+export const RECURRING_LIST = 'rec:list';
+export const RULE_OPEN = /^rec:r:([0-9a-f-]{36})$/;
+export const RULE_MODE = /^rec:mode:([ak])$/;
+export const RULE_DELETE = 'rec:del';
+export const RULE_DELETE_CONFIRM = 'rec:delok';
+
+export function ruleOpenData(ruleId: RuleId): string {
+  return assertCallbackData(`rec:r:${ruleId}`);
+}
+
+export function ruleModeData(mode: 'auto' | 'ask'): string {
+  return assertCallbackData(`rec:mode:${mode === 'auto' ? 'a' : 'k'}`);
+}
+
+// An `ask` occurrence's prompt: [Записать] `rec:ok:<uuid>:<YYYY-MM-DD>` (54 bytes), [Другая
+// сумма] `rec:amt:…` (55) and [Пропустить] `rec:skip:…` (56). They work on any prompt, however
+// old: the occurrence's stored outcome is the guard.
+export const ASK_RECORD = /^rec:ok:([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/;
+export const ASK_AMOUNT = /^rec:amt:([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/;
+export const ASK_SKIP = /^rec:skip:([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/;
+
+export type AskAction = 'ok' | 'amt' | 'skip';
+
+export function askData(action: AskAction, ruleId: RuleId, dueOn: LocalDate): string {
+  return assertCallbackData(`rec:${action}:${ruleId}:${dueOn}`);
 }

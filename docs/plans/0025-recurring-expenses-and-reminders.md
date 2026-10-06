@@ -308,8 +308,8 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | 7c51ef7 |
-| 2: Weekly and yearly, short months, DST and catch-up | dev | done | committed with this row |
-| 3: Ask mode and managing rules | dev | not started | |
+| 2: Weekly and yearly, short months, DST and catch-up | dev | done | e271825 |
+| 3: Ask mode and managing rules | dev | done | committed with this row |
 | 4: Reminders | dev | not started | |
 | 5: Group ledgers | dev | not started | |
 | 6: Sealed ledgers, help and docs | dev | not started | |
@@ -329,6 +329,14 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   columns. `src/bot/handlers/card.ts` needed no change: the picker lists the service's choices.
 - Phase 2: the catch-up cap and the per-date transaction landed in Phase 1's `fireRule`;
   Phase 2 adds the choices and the tests.
+- Phase 3: `src/services/flowSessions.ts` also gets Phase 4's `reminderText` flow and the
+  screen's `reminderText` field, since Phase 4 does not list that file. `flows.ts` ignores a
+  `reminderText` answer until Phase 4.
+- Phase 3: the rule screen's buttons carry no rule id (`rec:mode:<a|k>`, `rec:del`,
+  `rec:delok`, `rec:list`): they act on the anchor's rule. [Другая сумма] makes the prompt the
+  anchor (a `recurringAsk` screen), and [Отмена] puts the prompt back.
+- Phase 3: ask-mode catch-up claims the dates before the last 3 as `skipped`, and the
+  "how many more" line is its own message before the prompts.
 
 ### Close triggers
 

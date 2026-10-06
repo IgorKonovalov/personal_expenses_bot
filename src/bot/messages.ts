@@ -1193,6 +1193,64 @@ export const messages = {
     return joinHtml([title, ...rules.map((rule) => recurringRuleLines(rule, today))], '\n\n');
   },
 
+  // A rule's button on /recurring: `аренда — 45 000.00 RSD`.
+  ruleButton: (rule: Pick<RuleListView, 'description' | 'money'>): string =>
+    `${shownDescription(rule.description)} — ${formatMoney(rule.money)}`,
+  recurringRuleScreen: ({
+    rule,
+    mode,
+    today,
+  }: {
+    rule: RuleListView;
+    mode: 'auto' | 'ask';
+    today: LocalDate;
+  }): Html =>
+    joinHtml(
+      [
+        recurringRuleLines(rule, today),
+        mode === 'auto'
+          ? html`Записываю сам в 09:00.`
+          : html`В 09:00 спрашиваю, записать ли, и с какой суммой.`,
+      ],
+      '\n',
+    ),
+  ruleAskModeButton: 'Спрашивать перед записью',
+  ruleAutoModeButton: 'Записывать само',
+  ruleModeToast: 'Готово',
+  ruleDeleteButton: 'Удалить правило',
+  ruleDeleteConfirmButton: 'Да, удалить',
+  ruleDeleteConfirm: (description: string): Html =>
+    html`Удалить правило «${shownDescription(description)}»? Уже записанные траты останутся.`,
+  ruleDeleted: html`Правило удалено. Записанные траты остались.`,
+  ruleGoneToast: 'Правило не найдено',
+  // An `ask` occurrence's prompt. `today` is the ledger's local date.
+  recurringAsk: ({
+    description,
+    money,
+    dueOn,
+    today,
+  }: {
+    description: string;
+    money: Money;
+    dueOn: LocalDate;
+    today: LocalDate;
+  }): Html =>
+    html`По расписанию на ${shownDate(dueOn, today)}: ${shownDescription(description)}, ${formatMoney(money)}. Записать?`,
+  askRecordButton: (money: Money): string => `Записать ${formatMoney(money)}`,
+  askAmountButton: 'Другая сумма',
+  askSkipButton: 'Пропустить',
+  recurringSkipped: (description: string): Html =>
+    html`Пропущено: ${shownDescription(description)}.`,
+  // Before the prompts after downtime: the missed dates not asked about.
+  recurringAskMissed: (count: number): Html =>
+    html`Пока я не работал, по расписанию прошло ещё ${count}, их я пропустил.`,
+  askAmountPrompt: (currency: CurrencyCode): Html =>
+    html`Введите сумму в ${currency}, например «4 870».`,
+  askAmountRefused: html`Не удалось разобрать сумму.`,
+  askAnswered: 'На это уже ответили',
+  askRecordedToast: 'Записано',
+  askForbidden: 'Ответить может только автор правила',
+
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,
 

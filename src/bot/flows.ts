@@ -17,12 +17,19 @@ import {
 } from '../services/flowSessions.js';
 import { isLocked } from '../services/ledgerKeys.js';
 import { answerCategoryFlow } from '../services/manageCategories.js';
+import { answerAskAmount } from '../services/recurring.js';
 import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
 import { budgetPromptView, budgetRefusal, budgetView } from './handlers/budget.js';
 import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { editPromptView } from './handlers/edit.js';
+import {
+  askAmountView,
+  askScreenFor,
+  recurringRecordedCard,
+  recurringScreenFor,
+} from './handlers/recurring.js';
 import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
 import { answerSecretFlow } from './handlers/unlock.js';
@@ -81,6 +88,15 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     const shown = showExpense(deps, { user, expenseId: screen.expenseId });
     if (shown.kind === 'card')
       await renderAnchor(ctx, anchor, cardFor(cardView(deps, user, shown)));
+    return;
+  }
+  if (screen.name === 'recurring') {
+    await renderAnchor(ctx, anchor, recurringScreenFor(deps, user, screen));
+    return;
+  }
+  if (screen.name === 'recurringAsk') {
+    const view = askScreenFor(deps, user, screen);
+    if (view !== undefined) await renderAnchor(ctx, anchor, view);
     return;
   }
   const view =
@@ -176,6 +192,22 @@ export async function answerFlow(
       }
     }
   }
+
+  if (flow.kind === 'recurringAmount') {
+    const result = answerAskAmount(deps, { ...input, flow, now: deps.now() });
+    if (result.kind === 'invalid') {
+      await show(ctx, anchor, askAmountView(result.target.template.currency, true));
+      return;
+    }
+    if (result.kind === 'recorded' && anchor !== undefined) {
+      await renderAnchor(ctx, anchor, recurringRecordedCard(deps, user, result));
+      return;
+    }
+    await restoreScreen(ctx, deps, user);
+    return;
+  }
+
+  if (flow.kind === 'reminderText') return;
 
   if (flow.kind === 'setTimezone') {
     // The user's own zone, or the shared ledger's when the prompt came from its scoped hub.

@@ -11,6 +11,7 @@ import type { CategoryId } from '../db/categories.js';
 import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
+import type { RuleId } from '../db/recurring.js';
 import type { UserId } from '../db/users.js';
 import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
@@ -47,8 +48,12 @@ import {
   editExpenseData,
   editFieldData,
   receiptItemsData,
+  askData,
   receiptRetryData,
+  repeatExpenseData,
+  repeatScheduleData,
   restoreExpenseData,
+  ruleOpenData,
   setExpenseDateData,
   setCategoryData,
   showExpenseData,
@@ -5151,8 +5156,168 @@ describe('recurring expenses', () => {
     };
     const providers = [register(recurringProvider(deps, harness.bot.api))];
     const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
-    return { ...harness, clock, tap, send, tick };
+    // Sent messages get ids, so a screen can become the anchor.
+    let messageId = 100;
+    harness.bot.api.config.use(async (prev, method, payload, signal) => {
+      const answer = await prev(method, payload, signal);
+      if (method !== 'sendMessage') return answer;
+      const chat = { id: (payload as { chat_id: number }).chat_id, type: 'private' };
+      return { ok: true, result: { message_id: ++messageId, date: 0, chat, text: '' } as never };
+    });
+    const tapOn = (data: string, message: number) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: message }));
+    const ruleId = () =>
+      harness.db.prepare('SELECT id FROM recurring_rules').pluck().get() as string;
+    const askMode = () => harness.db.prepare("UPDATE recurring_rules SET mode = 'ask'").run();
+    const recorded = () =>
+      harness.db
+        .prepare(
+          "SELECT amount_minor, occurred_on, deleted_at FROM expenses WHERE source_key LIKE 'rec:%'",
+        )
+        .all();
+    const lastMessageId = () => messageId;
+    return { ...harness, clock, tap, tapOn, send, tick, ruleId, askMode, recorded, lastMessageId };
   }
+
+  function sent(calls: readonly ApiCall[]) {
+    return calls
+      .filter((c) => c.method === 'sendMessage')
+      .map((c) => c.payload as { text: string; reply_markup?: { inline_keyboard: unknown[][] } });
+  }
+
+  it('/recurring opens a rule, switches it to ask mode, and the due tick asks instead of recording', async () => {
+    const { tap, tapOn, send, tick, ruleId, recorded, calls, db, lastMessageId } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    await send('/recurring');
+    const list = lastMessageId();
+
+    await tapOn(`rec:r:${ruleId()}`, list);
+    await tapOn('rec:mode:k', list);
+    expect(db.prepare('SELECT mode FROM recurring_rules').pluck().get()).toBe('ask');
+    calls.length = 0;
+
+    await tick('2026-11-01T08:00:00Z');
+
+    expect(recorded()).toEqual([]);
+    const id = ruleId();
+    expect(sent(calls)).toEqual([
+      expect.objectContaining({
+        text: 'По расписанию на 1 ноября: аренда, 45 000.00 RSD. Записать?',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Записать 45 000.00 RSD', callback_data: `rec:ok:${id}:2026-11-01` }],
+            [
+              { text: 'Другая сумма', callback_data: `rec:amt:${id}:2026-11-01` },
+              { text: 'Пропустить', callback_data: `rec:skip:${id}:2026-11-01` },
+            ],
+          ],
+        },
+      }),
+    ]);
+  });
+
+  it('[Записать] records the template on the due date, and a second tap records nothing', async () => {
+    const { tap, tick, ruleId, askMode, recorded } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    askMode();
+    await tick('2026-11-01T08:00:00Z');
+
+    await tap(`rec:ok:${ruleId()}:2026-11-01`);
+    await tap(`rec:ok:${ruleId()}:2026-11-01`);
+
+    expect(recorded()).toEqual([
+      { amount_minor: 4500000, occurred_on: '2026-11-01', deleted_at: null },
+    ]);
+  });
+
+  it('[Другая сумма] then 4870 records 487000 minor units in RSD', async () => {
+    const { tap, send, tick, ruleId, askMode, db } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    askMode();
+    await tick('2026-11-01T08:00:00Z');
+
+    await tap(`rec:amt:${ruleId()}:2026-11-01`);
+    await send('4870');
+
+    expect(
+      db
+        .prepare(
+          "SELECT amount_minor, currency, occurred_on FROM expenses WHERE source_key LIKE 'rec:%'",
+        )
+        .all(),
+    ).toEqual([{ amount_minor: 487000, currency: 'RSD', occurred_on: '2026-11-01' }]);
+  });
+
+  it('[Пропустить] records nothing and the prompt says «Пропущено»', async () => {
+    const { tap, tick, ruleId, askMode, recorded, calls } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    askMode();
+    await tick('2026-11-01T08:00:00Z');
+    calls.length = 0;
+
+    await tap(`rec:skip:${ruleId()}:2026-11-01`);
+    await tap(`rec:ok:${ruleId()}:2026-11-01`);
+
+    expect(recorded()).toEqual([]);
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text: 'Пропущено: аренда.',
+    });
+  });
+
+  it('after downtime an ask rule asks about the last 3 dates and names how many more it skipped', async () => {
+    const { tap, tick, askMode, calls } = await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    askMode();
+    calls.length = 0;
+
+    await tick('2027-03-02T10:00:00Z');
+
+    expect(sent(calls).map((m) => m.text)).toEqual([
+      'Пока я не работал, по расписанию прошло ещё 2, их я пропустил.',
+      'По расписанию на 1 января: аренда, 45 000.00 RSD. Записать?',
+      'По расписанию на 1 февраля: аренда, 45 000.00 RSD. Записать?',
+      'По расписанию на 1 марта: аренда, 45 000.00 RSD. Записать?',
+    ]);
+  });
+
+  it('keeps every recurring callback within 64 bytes', () => {
+    const id = '00000000-0000-4000-8000-000000000003' as ExpenseId;
+    const rule = id as unknown as RuleId;
+    const day = '2026-11-01' as LocalDate;
+    const data = [
+      repeatExpenseData(id),
+      repeatScheduleData(id, 'm'),
+      ruleOpenData(rule),
+      askData('ok', rule, day),
+      askData('amt', rule, day),
+      askData('skip', rule, day),
+    ];
+
+    expect(data.map((d) => Buffer.byteLength(d, 'utf8'))).toEqual([44, 44, 42, 54, 55, 56]);
+  });
+
+  it('a deleted rule never fires again, and its past expense stays in /month', async () => {
+    const { tap, tapOn, send, tick, ruleId, recorded, clock, calls, lastMessageId } =
+      await rentBot();
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+    await tick('2026-11-01T08:00:00Z');
+    await send('/recurring');
+    const list = lastMessageId();
+
+    await tapOn(`rec:r:${ruleId()}`, list);
+    await tapOn('rec:del', list);
+    await tapOn('rec:delok', list);
+    await tick('2026-12-01T08:00:00Z');
+    await tick('2027-01-01T08:00:00Z');
+
+    expect(recorded()).toEqual([
+      { amount_minor: 4500000, occurred_on: '2026-11-01', deleted_at: null },
+    ]);
+    clock.setTime(new Date('2026-11-15T10:00:00Z').getTime());
+    calls.length = 0;
+    await send('/month');
+    expect(sent(calls)[0]?.text).toContain('45 000.00 RSD');
+  });
 
   it('[Повторять] offers monthly, weekly and yearly from Thursday 1 October, with [« Назад]', async () => {
     const { tap, calls } = await rentBot();
