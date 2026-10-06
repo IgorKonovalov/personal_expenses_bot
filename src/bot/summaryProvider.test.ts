@@ -5,12 +5,13 @@ import type { CategoryId } from '../db/categories.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
-import { setPushOn, type UserId } from '../db/users.js';
+import { findUserByIdentity, setPushOn, type UserId } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
+import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import type { HandlerDeps } from './bot.js';
 import { messages } from './messages.js';
 import { htmlParseMode } from './render/html.js';
@@ -69,8 +70,17 @@ async function pushBot() {
       ...(categoryId === undefined ? {} : { categoryId }),
     });
   };
+  // Encryption on (ADR-0020), which seals every expense added so far and leaves it locked.
+  const keyDeps = { db, logger: deps.logger, keys: harness.keys };
+  const user = () => {
+    const found = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (found === undefined) throw new Error('setup: no user');
+    return found;
+  };
+  const seal = () => sealPersonalLedger(keyDeps, user(), clock);
+  const unlock = () => unlockPersonalLedger(keyDeps, user(), clock);
   harness.calls.length = 0;
-  return { ...harness, ledgerId, tick, add };
+  return { ...harness, ledgerId, tick, add, seal, unlock };
 }
 
 const sent = (calls: { method: string; payload: unknown }[]) =>
@@ -444,5 +454,148 @@ describe('the summary provider: budget periods, the budget block and the top 3',
     await tick('2026-10-01T07:00:00Z');
 
     expect(blocks(calls).at(-1)).toBe(messages.pushDonateLine);
+  });
+});
+
+describe('the summary provider: a sealed ledger (ADR-0020)', () => {
+  // The same expenses in either ledger: August and September in two categories, and a
+  // description that must not leak.
+  const fill = (add: Awaited<ReturnType<typeof pushBot>>['add']) => {
+    add('2026-08-10', 930000, 'cafe', 'RSD', 'тайный ужин');
+    add('2026-09-10', 1240000, 'cafe', 'RSD', 'тайный ужин');
+    add('2026-09-11', 50000, 'transport', 'RSD', 'тайное такси');
+  };
+
+  it('sends a locked ledger «Итоги сентября готовы» with [Показать] and [Отключить], and no amount or description', async () => {
+    const { calls, tick, add, seal } = await pushBot();
+    fill(add);
+    await seal();
+    calls.length = 0;
+
+    await tick('2026-10-01T07:00:00Z');
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: [
+            '<b>Итоги сентября готовы</b>',
+            'Учёт зашифрован и закрыт. Откройте его (/unlock) и нажмите [Показать].',
+          ].join('\n'),
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: messages.pushShowButton, callback_data: 'sum:show:m:2026-09' },
+                { text: messages.pushOffButton, callback_data: 'sum:off:m' },
+              ],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    const [text] = sent(calls);
+    expect(text).not.toMatch(/\d/);
+    expect(text).not.toContain('тайн');
+  });
+
+  it('answers [Показать] with the locked toast while locked, and edits nothing', async () => {
+    const { bot, calls, tick, add, seal } = await pushBot();
+    fill(add);
+    await seal();
+    await tick('2026-10-01T07:00:00Z');
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:show:m:2026-09' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-10', text: messages.ledgerLockedToast },
+      },
+    ]);
+  });
+
+  it('[Показать] after /unlock shows the report an unsealed ledger gets for the same expenses', async () => {
+    const plain = await pushBot();
+    fill(plain.add);
+    await plain.tick('2026-10-01T07:00:00Z');
+    const [expected] = sent(plain.calls);
+
+    const sealed = await pushBot();
+    fill(sealed.add);
+    await sealed.seal();
+    await sealed.tick('2026-10-01T07:00:00Z');
+    await sealed.unlock();
+    sealed.calls.length = 0;
+
+    await sealed.bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:show:m:2026-09' }));
+
+    expect(expected).toContain('Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)');
+    expect(expected).toContain('10.09 · 12 400.00 RSD · тайный ужин');
+    expect(sealed.calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-10' } },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: ALLOWED_ID,
+          message_id: 2,
+          text: expected,
+          reply_markup: offKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('sends an unlocked sealed ledger the full report', async () => {
+    const plain = await pushBot();
+    fill(plain.add);
+    await plain.tick('2026-10-01T07:00:00Z');
+
+    const sealed = await pushBot();
+    fill(sealed.add);
+    await sealed.seal();
+    await sealed.unlock();
+    sealed.calls.length = 0;
+    await sealed.tick('2026-10-01T07:00:00Z');
+
+    expect(sent(sealed.calls)).toEqual(sent(plain.calls));
+  });
+
+  it('[Показать] reads a budget period back from its first day', async () => {
+    const { bot, calls, db, ledgerId, tick, add, seal, unlock } = await pushBot();
+    setBudgetStartDay(db, ledgerId, { startDay: 15, currency: 'RSD' }, new Date());
+    add('2026-09-20', 1240000, 'cafe');
+    await seal();
+    await tick('2026-10-15T07:00:00Z');
+    expect(calls.at(-1)?.payload).toMatchObject({
+      text: '<b>Итоги периода 15.09–14.10 готовы</b>\nУчёт зашифрован и закрыт. Откройте его (/unlock) и нажмите [Показать].',
+    });
+    await unlock();
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:show:m:2026-09-15' }));
+
+    const edit = calls.find((c) => c.method === 'editMessageText')?.payload as { text: string };
+    expect(edit.text.split('\n\n').slice(0, 2)).toEqual([
+      '<b>Итоги периода 15.09–14.10</b>',
+      '<b>12 400.00 RSD</b> (новое)\nКафе и рестораны: 12 400.00 RSD (новое)',
+    ]);
+  });
+
+  it('answers [Показать] for a period no push was sent for silently', async () => {
+    const { bot, calls, add, seal, unlock } = await pushBot();
+    fill(add);
+    await seal();
+    await unlock();
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:show:m:2026-09' }));
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-10' } },
+    ]);
   });
 });

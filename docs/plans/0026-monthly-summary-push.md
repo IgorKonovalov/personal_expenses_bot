@@ -245,8 +245,8 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 |---|---|---|---|
 | 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | c11768c |
 | 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | a839502 |
-| 3: The weekly push and the settings switches | dev | done | committed with this row |
-| 4: Sealed ledgers, help and docs | dev | not started | |
+| 3: The weekly push and the settings switches | dev | done | 5060242 |
+| 4: Sealed ledgers, help and docs | dev | done | committed with this row |
 | 5: A real month's push | human | not started | |
 
 ### Notes
@@ -274,6 +274,11 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
   not the illustrative `2026-W40` of Data shapes.
 - Phase 3: the two hub rows sit between [Шифрование] and [Подсказки]. The weekly title reads
   «Итоги недели 28 сентября – 4 октября».
+- Phase 4: `src/bot/bot.ts` is unchanged; `registerSummaryPush` (registered in Phase 1) takes
+  the `sum:show` handler too. The `/help` assertion is in `bot.test.ts`, not `messages.test.ts`.
+- Phase 4: [Показать] answers silently for a key with no `sent` row. A budget-period key is read
+  back with the budget's current start day, or the key's day of the month when that day no
+  longer starts a period there.
 
 ### Close triggers
 

@@ -214,6 +214,15 @@ export function summaryPushOffData(push: 'monthly' | 'weekly'): string {
   return assertCallbackData(`sum:off:${push === 'monthly' ? 'm' : 'w'}`);
 }
 
+// [Показать] under a locked ledger's push: `sum:show:<m|w>:<period key>`, the key `YYYY-MM`, a
+// budget period's first day or a week's Monday (at most 21 bytes). The sent push's row is the
+// guard.
+export const SUMMARY_PUSH_SHOW = /^sum:show:([mw]):(\d{4}-\d{2}(?:-\d{2})?)$/;
+
+export function summaryPushShowData(push: 'monthly' | 'weekly', periodKey: string): string {
+  return assertCallbackData(`sum:show:${push === 'monthly' ? 'm' : 'w'}:${periodKey}`);
+}
+
 // [Позиции] on /week and /month and its pager (ADR-0038): `itm:w:<Monday YYYY-MM-DD>:<page>`,
 // `itm:m:<YYYY-MM>:<page>`, 1-based pages (at most 19 bytes). They act on the summary screen's
 // ledger, so only its anchor accepts them.

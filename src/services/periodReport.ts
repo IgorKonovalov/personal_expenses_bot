@@ -26,13 +26,14 @@ import type { Money } from '../domain/money.js';
 import {
   budgetPeriodOf,
   monthOf,
+  parsePeriod,
   periodKey,
   previous,
   weekOf,
   type DateRange,
 } from '../domain/periods.js';
 import { dueInstant } from '../domain/schedule.js';
-import { localDateOf, type LocalDate } from '../domain/time.js';
+import { localDateOf, parseLocalDate, type LocalDate } from '../domain/time.js';
 import { budgetEnd, type BudgetEnd } from './budget.js';
 import { isLocked, openExpenses, type KeyDeps, type Locked } from './ledgerKeys.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
@@ -281,6 +282,55 @@ function openedBetween(
     }),
   );
   return opened.kind === 'locked' ? opened : opened.expenses;
+}
+
+// [Показать] under a locked ledger's push: the report of the push the user's personal ledger was
+// sent under that key, read now. Undefined when no such push was sent; `locked` while the ledger
+// still is.
+export function shownSummary(
+  deps: Deps,
+  input: { readonly user: User; readonly push: PushKind; readonly periodKey: string },
+): PeriodReport | Locked | undefined {
+  const ledger = findPersonalLedger(deps.db, input.user.id);
+  if (ledger === undefined) return undefined;
+  const kind: SummaryKind = input.push === 'weekly' ? 'week' : 'period';
+  if (findSummaryPush(deps.db, ledger.id, kind, input.periodKey) !== 'sent') return undefined;
+  const periods = periodsOfKey(deps, ledger, kind, input.periodKey);
+  if (periods === undefined) return undefined;
+  return periodReport(deps, { ledger, readerId: input.user.id, ...periods });
+}
+
+// A push's period and the one before it, back from its key: a week by its Monday, a calendar
+// month by `YYYY-MM`, a budget period by its first day under the budget's start day (that day of
+// the month when the start day has moved since).
+function periodsOfKey(
+  deps: Deps,
+  ledger: Ledger,
+  kind: SummaryKind,
+  key: string,
+): { readonly period: SummaryPeriod; readonly previous: DateRange } | undefined {
+  if (kind === 'week') {
+    const week = parsePeriod('week', key);
+    return week === undefined
+      ? undefined
+      : { period: { kind: 'week', from: week.from, to: week.to }, previous: previous(week) };
+  }
+  const month = parsePeriod('month', key);
+  if (month !== undefined) {
+    return { period: { kind: 'month', from: month.from, to: month.to }, previous: previous(month) };
+  }
+  const from = parseLocalDate(key);
+  if (from === undefined) return undefined;
+  const current = findLedgerBudget(deps.db, ledger.id)?.periodStartDay;
+  const startDay =
+    current !== undefined && budgetPeriodOf(from, current).from === from
+      ? current
+      : Number(from.slice(8, 10));
+  const closed = budgetPeriodOf(from, startDay);
+  return {
+    period: { kind: 'budget', from: closed.from, to: closed.to },
+    previous: budgetPeriodOf(addDays(closed.from, -1), startDay),
+  };
 }
 
 // [Отключить] on a push: that push's switch off. False when it already was.

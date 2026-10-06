@@ -86,6 +86,7 @@ import {
   showExpenseData,
   summaryPageData,
   summaryPushOffData,
+  summaryPushShowData,
   tagShowData,
   undoExpenseData,
 } from './callbackData.js';
@@ -262,6 +263,12 @@ describe('menu and help', () => {
   it('names the menu buttons in the help text', () => {
     expect(messages.help).toContain('📊 Сегодня');
     expect(messages.help).toContain('❓ Помощь');
+  });
+
+  it('tells about the summary pushes and their switches in the help text', () => {
+    expect(messages.help).toContain('1-го числа в 09:00 я пришлю итоги прошлого месяца');
+    expect(messages.help).toContain('Итоги недели по понедельникам включаются в /settings');
+    expect(messages.help).toContain('[Отключить] под итогами');
   });
 
   it('answers the 📊 Сегодня label exactly like /today and records nothing', async () => {
@@ -1913,6 +1920,17 @@ describe('callback data', () => {
     const data = setCategoryData(EXPENSE_ID as ExpenseId, 1_234_567_890_123_456 as CategoryId);
     expect(data).toMatch(new RegExp(`^exp:setcat:${EXPENSE_ID}:\\d{16}$`));
     expect(Buffer.byteLength(data, 'utf8')).toBeLessThanOrEqual(64);
+  });
+
+  it('is sum:show:m:2026-09 at 18 bytes, and at most 22 for a budget period or a week', () => {
+    expect(summaryPushShowData('monthly', '2026-09')).toBe('sum:show:m:2026-09');
+    expect(Buffer.byteLength(summaryPushShowData('monthly', '2026-09'), 'utf8')).toBe(18);
+    expect(
+      Buffer.byteLength(summaryPushShowData('monthly', '2026-09-15'), 'utf8'),
+    ).toBeLessThanOrEqual(22);
+    expect(
+      Buffer.byteLength(summaryPushShowData('weekly', '2026-09-28'), 'utf8'),
+    ).toBeLessThanOrEqual(22);
   });
 
   it('is sum:off:m and sum:off:w under a summary push, 9 bytes', () => {
