@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.21.0 (2026-10-06)
+
+From Plan 0034 (pre-invite polish).
+
+- The menu gains [☰ Ещё]: every command without a menu button (/recurring, /debts, /tags, /tag,
+  /export, /changelog, /donate, /paysupport, /privacy, /delete_account, /unlock or /lock) is a
+  button there. A command that needs an argument asks for it. The admin gets an admin row.
+- The `/` menu in a private chat lists every command; the admin's chat adds the admin commands.
+- A receipt photo is deleted once its expense is recorded or found already recorded.
+- The full help on a sticker or an unrecognised message is shown once. After that the bot answers
+  one line that disappears after a minute. The edit hint and the plaintext warnings of an
+  encrypted ledger's export and reminder prompts are also shown once.
+
 ## 0.20.0 (2026-10-06)
 
 From Plan 0012 (tags for projects).

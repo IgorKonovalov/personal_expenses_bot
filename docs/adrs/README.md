@@ -42,5 +42,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0033](0033-pdf-statements-via-pdfjs-dist.md) | PDF statements are read with `pdfjs-dist`, imported lazily and only by the statements adapter | accepted (2026-10-06) |
 | [0034](0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) | Retry an unread receipt QR on preprocessed pixels, decoded with jpeg-js | accepted (2026-10-05) |
 | [0035](0035-recurring-occurrences-sealed-under-their-rule.md) | A sealed recurring occurrence opens under its rule's binding, not its own expense id | accepted (2026-10-06) |
-| [0036](0036-stay-on-node-memory-work-targets-heavy-jobs.md) | Stay on Node; memory work targets the heavy jobs, not the runtime | proposed (2026-10-06) |
-| [0037](0037-first-time-notices-and-transient-replies.md) | One-time notices are rows in `user_notices`, and transient replies are deleted by an in-process timer | proposed (2026-10-06) |
+| [0036](0036-stay-on-node-memory-work-targets-heavy-jobs.md) | Stay on Node; memory work targets the heavy jobs, not the runtime | accepted (2026-10-06) |
+| [0037](0037-first-time-notices-and-transient-replies.md) | One-time notices are rows in `user_notices`, and transient replies are deleted by an in-process timer | accepted (2026-10-06) |

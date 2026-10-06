@@ -1,8 +1,8 @@
 # ADR-0037: One-time notices are rows in `user_notices`, and transient replies are deleted by an in-process timer
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06, at the close of Plan 0034)
 > **Date:** 2026-10-06
-> **Related plan(s):** [Plan 0034](../plans/0034-pre-invite-polish.md) Phase 4
+> **Related plan(s):** [Plan 0034](../plans/done/0034-pre-invite-polish.md) Phase 4
 
 ## Context
 

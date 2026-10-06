@@ -1,10 +1,11 @@
 # 0034: Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned, one minor fixed at close in a8af824, one minor
+> open as a followup, Phase 5 live check owed, v0.21.0
 > **Created:** 2026-10-06
-> **Related ADRs:** [ADR-0037](../adrs/0037-first-time-notices-and-transient-replies.md) (notices
-> shown once, transient replies), [ADR-0011](../adrs/0011-navigation-model.md) (the menu bar),
-> [ADR-0028](../adrs/0028-contextual-tips-registry.md) (tips, kept apart)
+> **Related ADRs:** [ADR-0037](../../adrs/0037-first-time-notices-and-transient-replies.md) (notices
+> shown once, transient replies), [ADR-0011](../../adrs/0011-navigation-model.md) (the menu bar),
+> [ADR-0028](../../adrs/0028-contextual-tips-registry.md) (tips, kept apart)
 
 ## TL;DR
 
@@ -298,4 +299,53 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
   1508 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (268 links).
 - **Outstanding `human` phases:** Phase 5 (live check), owed after the deploy.
 
+## Close review
+
+The review at tip 8ce4f75, in a fresh session. Minor 1 and both nits were fixed in a8af824 and
+re-verified at that tip. Minor 2 stays open. Phase 5 (`human`) is owed.
+
+**Verdict:** Phases 1-4 are built as planned, every done-when has a test with a real assertion,
+and every deviation is disclosed in the log. No blockers or majors.
+
+### Gate
+
+- At 8ce4f75: `pnpm typecheck` and `pnpm lint` exit 0, `pnpm test` 105 files, 1508 tests pass,
+  `node scripts/check-doc-links.mjs` exit 0 (268 links).
+- At a8af824: typecheck and lint exit 0, 105 files, 1509 tests pass.
+
+### Alignment
+
+- Commits match the log: 50ccc70, e6a8e4d, 4419af7, ee37e65. Each phase has one valid owner tag.
+- Assertions read against the done-whens: every direct [☰ Ещё] button is compared to its typed
+  command by the full Telegram API payloads, with the typed side asserted non-empty; argument
+  buttons assert the prompt, the edit that drops [Отмена], then payloads equal to
+  `/<command> отпуск`; a redelivered answer sends once; a forged `adm:*` tap from a non-admin
+  writes no flow and no invite code; the guard test is shown to name a `brand_new` command. The
+  receipt tests assert the `deleteMessage` chat and message id, none for an unreadable photo, and
+  a warn when the delete fails. The transient test asserts nothing at 59 999 ms and the delete at
+  60 000 ms. Two concurrent first stickers yield one full help.
+- Disclosed deviations accepted: the `/categories` guard exemption, three admin rows of two,
+  the block test on the harness's second user instead of 42.
+- ADR-0037 is followed as written. No ADR is reversed.
+
+### Findings
+
+- **minor 1 (fixed in a8af824):** `registerCommands` wrote the admin chat scope before the group
+  list in one `try`, so a "chat not found" for an admin who never opened the bot skipped the
+  group list. The admin scope now goes last in its own `try`, and a test fails that one call.
+- **minor 2 (open):** the [Возврат пожертвования] prompt holds for `FLOW_TTL_MS` and a menu-bar
+  tap doesn't end it, so an expense typed minutes later ("450 кофе") is relayed to the admin as a
+  support request. Other argument prompts refuse what they can't use; this one forwards anything.
+  Built as the plan said, so it is a plan gap, not a defect.
+- **nits 1-2 (fixed in a8af824):** two comments re-wrapped (`deleteAccount.ts`, `receipt.ts`).
+
+### Docs
+
+README, `/help` and the command lists are updated. No config or env keys. `CLAUDE.md`'s tree
+still matches.
+
 ## Followups
+
+- Minor 2: confirm the paysupport answer before relaying it, or end an argument prompt on a
+  menu-bar tap. A future plan.
+- Phase 5 (`human`): the live check, owed after the deploy.

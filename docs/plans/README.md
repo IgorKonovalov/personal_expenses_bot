@@ -15,12 +15,12 @@ status and date. What a plan did lives in the plan.
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0034](0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | approved (2026-10-06) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0034](done/0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | done (2026-10-06): built as planned, one minor fixed at close, one minor open, Phase 5 live check owed, v0.21.0 |
 | [0012](done/0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | done (2026-10-06): built as planned, one minor fixed at close, five minors and three nits open, Phase 6 real trip owed, v0.20.0 |
 | [0013](done/0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | done (2026-10-06): built as planned after one fix pass, four minors and two nits open, Phase 6 real debts and group owed, v0.19.0 |
 | [0027](done/0027-bank-statement-import.md) | Bank statement import: a Serbian bank's export file becomes expenses | done (2026-10-06): built as planned, two minors open, Phase 5 real statement owed, v0.18.0 |
