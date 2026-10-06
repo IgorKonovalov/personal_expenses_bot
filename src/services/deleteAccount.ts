@@ -15,11 +15,11 @@ import type { LedgerKeyring } from './ledgerKeys.js';
 // /delete_account (ADR-0024). One transaction hard-deletes the personal ledger with every
 // expense, receipt and its items, budget, cap, category, sealed key and membership, every
 // recurring rule and reminder the user made in any ledger with its occurrences, every debt
-// person and operation (ADR-0030), then the user's
-// flow session, one-time notices (ADR-0037) and identity, and leaves the users row as a tombstone: `deleted_at` set,
-// admission and the active ledger cleared, and the display name forgotten in every group. The
-// user's expenses in group ledgers stay, so the group's totals don't change; they show under
-// a deleted member. The Telegram id then matches no one and needs an invite like anyone else.
+// person and operation (ADR-0030), then the user's flow session, one-time notices (ADR-0037)
+// and identity, and leaves the users row as a tombstone: `deleted_at` set, admission and the
+// active ledger cleared, and the display name forgotten in every group. The user's expenses
+// in group ledgers stay, so the group's totals don't change; they show under a deleted member.
+// The Telegram id then matches no one and needs an invite like anyone else.
 
 export interface DeleteAccountDeps {
   readonly db: Db;

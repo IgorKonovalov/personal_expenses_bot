@@ -277,6 +277,11 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 - Phase 4: [« Назад] on the export picker also reads `export_plaintext`, so it shows the warning
   only if the notice was never seen.
 - Phase 4: `src/bot/flows.ts` and `src/bot/testHarness.ts` weren't touched.
+- Fix pass (review minor 1): `registerCommands` writes the admin-chat command list last, in its
+  own try that warns `setMyCommands failed for the admin chat`, so its failure can't skip the
+  group list; the test fails that call by scope with a `bot.api.config.use` transformer, so
+  `testHarness.ts` wasn't extended. The two review nits re-wrap comments in
+  `src/services/deleteAccount.ts` and `src/bot/handlers/receipt.ts`. Same fix commit.
 
 ### Close triggers
 

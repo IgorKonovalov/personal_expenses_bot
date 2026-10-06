@@ -186,8 +186,8 @@ export function telegramFileDownloader(token: string): FileDownloader {
 
 // A photo, or an image sent as a file, in DM: the first QR text that is a receipt URL runs the
 // pasted-link path (ADR-0019), and a recorded or duplicate receipt's image is then deleted. An
-// image with no such QR gets one hint and stays. A non-image document
-// falls through to the help reply. Register before the non-text handler.
+// image with no such QR gets one hint and stays. A non-image document falls through to the
+// help reply. Register before the non-text handler.
 export function registerReceiptMedia(
   bot: Composer<Context>,
   deps: AdminDeps,

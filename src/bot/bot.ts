@@ -165,10 +165,12 @@ export function privateComposer(options: BotOptions): Composer<Context> {
 }
 
 // The slash-command lists the client shows: the DM list by default and in every private chat,
-// the DM list plus the admin commands in the admin's chat, the group list in every group
-// (ADR-0014), plus the profile description texts. A list set for
-// a narrower scope beats the default, so the private scope is written too: whatever was set
-// there before is overwritten on every boot. A failure costs only those, so boot continues.
+// the group list in every group (ADR-0014), the DM list plus the admin commands in the admin's
+// chat, plus the profile description texts. A list set for a narrower scope beats the default,
+// so the private scope is written too: whatever was set there before is overwritten on every
+// boot. A failure costs only those, so boot continues. The admin-chat scope goes last in its
+// own try: it fails with "chat not found" until the admin has opened the bot, and that must not
+// cost the group list.
 export async function registerCommands(
   bot: Bot,
   logger: Logger,
@@ -177,12 +179,16 @@ export async function registerCommands(
   try {
     await bot.api.setMyCommands(messages.commands);
     await bot.api.setMyCommands(messages.commands, { scope: { type: 'all_private_chats' } });
-    await bot.api.setMyCommands([...messages.commands, ...messages.adminCommands], {
-      scope: { type: 'chat', chat_id: adminTelegramId },
-    });
     await bot.api.setMyCommands(messages.groupCommands, { scope: { type: 'all_group_chats' } });
   } catch (error) {
     logger.warn({ err: safeError(error) }, 'setMyCommands failed');
+  }
+  try {
+    await bot.api.setMyCommands([...messages.commands, ...messages.adminCommands], {
+      scope: { type: 'chat', chat_id: adminTelegramId },
+    });
+  } catch (error) {
+    logger.warn({ err: safeError(error) }, 'setMyCommands failed for the admin chat');
   }
   // The profile texts are overwritten on every boot, so editing them in messages ships with
   // the next deploy. A failure costs only the texts.

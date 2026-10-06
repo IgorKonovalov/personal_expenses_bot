@@ -423,7 +423,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers the private list by default and in every private chat, plus the admin commands in the admin chat', async () => {
+  it('registers the private list by default and in every private chat, the group list, then the admin commands in the admin chat', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger(), ADMIN_ID);
@@ -461,6 +461,10 @@ describe('command registration at boot', () => {
       },
       {
         method: 'setMyCommands',
+        payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
+      },
+      {
+        method: 'setMyCommands',
         payload: {
           commands: [
             ...messages.commands,
@@ -473,10 +477,6 @@ describe('command registration at boot', () => {
           ],
           scope: { type: 'chat', chat_id: ADMIN_ID },
         },
-      },
-      {
-        method: 'setMyCommands',
-        payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
       },
       { method: 'setMyDescription', payload: { description: messages.botDescription } },
       {
@@ -520,7 +520,7 @@ describe('command registration at boot', () => {
     });
   });
 
-  it('logs one warning and returns when setMyCommands fails', async () => {
+  it('logs a warning per failed step and returns when every call fails', async () => {
     const { bot } = createTestBot();
     bot.api.config.use(() => Promise.reject(new Error('network down')));
     const lines: string[] = [];
@@ -533,7 +533,40 @@ describe('command registration at boot', () => {
 
     expect(lines.map((l) => (JSON.parse(l) as { msg: string }).msg)).toEqual([
       'setMyCommands failed',
+      'setMyCommands failed for the admin chat',
       'setMyDescription failed',
+    ]);
+  });
+
+  it('still writes the group list and the profile texts when the admin-chat scope fails', async () => {
+    const { bot, calls } = createTestBot();
+    bot.api.config.use((prev, method, payload, signal) => {
+      const scope = (payload as { scope?: { type: string } } | undefined)?.scope;
+      return method === 'setMyCommands' && scope?.type === 'chat'
+        ? Promise.reject(new Error('Bad Request: chat not found'))
+        : prev(method, payload, signal);
+    });
+    const lines: string[] = [];
+
+    await registerCommands(
+      bot,
+      createLogger('info', { write: (line: string) => void lines.push(line) }),
+      ADMIN_ID,
+    );
+
+    expect(calls).toContainEqual({
+      method: 'setMyCommands',
+      payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
+    });
+    expect(calls.map((c) => c.method)).toEqual([
+      'setMyCommands',
+      'setMyCommands',
+      'setMyCommands',
+      'setMyDescription',
+      'setMyShortDescription',
+    ]);
+    expect(lines.map((l) => JSON.parse(l) as { level: number; msg: string })).toEqual([
+      expect.objectContaining({ level: 40, msg: 'setMyCommands failed for the admin chat' }),
     ]);
   });
 });
