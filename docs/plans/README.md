@@ -13,7 +13,6 @@ status and date. What a plan did lives in the plan.
 | [0012](0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | approved (2026-10-01) |
 | [0013](0013-debts.md) | Debts: who owes whom, closed in the currency they were opened in | approved (2026-10-01) |
 | [0015](0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | approved (2026-10-01) |
-| [0025](0025-recurring-expenses-and-reminders.md) | Recurring expenses and reminders: rent and subscriptions recorded on their day | approved (2026-10-02) |
 | [0026](0026-monthly-summary-push.md) | Monthly summary push: last period's report arrives on its own | approved (2026-10-02) |
 | [0027](0027-bank-statement-import.md) | Bank statement import: a Serbian bank's export file becomes expenses | approved (2026-10-02) |
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
@@ -24,6 +23,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0025](done/0025-recurring-expenses-and-reminders.md) | Recurring expenses and reminders: rent and subscriptions recorded on their day | done (2026-10-06): built as planned after one fix pass, one minor fixed at close, one nit open, Phase 7 real month owed, v0.17.0 |
 | [0029](done/0029-opening-by-invite.md) | Opening by invite: invite links, abuse limits, a privacy policy and account deletion | done (2026-10-06): built as planned after one fix pass, one minor fixed at close, Phase 7 deploy and open owed, v0.16.0 |
 | [0024](done/0024-export-and-data-ownership.md) | Export and data ownership: every expense out as CSV or XLSX, free | done (2026-10-03): built as planned, one minor and two nits open, Phase 5 real-apps check owed, v0.15.0 |
 | [0028](done/0028-donations.md) | Donations: everything free, `/donate` via Telegram Stars and an external link | done (2026-10-06): built as planned, two minors open, Phase 4 live donation and refund owed, v0.14.0 |

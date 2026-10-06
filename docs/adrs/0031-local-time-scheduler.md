@@ -1,8 +1,8 @@
 # ADR-0031: One minute-tick scheduler fires per-ledger jobs at a local time, keyed by occurrence date
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06)
 > **Date:** 2026-10-02
-> **Related plan(s):** Plan 0025 ([0025-recurring-expenses-and-reminders.md](../plans/0025-recurring-expenses-and-reminders.md)),
+> **Related plan(s):** Plan 0025 ([0025-recurring-expenses-and-reminders.md](../plans/done/0025-recurring-expenses-and-reminders.md)),
 > and Plan 0026 (its first reuse)
 
 ## Context

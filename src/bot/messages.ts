@@ -525,6 +525,7 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.17.0': html`Регулярные траты: под карточкой траты кнопка [Повторять] записывает её каждый месяц, неделю или год в 09:00 по вашему времени. Можно попросить бота сначала спрашивать сумму. /recurring показывает правила и добавляет напоминания.`,
   '0.16.0': html`/privacy рассказывает, какие данные хранит бот и куда они уходят. /delete_account удаляет ваш личный учёт со всеми тратами, чеками и настройками.`,
   '0.15.0': html`/export присылает траты за выбранный период файлом CSV или Excel, в личном чате и в группе.`,
   '0.14.0': html`Бот остаётся бесплатным для всех, без платных функций. Если хотите поддержать его, /donate принимает Telegram Stars, а пожертвование ничего не открывает. Вернуть пожертвование можно через /paysupport.`,

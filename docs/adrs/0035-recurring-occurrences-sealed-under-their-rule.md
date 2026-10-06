@@ -1,8 +1,8 @@
 # ADR-0035: A sealed recurring occurrence opens under its rule's binding, not its own expense id
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06)
 > **Date:** 2026-10-05
-> **Related plan(s):** [Plan 0025](../plans/0025-recurring-expenses-and-reminders.md) Phase 6
+> **Related plan(s):** [Plan 0025](../plans/done/0025-recurring-expenses-and-reminders.md) Phase 6
 
 ## Context
 

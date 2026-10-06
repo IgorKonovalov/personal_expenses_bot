@@ -2,6 +2,22 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.17.0 (2026-10-06)
+
+From Plan 0025 (recurring expenses and reminders).
+
+- [Повторять] under the author's expense card makes a rule from it: every month on its day,
+  every week on its weekday, or every year on its date. Each occurrence is recorded at 09:00 in
+  the ledger's timezone, with [Удалить] on its notice. Days 29 to 31 fall on a short month's
+  last day.
+- A rule can ask first instead, with [Записать] / [Другая сумма] / [Пропустить], for bills that
+  vary. /recurring lists the rules, switches their mode, deletes them, and adds reminders that
+  just send a text on their day.
+- Group expenses repeat into their group, and only the author can act on them. Rules in a sealed
+  ledger record without the passphrase, and their notices carry no amount or description.
+- After downtime, missed expenses are recorded on their own dates, once; a reminder sends only
+  its latest missed date. /delete_account also removes the user's rules and reminders.
+
 ## 0.16.0 (2026-10-06)
 
 From Plan 0029 (opening by invite).

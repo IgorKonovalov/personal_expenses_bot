@@ -1,13 +1,14 @@
 # 0025: Recurring expenses and reminders: rent and subscriptions recorded on their day
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned after one fix pass, one minor fixed at close,
+> one nit open, Phase 7 real month owed, v0.17.0
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
-> **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler),
-> [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md) (ledger time),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
-> [ADR-0035](../adrs/0035-recurring-occurrences-sealed-under-their-rule.md) (sealed occurrences)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed rules in Phase 6)
+> **Related ADRs:** [ADR-0031](../../adrs/0031-local-time-scheduler.md) (the scheduler),
+> [ADR-0015](../../adrs/0015-shared-ledgers-carry-a-timezone.md) (ledger time),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0035](../../adrs/0035-recurring-occurrences-sealed-under-their-rule.md) (sealed occurrences)
 
 ## TL;DR
 
@@ -397,4 +398,123 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   259 relative links resolve.
 - **Outstanding `human` phases:** Phase 7 (a real month; blocks merge: no).
 
+## Close review
+
+Closed 2026-10-06 at v0.17.0. Phase 7 (`human`, a real month) is owed after the merge.
+
+### Review round 2 (tip fc9a59f), in full
+
+**Verdict:** The round 1 blocker is fixed and tested. No blockers or majors remain, so the plan is
+ready to close. The round 1 minor (`CLAUDE.md` doesn't list `src/scheduler/`) and nit (ask-mode
+catch-up past 31 dates) are still open, and the close session can fold the minor into its commit.
+
+#### Gate (run in this session, at the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 92 files, 1247 tests passed. That is round 1's 1246 plus the new
+  `deleteAccount` case.
+- `node scripts/check-doc-links.mjs`: exit 0, 259 relative links resolve.
+- `git status` was clean after the run.
+
+#### Round 1 finding 0 (blocker): `/delete_account` with recurring rules, now resolved in 01a3f74
+
+- **The code:** `deleteUserOccurrences` and `deleteUserRules` (`src/db/recurring.ts:282-299`)
+  select rules by `user_id = ? OR ledger_id = ?`. That covers every rule the user authored, of
+  any kind, in any ledger and deleted ones included, plus any rule on their personal ledger.
+- **The order:** `deleteAccount` (`src/services/deleteAccount.ts:44-56`) deletes in an order that
+  satisfies every FK in `0015_recurring.sql` and `0016_expense_sealed_rule.sql`:
+  - occurrences first, before the expenses their `expense_id` points at;
+  - then the personal ledger's receipts and expenses, which removes any `sealed_rule_id`
+    reference;
+  - then the rules, before the categories their `category_id` points at and before the ledger.
+- **Other paths:** `deleteLedger`, `deleteLedgerExpenses` and `deleteLedgerCategories` have no
+  other callers in `src/` (checked with `git grep`), so no second deletion path needs the same
+  treatment.
+- **Group expenses:** a recorded group expense survives, and its occurrence row is gone. Shared
+  ledgers are never sealed, so no surviving expense carries `sealed_rule_id` for a deleted rule.
+  The header comment in `db/recurring.ts` says this.
+- **The test:** `src/services/deleteAccount.test.ts`, "deletes the user's rules, reminders and
+  occurrences in every ledger, and no one else's". Its assertions:
+  - Before deletion there are four occurrences: rent `recorded`, group rule `recorded`, and two
+    reminders `reminded`.
+  - `deleteAccount` returns `'deleted'`, where before the fix the transaction threw.
+  - Alice has zero rules left, Bob's reminder text survives, and exactly one occurrence remains
+    (Bob's `reminded`).
+  - The group expense of 120000 minor units stays under Alice.
+  - The assertions are exact values, not non-empty checks. The case covers every row kind the
+    round 1 fix asked for.
+- **Docs:** the `deleteAccount` header comment names the rules. The implementation log records
+  the fix and the files outside `Files touched`.
+
+Round 1's evidence for the Phase 1 to 6 done-whens still stands. The fix touched only
+`src/db/recurring.ts` (two additive functions), `src/services/deleteAccount.ts` and its test.
+No phase code changed.
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+##### 1. `CLAUDE.md` "Where things live" still doesn't list `src/scheduler/` (carried from round 1)
+
+- **What:** The plan adds a new top-level source directory, `src/scheduler/`. It holds the
+  ADR-0031 worker and the provider type that Plan 0026 reuses. The orientation map's `src/` tree
+  still omits it.
+- **Where:** `CLAUDE.md:22`, the `src/` block, right after the `fx/` line.
+- **Why it matters:** Every session starts from this map. A missing directory is how drift
+  starts, and the next plan builds on this one.
+- **Suggested fix:** Add this line after `CLAUDE.md:22`:
+  `├── scheduler/       # the local-time scheduler (ADR-0031): the 60 s tick and its providers`.
+  The close session can include it in the close commit, since `CLAUDE.md` is outside `.claude/`.
+
+#### nit
+
+##### 2. Ask-mode catch-up beyond 31 missed dates asks more than 3 times (carried from round 1)
+
+- **What:** `fireRule` asks about the last `ASK_CATCH_UP` dates of each batch, and `dueRules`
+  caps a batch at `MAX_CATCH_UP` (31). A longer backlog splits across ticks, and each tick posts
+  its own "skipped" line and up to 3 prompts.
+- **Where:** `src/services/recurring.ts:232-240` and `307`.
+- **Why it matters:** This is cosmetic. It only happens after about 8 months of downtime for a
+  weekly rule, or 2.5 years for a monthly one.
+- **Suggested fix:** Optional. Let an `ask` rule scan past the cap, as reminders do with
+  `MAX_REMINDER_SCAN`, and claim every date but the last 3 as `skipped`. Alternatively, record it
+  as a followup.
+
+#### Bookkeeping owed at close
+
+- Flip `Status:` to `done` and `git mv` the plan to `docs/plans/done/`.
+  - Repair its outbound links: `done/0019-…` becomes `0019-…`, and `../adrs/` becomes
+    `../../adrs/`.
+  - Repair any inbound links.
+  - Run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0031 and ADR-0035 if they are still `proposed`, and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Bump the version to the next minor, since this is a feature plan. Add a `CHANGELOG.md` entry
+  and the version's `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013).
+- Add the `src/scheduler/` line to `CLAUDE.md` (minor 1).
+- Phase 7 (`human`, blocks merge: no) stays owed after the merge. Record that in the plan's
+  close.
+- Followup for a future plan, not a finding: `/privacy` (Plan 0029) doesn't yet name recurring
+  rules or reminder texts among the stored data.
+
+### Resolution
+
+- Round 1, finding 1 (blocker, `/delete_account` fails for a user with a recurring rule):
+  resolved in 01a3f74.
+- Round 2, minor 1 (`CLAUDE.md` omits `src/scheduler/`): fixed at close in c862bd0.
+- Round 2, nit 2 (ask-mode catch-up past 31 dates): open.
+- Phase 7 (`human`, a real month): owed.
+
 ## Followups
+
+- `/privacy` (Plan 0029) doesn't yet name recurring rules or reminder texts among the stored
+  data.
+- Ask-mode catch-up past `MAX_CATCH_UP` dates posts more than 3 prompts across ticks (review
+  round 2, nit 2).
