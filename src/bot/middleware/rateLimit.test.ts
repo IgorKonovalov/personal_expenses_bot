@@ -5,6 +5,7 @@ import {
   createTestBot,
   groupTextUpdate,
   logContent,
+  successfulPaymentUpdate,
   textUpdate,
 } from '../testHarness.js';
 import { RateLimiter } from './rateLimit.js';
@@ -72,5 +73,25 @@ describe('rateLimit middleware', () => {
     }
     await bot.handleUpdate(textUpdate({ updateId: 200, fromId: SECOND_ALLOWED_ID, text: '/help' }));
     expect(calls).toEqual([]);
+  });
+
+  it('records a successful_payment from a sender over the limit', async () => {
+    const { bot, db } = createTestBot();
+
+    for (let i = 1; i <= 30; i += 1) {
+      await bot.handleUpdate(textUpdate({ updateId: i, fromId: SECOND_ALLOWED_ID, text: '/help' }));
+    }
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: 31,
+        stars: 50,
+        chargeId: 'charge-1',
+        fromId: SECOND_ALLOWED_ID,
+      }),
+    );
+
+    expect(db.prepare('SELECT stars, telegram_payment_charge_id FROM donations').all()).toEqual([
+      { stars: 50, telegram_payment_charge_id: 'charge-1' },
+    ]);
   });
 });

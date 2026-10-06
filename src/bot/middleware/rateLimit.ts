@@ -55,7 +55,8 @@ export class RateLimiter {
 }
 
 // Registered before the access check, for private and group updates alike. The admin is exempt;
-// an update with no sender passes.
+// an update with no sender passes. A successful_payment passes and doesn't count: the Stars are
+// already taken, and Telegram doesn't redeliver an update the bot handled (ADR-0027).
 export function rateLimit(deps: {
   readonly adminTelegramId: number;
   readonly logger: Logger;
@@ -64,7 +65,11 @@ export function rateLimit(deps: {
   const limiter = new RateLimiter(RATE_LIMIT.limit, RATE_LIMIT.windowMs);
   return async (ctx, next) => {
     const fromId = ctx.from?.id;
-    if (fromId === undefined || fromId === deps.adminTelegramId) {
+    if (
+      fromId === undefined ||
+      fromId === deps.adminTelegramId ||
+      ctx.message?.successful_payment !== undefined
+    ) {
       await next();
       return;
     }
