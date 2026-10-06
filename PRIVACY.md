@@ -55,4 +55,4 @@
 
 ## Контакт
 
-Вопросы о данных: TODO-CONTACT (Telegram-username администратора; заполняется при запуске).
+Вопросы о данных: @LongMaan в Telegram.

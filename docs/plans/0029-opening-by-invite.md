@@ -1,6 +1,6 @@
 # 0029: Opening by invite: invite links, abuse limits, a privacy policy and account deletion
 
-> **Status:** in-progress
+> **Status:** approved
 > **Created:** 2026-10-01
 > **Related ADRs:** ADR-0024 ([0024-admission-lives-in-the-database-via-invite-codes.md](../adrs/0024-admission-lives-in-the-database-via-invite-codes.md)),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
@@ -25,7 +25,7 @@ hog the bot, and one user shouldn't be able to drive hundreds of requests at `su
 Strangers' financial data also brings obligations a household didn't need: a stated policy, and
 a way to delete everything. ADR-0024 records why admission moves into the database.
 
-**Prerequisites for the opening itself** (Phase 6, not for building this plan): Plan 0015
+**Prerequisites for the opening itself** (Phase 7, not for building this plan): Plan 0015
 (onboarding), Plan 0019 (encrypted ledger), Plan 0024 (export) and Plan 0028 (donations). This
 plan can land before them. With the household admitted at boot, it changes nothing they see
 until the first link goes out.
@@ -235,16 +235,27 @@ between phases. The architect reviews once at the end, in a fresh session. All n
   `/help` lists both new commands. `PRIVACY.md` names every external host the README lists under
   Receipts and Currency conversion.
 
-### Phase 6: Deploy and open
+### Phase 6: Prepare the opening
 - **Owner skill:** human
 - **What:**
   1. Fill in the contact in `PRIVACY.md`.
-  2. On the VPS, replace `ALLOWED_TELEGRAM_IDS` with `ADMIN_TELEGRAM_ID` (the old first id) and
-     `ADMIT_TELEGRAM_IDS` (the rest), before the deploy.
-  3. Push and deploy, then check that the household still records.
-  4. Test `/invite` with a second account.
-  5. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+  2. On the VPS, add `ADMIN_TELEGRAM_ID` (the admin's id) and `ADMIT_TELEGRAM_IDS` (the rest) to
+     the `.env`, and keep `ALLOWED_TELEGRAM_IDS`: the code before 0029 requires it, so every
+     deploy until 0029 ships still boots.
 - **Files touched:** `PRIVACY.md`, the VPS `.env`.
+- **Done when:** `PRIVACY.md` names a contact, and the VPS `.env` sets `ADMIN_TELEGRAM_ID` and
+  lists every other household id in `ADMIT_TELEGRAM_IDS`. This phase blocks the merge, so the
+  new keys exist before any push can deploy 0029.
+
+### Phase 7: Deploy and open
+- **Owner skill:** human
+- **Blocks merge:** no
+- **What:**
+  1. Delete `ALLOWED_TELEGRAM_IDS` from the VPS `.env`, which 0029 refuses at boot, then push
+     and deploy, and check that the household still records.
+  2. Test `/invite` with a second account.
+  3. Post the first link only once Plans 0015, 0019, 0024 and 0028 are done.
+- **Files touched:** the VPS `.env`.
 - **Done when:** after the deploy, every household member records `450 кофе` in private. A test
   account admitted by a fresh link records too, and `/delete_account` on it leaves the
   household's data untouched.
@@ -280,7 +291,9 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 ## Risks & open questions
 
 - **Env rename at deploy.** A deploy before the `.env` edit fails at boot, by design. The
-  household is then offline until the edit. Phase 6 orders the edit first.
+  household is then offline until the edit. Phase 6 adds the new keys, and Phase 7 deletes the old
+  one right before the push that ships 0029. Until then, a deploy of the code before 0029 needs
+  the old key, so both stay.
 - **An orphaned group ledger.** If the user who bound a group deletes their account, nobody can
   change that group's settings. Accepted for now. Handing ownership to another admitted member is
   a followup.
@@ -318,7 +331,8 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 | 3: Abuse limits: message rate and daily receipts | dev | done | cfd47fc |
 | 4: Delete my account | dev | done | 8b41787 |
 | 5: Privacy policy and `/privacy` | dev | done | 56b6444 |
-| 6: Deploy and open | human | not started | |
+| 6: Prepare the opening | human | done | PRIVACY.md contact in this commit; VPS .env holds ADMIN_TELEGRAM_ID (no other household id, so no ADMIT_TELEGRAM_IDS) beside the old key |
+| 7: Deploy and open | human | not started | |
 
 ### Notes
 
