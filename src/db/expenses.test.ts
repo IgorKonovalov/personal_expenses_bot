@@ -4,6 +4,7 @@ import type { LocalDate } from '../domain/time.js';
 import { insertCategoriesOrIgnore, type CategoryId } from './categories.js';
 import { openDatabase, type Db } from './connection.js';
 import {
+  countLiveExpenses,
   findExpenseById,
   findHistoryCategory,
   findTakenSourceKeys,
@@ -94,6 +95,22 @@ describe('tags (ADR-0029)', () => {
     ]);
     expect(findExpenseById(db, 'exp-t' as ExpenseId)).toMatchObject({ tags: ['отпуск', 'рим'] });
     expect(findExpenseById(db, 'exp-n' as ExpenseId)).toMatchObject({ tags: [] });
+  });
+});
+
+describe('countLiveExpenses', () => {
+  it("counts a ledger's live expenses, all authors or one, and skips deleted ones", () => {
+    insertMember(db, { ledgerId: LEDGER_A, userId: USER_B, role: 'member' });
+    addExpense('exp-1', LEDGER_A, USER_A, 'tg:1:1');
+    addExpense('exp-2', LEDGER_A, USER_A, 'tg:1:2');
+    addExpense('exp-3', LEDGER_A, USER_B, 'tg:1:3');
+    addExpense('exp-4', LEDGER_B, USER_B, 'tg:1:4');
+    softDeleteExpense(db, 'exp-2' as ExpenseId, NOW);
+
+    expect(countLiveExpenses(db, LEDGER_A)).toBe(2);
+    expect(countLiveExpenses(db, LEDGER_A, USER_A)).toBe(1);
+    expect(countLiveExpenses(db, LEDGER_A, USER_B)).toBe(1);
+    expect(countLiveExpenses(db, LEDGER_B, USER_A)).toBe(0);
   });
 });
 

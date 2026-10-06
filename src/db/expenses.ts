@@ -190,6 +190,23 @@ export function findExpenseById(db: Db, id: ExpenseId): StoredExpense | undefine
   return row === undefined ? undefined : toStoredExpense(row);
 }
 
+// The ledger's live (not deleted) expenses, sealed ones included; only `createdBy`'s when given.
+export function countLiveExpenses(db: Db, ledgerId: LedgerId, createdBy?: UserId): number {
+  return createdBy === undefined
+    ? (db
+        .prepare<[string], number>(
+          'SELECT COUNT(*) FROM expenses WHERE ledger_id = ? AND deleted_at IS NULL',
+        )
+        .pluck()
+        .get(ledgerId) ?? 0)
+    : (db
+        .prepare<[string, string], number>(
+          'SELECT COUNT(*) FROM expenses WHERE ledger_id = ? AND created_by = ? AND deleted_at IS NULL',
+        )
+        .pluck()
+        .get(ledgerId, createdBy) ?? 0);
+}
+
 // Hard-deletes every expense of the ledger, soft-deleted ones included. Run it after the
 // ledger's receipts are gone. Returns how many.
 export function deleteLedgerExpenses(db: Db, ledgerId: LedgerId): number {

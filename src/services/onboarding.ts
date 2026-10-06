@@ -1,6 +1,14 @@
 import { TZDate } from '@date-fns/tz';
 import { format } from 'date-fns';
-import { findOnboarding, markOnboarded, setTipsOff, type User } from '../db/users.js';
+import { countLiveExpenses } from '../db/expenses.js';
+import { findActiveLedger } from '../db/ledgers.js';
+import {
+  findOnboarding,
+  findUserByIdentity,
+  markOnboarded,
+  setTipsOff,
+  type User,
+} from '../db/users.js';
 import { deleteUserTips } from '../db/userTips.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { userSettings, type TimezoneDeps } from './settings.js';
@@ -21,6 +29,23 @@ export interface SetupView {
 export interface SetupCheckView extends SetupView {
   // `HH:MM` now, in `timezone`.
   readonly localTime: string;
+}
+
+// The user behind a Telegram account who has never been onboarded; undefined for an onboarded,
+// deleted or never-provisioned one. Provisions nothing.
+export function pendingOnboarding(
+  { db }: Pick<ServiceDeps, 'db'>,
+  telegramId: number,
+): User | undefined {
+  const user = findUserByIdentity(db, 'telegram', String(telegramId));
+  return user === undefined || findOnboarding(db, user.id).onboardedAt !== null ? undefined : user;
+}
+
+// Whether the user has a live expense of their own in the active ledger: on first contact, the
+// message just handled recorded it.
+export function hasOwnExpense({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean {
+  const ledger = findActiveLedger(db, user.id);
+  return ledger !== undefined && countLiveExpenses(db, ledger.id, user.id) > 0;
 }
 
 export function isOnboarded({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean {

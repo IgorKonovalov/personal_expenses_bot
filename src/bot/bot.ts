@@ -43,6 +43,7 @@ import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
+import { onboarding } from './middleware/onboarding.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { replyHtml, type Html } from './render/html.js';
 
@@ -118,6 +119,9 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
   registerSuccessfulPayment(dm, donateDeps);
   dm.use(access(options));
+  // Wraps every handler below: a never-onboarded sender's first message gets the welcome and
+  // the setup check after its own reply (ADR-0028).
+  dm.use(onboarding(options));
   registerPreCheckout(dm);
   // Answer-once tracking for every callback query, and the silent fallback answer for one no
   // handler claimed. The fallback runs after the whole chain, so it never swallows a scope.

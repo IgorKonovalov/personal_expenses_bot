@@ -1,5 +1,6 @@
 import type { Composer, Context } from 'grammy';
 import { seenNotice } from '../../services/notices.js';
+import { isOnboarded } from '../../services/onboarding.js';
 import type { HandlerDeps } from '../bot.js';
 import { menuKeyboard } from '../keyboards.js';
 import { messages } from '../messages.js';
@@ -12,11 +13,18 @@ export async function sendHelp(ctx: Context): Promise<void> {
 }
 
 // Input the bot can't read (an unknown command, text that isn't an expense, a sticker): the full
-// help the first time (ADR-0037), then a one-line pointer to it that deletes itself.
+// help the first time (ADR-0037), then a one-line pointer to it that deletes itself. A
+// never-onboarded user gets nothing here: the welcome and setup check that follow stand in for
+// it, and the welcome points to /help, so the full help counts as seen.
 export async function sendStrayReply(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const now = deps.now();
-  if (seenNotice(deps, ensureUser(deps, ctx.from.id, now), 'stray_help', now)) {
+  const user = ensureUser(deps, ctx.from.id, now);
+  if (!isOnboarded(deps, user)) {
+    seenNotice(deps, user, 'stray_help', now);
+    return;
+  }
+  if (seenNotice(deps, user, 'stray_help', now)) {
     await sendHelp(ctx);
     return;
   }

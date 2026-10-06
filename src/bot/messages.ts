@@ -539,6 +539,10 @@ function timezoneName(iana: string): string {
   return entry === undefined ? iana : `${timezoneLabels[entry.slug]} (${iana})`;
 }
 
+function setupAfterExpense({ currency }: { currency: CurrencyCode }): Html {
+  return html`Трату выше я записал в ${currency}. Если валюта другая, нажмите под ней [Изменить] → [Сумма] и отправьте сумму с валютой, например «450 RUB».`;
+}
+
 // `Белград`; a zone typed through [Другой…] shows as its IANA name.
 function timezoneCity(iana: string): string {
   const entry = timezoneByIana(iana);
@@ -783,23 +787,29 @@ export const messages = {
     ],
     '\n\n',
   ),
+  // `afterExpense`: the first message recorded an expense in the default currency, which the
+  // check opens by naming.
   setupCheck: ({
     timezone,
     localTime,
     currency,
+    afterExpense = false,
   }: {
     timezone: string;
     localTime: string;
     currency: CurrencyCode;
+    afterExpense?: boolean;
   }): Html =>
     joinHtml(
       [
+        ...(afterExpense ? [setupAfterExpense({ currency }), html``] : []),
         html`Проверьте настройки:`,
         html`Часовой пояс: ${timezoneCity(timezone)}, у вас сейчас ${localTime}?`,
         html`Валюта по умолчанию: ${currency}`,
       ],
       '\n',
     ),
+  setupAfterExpense,
   setupOkButton: 'Да, всё верно',
   setupEditButton: 'Изменить',
   setupConfirmed: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>

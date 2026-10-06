@@ -320,8 +320,8 @@ first, Phase 1 adds that delete to its deletion service.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | committed with this row |
-| 2: A first message that isn't `/start` | dev | not started | |
+| 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | 8bc02c1 |
+| 2: A first message that isn't `/start` | dev | done | committed with this row |
 | 3: The tips registry and the recording tips | dev | not started | |
 | 4: The feature tips and the group welcome | dev | not started | |
 | 5: A stranger's first contact | human | not started | |
@@ -334,6 +334,12 @@ first, Phase 1 adds that delete to its deletion service.
   follow the argument-less `welcome` and the second /start message.
 - Phase 1: the `onb:ok` / `onb:edit` handlers live in `src/bot/handlers/start.ts`;
   `src/bot/callbacks.ts` is unchanged.
+- Phase 2: files outside `Files touched`, approved by the user in session: `countLiveExpenses` in
+  `src/db/expenses.ts` (+ test), for `hasOwnExpense` here and the Phase 4 counts;
+  `onboardOnCreate(db)` exported from `src/bot/testHarness.ts` and called by the test bots that
+  `bot.test.ts` and `src/bot/handlers/unlock.test.ts` build with `createBot`.
+- Phase 2: "the user has at least one expense" reads as a live expense the user created in the
+  active ledger.
 
 ### Close triggers
 

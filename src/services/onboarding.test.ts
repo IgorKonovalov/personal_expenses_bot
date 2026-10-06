@@ -5,14 +5,18 @@ import { insertNoticeSeen } from '../db/notices.js';
 import { findOnboarding, setTipsOff, type User } from '../db/users.js';
 import { insertTipShown, listTipsShown } from '../db/userTips.js';
 import { createLogger } from '../logger.js';
+import { createLedgerKeyring } from './ledgerKeys.js';
 import {
   claimOnboarding,
+  hasOwnExpense,
   isOnboarded,
+  pendingOnboarding,
   replayOnboarding,
   setupCheckView,
   setupView,
 } from './onboarding.js';
 import { provisionUser } from './provisionUser.js';
+import { recordExpense } from './recordExpense.js';
 
 const NOW = new Date('2026-10-01T12:05:00Z');
 
@@ -88,5 +92,28 @@ describe('onboarding', () => {
       timezone: 'Europe/Moscow',
       currency: 'RSD',
     });
+  });
+
+  it('finds a never-onboarded user without provisioning anyone', () => {
+    const user = provision('1001');
+
+    expect(pendingOnboarding(deps(), 1001)).toEqual(user);
+    expect(pendingOnboarding(deps(), 1002)).toBeUndefined();
+    expect(db.prepare('SELECT COUNT(*) FROM users').pluck().get()).toBe(1);
+
+    claimOnboarding(deps(), user, NOW);
+    expect(pendingOnboarding(deps(), 1001)).toBeUndefined();
+  });
+
+  it('says whether the user has a live expense of their own in the active ledger', () => {
+    const user = provision('1001');
+    expect(hasOwnExpense(deps(), user)).toBe(false);
+
+    recordExpense(
+      { ...deps(), keys: createLedgerKeyring(() => NOW) },
+      { user, text: '450 кофе', sourceKey: 'tg:1:1', occurredAt: NOW, now: NOW },
+    );
+
+    expect(hasOwnExpense(deps(), user)).toBe(true);
   });
 });

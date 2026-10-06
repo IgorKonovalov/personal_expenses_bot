@@ -96,6 +96,7 @@ import {
   invoiceLink,
   logContent,
   myChatMemberUpdate,
+  onboardOnCreate,
   preCheckoutUpdate,
   successfulPaymentUpdate,
   textUpdate,
@@ -2453,6 +2454,7 @@ describe('/budget and the card line (ADR-0017)', () => {
     const clock = { now: OCT_1 };
     const db = openDatabase(':memory:');
     runMigrations(db, OCT_1);
+    onboardOnCreate(db);
     let ids = 0;
     let messageId = 100;
     const bot = createBot({
@@ -2984,6 +2986,7 @@ describe('/week and /month', () => {
   async function summaryBot(opts: { fixture?: boolean } = {}) {
     const db = openDatabase(':memory:');
     runMigrations(db, NOW);
+    onboardOnCreate(db);
     let ids = 0;
     // The /start welcome and setup check take 99 and 100, so the first screen after them is 101.
     let messageId = 98;
@@ -3469,6 +3472,7 @@ describe('/categories screen and text flows', () => {
       (() => {
         const memory = openDatabase(':memory:');
         runMigrations(memory, T);
+        onboardOnCreate(memory);
         return memory;
       })();
     let messageId = opts.firstMessageId ?? 100;
@@ -3916,6 +3920,7 @@ describe('/settings hub and the timezone picker', () => {
     const clock = { now: LATE };
     const db = openDatabase(':memory:');
     runMigrations(db, LATE);
+    onboardOnCreate(db);
     const logLines: string[] = [];
     let ids = 0;
     let messageId = 100;
@@ -5219,6 +5224,7 @@ describe('sealed ledger lifecycle and log hygiene (ADR-0020)', () => {
     const now = new Date('2026-09-30T10:00:00Z');
     const db = openDatabase(':memory:');
     runMigrations(db, now);
+    onboardOnCreate(db);
     const logLines: string[] = [];
     let ids = 0;
     let messageId = 100;
@@ -7086,6 +7092,7 @@ describe('bank statements (Plan 0027)', () => {
       try {
         const db = openDatabase(join(dataDir, 'bot.db'));
         runMigrations(db, SENT);
+        onboardOnCreate(db);
         let n = 0;
         const bot = createBot({
           db,
@@ -8130,6 +8137,116 @@ describe('onboarding (Plan 0015)', () => {
     await tap('acct:del', 2);
 
     expect(db.prepare('SELECT COUNT(*) FROM user_tips').pluck().get()).toBe(0);
+  });
+
+  describe('a first message that is not /start', () => {
+    const CARD = 'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны';
+    const CHECK_AFTER_EXPENSE = messages.setupCheck({
+      timezone: 'Europe/Belgrade',
+      localTime: '14:05',
+      currency: 'RSD',
+      afterExpense: true,
+    });
+    const sticker = (updateId: number): Update => ({
+      update_id: updateId,
+      message: {
+        message_id: updateId,
+        date: Math.floor(NOW.getTime() / 1000),
+        chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+        from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+        sticker: {
+          file_id: 's',
+          file_unique_id: 's',
+          type: 'regular',
+          width: 1,
+          height: 1,
+          is_animated: false,
+          is_video: false,
+        },
+      },
+    });
+
+    it('records 450 кофе, confirms it, then sends the welcome and the check naming the currency', async () => {
+      const { send, calls, db, onboardedAt } = onboardingBot();
+
+      await send('450 кофе');
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 45000, currency: 'RSD' },
+      ]);
+      expect(sentTexts(calls)).toEqual([CARD, WELCOME, CHECK_AFTER_EXPENSE]);
+      expect(CHECK_AFTER_EXPENSE).toBe(
+        'Трату выше я записал в RSD. Если валюта другая, нажмите под ней [Изменить] → [Сумма] и отправьте сумму с валютой, например «450 RUB».' +
+          '\n\nПроверьте настройки:\nЧасовой пояс: Белград, у вас сейчас 14:05?\nВалюта по умолчанию: RSD',
+      );
+      expect(calls[1]?.payload).toMatchObject({ reply_markup: menuKeyboard });
+      expect(calls[2]?.payload).toMatchObject({ reply_markup: setupKeyboard });
+      expect(onboardedAt()).toBe(NOW.toISOString());
+    });
+
+    it('answers the second message with its confirmation only', async () => {
+      const { send, calls } = onboardingBot();
+      await send('450 кофе');
+      calls.length = 0;
+
+      await send('300 такси');
+
+      expect(sentTexts(calls)).toEqual([
+        'Записано в «Личные расходы»: <b>300.00 RSD</b> — такси · Транспорт',
+      ]);
+    });
+
+    it('records one expense and sends the pair once for a redelivered first update', async () => {
+      const { bot, calls, db } = onboardingBot();
+      const update = textUpdate({ updateId: 1, text: '450 кофе', messageId: 1, date: NOW });
+
+      await bot.handleUpdate(update);
+      await bot.handleUpdate(update);
+
+      expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+      // The redelivery gets the card again, and nothing after it.
+      expect(sentTexts(calls)).toEqual([CARD, WELCOME, CHECK_AFTER_EXPENSE, CARD]);
+    });
+
+    it('answers a first /today with the today screen, then the pair without the expense line', async () => {
+      const { send, calls } = onboardingBot();
+
+      await send('/today');
+
+      const texts = sentTexts(calls);
+      expect(texts).toHaveLength(3);
+      expect(texts.slice(1)).toEqual([WELCOME, CHECK]);
+    });
+
+    it('answers a first sticker with the pair alone, and the second with the short line', async () => {
+      const { bot, calls, db, userId } = onboardingBot();
+
+      await bot.handleUpdate(sticker(1));
+
+      expect(sentTexts(calls)).toEqual([WELCOME, CHECK]);
+      expect(
+        db.prepare('SELECT notice FROM user_notices WHERE user_id = ?').pluck().all(userId()),
+      ).toEqual(['stray_help']);
+      calls.length = 0;
+
+      await bot.handleUpdate(sticker(2));
+
+      expect(sentTexts(calls)).toEqual([messages.notUnderstood]);
+    });
+
+    it('onboards no one on a callback query or a group message', async () => {
+      const { bot, calls, db } = onboardingBot();
+
+      await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'onb:ok', messageId: 5 }));
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 2, text: '450 кофе', fromId: SECOND_ALLOWED_ID }),
+      );
+
+      expect(sentTexts(calls)).not.toContain(WELCOME);
+      expect(
+        db.prepare('SELECT COUNT(*) FROM users WHERE onboarded_at IS NOT NULL').pluck().get(),
+      ).toBe(0);
+    });
   });
 
   it('keeps onb:ok at 6 bytes and onb:edit at 8, inside the callback limit', () => {

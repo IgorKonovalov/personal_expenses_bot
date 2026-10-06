@@ -55,11 +55,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   const now = options.now ?? new Date('2026-09-29T22:10:00Z');
   const db: Db = openDatabase(':memory:');
   runMigrations(db, now);
-  if (options.onboarding !== true) {
-    db.exec(`CREATE TEMP TRIGGER test_onboarded AFTER INSERT ON users BEGIN
-               UPDATE users SET onboarded_at = NEW.created_at WHERE id = NEW.id;
-             END`);
-  }
+  if (options.onboarding !== true) onboardOnCreate(db);
   const logLines: string[] = [];
   let n = 0;
   const keys = createLedgerKeyring(() => now);
@@ -108,6 +104,15 @@ export function createTestBot(options: TestBotOptions = {}) {
   const prepareDonations = () => createDonationLinks(bot.api, logger, donationLinks);
 
   return { bot, db, calls, logLines, keys, prepareDonations };
+}
+
+// Marks every user onboarded the moment it is created, so a test's first message gets only its
+// own reply, without the first-contact welcome and setup check (ADR-0028). For a bot a test builds
+// with createBot itself.
+export function onboardOnCreate(db: Db): void {
+  db.exec(`CREATE TEMP TRIGGER test_onboarded AFTER INSERT ON users BEGIN
+             UPDATE users SET onboarded_at = NEW.created_at WHERE id = NEW.id;
+           END`);
 }
 
 // Gives every sendMessage a result with a fresh message id, so a screen can become the anchor.
