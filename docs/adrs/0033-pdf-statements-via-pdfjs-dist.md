@@ -1,8 +1,8 @@
 # ADR-0033: PDF statements are read with `pdfjs-dist`, imported lazily and only by the statements adapter
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06)
 > **Date:** 2026-10-02
-> **Related plan(s):** Plan 0027 ([0027-bank-statement-import.md](../plans/0027-bank-statement-import.md))
+> **Related plan(s):** Plan 0027 ([0027-bank-statement-import.md](../plans/done/0027-bank-statement-import.md))
 
 ## Context
 

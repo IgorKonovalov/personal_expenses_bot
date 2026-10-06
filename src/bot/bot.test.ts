@@ -1,15 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import type { Bot, InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { CategoryId } from '../db/categories.js';
-import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import {
+  insertExpenseOrGetExisting,
+  listLedgerExpensesBetween,
+  softDeleteExpense,
+  type ExpenseId,
+} from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
@@ -21,6 +26,12 @@ import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/cur
 import { parseExpenseText } from '../domain/expenseText.js';
 import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
+import { buildPdf } from '../domain/statements/testing/buildPdf.js';
+import {
+  cardRow,
+  statementPdf,
+  TWO_PAGE_ROWS,
+} from '../domain/statements/testing/raiffeisenStatement.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
@@ -29,7 +40,7 @@ import { createLogger } from '../logger.js';
 import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
-import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createBot, registerCommands } from './bot.js';
 import { recurringProvider } from './recurringProvider.js';
@@ -308,7 +319,7 @@ describe('input that is not an expense text', () => {
   it.each([
     [
       'non-image file',
-      { document: { file_id: 'd', file_unique_id: 'd', mime_type: 'application/pdf' } },
+      { document: { file_id: 'd', file_unique_id: 'd', mime_type: 'application/msword' } },
     ],
     [
       'sticker',
@@ -4667,7 +4678,7 @@ describe('fiscal receipts', () => {
     it('does not download a non-image file and keeps the help reply', async () => {
       const { sendDocument, calls, getFiles } = receiptBot();
 
-      await sendDocument('report.pdf', 'application/pdf', 1000);
+      await sendDocument('report.docx', 'application/msword', 1000);
 
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
@@ -6375,5 +6386,589 @@ describe('debts (Plan 0013)', () => {
 
   it('[Удалить] carries 44 bytes of callback data', () => {
     expect(Buffer.byteLength(debtDeleteData('00000000-0000-4000-8000-000000000001'))).toBe(44);
+  });
+});
+
+describe('bank statements (Plan 0027)', () => {
+  const SENT = new Date('2026-10-02T09:00:00Z');
+  // The download goes through fetch; it serves the files registered by file id.
+  const realFetch = globalThis.fetch;
+  let files: Map<string, Uint8Array>;
+  let fetched: string[];
+  beforeEach(() => {
+    files = new Map();
+    fetched = [];
+    globalThis.fetch = (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      fetched.push(url);
+      const body = files.get(url.slice(url.lastIndexOf('/') + 1));
+      return Promise.resolve(
+        body === undefined ? new Response('gone', { status: 404 }) : new Response(body),
+      );
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function statementBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+    const harness = createTestBot({ now: SENT, ...options });
+    let updateId = 0;
+    harness.bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'getFile') return prev(method, payload, signal);
+      const { file_id } = payload as { file_id: string };
+      return Promise.resolve({
+        ok: true,
+        result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+      });
+    });
+    const send = (text: string) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, date: SENT }),
+      );
+    const sendPdf = (
+      bytes: Uint8Array,
+      document: { fileName?: string; mimeType?: string; fileSize?: number } = {},
+    ) => {
+      const fileId = `file-${++updateId}`;
+      files.set(fileId, bytes);
+      return harness.bot.handleUpdate({
+        update_id: updateId,
+        message: {
+          message_id: updateId,
+          date: Math.floor(SENT.getTime() / 1000),
+          chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+          from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+          document: {
+            file_id: fileId,
+            file_unique_id: fileId,
+            file_name: document.fileName ?? 'izvod.pdf',
+            mime_type: document.mimeType ?? 'application/pdf',
+            file_size: document.fileSize ?? bytes.length,
+          },
+        },
+      });
+    };
+    const tap = (data: string) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: 500 }));
+    return { ...harness, send, sendPdf, tap };
+  }
+
+  const TWO_PAGE_PDF = statementPdf(TWO_PAGE_ROWS, { rowsPerPage: 6 });
+  const PREVIEW = [
+    '<b>Выписка за 01.09.2026–30.09.2026</b> → «Личные расходы»',
+    'Найдено 6 покупок, новых: 6',
+    'На сумму: 4 134.56 RSD, 15.00 USD, 0.30 EUR',
+    '',
+    '02.09 · 450.00 RSD · PRODAVNICA PRIMER BEOGRAD',
+    '05.09 · 1 234.56 RSD · SUPERMARKET PRIMER NOVI SAD BULEVAR OSLOBOĐENJA 1',
+    '07.09 · 15.00 USD · EXAMPLE.COM AMSTERDAM',
+    '07.09 · 0.30 EUR · EXAMPLE.COM AMSTERDAM',
+    '14.09 · 2 000.00 RSD · APOTEKA PRIMER',
+    '20.09 · 450.00 RSD · KAFE PRIMER',
+  ].join('\n');
+
+  function storedRows(db: Db) {
+    return db
+      .prepare('SELECT amount_minor, currency, occurred_on FROM expenses ORDER BY rowid')
+      .all();
+  }
+
+  it('previews a statement PDF with its card purchases and records nothing yet', async () => {
+    const { sendPdf, calls, db } = statementBot();
+
+    await sendPdf(TWO_PAGE_PDF);
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(calls.filter((call) => call.method !== 'getFile')).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: PREVIEW,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Записать все (6)', callback_data: 'stm:all' }],
+              [{ text: 'Отмена', callback_data: 'stm:x' }],
+            ],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('[Записать все] records the 6 card purchases dated by transaction, in their own currency', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    calls.length = 0;
+
+    await tap('stm:all');
+
+    expect(storedRows(db)).toEqual([
+      { amount_minor: 45000, currency: 'RSD', occurred_on: '2026-09-02' },
+      { amount_minor: 123456, currency: 'RSD', occurred_on: '2026-09-05' },
+      { amount_minor: 1500, currency: 'USD', occurred_on: '2026-09-07' },
+      { amount_minor: 30, currency: 'EUR', occurred_on: '2026-09-07' },
+      { amount_minor: 200000, currency: 'RSD', occurred_on: '2026-09-14' },
+      { amount_minor: 45000, currency: 'RSD', occurred_on: '2026-09-20' },
+    ]);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: 'Выписка записана' },
+      },
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: ALLOWED_ID,
+          message_id: 500,
+          text: 'Записано в «Личные расходы»: 6 покупок на 4 134.56 RSD, 15.00 USD, 0.30 EUR.',
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it('[Отмена] records nothing, and a later [Записать все] answers that time is up', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    calls.length = 0;
+
+    await tap('stm:x');
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+      messages.statementCancelled,
+      messages.flowExpired,
+    ]);
+  });
+
+  it('records a typed expense while a preview is pending, and the buttons still work', async () => {
+    const { sendPdf, send, tap, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+
+    await send('450 кофе');
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 7 });
+  });
+
+  it('answers a PDF that is not this statement with the help reply and records nothing', async () => {
+    const { sendPdf, calls, db } = statementBot();
+
+    await sendPdf(buildPdf([[{ y: 40, cells: [{ x: 20, text: 'Racun za struju' }] }]]));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+      messages.help,
+    ]);
+  });
+
+  it('reads a document named .pdf without the PDF MIME type', async () => {
+    const { sendPdf, calls } = statementBot();
+
+    await sendPdf(TWO_PAGE_PDF, { mimeType: 'application/octet-stream', fileName: 'IZVOD.PDF' });
+
+    expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([PREVIEW]);
+  });
+
+  it('records the rows once when the same file is sent and recorded twice', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    await tap('stm:all');
+    calls.length = 0;
+
+    await sendPdf(TWO_PAGE_PDF);
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 6 });
+    const preview = calls.find((call) => call.method === 'sendMessage');
+    expect(preview?.payload).toMatchObject({
+      text: [
+        '<b>Выписка за 01.09.2026–30.09.2026</b> → «Личные расходы»',
+        'Найдено 6 покупок, новых: 0',
+        'Уже записано: 6',
+        messages.statementNothingNew,
+      ].join('\n'),
+      reply_markup: { inline_keyboard: [[{ text: 'Отмена', callback_data: 'stm:x' }]] },
+    });
+  });
+
+  it('skips a row already recorded by hand, and [Записать и уже записанные] records N+M', async () => {
+    const { send, sendPdf, tap, calls, db } = statementBot();
+    // KAFE PRIMER's 450.00 RSD of the 20th, typed a day later.
+    await send('/start');
+    await send('450 кофе 21.09');
+    expect(expenseCount(db)).toEqual({ n: 1 });
+    calls.length = 0;
+
+    await sendPdf(TWO_PAGE_PDF);
+
+    const preview = calls.find((call) => call.method === 'sendMessage');
+    expect((preview?.payload as { text: string }).text.split('\n').slice(1, 3)).toEqual([
+      'Найдено 6 покупок, новых: 5',
+      'Уже записано: 1',
+    ]);
+    expect(preview?.payload).toMatchObject({
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Записать все (5)', callback_data: 'stm:all' }],
+          [{ text: 'Записать и уже записанные (6)', callback_data: 'stm:dup' }],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+      },
+    });
+
+    await tap('stm:dup');
+
+    expect(expenseCount(db)).toEqual({ n: 1 + 6 });
+    expect(calls.at(-1)?.payload).toMatchObject({
+      text: 'Записано в «Личные расходы»: 6 покупок на 4 134.56 RSD, 15.00 USD, 0.30 EUR.',
+    });
+  });
+
+  it('[Записать все] leaves the row already recorded by hand out', async () => {
+    const { send, sendPdf, tap, db } = statementBot();
+    await send('450 кофе 21.09');
+    await sendPdf(TWO_PAGE_PDF);
+
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 1 + 5 });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE occurred_on = '2026-09-20'").get(),
+    ).toEqual({ n: 0 });
+  });
+
+  describe('paging, limits and errors', () => {
+    // 25 purchases of 1.00 to 25.00 RSD, one per day from 1 September.
+    const ROWS_25 = Array.from({ length: 25 }, (_, index) =>
+      cardRow(
+        `${String(index + 1).padStart(2, '0')}.09.2026`,
+        `${index + 1}.00`,
+        `PRODAVNICA PRIMER ${index + 1}`,
+      ),
+    );
+    const rowLines = (text: unknown) =>
+      String(text)
+        .split('\n')
+        .filter((line) => / · PRODAVNICA PRIMER /.test(line));
+
+    it('pages a 25-row preview 10, 10 and 5 rows', async () => {
+      const { sendPdf, tap, calls } = statementBot();
+
+      await sendPdf(statementPdf(ROWS_25));
+      await tap('stm:p:2');
+      await tap('stm:p:3');
+
+      const shown = calls.filter(
+        (call) => call.method === 'sendMessage' || call.method === 'editMessageText',
+      );
+      const payloads = shown.map(
+        (call) =>
+          call.payload as {
+            text: string;
+            reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
+          },
+      );
+      expect(payloads.map((p) => rowLines(p.text).length)).toEqual([10, 10, 5]);
+      expect(rowLines(payloads[0]?.text)[0]).toBe('01.09 · 1.00 RSD · PRODAVNICA PRIMER 1');
+      expect(rowLines(payloads[2]?.text).at(-1)).toBe('25.09 · 25.00 RSD · PRODAVNICA PRIMER 25');
+      expect(payloads.map((p) => p.reply_markup.inline_keyboard)).toEqual([
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: '1/3', callback_data: 'stm:p:1' },
+            { text: messages.pagerNext, callback_data: 'stm:p:2' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: messages.pagerPrev, callback_data: 'stm:p:1' },
+            { text: '2/3', callback_data: 'stm:p:2' },
+            { text: messages.pagerNext, callback_data: 'stm:p:3' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: messages.pagerPrev, callback_data: 'stm:p:2' },
+            { text: '3/3', callback_data: 'stm:p:3' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+      ]);
+    });
+
+    it('lists a row already recorded after the new ones, marked «уже записано»', async () => {
+      const { send, sendPdf, calls } = statementBot();
+      await send('450 кофе 21.09');
+      calls.length = 0;
+
+      await sendPdf(TWO_PAGE_PDF);
+
+      const text = String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]);
+      expect(text.split('\n').at(-1)).toBe('20.09 · 450.00 RSD · KAFE PRIMER · уже записано');
+    });
+
+    it('does not download a document reported at 6 MB', async () => {
+      const { sendPdf, calls } = statementBot();
+
+      await sendPdf(TWO_PAGE_PDF, { fileSize: 6 * 1024 * 1024 });
+
+      expect(calls.map((call) => call.method)).toEqual(['sendMessage']);
+      expect(fetched).toEqual([]);
+      expect(sentTexts(calls)).toEqual([messages.statementTooLarge]);
+    });
+
+    it('answers a PDF with no text layer with statementNoText', async () => {
+      const { sendPdf, calls, db } = statementBot();
+
+      await sendPdf(buildPdf([[], []]));
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementNoText,
+      ]);
+    });
+
+    it('refuses a PDF over 30 pages with statementTooLong', async () => {
+      const { sendPdf, calls } = statementBot();
+
+      await sendPdf(statementPdf(ROWS_25.concat(ROWS_25.slice(0, 6)), { rowsPerPage: 1 }));
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementTooLong,
+      ]);
+    });
+
+    it('answers a file pdf.js cannot open with statementUnreadable, logging the error class', async () => {
+      const { sendPdf, calls, logLines } = statementBot({ logLevel: 'info' });
+
+      await sendPdf(new TextEncoder().encode('%PDF-1.4 broken'));
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementUnreadable,
+      ]);
+      const reads = logLines.filter((line) => line.includes('statement read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        level: 30,
+        outcome: 'unreadable',
+        error: expect.stringMatching(/^[A-Za-z]+$/) as unknown,
+      });
+      expect(String(reads[0])).not.toContain('broken');
+    });
+
+    it('answers an expired preview’s buttons with flowExpired and records nothing', async () => {
+      const { sendPdf, tap, calls, db } = statementBot();
+      await sendPdf(TWO_PAGE_PDF);
+      db.prepare("UPDATE flow_sessions SET expires_at = '2026-10-02T08:00:00.000Z'").run();
+      calls.length = 0;
+
+      await tap('stm:p:2');
+      await tap('stm:all');
+      await tap('stm:dup');
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+        messages.flowExpired,
+        messages.flowExpired,
+        messages.flowExpired,
+      ]);
+    });
+
+    it('logs no merchant, amount or account number at any level above debug', async () => {
+      const { send, sendPdf, tap, logLines } = statementBot({ logLevel: 'info' });
+      await send('450 кофе 21.09');
+
+      await sendPdf(TWO_PAGE_PDF);
+      await tap('stm:p:1');
+      await tap('stm:dup');
+      await sendPdf(TWO_PAGE_PDF);
+
+      expect(logLines.some((line) => line.includes('statement recorded'))).toBe(true);
+      for (const line of logLines) {
+        const content = logContent(line);
+        expect(content).not.toMatch(
+          /PRIMER|EXAMPLE|AMSTERDAM|OSLOBO|\b(?:450|45000|1,234\.56|123456|1500|15\.00|175685|2,000\.00|200000)\b|0{13}/,
+        );
+      }
+    });
+  });
+
+  describe('sealed ledgers and the file on disk', () => {
+    async function sealed() {
+      const harness = statementBot();
+      await harness.send('/start');
+      const user = findUserByIdentity(harness.db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const keyDeps = { db: harness.db, logger: silentLogger(), keys: harness.keys };
+      const ledger = await sealPersonalLedger(keyDeps, user, SENT);
+      harness.calls.length = 0;
+      return { ...harness, user, keyDeps, ledger };
+    }
+
+    it('answers a statement to a locked sealed ledger with the locked message and keeps nothing', async () => {
+      const { sendPdf, calls, db } = await sealed();
+
+      await sendPdf(TWO_PAGE_PDF);
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.ledgerLocked,
+      ]);
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(db.prepare('SELECT kind FROM flow_sessions').pluck().all()).not.toContain(
+        'statementImport',
+      );
+    });
+
+    it('after /unlock previews the same file and records sealed rows that open to its amounts', async () => {
+      const { sendPdf, tap, calls, db, keys, user, keyDeps, ledger } = await sealed();
+      await sendPdf(TWO_PAGE_PDF);
+      await unlockPersonalLedger(keyDeps, user, SENT);
+      calls.length = 0;
+
+      await sendPdf(TWO_PAGE_PDF);
+      await tap('stm:all');
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([PREVIEW]);
+      expect(
+        db
+          .prepare(
+            'SELECT COUNT(*) AS n FROM expenses WHERE sealed IS NOT NULL AND amount_minor IS NULL',
+          )
+          .get(),
+      ).toEqual({ n: 6 });
+      const opened = openExpenses(
+        { db, keys },
+        ledger.id,
+        listLedgerExpensesBetween(db, {
+          ledgerId: ledger.id,
+          memberId: user.id,
+          from: '2026-09-01' as LocalDate,
+          to: '2026-09-30' as LocalDate,
+        }),
+      );
+      if (opened.kind !== 'open') throw new Error('expected the ledger open');
+      expect(opened.expenses.map((e) => [e.occurredOn, e.amountMinor, e.currency])).toEqual([
+        ['2026-09-02', 45000, 'RSD'],
+        ['2026-09-05', 123456, 'RSD'],
+        ['2026-09-07', 1500, 'USD'],
+        ['2026-09-07', 30, 'EUR'],
+        ['2026-09-14', 200000, 'RSD'],
+        ['2026-09-20', 45000, 'RSD'],
+      ]);
+    });
+
+    it('never writes the downloaded file under the data directory', async () => {
+      // A bot on a database file in its own data directory, as in production.
+      const dataDir = mkdtempSync(join(tmpdir(), 'peb-statement-'));
+      try {
+        const db = openDatabase(join(dataDir, 'bot.db'));
+        runMigrations(db, SENT);
+        let n = 0;
+        const bot = createBot({
+          db,
+          logger: silentLogger(),
+          newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
+          now: () => SENT,
+          defaultTimezone: 'Europe/Belgrade',
+          defaultCurrency: 'RSD',
+          keys: createLedgerKeyring(() => SENT),
+          adminTelegramId: ALLOWED_ID,
+          token: '123456:test-token',
+          backupKeep: 14,
+          botInfo: {
+            id: 42,
+            is_bot: true,
+            first_name: 'Test Bot',
+            username: 'test_bot',
+            can_join_groups: false,
+            can_read_all_group_messages: false,
+            supports_inline_queries: false,
+            can_connect_to_business: false,
+            has_main_web_app: false,
+            has_topics_enabled: false,
+            allows_users_to_create_topics: false,
+            can_manage_bots: false,
+            supports_join_request_queries: false,
+          },
+        });
+        const sent: string[] = [];
+        bot.api.config.use((_prev, method, payload) => {
+          if (method === 'getFile') {
+            const { file_id } = payload as { file_id: string };
+            return Promise.resolve({
+              ok: true,
+              result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+            });
+          }
+          if (method === 'sendMessage') sent.push((payload as { text: string }).text);
+          return Promise.resolve({ ok: true, result: true as never });
+        });
+        files.set('izvod', TWO_PAGE_PDF);
+
+        await bot.handleUpdate({
+          update_id: 1,
+          message: {
+            message_id: 1,
+            date: Math.floor(SENT.getTime() / 1000),
+            chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+            from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+            document: {
+              file_id: 'izvod',
+              file_unique_id: 'izvod',
+              file_name: 'izvod.pdf',
+              mime_type: 'application/pdf',
+              file_size: TWO_PAGE_PDF.length,
+            },
+          },
+        });
+        await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'stm:all' }));
+        db.close();
+
+        expect(sent).toEqual([PREVIEW]);
+        expect(fetched).toHaveLength(1);
+        const names = readdirSync(dataDir).sort();
+        expect(names.every((name) => name.startsWith('bot.db'))).toBe(true);
+        const header = Buffer.from('%PDF-');
+        for (const name of names) {
+          expect(readFileSync(join(dataDir, name)).includes(header)).toBe(false);
+        }
+      } finally {
+        rmSync(dataDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('does not load pdfjs-dist with the bot wiring, only for a PDF', async () => {
+    // A fresh module graph, with a probe that counts each load of the PDF engine.
+    vi.resetModules();
+    const loads = { count: 0 };
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', async (importOriginal) => {
+      loads.count++;
+      return importOriginal();
+    });
+    try {
+      const harness = await import('./testHarness.js');
+      const { bot } = harness.createTestBot({ now: SENT });
+
+      await bot.handleUpdate(harness.textUpdate({ updateId: 1, text: '/start' }));
+      await bot.handleUpdate(harness.textUpdate({ updateId: 2, messageId: 2, text: '450 кофе' }));
+
+      expect(loads.count).toBe(0);
+      // The probe counts: reading a PDF loads it once.
+      const { readPdfLines } = await import('../statements/pdf.js');
+      await readPdfLines(TWO_PAGE_PDF);
+      expect(loads.count).toBe(1);
+    } finally {
+      vi.doUnmock('pdfjs-dist/legacy/build/pdf.mjs');
+    }
   });
 });

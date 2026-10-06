@@ -361,17 +361,30 @@ export function sealExpenseInPlace(db: Db, id: ExpenseId, sealed: Buffer): boole
 }
 
 // Replaces every content-derived source key of the ledger (`sms:` fingerprints, `rcpt:` fiscal
-// ids) with `sealed:<expenseId>`, deleted rows included; `tg:` keys stay. Returns the number of
-// rows re-keyed.
+// ids, `stmt:` statement-row fingerprints) with `sealed:<expenseId>`, deleted rows included;
+// `tg:` keys stay. Returns the number of rows re-keyed.
 export function rekeyContentSourceKeys(db: Db, ledgerId: LedgerId): number {
   return db
     .prepare<[string]>(
       `UPDATE expenses
           SET source_key = 'sealed:' || id
         WHERE ledger_id = ?
-          AND (substr(source_key, 1, 4) = 'sms:' OR substr(source_key, 1, 5) = 'rcpt:')`,
+          AND (substr(source_key, 1, 4) = 'sms:' OR substr(source_key, 1, 5) = 'rcpt:'
+               OR substr(source_key, 1, 5) = 'stmt:')`,
     )
     .run(ledgerId).changes;
+}
+
+// Which of `sourceKeys` some expense already holds, deleted rows included.
+export function findTakenSourceKeys(db: Db, sourceKeys: readonly string[]): Set<string> {
+  const taken = new Set<string>();
+  const find = db.prepare<[string], { source_key: string }>(
+    'SELECT source_key FROM expenses WHERE source_key = ?',
+  );
+  for (const key of new Set(sourceKeys)) {
+    if (find.get(key) !== undefined) taken.add(key);
+  }
+  return taken;
 }
 
 // Non-deleted expenses of one ledger on one local date, visible only to members of that

@@ -34,6 +34,7 @@ import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
+import { registerStatement } from './handlers/statement.js';
 import { registerSummary } from './handlers/summary.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
@@ -111,8 +112,8 @@ export function createBot(options: BotOptions): Bot {
   dm.use(clearFlowOnCommand(options));
 
   // Commands and exact menu labels first: the text handler treats any other text as a flow
-  // answer, a receipt link or an expense attempt; photos and image files are read for a receipt
-  // QR; whatever else isn't text gets the help reply.
+  // answer, a receipt link or an expense attempt; a PDF is read as a bank statement; photos and
+  // image files are read for a receipt QR; whatever else isn't text gets the help reply.
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
@@ -139,7 +140,9 @@ export function createBot(options: BotOptions): Bot {
   registerCard(dm, options);
   registerCategory(dm, options);
   registerText(dm, options);
-  registerReceiptMedia(dm, options, telegramFileDownloader(options.token));
+  const download = telegramFileDownloader(options.token);
+  registerStatement(dm, options, download);
+  registerReceiptMedia(dm, options, download);
   registerNonText(dm);
   registerEdited(dm, options);
 

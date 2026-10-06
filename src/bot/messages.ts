@@ -165,6 +165,26 @@ interface SummaryView {
   readonly people?: PeopleView | undefined;
 }
 
+// A bank statement's preview (Plan 0027): the new purchases a tap would record, and one page of
+// the listed rows. Merchants are bank text and go through `html`.
+interface StatementPreviewView {
+  readonly period: { readonly from: LocalDate; readonly to: LocalDate } | undefined;
+  readonly ledger: LedgerRef;
+  // Every card purchase in the file.
+  readonly purchaseCount: number;
+  // Rows already in the ledger: matched to a recorded expense, or imported before.
+  readonly alreadyCount: number;
+  readonly fresh: readonly Money[];
+  // The page's rows: new ones first, then the ones a recorded expense covers (`already`).
+  readonly rows: readonly StatementRowView[];
+}
+
+interface StatementRowView extends Money {
+  readonly date: LocalDate;
+  readonly merchant: string;
+  readonly already: boolean;
+}
+
 const MONTHS = [
   'Январь',
   'Февраль',
@@ -342,6 +362,41 @@ function itemCount(n: number): string {
   if (ones >= 2 && ones <= 4) return `${n} позиции`;
   return `${n} позиций`;
 }
+
+// `1 покупка`, `2 покупки`, `5 покупок`, `21 покупка`.
+function purchaseCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} покупок`;
+  if (ones === 1) return `${n} покупка`;
+  if (ones >= 2 && ones <= 4) return `${n} покупки`;
+  return `${n} покупок`;
+}
+
+// `01.09.2026` from a local date.
+function numericDate(date: LocalDate): string {
+  return `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;
+}
+
+// Totals per currency, never converted: `1 234.56 RSD, 15.00 USD`.
+function moneyTotals(rows: readonly Money[]): string {
+  const totals = new Map<CurrencyCode, number>();
+  for (const { currency, amountMinor } of rows) {
+    totals.set(currency, (totals.get(currency) ?? 0) + amountMinor);
+  }
+  return [...totals]
+    .map(([currency, amountMinor]) => formatMoney({ amountMinor, currency }))
+    .join(', ');
+}
+
+// `12.09 · 450.00 RSD · KAFE PRIMER`, with ` · уже записано` for a row a recorded expense covers.
+function statementRowLine(row: StatementRowView): Html {
+  const line = html`${row.date.slice(8, 10)}.${row.date.slice(5, 7)} · ${formatMoney(row)} · ${shownDescription(row.merchant)}`;
+  return row.already ? joinHtml([line, html`уже записано`], ' · ') : line;
+}
+
+// In a statement preview, in place of [Записать все] when every row is already recorded.
+const statementNothingNew = html`Новых покупок нет: всё из выписки уже записано.`;
 
 // `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
 function expenseCountWords(n: number): string {
@@ -550,6 +605,7 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.18.0': html`Выписку Raiffeisen banka в PDF из e-banking можно прислать боту. Он найдёт покупки по карте, отметит уже записанные и одной кнопкой запишет остальные. Файл читается в памяти и не сохраняется.`,
   '0.17.0': html`Регулярные траты: под карточкой траты кнопка [Повторять] записывает её каждый месяц, неделю или год в 09:00 по вашему времени. Можно попросить бота сначала спрашивать сумму. /recurring показывает правила и добавляет напоминания.`,
   '0.16.0': html`/privacy рассказывает, какие данные хранит бот и куда они уходят. /delete_account удаляет ваш личный учёт со всеми тратами, чеками и настройками.`,
   '0.15.0': html`/export присылает траты за выбранный период файлом CSV или Excel, в личном чате и в группе.`,
@@ -742,6 +798,7 @@ export const messages = {
       html`Чек из Сербии или Черногории: отправьте фото QR-кода с чека или ссылку из него. Я запишу сумму, а через несколько секунд добавлю магазин и кнопку [Позиции].`,
       html`СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».`,
       html`Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.`,
+      html`Выписка Raiffeisen banka Srbija: скачайте в e-banking выписку по счёту («Izvod po tekućem računu») в PDF и отправьте файл. Я покажу покупки картой и запишу их одним нажатием. Покупки, которые уже записаны (та же сумма в пределах дня), пропускаю; снятие наличных, комиссии, переводы и поступления не записываю.`,
       html`Аренда, подписки и другие регулярные траты: на карточке траты нажмите [Повторять] и выберите расписание. В этот день в 09:00 я сам запишу такую же трату или спрошу, записать ли.`,
       html``,
       html`${menu.today} — траты за сегодня`,
@@ -874,6 +931,55 @@ export const messages = {
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
   // A photo where a QR symbol was located but no pass read it (ADR-0034).
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
+
+  // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
+  // one page of rows, above [Записать все (N)], the pager and [Отмена].
+  statementPreview: ({
+    period,
+    ledger,
+    purchaseCount,
+    alreadyCount,
+    fresh,
+    rows,
+  }: StatementPreviewView): Html => {
+    const title =
+      period === undefined
+        ? html`<b>Выписка</b> → «${ledgerName(ledger)}»`
+        : html`<b>Выписка за ${numericDate(period.from)}–${numericDate(period.to)}</b> → «${ledgerName(ledger)}»`;
+    const lines = [
+      title,
+      html`Найдено ${purchaseCountWords(purchaseCount)}, новых: ${fresh.length}`,
+    ];
+    // ADR-0032: the same amount and currency within a day, or recorded by an earlier import.
+    if (alreadyCount > 0) lines.push(html`Уже записано: ${alreadyCount}`);
+    lines.push(fresh.length === 0 ? statementNothingNew : html`На сумму: ${moneyTotals(fresh)}`);
+    if (rows.length > 0) lines.push(html``, ...rows.map(statementRowLine));
+    return joinHtml(lines, '\n');
+  },
+  statementRecordAllButton: (n: number): string => `Записать все (${n})`,
+  // The new rows plus the ones a recorded expense already covers.
+  statementRecordWithMatchedButton: (n: number): string => `Записать и уже записанные (${n})`,
+  statementNothingNew,
+  statementRecorded: ({
+    ledger,
+    count,
+    totals,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly count: number;
+    readonly totals: readonly Money[];
+  }): Html =>
+    count === 0
+      ? html`Ничего нового: все покупки из выписки уже записаны.`
+      : html`Записано в «${ledgerName(ledger)}»: ${purchaseCountWords(count)} на ${moneyTotals(totals)}.`,
+  statementRecordedToast: 'Выписка записана',
+  // Refusals, before any row is read (ADR-0033's caps).
+  statementTooLarge: html`Файл больше 5 МБ, такую выписку я не читаю. Выгрузите в e-banking период покороче.`,
+  statementTooLong: html`Выписка слишком длинная: больше 30 страниц или 1000 покупок. Выгрузите в e-banking период покороче.`,
+  // A PDF with no text layer: a scan or a photo.
+  statementNoText: html`В этом PDF нет текста, похоже на скан. Скачайте выписку в e-banking в формате PDF и отправьте файл.`,
+  statementUnreadable: html`Не удалось прочитать этот PDF. Скачайте выписку в e-banking заново и отправьте ещё раз.`,
+  statementCancelled: html`Выписка не записана.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.
