@@ -19,9 +19,12 @@ import { editHtml, replyHtml } from '../render/html.js';
 import { cardFor, cardView, expenseIdOf } from './card.js';
 import { ensureUser } from './start.js';
 
+export type ReceiptOutcome =
+  'recorded' | 'duplicate' | 'refused' | 'capReached' | 'futureReceipt' | 'sealedLedger';
+
 // A decoded receipt URL, from a pasted link or a photo's QR, in DM (ADR-0018): records the
 // receipt's total into the active ledger and answers with the card, or with «уже записано» and
-// the existing card for a receipt this ledger already has.
+// the existing card for a receipt this ledger already has. Returns what happened.
 export async function answerReceipt(
   ctx: Context,
   deps: AdminDeps,
@@ -32,11 +35,11 @@ export async function answerReceipt(
     readonly occurredAt: Date;
     readonly now: Date;
   },
-): Promise<void> {
+): Promise<ReceiptOutcome> {
   const { user, decoded } = input;
   if (decoded.kind === 'refused') {
     await replyHtml(ctx, messages.receiptRefused[decoded.reason]);
-    return;
+    return 'refused';
   }
 
   const result = recordReceipt(deps, {
@@ -50,15 +53,15 @@ export async function answerReceipt(
   });
   if (result.kind === 'capReached') {
     await replyHtml(ctx, messages.receiptCapReached);
-    return;
+    return 'capReached';
   }
   if (result.kind === 'futureReceipt') {
     await replyHtml(ctx, messages.futureReceipt);
-    return;
+    return 'futureReceipt';
   }
   if (result.kind === 'sealedLedger') {
     await replyHtml(ctx, messages.receiptSealedLedger);
-    return;
+    return 'sealedLedger';
   }
 
   const card = cardFor(cardView(deps, user, result));
@@ -74,6 +77,20 @@ export async function answerReceipt(
       chatId: sent.chat.id,
       messageId: sent.message_id,
     });
+  }
+  return result.duplicate ? 'duplicate' : 'recorded';
+}
+
+// The photo of a receipt the card now stands for. A bot may delete an incoming private message
+// for 48 hours; a delete that fails costs only the delete.
+async function deleteReceiptPhoto(ctx: Context, deps: HandlerDeps): Promise<void> {
+  try {
+    await ctx.deleteMessage();
+  } catch (error) {
+    deps.logger.warn(
+      { updateId: ctx.update.update_id, err: error instanceof Error ? error.name : typeof error },
+      'receipt photo delete failed',
+    );
   }
 }
 
@@ -168,7 +185,8 @@ export function telegramFileDownloader(token: string): FileDownloader {
 }
 
 // A photo, or an image sent as a file, in DM: the first QR text that is a receipt URL runs the
-// pasted-link path (ADR-0019). An image with no such QR gets one hint. A non-image document
+// pasted-link path (ADR-0019), and a recorded or duplicate receipt's image is then deleted. An
+// image with no such QR gets one hint and stays. A non-image document
 // falls through to the help reply. Register before the non-text handler.
 export function registerReceiptMedia(
   bot: Composer<Context>,
@@ -236,11 +254,13 @@ export function registerReceiptMedia(
       );
       return;
     }
-    await answerReceipt(ctx, deps, {
+    const outcome = await answerReceipt(ctx, deps, {
       user,
       decoded,
       occurredAt: new Date(ctx.message.date * 1000),
       now,
     });
+    // Recorded or already recorded: the card carries everything the photo said.
+    if (outcome === 'recorded' || outcome === 'duplicate') await deleteReceiptPhoto(ctx, deps);
   });
 }

@@ -47,7 +47,7 @@ when an amount could be read two ways.
 | `/paysupport`                        | Says a donation unlocks nothing. `/paysupport <текст>` relays a refund request to the admin, with your internal user id and your newest donations. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
-`/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. [☰ Ещё] opens one button for every other command: [Регулярные], [Долги], [Метки], [Экспорт], [Что нового], [Поддержать], [Возврат пожертвования], [Приватность] and [Удалить аккаунт], plus [Открыть учёт] or [Закрыть учёт] for a sealed ledger. Each answers exactly like its command. The `/` menu in a private chat lists every command. Only the exact label is a menu tap. A menu tap or any
+`/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. [☰ Ещё] opens one button for every other command: [Регулярные], [Долги], [Метки], [Включить метку], [Экспорт], [Что нового], [Поддержать], [Возврат пожертвования], [Приватность] and [Удалить аккаунт], plus [Открыть учёт] or [Закрыть учёт] for a sealed ledger. Each answers exactly like its command. [Включить метку] and [Возврат пожертвования] first ask for the tag or the request, with [Отмена], and then answer like `/tag <ответ>` or `/paysupport <ответ>`. The admin also gets [Пригласить], [Приглашения], [Статистика], [Заблокировать], [Разблокировать] and [Вернуть Stars]; the last three ask for the Telegram id or the charge id the same way. The `/` menu in a private chat lists every command, and the admin's chat adds the admin commands. Only the exact label is a menu tap. A menu tap or any
 command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
 stickers, voice messages and files that aren't images get the help reply. Photos are read for a
 receipt QR code (see Receipts below). Editing a sent expense doesn't change the record, and the
@@ -121,6 +121,9 @@ code, the photo as a file, or the link the QR code holds (`https://suf.purs.gov.
   14.5 hours), the card says so and offers [Повторить]. The expense keeps the QR total either way.
 - The same receipt sent again, as a photo or as a link, records nothing and answers «Уже
   записано» with the existing card. Refunds, copies, pro-forma and advance invoices are refused.
+- Once its card is sent, a recorded or already recorded receipt's photo (or image file) is
+  deleted from the chat: the card carries everything it said. A photo the bot couldn't read, or
+  whose receipt it refused, stays. A pasted link is never deleted.
 - QR codes are decoded with [zxing-wasm](https://github.com/Sec-ant/zxing-wasm), loaded from
   `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). A JPEG that doesn't
   decode is retried on preprocessed pixels

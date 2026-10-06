@@ -244,8 +244,8 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | 50ccc70 |
-| 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | committed with this row |
-| 3: A recorded receipt deletes its photo | dev | not started | |
+| 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | e6a8e4d |
+| 3: A recorded receipt deletes its photo | dev | done, see Notes | committed with this row |
 | 4: Notices shown once, and short replies that clean up after themselves | dev | not started | |
 | 5: Live check | human | not started | |
 
@@ -266,6 +266,7 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
   `src/bot/handlers/menu.ts` (takes `AdminDeps`, so the more screen knows the admin).
 - Phase 2: the admin buttons are three rows of two, not one row.
 - Phase 2: the block test blocks `SECOND_ALLOWED_ID`, the harness's second admitted user, not 42.
+- Phase 3: README's [☰ Ещё] paragraph also gained Phase 2's buttons and the admin's command list.
 
 ### Close triggers
 

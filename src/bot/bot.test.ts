@@ -4314,7 +4314,9 @@ describe('fiscal receipts', () => {
   const RS_LINK = buildRsUrl();
   const RS_CARD = 'Записано в «Личные расходы»: <b>829.12 RSD</b> — Чек · Другое';
 
-  function receiptBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+  function receiptBot(
+    options: { logLevel?: 'info' | 'silent'; failMethods?: readonly string[] } = {},
+  ) {
     const harness = createTestBot({ now: RECEIPT_SENT, ...options });
     let updateId = 0;
     const send = (text: string, fromId = ALLOWED_ID) =>
@@ -4569,7 +4571,46 @@ describe('fiscal receipts', () => {
       expect(db.prepare('SELECT amount_minor, currency, occurred_on FROM expenses').all()).toEqual([
         { amount_minor: 82912, currency: 'RSD', occurred_on: '2026-10-01' },
       ]);
-      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      // The card, then one delete of the photo's message.
+      expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage']);
+      expect(sentTexts(calls)[0]).toBe(RS_CARD);
+      expect(calls[1]).toEqual({
+        method: 'deleteMessage',
+        payload: { chat_id: ALLOWED_ID, message_id: 1 },
+      });
+    });
+
+    it('answers a duplicate photo with alreadyRecorded and deletes it too', async () => {
+      const { sendPhoto, calls, db } = receiptBot();
+      await sendPhoto('rs-receipt.jpg');
+      calls.length = 0;
+
+      await sendPhoto('rs-receipt.jpg');
+
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      // The card, then one delete of the photo's message.
+      expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage']);
+      expect(sentTexts(calls)[0]).toBe(`Уже записано.\n${RS_CARD}`);
+      expect(calls[1]).toEqual({
+        method: 'deleteMessage',
+        payload: { chat_id: ALLOWED_ID, message_id: 2 },
+      });
+    });
+
+    it('still sends the card and keeps the expense when the photo delete fails', async () => {
+      const { sendPhoto, calls, db, logLines } = receiptBot({
+        logLevel: 'info',
+        failMethods: ['deleteMessage'],
+      });
+
+      await sendPhoto('rs-receipt.jpg');
+
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage']);
+      expect(sentTexts(calls)[0]).toBe(RS_CARD);
+      const warns = logLines.filter((line) => line.includes('receipt photo delete failed'));
+      expect(warns).toHaveLength(1);
+      expect(JSON.parse(String(warns[0]))).toMatchObject({ level: 40 });
     });
 
     it('records the same receipt sent as a photo and then as a link once', async () => {
@@ -4591,7 +4632,7 @@ describe('fiscal receipts', () => {
       expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
         { amount_minor: 82912, currency: 'RSD' },
       ]);
-      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      expect(sentTexts(calls.filter((c) => c.method === 'sendMessage'))).toEqual([RS_CARD]);
       calls.length = 0;
 
       await send(RS_LINK);
@@ -4627,6 +4668,8 @@ describe('fiscal receipts', () => {
       await sendPhoto('rs-receipt-damaged.jpg');
 
       expect(expenseCount(db)).toEqual({ n: 0 });
+      // The unread photo stays: no deleteMessage.
+      expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
       expect(sentTexts(calls)).toEqual([messages.receiptPhotoUnreadable]);
       const reads = logLines.filter((line) => line.includes('receipt image read'));
       expect(reads).toHaveLength(1);
@@ -4664,7 +4707,7 @@ describe('fiscal receipts', () => {
       expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
         { amount_minor: 82912, currency: 'RSD' },
       ]);
-      expect(sentTexts(calls)).toEqual([RS_CARD]);
+      expect(sentTexts(calls.filter((c) => c.method === 'sendMessage'))).toEqual([RS_CARD]);
       const reads = logLines.filter((line) => line.includes('receipt image read'));
       expect(reads).toHaveLength(1);
       expect(JSON.parse(String(reads[0]))).toMatchObject({
