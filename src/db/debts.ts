@@ -293,6 +293,12 @@ export function sealDebtOpInPlace(db: Db, id: DebtOpId, sealed: Buffer): boolean
   return changes === 1;
 }
 
+// /delete_account: every operation of the user, then every person.
+export function deleteUserDebts(db: Db, userId: UserId): void {
+  db.prepare<[string]>('DELETE FROM debt_ops WHERE user_id = ?').run(userId);
+  db.prepare<[string]>('DELETE FROM debt_people WHERE user_id = ?').run(userId);
+}
+
 function toPerson(row: PersonRow): StoredDebtPerson {
   const ids = { id: row.id as DebtPersonId, userId: row.user_id as UserId };
   if (row.name !== null) return { ...ids, name: row.name };

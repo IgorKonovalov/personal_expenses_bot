@@ -1,6 +1,7 @@
 import { deleteLedgerBudget, deleteLedgerCaps } from '../db/budgets.js';
 import { deleteLedgerCategories } from '../db/categories.js';
 import type { Db } from '../db/connection.js';
+import { deleteUserDebts } from '../db/debts.js';
 import { deleteLedgerExpenses } from '../db/expenses.js';
 import { deleteFlowSession } from '../db/flowSessions.js';
 import { clearMemberDisplayNames, deleteLedger, findPersonalLedger } from '../db/ledgers.js';
@@ -12,7 +13,8 @@ import type { LedgerKeyring } from './ledgerKeys.js';
 
 // /delete_account (ADR-0024). One transaction hard-deletes the personal ledger with every
 // expense, receipt and its items, budget, cap, category, sealed key and membership, every
-// recurring rule and reminder the user made in any ledger with its occurrences, then the user's
+// recurring rule and reminder the user made in any ledger with its occurrences, every debt
+// person and operation (ADR-0030), then the user's
 // flow session and identity, and leaves the users row as a tombstone: `deleted_at` set,
 // admission and the active ledger cleared, and the display name forgotten in every group. The
 // user's expenses in group ledgers stay, so the group's totals don't change; they show under
@@ -48,6 +50,7 @@ export function deleteAccount(
       deleteLedgerExpenses(db, personal.id);
     }
     deleteUserRules(db, userId, personalId);
+    deleteUserDebts(db, userId);
     if (personal !== undefined) {
       deleteLedgerCaps(db, personal.id);
       deleteLedgerBudget(db, personal.id);

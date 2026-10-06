@@ -8,6 +8,14 @@ import type { LocalDate } from '../domain/time.js';
 import { decodeRsUrl } from '../domain/receipts/rsUrl.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { createLogger } from '../logger.js';
+import {
+  answerDebtAmount,
+  answerDebtPersonName,
+  answerSplitName,
+  finishSplit,
+  startDebt,
+  startSplit,
+} from './debts.js';
 import { deleteAccount, isAccountDeleted } from './deleteAccount.js';
 import { fetchDueReceipt, type FetchDeps } from './fetchDueReceipt.js';
 import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
@@ -95,6 +103,75 @@ describe('deleteAccount', () => {
     expect(db.prepare('SELECT COUNT(*) FROM ledgers').pluck().get()).toBe(0);
     expect(db.prepare('SELECT COUNT(*) FROM flow_sessions').pluck().get()).toBe(0);
     expect(isAccountDeleted(deps(), alice.id)).toBe(true);
+  });
+
+  it("deletes the user's debt people and operations, split lends included, and no one else's", () => {
+    let k = 0;
+    const d = {
+      ...deps(),
+      newId: () => `20000000-0000-4000-8000-${String(++k).padStart(12, '0')}`,
+      defaultCurrency: 'RSD' as const,
+    };
+    const bob = provisionUser(d, {
+      provider: 'telegram',
+      externalId: '1002',
+      defaultTimezone: 'Europe/Belgrade',
+      defaultCurrency: 'RSD',
+      now: NOW,
+    }).user;
+    const lend = (user: User, name: string, key: string) => {
+      const flow = startDebt(d, user, 'lend', NOW);
+      if (flow.kind === 'locked') throw new Error('setup: locked');
+      const asked = answerDebtAmount(d, {
+        user,
+        flow,
+        text: '5000',
+        inputKey: `${key}a`,
+        now: NOW,
+      });
+      if (asked.kind !== 'askPerson') throw new Error('setup: amount');
+      const recorded = answerDebtPersonName(d, {
+        user,
+        flow: asked.flow,
+        text: name,
+        inputKey: `${key}b`,
+        now: NOW,
+      });
+      if (recorded.kind !== 'recorded') throw new Error('setup: person');
+    };
+    lend(alice, 'Петя', 'tg:1001:1');
+    lend(bob, 'Аня', 'tg:1002:1');
+    const expense = recordExpense(d, {
+      user: alice,
+      text: '1000 кафе',
+      sourceKey: 'tg:1001:3',
+      occurredAt: NOW,
+      now: NOW,
+    });
+    if (expense.kind !== 'recorded') throw new Error('setup: expense');
+    const split = startSplit(d, {
+      user: alice,
+      expenseId: expense.expense.id,
+      each: 50000,
+      currency: 'RSD',
+      parts: 2,
+      sourceKey: 'tg:1001:3',
+      now: NOW,
+    });
+    if (split.kind === 'locked') throw new Error('setup: locked');
+    answerSplitName(d, { user: alice, flow: split, text: 'Вася', inputKey: 'tg:1001:4', now: NOW });
+    expect(finishSplit(d, { user: alice, now: NOW })).toMatchObject({ kind: 'recorded' });
+    const count = (table: string, userId: string) =>
+      db.prepare(`SELECT COUNT(*) FROM ${table} WHERE user_id = ?`).pluck().get(userId);
+    expect(count('debt_ops', alice.id)).toBe(2);
+    expect(count('debt_people', alice.id)).toBe(2);
+
+    expect(deleteAccount(d, { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(count('debt_ops', alice.id)).toBe(0);
+    expect(count('debt_people', alice.id)).toBe(0);
+    expect(count('debt_ops', bob.id)).toBe(1);
+    expect(count('debt_people', bob.id)).toBe(1);
   });
 
   it("deletes the user's rules, reminders and occurrences in every ledger, and no one else's", () => {
