@@ -43,4 +43,12 @@ describe('/privacy', () => {
     const policy = read('PRIVACY.md');
     for (const host of hosts) expect(policy, host).toContain(host);
   });
+
+  it('lists donations among what is stored and what outlives /delete_account', () => {
+    const policy = read('PRIVACY.md');
+    expect(policy).toContain('- Пожертвования:');
+    const deletion = policy.slice(policy.indexOf('## Удаление'));
+    expect(deletion.slice(0, deletion.indexOf('\n## ', 1))).toContain('пожертвованиях');
+    expect(messages.deleteAccountPrompt(14)).toContain('пожертвованиях');
+  });
 });

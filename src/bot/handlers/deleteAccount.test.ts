@@ -7,6 +7,7 @@ import {
   createTestBot,
   groupTextUpdate,
   myChatMemberUpdate,
+  successfulPaymentUpdate,
   textUpdate,
 } from '../testHarness.js';
 
@@ -62,6 +63,20 @@ describe('/delete_account', () => {
     // Two group expenses.
     await say('450 кафе', 10);
     await say('120 такси', 11);
+    // One donation, which a refund needs after the deletion.
+    await bot.handleUpdate(
+      successfulPaymentUpdate({
+        updateId: ++updateId,
+        stars: 50,
+        chargeId: 'charge-1',
+        fromId: MEMBER,
+      }),
+    );
+    const donations = () =>
+      db
+        .prepare('SELECT stars, telegram_payment_charge_id FROM donations WHERE user_id = ?')
+        .all(userId);
+    expect(donations()).toEqual([{ stars: 50, telegram_payment_charge_id: 'charge-1' }]);
     const count = (sql: string) => db.prepare(sql).pluck().get(personal);
     expect(count('SELECT COUNT(*) FROM expenses WHERE ledger_id = ?')).toBe(3);
 
@@ -113,6 +128,7 @@ describe('/delete_account', () => {
       active_ledger_id: null,
       deleted_at: '2026-09-29T22:10:00.000Z',
     });
+    expect(donations()).toEqual([{ stars: 50, telegram_payment_charge_id: 'charge-1' }]);
 
     // The group's month: 450.00 + 120.00 = 570.00 RSD (57 000 minor units), under a deleted
     // member.
