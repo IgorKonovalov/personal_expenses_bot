@@ -199,6 +199,7 @@ Shared fixture for the done-whens: the user's personal ledger in RSD, timezone `
 
 ### Phase 6: real receipts
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** Run `pnpm products:coverage` on a copy of the production database. Pass on only the
   generic product words of the top unmatched names to a `dev` session as catalog additions (no
   shop or personal data). Then check «Молоко» and two other products on a phone.

@@ -221,6 +221,7 @@ flowchart LR
 
 ### Phase 6: live check on a phone and the desktop
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot, scan a real receipt and check that the card arrives with its
   items collapsed and opens and closes with a tap, on mobile and on Telegram Desktop. Open
   `/week` and check the folded categories. Tap [Позиции] and page through and back. Turn on the
