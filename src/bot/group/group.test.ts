@@ -433,7 +433,7 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
     ]);
   });
 
-  it('replies a card with [Удалить] only to B, who is not allowlisted, and adds the DM link for A', async () => {
+  it('replies a card with [Удалить] only to B, who is not admitted, and adds the DM link for A', async () => {
     const { db, calls, say } = await bound();
 
     await say(STRANGER_ID, '2 минуты буду', 13, { firstName: 'Борис' });
