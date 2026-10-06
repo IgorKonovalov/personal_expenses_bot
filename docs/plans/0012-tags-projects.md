@@ -272,7 +272,7 @@ const MAX_TAGS_PER_EXPENSE = 5;
 | 2: The per-tag report | dev | done | d41c71c |
 | 3: The sticky trip tag | dev | done | 43bdd58 |
 | 4: Editing tags, the card, and groups | dev | done | 22559ac |
-| 5: Sealed ledgers, export, help | dev | done | committed with this row |
+| 5: Sealed ledgers, export, help | dev | done | f5c0c7d |
 | 6: A trip in real use | human | not started | |
 
 ### Notes
@@ -313,7 +313,22 @@ const MAX_TAGS_PER_EXPENSE = 5;
   restart done-when is tested in `stickyTag.test.ts` with a new keyring over the same database.
   The export done-when is tested in `rows.test.ts` (`#отпуск #рим` in Метки), not through
   `/export`. No test covers `sealExpenseInPlace` clearing `tags`.
+- Followup, not acted on: `/delete_account` clears a member's display names in shared ledgers
+  (`clearMemberDisplayNames`), but not `ledger_members.sticky_tag`, which is user data too.
+- Followup, not acted on: the receipt path's sticky tag is tested; the bank SMS path has no
+  test of its own.
 
 ### Close triggers
+
+- Phases 1-5 done in cdb24c3, d41c71c, 43bdd58, 22559ac and f5c0c7d. Phase 6 (`human`, does
+  not block merge) has not started.
+- Gate on the tip (f5c0c7d), run by the pre-commit hook: `pnpm typecheck` exit 0, `pnpm lint`
+  exit 0, `pnpm test` exit 0 (103 files, 1460 tests). `pnpm build` exit 0,
+  `node scripts/check-doc-links.mjs` exit 0 (261 relative links resolve).
+- No new dependency. Migrations: `0019_tags.sql` (`expenses.tags`), `0020_sticky_tag.sql`
+  (`ledger_members.sticky_tag`).
+- New callback data: `tag:l:<page>`, `tag:s:<8 hex>`, `tag:off`, `exp:ef:<uuid>:g`.
+- `/tags` joined `messages.commands`; `/tags` and `/tag` joined `messages.groupCommands`. `/help`,
+  README.md and the export's columns (Метки after Описание) changed.
 
 ## Followups
