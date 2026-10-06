@@ -360,6 +360,14 @@ first, Phase 1 adds that delete to its deletion service.
 - Followup, not acted on: an expense recorded through the ambiguous-amount buttons
   (`src/bot/handlers/ambiguous.ts`) offers no tip, because that path isn't among the plan's
   text, receipt and bank-SMS paths.
+- Review fix, MAJOR 1 (an unresolved deep link replayed the tour and re-enabled tips): only a bare
+  `/start` or an invite code replays; an unresolved `e_`/`gs_` link sends the welcome alone to an
+  onboarded user. 1ef7af0
+- Review fix, MAJOR 2 (`setupAfterExpense` could name the wrong currency): the line shows only when
+  the user's first live expense in the active ledger is in its default currency, via
+  `findFirstLiveExpenseCurrency` in `src/db/expenses.ts` (+ test). b24c96a
+- Review fix, MINOR 3 (stale README): the `/start` and `/settings` rows and a tips paragraph.
+  f16244f
 
 ### Close triggers
 
@@ -372,7 +380,7 @@ first, Phase 1 adds that delete to its deletion service.
   [Подсказки: вкл/выкл]; callback data: `onb:ok`, `onb:edit`, `tip:off`, `set:tips`;
   config/env keys: none; schema migrations: `0022_onboarding.sql`.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 110 files,
-  1568 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (269 links).
+  1572 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (284 links).
 - **Outstanding `human` phases:** Phase 5 (a stranger's first contact), owed after the deploy.
 
 ## Followups
