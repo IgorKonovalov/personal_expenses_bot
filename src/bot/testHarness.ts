@@ -101,6 +101,19 @@ export function createTestBot(options: TestBotOptions = {}) {
   return { bot, db, calls, logLines, keys, prepareDonations };
 }
 
+// Gives every sendMessage a result with a fresh message id, so a screen can become the anchor.
+// Returns the last id handed out.
+export function withMessageIds(bot: Bot, first = 100): () => number {
+  let messageId = first;
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    const answer = await prev(method, payload, signal);
+    if (method !== 'sendMessage') return answer;
+    const chat = { id: (payload as { chat_id: number }).chat_id, type: 'private' };
+    return { ok: true, result: { message_id: ++messageId, date: 0, chat, text: '' } as never };
+  });
+  return () => messageId;
+}
+
 // The fake's invoice link for a payload, e.g. `donate:150`.
 export function invoiceLink(payload: string): string {
   return `https://t.me/$test-${payload.replace(':', '-')}`;

@@ -55,22 +55,25 @@ export async function editList(ctx: Context, list: TagList, page: number): Promi
   await editHtml(ctx, view.text, { reply_markup: view.markup });
 }
 
+// /tags and its [☰ Ещё] button: the first page of the active ledger's tags.
+export async function sendTags(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  const list = activeLedgerTags(deps, user);
+  if (isLocked(list)) {
+    await replyHtml(ctx, messages.ledgerLocked);
+    return;
+  }
+  if (list.tags.length === 0) {
+    await replyHtml(ctx, messages.tagsEmpty);
+    return;
+  }
+  const view = listView(list, 1);
+  await replyHtml(ctx, view.text, { reply_markup: view.markup });
+}
+
 export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
-  bot.command('tags', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    const list = activeLedgerTags(deps, user);
-    if (isLocked(list)) {
-      await replyHtml(ctx, messages.ledgerLocked);
-      return;
-    }
-    if (list.tags.length === 0) {
-      await replyHtml(ctx, messages.tagsEmpty);
-      return;
-    }
-    const view = listView(list, 1);
-    await replyHtml(ctx, view.text, { reply_markup: view.markup });
-  });
+  bot.command('tags', (ctx) => sendTags(ctx, deps));
 
   // `/tag отпуск` sets the sticky tag of the active ledger; `/tag` alone shows it.
   bot.command('tag', async (ctx) => {

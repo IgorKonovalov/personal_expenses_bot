@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import type { Bot, InputFile } from 'grammy';
+import { Composer, type Bot, type InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
@@ -43,7 +43,9 @@ import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
-import { createBot, registerCommands } from './bot.js';
+import { createBot, privateComposer, registerCommands } from './bot.js';
+import { MENU_BAR_COMMANDS } from './handlers/menu.js';
+import { MORE_BUTTONS } from './handlers/more.js';
 import { recurringProvider } from './recurringProvider.js';
 import {
   BUDGET_CAP,
@@ -95,6 +97,7 @@ import {
   preCheckoutUpdate,
   successfulPaymentUpdate,
   textUpdate,
+  withMessageIds,
   type ApiCall,
 } from './testHarness.js';
 
@@ -144,7 +147,7 @@ describe('error boundary', () => {
 const menuKeyboard = {
   keyboard: [
     [{ text: '📊 Сегодня' }, { text: '📅 Неделя' }, { text: '🗓 Месяц' }],
-    [{ text: '💰 Бюджет' }, { text: '⚙️ Настройки' }, { text: '❓ Помощь' }],
+    [{ text: '💰 Бюджет' }, { text: '⚙️ Настройки' }, { text: '❓ Помощь' }, { text: '☰ Ещё' }],
   ],
   is_persistent: true,
   resize_keyboard: true,
@@ -194,6 +197,7 @@ describe('menu and help', () => {
       budget: '💰 Бюджет',
       settings: '⚙️ Настройки',
       help: '❓ Помощь',
+      more: '☰ Ещё',
     });
   });
 
@@ -406,7 +410,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /recurring, /debts, /tags, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
+  it('registers the private list from messages by default and in every private chat', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -431,8 +435,16 @@ describe('command registration at boot', () => {
             { command: 'help', description: messages.commands[12].description },
             { command: 'changelog', description: messages.commands[13].description },
             { command: 'donate', description: messages.commands[14].description },
+            { command: 'tag', description: messages.commands[15].description },
+            { command: 'privacy', description: messages.commands[16].description },
+            { command: 'paysupport', description: messages.commands[17].description },
+            { command: 'delete_account', description: messages.commands[18].description },
           ],
         },
+      },
+      {
+        method: 'setMyCommands',
+        payload: { commands: messages.commands, scope: { type: 'all_private_chats' } },
       },
       {
         method: 'setMyCommands',
@@ -466,7 +478,7 @@ describe('command registration at boot', () => {
       createLogger('info', { write: (line: string) => void lines.push(line) }),
     );
 
-    expect(calls.map((c) => c.method)).toEqual(['setMyCommands', 'setMyCommands']);
+    expect(calls.map((c) => c.method)).toEqual(['setMyCommands', 'setMyCommands', 'setMyCommands']);
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
       level: 40,
@@ -7368,6 +7380,153 @@ describe('tags (Plan 0012)', () => {
     expect(calls.at(-1)).toMatchObject({
       method: 'editMessageText',
       payload: { text: '<b>Метки — «Личные расходы»</b>\n#t1 — 100.00 RSD' },
+    });
+  });
+});
+
+describe('[☰ Ещё] (Plan 0034)', () => {
+  const NOW = new Date('2026-10-06T10:00:00Z');
+
+  function moreKeyboard(lockRow: readonly { text: string; callback_data: string }[][] = []) {
+    const b = (text: string, key: string) => ({ text, callback_data: `more:${key}` });
+    const label = messages.moreButtons;
+    return {
+      inline_keyboard: [
+        [b(label.recurring, 'rec'), b(label.debts, 'debt')],
+        [b(label.tags, 'tags'), b(label.export, 'exp')],
+        [b(label.changelog, 'chg'), b(label.donate, 'don')],
+        [b(label.paysupport, 'pay'), b(label.privacy, 'prv')],
+        [b(label.deleteAccount, 'del')],
+        ...lockRow,
+      ],
+    };
+  }
+
+  function apiCalls(calls: readonly ApiCall[]): ApiCall[] {
+    return calls.filter((c) => c.method !== 'answerCallbackQuery');
+  }
+
+  it('answers the ☰ Ещё label with the more screen', async () => {
+    const { bot, calls } = createTestBot({ now: NOW });
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '☰ Ещё' }));
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: messages.moreScreen,
+          reply_markup: moreKeyboard(),
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it.each(MORE_BUTTONS.map((b) => [b.key, b.command]))(
+    'answers more:%s exactly as /%s does',
+    async (key, command) => {
+      const typed = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
+      withMessageIds(typed.bot);
+      const tapped = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
+      withMessageIds(tapped.bot);
+
+      await typed.bot.handleUpdate(textUpdate({ updateId: 1, text: `/${command}` }));
+      await tapped.bot.handleUpdate(callbackUpdate({ updateId: 1, data: `more:${key}` }));
+
+      expect(typed.calls.length).toBeGreaterThan(0);
+      expect(apiCalls(tapped.calls)).toEqual(typed.calls);
+      expect(tapped.calls.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(1);
+    },
+  );
+
+  it('offers [Открыть учёт] for a locked sealed ledger and [Закрыть учёт] for an unlocked one', async () => {
+    const { bot, calls, db, keys } = createTestBot({ now: NOW });
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db, logger: silentLogger(), keys };
+    const ledger = await sealPersonalLedger(keyDeps, user, NOW);
+    keys.lock(ledger.id);
+    calls.length = 0;
+
+    await bot.handleUpdate(textUpdate({ updateId: 2, text: '☰ Ещё' }));
+    await unlockPersonalLedger(keyDeps, user, NOW);
+    await bot.handleUpdate(textUpdate({ updateId: 3, text: '☰ Ещё' }));
+
+    const markups = calls.map((c) => (c.payload as { reply_markup: unknown }).reply_markup);
+    expect(markups).toEqual([
+      moreKeyboard([[{ text: messages.moreButtons.unlock, callback_data: 'more:unl' }]]),
+      moreKeyboard([[{ text: messages.moreButtons.lock, callback_data: 'more:lock' }]]),
+    ]);
+  });
+
+  it('clears a pending flow before the command runs, as a typed command does', async () => {
+    const { bot, db } = createTestBot({ now: NOW });
+    withMessageIds(bot);
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/settings' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'set:tzother', messageId: 101 }));
+    const pending = () => db.prepare('SELECT kind FROM flow_sessions').pluck().get();
+    expect(pending()).toBe('setTimezone');
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'more:prv' }));
+
+    expect(pending()).toBeNull();
+  });
+
+  describe('the guard: every private command has a button', () => {
+    // Reached without a button of their own: /start opens the chat, /cancel ends a prompt that
+    // carries [Отмена], /recover is offered by the unlock prompt, and /categories is a button on
+    // the settings hub.
+    const REACHED_ELSEWHERE = ['start', 'cancel', 'recover', 'categories'];
+    // Plan 0034 Phase 2 adds their buttons.
+    const NOT_YET = ['tag', 'invite', 'invites', 'block', 'unblock', 'stats', 'refund'];
+
+    function privateCommands(): string[] {
+      const spy = vi.spyOn(Composer.prototype, 'command');
+      try {
+        const db = openDatabase(':memory:');
+        runMigrations(db, NOW);
+        privateComposer({
+          db,
+          logger: silentLogger(),
+          newId: randomUUID,
+          now: () => NOW,
+          defaultTimezone: 'Europe/Belgrade',
+          defaultCurrency: 'RSD',
+          keys: createLedgerKeyring(() => NOW),
+          adminTelegramId: ADMIN_ID,
+          token: '123456:test-token',
+          backupKeep: 14,
+        });
+        return spy.mock.calls.flatMap(([command]) =>
+          Array.isArray(command) ? command : [command],
+        );
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    function withoutButton(commands: readonly string[]): string[] {
+      const covered = new Set([
+        ...MENU_BAR_COMMANDS,
+        ...MORE_BUTTONS.map((b) => b.command),
+        ...REACHED_ELSEWHERE,
+        ...NOT_YET,
+      ]);
+      return commands.filter((c) => !covered.has(c));
+    }
+
+    it('finds the private commands, and none without a button', () => {
+      const commands = privateCommands();
+
+      expect(commands).toEqual(expect.arrayContaining(['today', 'recurring', 'delete_account']));
+      expect(withoutButton(commands)).toEqual([]);
+    });
+
+    it('names a new command registered with no button', () => {
+      expect(withoutButton([...privateCommands(), 'brand_new'])).toEqual(['brand_new']);
     });
   });
 });

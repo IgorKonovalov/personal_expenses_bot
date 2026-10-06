@@ -28,23 +28,25 @@ function adminTimezone(deps: AdminDeps): string {
 
 // /paysupport alone explains; `/paysupport <text>` relays the text to the admin with the user's
 // internal id and donations, then confirms.
+export async function sendPaySupport(ctx: Context, deps: AdminDeps, arg: string): Promise<void> {
+  if (ctx.from === undefined) return;
+  const text = arg.trim();
+  if (text === '') {
+    await replyHtml(ctx, messages.paySupport);
+    return;
+  }
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  const timezone = adminTimezone(deps);
+  const donations = listDonationsOfUser(deps.db, user.id, SHOWN_DONATIONS).map((d) => ({
+    chargeId: d.chargeId,
+    stars: d.stars,
+    on: localDateOf(d.createdAt, timezone),
+    refunded: d.refundedAt !== null,
+  }));
+  await deps.notifyAdmin(messages.adminPaySupport({ userId: user.id, text, donations }));
+  await replyHtml(ctx, messages.paySupportSent);
+}
+
 export function registerPaySupport(bot: Composer<Context>, deps: AdminDeps): void {
-  bot.command('paysupport', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const text = ctx.match.trim();
-    if (text === '') {
-      await replyHtml(ctx, messages.paySupport);
-      return;
-    }
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    const timezone = adminTimezone(deps);
-    const donations = listDonationsOfUser(deps.db, user.id, SHOWN_DONATIONS).map((d) => ({
-      chargeId: d.chargeId,
-      stars: d.stars,
-      on: localDateOf(d.createdAt, timezone),
-      refunded: d.refundedAt !== null,
-    }));
-    await deps.notifyAdmin(messages.adminPaySupport({ userId: user.id, text, donations }));
-    await replyHtml(ctx, messages.paySupportSent);
-  });
+  bot.command('paysupport', (ctx) => sendPaySupport(ctx, deps, ctx.match));
 }

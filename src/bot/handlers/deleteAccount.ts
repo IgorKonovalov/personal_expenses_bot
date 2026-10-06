@@ -9,17 +9,19 @@ import { editHtml, replyHtml } from '../render/html.js';
 // [Удалить всё] after the deletion comes from a Telegram id with no account, which the access
 // gate answers.
 
+export async function sendDeleteAccount(ctx: Context, backupKeep: number): Promise<void> {
+  await replyHtml(ctx, messages.deleteAccountPrompt(backupKeep), {
+    reply_markup: new InlineKeyboard()
+      .text(messages.deleteAccountButton, ACCOUNT_DELETE)
+      .text(messages.cancelButton, ACCOUNT_KEEP),
+  });
+}
+
 export function registerDeleteAccount(
   bot: Composer<Context>,
   deps: HandlerDeps & { readonly backupKeep: number },
 ): void {
-  bot.command('delete_account', async (ctx) => {
-    await replyHtml(ctx, messages.deleteAccountPrompt(deps.backupKeep), {
-      reply_markup: new InlineKeyboard()
-        .text(messages.deleteAccountButton, ACCOUNT_DELETE)
-        .text(messages.cancelButton, ACCOUNT_KEEP),
-    });
-  });
+  bot.command('delete_account', (ctx) => sendDeleteAccount(ctx, deps.backupKeep));
 
   bot.callbackQuery(ACCOUNT_DELETE, async (ctx) => {
     const result = deleteAccount(deps, { telegramId: ctx.from.id, now: deps.now() });

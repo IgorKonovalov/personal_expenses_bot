@@ -12,6 +12,7 @@ export function menuKeyboard(): Keyboard {
     .text(messages.menu.budget)
     .text(messages.menu.settings)
     .text(messages.menu.help)
+    .text(messages.menu.more)
     .resized()
     .persistent();
 }

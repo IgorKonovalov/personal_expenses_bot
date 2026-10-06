@@ -26,6 +26,7 @@ import { registerExport } from './handlers/export.js';
 import { registerHelp } from './handlers/help.js';
 import { registerInvite } from './handlers/invite.js';
 import { registerMenu } from './handlers/menu.js';
+import { registerMore } from './handlers/more.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerPaySupport } from './handlers/paysupport.js';
 import { registerPrivacy } from './handlers/privacy.js';
@@ -92,9 +93,21 @@ export function createBot(options: BotOptions): Bot {
 
   // Group updates and everything else take separate composers (ADR-0014): no DM handler, flow
   // or anchor sees a group update, and the group side never falls through to the DM side.
-  const dm = new Composer<Context>();
-  bot.branch(isGroupChat, groupComposer(options), dm);
+  bot.branch(isGroupChat, groupComposer(options), privateComposer(options));
 
+  bot.catch((err) => {
+    logger.error(
+      { updateId: err.ctx.update.update_id, err: safeError(err.error) },
+      'error escaped the error boundary',
+    );
+  });
+
+  return bot;
+}
+
+// Every handler for a private chat (and any other non-group update).
+export function privateComposer(options: BotOptions): Composer<Context> {
+  const dm = new Composer<Context>();
   const donateDeps = {
     ...options,
     donationLinks: options.donationLinks ?? new Map<DonationPreset, string>(),
@@ -134,6 +147,7 @@ export function createBot(options: BotOptions): Bot {
   registerDonate(dm, donateDeps);
   registerPaySupport(dm, donateDeps);
   registerRefund(dm, donateDeps);
+  registerMore(dm, donateDeps);
   // Admin commands: from anyone else they fall through to the unknown-command reply.
   registerInvite(dm, options);
   registerAdmin(dm, options);
@@ -147,23 +161,17 @@ export function createBot(options: BotOptions): Bot {
   registerReceiptMedia(dm, options, download);
   registerNonText(dm);
   registerEdited(dm, options);
-
-  bot.catch((err) => {
-    logger.error(
-      { updateId: err.ctx.update.update_id, err: safeError(err.error) },
-      'error escaped the error boundary',
-    );
-  });
-
-  return bot;
+  return dm;
 }
 
-// The slash-command lists the client shows: the DM list by default, the group list in every
-// group (ADR-0014), plus the profile description texts. A failure costs only those, so boot
-// continues.
+// The slash-command lists the client shows: the DM list by default and in every private chat,
+// the group list in every group (ADR-0014), plus the profile description texts. A list set for
+// a narrower scope beats the default, so the private scope is written too: whatever was set
+// there before is overwritten on every boot. A failure costs only those, so boot continues.
 export async function registerCommands(bot: Bot, logger: Logger): Promise<void> {
   try {
     await bot.api.setMyCommands(messages.commands);
+    await bot.api.setMyCommands(messages.commands, { scope: { type: 'all_private_chats' } });
     await bot.api.setMyCommands(messages.groupCommands, { scope: { type: 'all_group_chats' } });
   } catch (error) {
     logger.warn({ err: safeError(error) }, 'setMyCommands failed');

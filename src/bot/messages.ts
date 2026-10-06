@@ -515,6 +515,7 @@ const menu = {
   budget: '💰 Бюджет',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
+  more: '☰ Ещё',
 } as const;
 
 // The timezone picker's city labels, one per entry of TIMEZONES.
@@ -717,7 +718,26 @@ export const messages = {
     { command: 'help', description: 'Как записать трату' },
     { command: 'changelog', description: 'Что нового в боте' },
     { command: 'donate', description: 'Поддержать бота' },
+    { command: 'tag', description: 'Метка для всех новых трат, например /tag отпуск' },
+    { command: 'privacy', description: 'Какие данные хранятся и кто их видит' },
+    { command: 'paysupport', description: 'Вопрос о пожертвовании или возврат' },
+    { command: 'delete_account', description: 'Удалить аккаунт и личный учёт' },
   ],
+  // [☰ Ещё]: every private command that has no menu-bar button, as inline buttons.
+  moreScreen: html`<b>Ещё</b>\nВсе остальные команды — кнопками.`,
+  moreButtons: {
+    recurring: 'Регулярные',
+    debts: 'Долги',
+    tags: 'Метки',
+    export: 'Экспорт',
+    changelog: 'Что нового',
+    donate: 'Поддержать',
+    paysupport: 'Возврат пожертвования',
+    privacy: 'Приватность',
+    deleteAccount: 'Удалить аккаунт',
+    unlock: 'Открыть учёт',
+    lock: 'Закрыть учёт',
+  },
 
   welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(
@@ -869,6 +889,7 @@ export const messages = {
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории и шифрование`,
       html`${menu.help} — эта подсказка`,
+      html`${menu.more} — остальные команды кнопками`,
       html`/recurring — регулярные траты и напоминания`,
       html`/debts — долги: кто кому должен`,
       html`/tags — метки и траты по ним, /tag — метка для всех новых трат`,

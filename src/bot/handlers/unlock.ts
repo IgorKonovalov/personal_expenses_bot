@@ -167,38 +167,46 @@ async function deleteCommandArgument(ctx: CommandContext<Context>, deps: Handler
   if (ctx.match.trim() !== '') await deleteSecretMessage(ctx, deps);
 }
 
+// /unlock (its argument already deleted) and [Открыть учёт]: the passphrase prompt.
+export async function sendUnlock(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const now = deps.now();
+  const user = ensureUser(deps, ctx.from.id, now);
+  switch (startUnlockFlow(deps, user, now)) {
+    case 'asked':
+      await replyHtml(ctx, messages.unlockPrompt);
+      return;
+    case 'off':
+      await replyHtml(ctx, messages.unlockNotSealed);
+      return;
+    case 'unlocked':
+      await replyHtml(ctx, messages.alreadyUnlocked);
+      return;
+  }
+}
+
+// /lock and [Закрыть учёт].
+export async function sendLock(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  const result = lockLedger(deps, user);
+  await replyHtml(
+    ctx,
+    result === 'locked'
+      ? messages.ledgerLockedNow
+      : result === 'alreadyLocked'
+        ? messages.alreadyLocked
+        : messages.unlockNotSealed,
+  );
+}
+
 export function registerUnlock(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('unlock', async (ctx) => {
-    if (ctx.from === undefined) return;
     await deleteCommandArgument(ctx, deps);
-    const now = deps.now();
-    const user = ensureUser(deps, ctx.from.id, now);
-    switch (startUnlockFlow(deps, user, now)) {
-      case 'asked':
-        await replyHtml(ctx, messages.unlockPrompt);
-        return;
-      case 'off':
-        await replyHtml(ctx, messages.unlockNotSealed);
-        return;
-      case 'unlocked':
-        await replyHtml(ctx, messages.alreadyUnlocked);
-        return;
-    }
+    await sendUnlock(ctx, deps);
   });
 
-  bot.command('lock', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    const result = lockLedger(deps, user);
-    await replyHtml(
-      ctx,
-      result === 'locked'
-        ? messages.ledgerLockedNow
-        : result === 'alreadyLocked'
-          ? messages.alreadyLocked
-          : messages.unlockNotSealed,
-    );
-  });
+  bot.command('lock', (ctx) => sendLock(ctx, deps));
 
   bot.command('recover', async (ctx) => {
     if (ctx.from === undefined) return;

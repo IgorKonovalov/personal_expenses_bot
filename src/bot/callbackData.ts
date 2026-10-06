@@ -412,3 +412,11 @@ export function exportRangeData(range: ExportRange): string {
 export function exportFormatData(range: ExportRange, format: ExportFormat): string {
   return assertCallbackData(`xp:f:${range}:${format}`);
 }
+
+// A [☰ Ещё] button: `more:<key>` (at most 10 bytes) runs the command its key names. The screen is
+// stateless, so a tap on any old copy works and carries nothing else.
+export const MORE_ACTION = /^more:([a-z]{2,5})$/;
+
+export function moreData(key: string): string {
+  return assertCallbackData(`more:${key}`);
+}

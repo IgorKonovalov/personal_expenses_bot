@@ -50,24 +50,27 @@ export async function createDonationLinks(
   }
 }
 
-// /donate, private chats only. Group updates never reach the DM composer (ADR-0014).
+// /donate and its [☰ Ещё] button, private chats only. Group updates never reach the DM
+// composer (ADR-0014).
+export async function sendDonate(ctx: Context, deps: DonateDeps): Promise<void> {
+  if (ctx.chat?.type !== 'private') return;
+  const markup = new InlineKeyboard();
+  for (const [stars, link] of deps.donationLinks) {
+    markup.url(messages.donateStarsButton(stars), link);
+  }
+  if (deps.donateUrl !== undefined) {
+    if (deps.donationLinks.size > 0) markup.row();
+    markup.url(messages.donateExternal, deps.donateUrl);
+  }
+  if (markup.inline_keyboard.flat().length === 0) {
+    await replyHtml(ctx, messages.donateUnavailable);
+    return;
+  }
+  await replyHtml(ctx, messages.donate, { reply_markup: markup });
+}
+
 export function registerDonate(bot: Composer<Context>, deps: DonateDeps): void {
-  bot.command('donate', async (ctx) => {
-    if (ctx.chat.type !== 'private') return;
-    const markup = new InlineKeyboard();
-    for (const [stars, link] of deps.donationLinks) {
-      markup.url(messages.donateStarsButton(stars), link);
-    }
-    if (deps.donateUrl !== undefined) {
-      if (deps.donationLinks.size > 0) markup.row();
-      markup.url(messages.donateExternal, deps.donateUrl);
-    }
-    if (markup.inline_keyboard.flat().length === 0) {
-      await replyHtml(ctx, messages.donateUnavailable);
-      return;
-    }
-    await replyHtml(ctx, messages.donate, { reply_markup: markup });
-  });
+  bot.command('donate', (ctx) => sendDonate(ctx, deps));
 }
 
 // Behind the access middleware: only an admitted user can start a payment. Writes nothing, so a

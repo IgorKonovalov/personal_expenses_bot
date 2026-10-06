@@ -139,22 +139,25 @@ export async function showFormatStep(ctx: Context, range: string): Promise<void>
   await editHtml(ctx, messages.exportFormatPrompt, { reply_markup: formatKeyboard(range) });
 }
 
+// /export and its [☰ Ещё] button: the range step for the active ledger.
+export async function sendExportPicker(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const state = activeExportState(deps, ensureUser(deps, ctx.from.id, deps.now()));
+  if (isLocked(state)) {
+    await replyHtml(ctx, messages.ledgerLocked);
+    return;
+  }
+  const step = rangeStep(state.sealed);
+  await replyHtml(ctx, step.text, { reply_markup: step.markup });
+}
+
 export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void {
   const guard = createTapGuard();
   // The picker's state for the tapping user's active ledger; a locked ledger answers locked.
   const pickerState = (telegramId: number) =>
     activeExportState(deps, ensureUser(deps, telegramId, deps.now()));
 
-  bot.command('export', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const state = pickerState(ctx.from.id);
-    if (isLocked(state)) {
-      await replyHtml(ctx, messages.ledgerLocked);
-      return;
-    }
-    const step = rangeStep(state.sealed);
-    await replyHtml(ctx, step.text, { reply_markup: step.markup });
-  });
+  bot.command('export', (ctx) => sendExportPicker(ctx, deps));
 
   bot.callbackQuery(EXPORT_RANGE, (ctx) => showFormatStep(ctx, ctx.match[1] ?? ''));
 

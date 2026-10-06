@@ -1,6 +1,6 @@
 # 0034: Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once
 
-> **Status:** approved (2026-10-06)
+> **Status:** in-progress
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0037](../adrs/0037-first-time-notices-and-transient-replies.md) (notices
 > shown once, transient replies), [ADR-0011](../adrs/0011-navigation-model.md) (the menu bar),
@@ -243,13 +243,21 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | not started | |
+| 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | committed with this row |
 | 2: The admin row, argument prompts and the admin's command list | dev | not started | |
 | 3: A recorded receipt deletes its photo | dev | not started | |
 | 4: Notices shown once, and short replies that clean up after themselves | dev | not started | |
 | 5: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: `messages.commands` also gained `/tag`, `/privacy`, `/paysupport` and
+  `/delete_account`, which were missing from the private list.
+- Phase 1: the guard exempts `/categories` besides `/start`, `/cancel` and `/recover`: it has no
+  menu-bar or more-screen button and is reached by [Категории] on the settings hub. The plan's
+  exemption list doesn't name it.
+- Phase 1: `createBot`'s DM side moved into an exported `privateComposer(options)`, so the guard
+  test enumerates its `command` registrations by spying on `Composer.prototype.command`.
 
 ### Close triggers
 

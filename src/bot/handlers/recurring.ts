@@ -389,12 +389,15 @@ export async function showAskResult(
   }
 }
 
+// /recurring and its [☰ Ещё] button: the rule list as a new anchor.
+export async function sendRecurring(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  await showScreen(ctx, deps, user, { name: 'recurring' }, recurringListView(deps, user));
+}
+
 export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): void {
-  bot.command('recurring', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    await showScreen(ctx, deps, user, { name: 'recurring' }, recurringListView(deps, user));
-  });
+  bot.command('recurring', (ctx) => sendRecurring(ctx, deps));
 
   bot.callbackQuery(RECURRING_LIST, async (ctx) => {
     const tap = await recurringTap(ctx, deps);

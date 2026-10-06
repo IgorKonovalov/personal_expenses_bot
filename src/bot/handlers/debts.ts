@@ -454,6 +454,17 @@ async function showRepayStart(
   });
 }
 
+// /debts and its [☰ Ещё] button: the debts list as a new anchor.
+export async function sendDebts(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  if (debtsLocked(deps, user)) {
+    await replyHtml(ctx, messages.ledgerLocked);
+    return;
+  }
+  await showScreen(ctx, deps, user, { name: 'debts' }, debtsListView(deps, user));
+}
+
 export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.callbackQuery(DEBTS_LIST, async (ctx) => {
     const tap = await debtsTap(ctx, deps);
@@ -595,15 +606,7 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     );
   });
 
-  bot.command('debts', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    if (debtsLocked(deps, user)) {
-      await replyHtml(ctx, messages.ledgerLocked);
-      return;
-    }
-    await showScreen(ctx, deps, user, { name: 'debts' }, debtsListView(deps, user));
-  });
+  bot.command('debts', (ctx) => sendDebts(ctx, deps));
 
   bot.callbackQuery(DEBT_NEW, async (ctx) => {
     const tap = await debtsTap(ctx, deps);
