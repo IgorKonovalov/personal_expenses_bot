@@ -5,11 +5,13 @@ import { openDatabase, type Db } from './connection.js';
 import {
   findExpenseById,
   findHistoryCategory,
+  findTakenSourceKeys,
   insertExpenseOrGetExisting,
   insertSealedExpenseOrGetExisting,
   listLedgerExpenses,
   listLedgerExpensesBetween,
   listLedgerExpensesOn,
+  rekeyContentSourceKeys,
   resealExpense,
   restoreDeletedExpense,
   setExpenseAmount,
@@ -67,6 +69,35 @@ function addExpense(id: string, ledgerId: LedgerId, createdBy: UserId, sourceKey
     createdAt: NOW,
   });
 }
+
+describe('statement source keys', () => {
+  it('finds which keys are taken, deleted rows included', () => {
+    addExpense('exp-1', LEDGER_A, USER_A, 'stmt:raiffeisen-rs:aa:ledger-a');
+    addExpense('exp-2', LEDGER_A, USER_A, 'stmt:raiffeisen-rs:bb:ledger-a');
+    softDeleteExpense(db, 'exp-2' as ExpenseId, NOW);
+
+    expect(
+      findTakenSourceKeys(db, [
+        'stmt:raiffeisen-rs:aa:ledger-a',
+        'stmt:raiffeisen-rs:bb:ledger-a',
+        'stmt:raiffeisen-rs:cc:ledger-a',
+      ]),
+    ).toEqual(new Set(['stmt:raiffeisen-rs:aa:ledger-a', 'stmt:raiffeisen-rs:bb:ledger-a']));
+  });
+
+  it('re-keys statement rows with the other content keys when a ledger is sealed', () => {
+    addExpense('exp-1', LEDGER_A, USER_A, 'stmt:raiffeisen-rs:aa:ledger-a');
+    addExpense('exp-2', LEDGER_A, USER_A, 'tg:1:2');
+    addExpense('exp-3', LEDGER_B, USER_B, 'stmt:raiffeisen-rs:aa:ledger-b');
+
+    expect(rekeyContentSourceKeys(db, LEDGER_A)).toBe(1);
+    expect(db.prepare('SELECT id, source_key FROM expenses ORDER BY id').all()).toEqual([
+      { id: 'exp-1', source_key: 'sealed:exp-1' },
+      { id: 'exp-2', source_key: 'tg:1:2' },
+      { id: 'exp-3', source_key: 'stmt:raiffeisen-rs:aa:ledger-b' },
+    ]);
+  });
+});
 
 describe('expenses repository', () => {
   it("never lists user A's personal-ledger expenses to user B", () => {

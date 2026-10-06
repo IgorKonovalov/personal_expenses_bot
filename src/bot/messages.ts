@@ -172,6 +172,8 @@ interface StatementPreviewView {
   readonly ledger: LedgerRef;
   // Every card purchase in the file.
   readonly purchaseCount: number;
+  // Rows already in the ledger: matched to a recorded expense, or imported before.
+  readonly alreadyCount: number;
   readonly fresh: readonly StatementRowView[];
 }
 
@@ -391,6 +393,9 @@ function statementRowLine(row: StatementRowView): Html {
 
 // How many new rows the preview lists.
 const STATEMENT_ROWS_SHOWN = 10;
+
+// In a statement preview, in place of [Записать все] when every row is already recorded.
+const statementNothingNew = html`Новых покупок нет: всё из выписки уже записано.`;
 
 // `1 расход`, `2 расхода`, `5 расходов`, `21 расход`.
 function expenseCountWords(n: number): string {
@@ -899,7 +904,13 @@ export const messages = {
 
   // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
   // the first of them, above [Записать все (N)] and [Отмена].
-  statementPreview: ({ period, ledger, purchaseCount, fresh }: StatementPreviewView): Html => {
+  statementPreview: ({
+    period,
+    ledger,
+    purchaseCount,
+    alreadyCount,
+    fresh,
+  }: StatementPreviewView): Html => {
     const title =
       period === undefined
         ? html`<b>Выписка</b> → «${ledgerName(ledger)}»`
@@ -908,6 +919,9 @@ export const messages = {
       title,
       html`Найдено ${purchaseCountWords(purchaseCount)}, новых: ${fresh.length}`,
     ];
+    // ADR-0032: the same amount and currency within a day, or recorded by an earlier import.
+    if (alreadyCount > 0) lines.push(html`Уже записано: ${alreadyCount}`);
+    if (fresh.length === 0) lines.push(statementNothingNew);
     if (fresh.length > 0) {
       lines.push(html`На сумму: ${moneyTotals(fresh)}`, html``);
       lines.push(...fresh.slice(0, STATEMENT_ROWS_SHOWN).map(statementRowLine));
@@ -918,6 +932,9 @@ export const messages = {
     return joinHtml(lines, '\n');
   },
   statementRecordAllButton: (n: number): string => `Записать все (${n})`,
+  // The new rows plus the ones a recorded expense already covers.
+  statementRecordWithMatchedButton: (n: number): string => `Записать и уже записанные (${n})`,
+  statementNothingNew,
   statementRecorded: ({
     ledger,
     count,

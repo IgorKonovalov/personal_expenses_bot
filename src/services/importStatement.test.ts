@@ -3,7 +3,10 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { parseRaiffeisenRs } from '../domain/statements/raiffeisenRs.js';
+import { parseBankSms } from '../domain/bankSms/index.js';
+import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import {
+  cardRow,
   statementLines,
   TWO_PAGE_ROWS,
   type StatementRowFixture,
@@ -13,7 +16,8 @@ import { createLogger } from '../logger.js';
 import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { previewStatement, recordStatement } from './importStatement.js';
 import { provisionUser } from './provisionUser.js';
-import type { RecordDeps } from './recordExpense.js';
+import { recordBankSms } from './recordBankSms.js';
+import { recordExpense, type RecordDeps } from './recordExpense.js';
 
 const NOW = new Date('2026-10-02T09:00:00Z');
 
@@ -62,6 +66,98 @@ function stored() {
     )
     .all();
 }
+
+// Records typed text, sent at noon UTC of `day`.
+function typed(text: string, day: string) {
+  const at = new Date(`${day}T12:00:00Z`);
+  const result = recordExpense(deps, {
+    user: alice,
+    text,
+    sourceKey: `tg:${alice.id}:${text}:${day}`,
+    occurredAt: at,
+    now: at,
+  });
+  if (result.kind !== 'recorded') throw new Error(`expected a record, got ${result.kind}`);
+}
+
+const USD_ROW: StatementRowFixture = {
+  date: '07.09.2026',
+  card: '0000',
+  description: ['EXAMPLE.COM'],
+  original: '15.00 USD',
+  rate: '117.1234',
+  debit: '1,756.85',
+};
+
+describe('matching recorded expenses (ADR-0032)', () => {
+  it('matches a hand-recorded 1 250 кофе of the 12th to a row of the 13th, not of the 14th', () => {
+    typed('1 250 кофе', '2026-09-12');
+
+    const near = preview([cardRow('13.09.2026', '1,250.00', 'KAFE PRIMER')]);
+    expect([near.fresh.length, near.matched.length]).toEqual([0, 1]);
+
+    const far = preview([cardRow('14.09.2026', '1,250.00', 'KAFE PRIMER')]);
+    expect([far.fresh.length, far.matched.length]).toEqual([1, 0]);
+  });
+
+  it('gives two 450.00 rows of one day against one recorded 450 one match and one new row', () => {
+    typed('450 кофе', '2026-09-12');
+
+    const result = preview([
+      cardRow('12.09.2026', '450.00', 'KAFE PRIMER'),
+      cardRow('12.09.2026', '450.00', 'KAFE PRIMER'),
+    ]);
+
+    expect(result.matched.map((p) => p.ordinal)).toEqual([0]);
+    expect(result.fresh.map((p) => p.ordinal)).toEqual([1]);
+  });
+
+  it('matches an SMS-recorded 15.00 USD on the original amount, not on the RSD debit', () => {
+    const sms = parseBankSms(
+      buildKoriscenjeSms({ datum: '07.09.2026 13:00:00', iznos: '15,00 USD' }),
+    );
+    if (sms.kind !== 'purchase') throw new Error('synthetic SMS did not parse');
+    recordBankSms(deps, {
+      user: alice,
+      sms,
+      messageKey: 'tg:1:1',
+      occurredAt: new Date('2026-09-07T12:00:00Z'),
+      now: NOW,
+    });
+
+    // A row of the USD purchase's RSD debit alone, then the USD purchase.
+    const result = preview([cardRow('07.09.2026', '1,756.85', 'EXAMPLE.COM'), USD_ROW]);
+
+    expect(result.matched.map((p) => [p.amountMinor, p.currency])).toEqual([[1500, 'USD']]);
+    expect(result.fresh.map((p) => [p.amountMinor, p.currency])).toEqual([[175685, 'RSD']]);
+  });
+
+  it('[Записать все] skips matched rows, and with them records the matched rows too', () => {
+    typed('450 кофе', '2026-09-02');
+    preview();
+
+    expect(recordStatement(deps, { user: alice, now: NOW })).toMatchObject({ count: 5 });
+
+    preview();
+    expect(recordStatement(deps, { user: alice, now: NOW, withMatched: true })).toMatchObject({
+      count: 1,
+    });
+    expect(stored()).toHaveLength(1 + 6);
+  });
+
+  it('counts a re-sent statement as imported: nothing new, nothing matched', () => {
+    preview();
+    recordStatement(deps, { user: alice, now: NOW });
+
+    const again = preview();
+
+    expect([again.fresh.length, again.matched.length, again.imported.length]).toEqual([0, 0, 6]);
+    expect(recordStatement(deps, { user: alice, now: NOW, withMatched: true })).toMatchObject({
+      count: 0,
+    });
+    expect(stored()).toHaveLength(6);
+  });
+});
 
 describe('recordStatement', () => {
   it('records each card purchase with its transaction date and original amount', () => {

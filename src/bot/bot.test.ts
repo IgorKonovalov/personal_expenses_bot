@@ -6069,10 +6069,8 @@ describe('bank statements (Plan 0027)', () => {
           text: PREVIEW,
           reply_markup: {
             inline_keyboard: [
-              [
-                { text: 'Записать все (6)', callback_data: 'stm:all' },
-                { text: 'Отмена', callback_data: 'stm:x' },
-              ],
+              [{ text: 'Записать все (6)', callback_data: 'stm:all' }],
+              [{ text: 'Отмена', callback_data: 'stm:x' }],
             ],
           },
           ...htmlParseMode,
@@ -6155,6 +6153,74 @@ describe('bank statements (Plan 0027)', () => {
     await sendPdf(TWO_PAGE_PDF, { mimeType: 'application/octet-stream', fileName: 'IZVOD.PDF' });
 
     expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([PREVIEW]);
+  });
+
+  it('records the rows once when the same file is sent and recorded twice', async () => {
+    const { sendPdf, tap, calls, db } = statementBot();
+    await sendPdf(TWO_PAGE_PDF);
+    await tap('stm:all');
+    calls.length = 0;
+
+    await sendPdf(TWO_PAGE_PDF);
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 6 });
+    const preview = calls.find((call) => call.method === 'sendMessage');
+    expect(preview?.payload).toMatchObject({
+      text: [
+        '<b>Выписка за 01.09.2026–30.09.2026</b> → «Личные расходы»',
+        'Найдено 6 покупок, новых: 0',
+        'Уже записано: 6',
+        messages.statementNothingNew,
+      ].join('\n'),
+      reply_markup: { inline_keyboard: [[{ text: 'Отмена', callback_data: 'stm:x' }]] },
+    });
+  });
+
+  it('skips a row already recorded by hand, and [Записать и уже записанные] records N+M', async () => {
+    const { send, sendPdf, tap, calls, db } = statementBot();
+    // KAFE PRIMER's 450.00 RSD of the 20th, typed a day later.
+    await send('/start');
+    await send('450 кофе 21.09');
+    expect(expenseCount(db)).toEqual({ n: 1 });
+    calls.length = 0;
+
+    await sendPdf(TWO_PAGE_PDF);
+
+    const preview = calls.find((call) => call.method === 'sendMessage');
+    expect((preview?.payload as { text: string }).text.split('\n').slice(1, 3)).toEqual([
+      'Найдено 6 покупок, новых: 5',
+      'Уже записано: 1',
+    ]);
+    expect(preview?.payload).toMatchObject({
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Записать все (5)', callback_data: 'stm:all' }],
+          [{ text: 'Записать и уже записанные (6)', callback_data: 'stm:dup' }],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+      },
+    });
+
+    await tap('stm:dup');
+
+    expect(expenseCount(db)).toEqual({ n: 1 + 6 });
+    expect(calls.at(-1)?.payload).toMatchObject({
+      text: 'Записано в «Личные расходы»: 6 покупок на 4 134.56 RSD, 15.00 USD, 0.30 EUR.',
+    });
+  });
+
+  it('[Записать все] leaves the row already recorded by hand out', async () => {
+    const { send, sendPdf, tap, db } = statementBot();
+    await send('450 кофе 21.09');
+    await sendPdf(TWO_PAGE_PDF);
+
+    await tap('stm:all');
+
+    expect(expenseCount(db)).toEqual({ n: 1 + 5 });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE occurred_on = '2026-09-20'").get(),
+    ).toEqual({ n: 0 });
   });
 
   it('does not load pdfjs-dist with the bot wiring, only for a PDF', async () => {

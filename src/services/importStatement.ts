@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import { TZDate } from '@date-fns/tz';
 import { listActiveCategories } from '../db/categories.js';
-import type { ExpenseId } from '../db/expenses.js';
+import {
+  findTakenSourceKeys,
+  isSealed,
+  listLedgerExpensesBetween,
+  type Expense,
+  type ExpenseId,
+} from '../db/expenses.js';
 import {
   findActiveLedger,
   findLedgerForMember,
@@ -11,8 +17,10 @@ import {
 import type { User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import type { Money } from '../domain/money.js';
+import { matchRows } from '../domain/statements/match.js';
 import { RAIFFEISEN_RS } from '../domain/statements/raiffeisenRs.js';
 import type { StatementPeriod, StatementPurchase } from '../domain/statements/types.js';
+import type { LocalDate } from '../domain/time.js';
 import { cancelFlow, pendingStatementFlow, startStatementFlow } from './flowSessions.js';
 import type { KeyDeps } from './ledgerKeys.js';
 import { historyCategory, storeExpense, type RecordDeps } from './recordExpense.js';
@@ -34,6 +42,56 @@ export interface StatementPreview {
   readonly purchases: readonly StatementPurchase[];
   // The purchases [Записать все] records.
   readonly fresh: readonly StatementPurchase[];
+  // Rows a live expense already covers (ADR-0032): [Записать и уже записанные] adds them.
+  readonly matched: readonly StatementPurchase[];
+  // Rows whose source key is already stored: an earlier import recorded them.
+  readonly imported: readonly StatementPurchase[];
+}
+
+// Where each row of a statement stands against a ledger.
+type RowState = 'fresh' | 'matched' | 'imported';
+
+// A row whose source key is stored was imported before, and its own expense is no candidate for
+// another row. The rest are matched against the ledger's other live expenses within a day of
+// the statement's dates (ADR-0032).
+function classify(
+  deps: ImportDeps,
+  user: User,
+  ledgerId: LedgerId,
+  purchases: readonly StatementPurchase[],
+): RowState[] {
+  const { db } = deps;
+  const keys = purchases.map((purchase) => statementSourceKey(purchase, ledgerId));
+  const taken = findTakenSourceKeys(db, keys);
+  const own = new Set(keys);
+  const dates = purchases.map((purchase) => purchase.date).sort();
+  const [first] = dates;
+  const last = dates.at(-1);
+  if (first === undefined || last === undefined) return [];
+  const candidates = listLedgerExpensesBetween(db, {
+    ledgerId,
+    memberId: user.id,
+    from: shiftDays(first, -1),
+    to: shiftDays(last, 1),
+  }).filter((expense): expense is Expense => !isSealed(expense) && !own.has(expense.sourceKey));
+
+  const open = purchases.flatMap((purchase, index) =>
+    taken.has(keys[index] ?? '') ? [] : [purchase],
+  );
+  const matches = matchRows(open, candidates);
+  let next = 0;
+  return purchases.map((_, index) => {
+    if (taken.has(keys[index] ?? '')) return 'imported';
+    return matches[next++] === undefined ? 'fresh' : 'matched';
+  });
+}
+
+function pick(
+  purchases: readonly StatementPurchase[],
+  states: readonly RowState[],
+  wanted: RowState,
+): StatementPurchase[] {
+  return purchases.filter((_, index) => states[index] === wanted);
 }
 
 // Holds the statement's purchases for the active ledger and describes the preview.
@@ -50,12 +108,29 @@ export function previewStatement(
   const { user, period, purchases } = input;
   const ledger = findActiveLedger(db, user.id);
   if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  const states = classify(deps, user, ledger.id, purchases);
   startStatementFlow(deps, user, { ledgerId: ledger.id, period, purchases }, input.now);
+  const preview: StatementPreview = {
+    kind: 'preview',
+    ledger,
+    period,
+    purchases,
+    fresh: pick(purchases, states, 'fresh'),
+    matched: pick(purchases, states, 'matched'),
+    imported: pick(purchases, states, 'imported'),
+  };
   logger.info(
-    { userId: user.id, ledgerId: ledger.id, purchases: purchases.length },
+    {
+      userId: user.id,
+      ledgerId: ledger.id,
+      purchases: purchases.length,
+      fresh: preview.fresh.length,
+      matched: preview.matched.length,
+      imported: preview.imported.length,
+    },
     'statement previewed',
   );
-  return { kind: 'preview', ledger, period, purchases, fresh: purchases };
+  return preview;
 }
 
 export type RecordStatementResult =
@@ -70,13 +145,14 @@ export type RecordStatementResult =
   // No statement is pending: it expired, was recorded or cancelled, or another flow replaced it.
   | { readonly kind: 'expired' };
 
-// Records the pending statement's purchases into the ledger it was previewed for, all in one
-// transaction that also clears the flow, so a second tap finds nothing pending. Each row's
+// Records the pending statement's new rows, and with `withMatched` the rows a live expense
+// already covers, into the ledger it was previewed for. The rows are classified again inside
+// one transaction that also clears the flow, so a second tap finds nothing pending. Each row's
 // source key fingerprints the row and the ledger (ADR-0032), so a row stored before records
 // nothing.
 export function recordStatement(
   deps: ImportDeps,
-  input: { readonly user: User; readonly now: Date },
+  input: { readonly user: User; readonly now: Date; readonly withMatched?: boolean },
 ): RecordStatementResult {
   const { db, logger } = deps;
   const { user, now } = input;
@@ -86,9 +162,14 @@ export function recordStatement(
   if (ledger === undefined) return { kind: 'expired' };
 
   const recorded = db.transaction(() => {
+    const states = classify(deps, user, ledger.id, flow.purchases);
+    const chosen = flow.purchases.filter(
+      (_, index) =>
+        states[index] === 'fresh' || (input.withMatched === true && states[index] === 'matched'),
+    );
     const categories = listActiveCategories(db, ledger.id);
     const created: StatementPurchase[] = [];
-    for (const purchase of flow.purchases) {
+    for (const purchase of chosen) {
       const key = descriptionKey(purchase.merchant);
       const category = suggestCategory({
         description: purchase.merchant,
@@ -154,6 +235,12 @@ export function totalsOf(purchases: readonly StatementPurchase[]): Money[] {
     totals.set(currency, (totals.get(currency) ?? 0) + amountMinor);
   }
   return [...totals].map(([currency, amountMinor]) => ({ amountMinor, currency }));
+}
+
+// A local date moved by whole days, on the calendar alone.
+function shiftDays(date: LocalDate, days: number): LocalDate {
+  const shifted = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
+  return shifted.toISOString().slice(0, 10) as LocalDate;
 }
 
 function stampOf(purchase: StatementPurchase): Date {

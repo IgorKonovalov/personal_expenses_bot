@@ -8,7 +8,11 @@ import {
 } from '../../services/importStatement.js';
 import { readPdfLines } from '../../statements/pdf.js';
 import type { HandlerDeps } from '../bot.js';
-import { STATEMENT_CANCEL, STATEMENT_RECORD_ALL } from '../callbackData.js';
+import {
+  STATEMENT_CANCEL,
+  STATEMENT_RECORD_ALL,
+  STATEMENT_RECORD_WITH_MATCHED,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml, replyHtml } from '../render/html.js';
 import type { FileDownloader } from './receipt.js';
@@ -60,9 +64,20 @@ export function registerStatement(
       purchases: parsed.purchases,
       now,
     });
+    // One button per row: the labels are long. [Записать все] only when there is something new,
+    // [Записать и уже записанные] only when a recorded expense covers some row.
     const keyboard = new InlineKeyboard();
-    if (preview.fresh.length > 0) {
-      keyboard.text(messages.statementRecordAllButton(preview.fresh.length), STATEMENT_RECORD_ALL);
+    const { fresh, matched } = preview;
+    if (fresh.length > 0) {
+      keyboard.text(messages.statementRecordAllButton(fresh.length), STATEMENT_RECORD_ALL).row();
+    }
+    if (matched.length > 0) {
+      keyboard
+        .text(
+          messages.statementRecordWithMatchedButton(fresh.length + matched.length),
+          STATEMENT_RECORD_WITH_MATCHED,
+        )
+        .row();
     }
     keyboard.text(messages.cancelButton, STATEMENT_CANCEL);
     await replyHtml(
@@ -71,24 +86,30 @@ export function registerStatement(
         period: preview.period,
         ledger: preview.ledger,
         purchaseCount: preview.purchases.length,
-        fresh: preview.fresh,
+        alreadyCount: matched.length + preview.imported.length,
+        fresh,
       }),
       { reply_markup: keyboard },
     );
   });
 
-  bot.callbackQuery(STATEMENT_RECORD_ALL, async (ctx) => {
-    const now = deps.now();
-    const user = ensureUser(deps, ctx.from.id, now);
-    const result = recordStatement(deps, { user, now });
-    if (result.kind === 'expired') {
-      await ctx.answerCallbackQuery();
-      await editHtml(ctx, messages.flowExpired);
-      return;
-    }
-    await ctx.answerCallbackQuery({ text: messages.statementRecordedToast });
-    await editHtml(ctx, messages.statementRecorded(result));
-  });
+  for (const [data, withMatched] of [
+    [STATEMENT_RECORD_ALL, false],
+    [STATEMENT_RECORD_WITH_MATCHED, true],
+  ] as const) {
+    bot.callbackQuery(data, async (ctx) => {
+      const now = deps.now();
+      const user = ensureUser(deps, ctx.from.id, now);
+      const result = recordStatement(deps, { user, now, withMatched });
+      if (result.kind === 'expired') {
+        await ctx.answerCallbackQuery();
+        await editHtml(ctx, messages.flowExpired);
+        return;
+      }
+      await ctx.answerCallbackQuery({ text: messages.statementRecordedToast });
+      await editHtml(ctx, messages.statementRecorded(result));
+    });
+  }
 
   bot.callbackQuery(STATEMENT_CANCEL, async (ctx) => {
     const now = deps.now();

@@ -299,8 +299,8 @@ interface StatementPurchase {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a statement PDF records its card purchases | dev | done | committed with this row |
-| 2: Already recorded, and sending the file twice | dev | not started | |
+| 1: Walking skeleton: a statement PDF records its card purchases | dev | done | 0685667 |
+| 2: Already recorded, and sending the file twice | dev | done | committed with this row |
 | 3: Paging, limits, errors and categories | dev | not started | |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real statement | human | not started | |
@@ -322,6 +322,20 @@ interface StatementPurchase {
   Helvetica with a `/Differences` encoding for `ć č đ Ć Č Đ`. The boot test resets the module
   graph and counts loads of `pdfjs-dist` with `vi.doMock`. A positive control in the same test
   shows the probe counts one load for one PDF read.
+- Phase 2: `src/bot/callbackData.ts` (not in Files touched) gained `STATEMENT_RECORD_WITH_MATCHED`
+  (`stm:dup`), because ADR-0011 builds every callback string there.
+- Phase 2: rows are classified at preview and again inside the recording transaction. The flow
+  payload stays as Phase 1 wrote it (`flowSessions.ts` is not in this phase's files).
+- Phase 2: a row whose source key is stored counts as imported. Its own expense is no match
+  candidate for another row. «Уже записано: M» counts matched plus imported rows, while
+  [Записать и уже записанные] shows N + matched, the rows a tap can still create. With matches,
+  the preview's buttons sit one per row: [Записать все], [Записать и уже записанные], [Отмена].
+- Phase 2: `statementNothingNew` is a line in the preview text, shown when no row is new. Then
+  [Записать все] is absent and [Отмена] stays.
+- Phase 2: `rekeyContentSourceKeys` now also re-keys `stmt:` rows to `sealed:<id>` when a ledger is
+  sealed (ADR-0020), alongside `sms:` and `rcpt:`.
+- Phase 2: one full-suite run timed out in `ledgerKeys.test.ts` (the recovery test, 5 s). This
+  phase doesn't touch it, and the rerun passed.
 
 ### Close triggers
 
