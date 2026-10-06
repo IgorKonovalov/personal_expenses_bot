@@ -303,7 +303,7 @@ interface StatementPurchase {
 | 2: Already recorded, and sending the file twice | dev | done | d39404f |
 | 3: Paging, limits, errors and categories | dev | done | 0141854 |
 | 4: Sealed ledgers, help and docs | dev | done | 712d76e |
-| 5: A real statement | human | not started | |
+| 5: A real statement | human | owed | |
 
 ### Notes
 
