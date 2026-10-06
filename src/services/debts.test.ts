@@ -3,12 +3,17 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
+import type { DebtOpId } from '../db/debts.js';
 import {
   answerDebtAmount,
   answerDebtPersonName,
+  answerRepayAmount,
   debtLines,
+  deleteDebtOp,
   pickDebtPerson,
+  repayAll,
   startDebt,
+  startRepay,
   type DebtDeps,
 } from './debts.js';
 import { currentFlow, type DebtPersonFlow } from './flowSessions.js';
@@ -136,5 +141,71 @@ describe('lending', () => {
       expect(content).not.toContain('Синтетик');
       expect(content).not.toContain('4321');
     }
+  });
+});
+
+describe('repaying', () => {
+  // Петя owes 5000 RSD and 20 EUR.
+  function petya() {
+    const first = lendTo('Петя', '5000', 1);
+    lendTo('Петя', '20 EUR', 3);
+    if (first.kind !== 'recorded') throw new Error('setup');
+    return first.person.id;
+  }
+
+  it('asks for the currency when two balances point the same way', () => {
+    const personId = petya();
+
+    expect(startRepay(deps, { user: alice, personId, direction: 'toMe', now: NOW })).toEqual({
+      kind: 'pickCurrency',
+      balances: [
+        { amountMinor: 2000, currency: 'EUR' },
+        { amountMinor: 500000, currency: 'RSD' },
+      ],
+    });
+    expect(startRepay(deps, { user: alice, personId, direction: 'byMe', now: NOW })).toEqual({
+      kind: 'nothing',
+    });
+  });
+
+  it('refuses another currency and more than the balance, then records 2000 of 5000', () => {
+    const personId = petya();
+    const start = startRepay(deps, {
+      user: alice,
+      personId,
+      direction: 'toMe',
+      currency: 'RSD',
+      now: NOW,
+    });
+    if (start.kind !== 'askAmount') throw new Error('setup');
+    const answer = (text: string, inputKey: string) =>
+      answerRepayAmount(deps, { user: alice, flow: start.flow, text, inputKey, now: NOW });
+
+    expect(answer('20 USD', 'k1')).toMatchObject({ kind: 'refused', reason: 'wrongCurrency' });
+    expect(answer('5000,01', 'k2')).toMatchObject({ kind: 'refused', reason: 'tooMuch' });
+    expect(answer('2000', 'k3')).toMatchObject({
+      kind: 'recorded',
+      op: { kind: 'repaid_to_me', amountMinor: 200000, currency: 'RSD' },
+      balance: { amountMinor: 300000, currency: 'RSD' },
+    });
+  });
+
+  it('[Весь долг] repays the whole balance once, and deleting it brings the balance back', () => {
+    const personId = petya();
+    startRepay(deps, { user: alice, personId, direction: 'toMe', currency: 'EUR', now: NOW });
+
+    const all = repayAll(deps, { user: alice, sourceKey: 'cb:1', now: NOW });
+    expect(all).toMatchObject({ kind: 'recorded', balance: { amountMinor: 0, currency: 'EUR' } });
+    expect(repayAll(deps, { user: alice, sourceKey: 'cb:2', now: NOW })).toEqual({
+      kind: 'stale',
+    });
+    if (all.kind !== 'recorded') throw new Error('setup');
+
+    const del = (opId: DebtOpId) => deleteDebtOp(deps, { user: alice, opId, now: NOW });
+    expect(del(all.op.id)).toMatchObject({
+      kind: 'deleted',
+      balance: { amountMinor: 2000, currency: 'EUR' },
+    });
+    expect(del(all.op.id)).toEqual({ kind: 'alreadyDeleted' });
   });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  checkRepayment,
   debtBalances,
+  repaymentKind,
   parseDebtAmount,
   parsePersonName,
   signedAmount,
@@ -39,6 +41,34 @@ describe('debtBalances', () => {
         { personId: 1, kind: 'repaid_to_me', amountMinor: 300000, currency: 'RSD' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('repayments', () => {
+  const owed = { amountMinor: 300000, currency: 'RSD' as const };
+
+  it('repays the way the balance points', () => {
+    expect(repaymentKind(300000)).toBe('repaid_to_me');
+    expect(repaymentKind(-2000)).toBe('i_repaid');
+  });
+
+  it('accepts up to the balance, in its currency only', () => {
+    expect(checkRepayment(owed, { amountMinor: 300000, currency: 'RSD' })).toEqual({ kind: 'ok' });
+    expect(checkRepayment(owed, { amountMinor: 300001, currency: 'RSD' })).toEqual({
+      kind: 'tooMuch',
+    });
+    expect(checkRepayment(owed, { amountMinor: 100, currency: 'USD' })).toEqual({
+      kind: 'wrongCurrency',
+    });
+    expect(
+      checkRepayment(
+        { amountMinor: -2000, currency: 'EUR' },
+        { amountMinor: 2000, currency: 'EUR' },
+      ),
+    ).toEqual({ kind: 'ok' });
+    expect(
+      checkRepayment({ amountMinor: 0, currency: 'EUR' }, { amountMinor: 1, currency: 'EUR' }),
+    ).toEqual({ kind: 'settled' });
   });
 });
 

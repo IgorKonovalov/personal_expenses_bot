@@ -102,7 +102,7 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     return;
   }
   if (screen.name === 'debts') {
-    await renderAnchor(ctx, anchor, debtsScreenFor(deps, user));
+    await renderAnchor(ctx, anchor, debtsScreenFor(deps, user, screen));
     return;
   }
   const view =
@@ -218,7 +218,7 @@ export async function answerFlow(
     return;
   }
 
-  if (flow.kind === 'debtAmount' || flow.kind === 'debtPerson') {
+  if (flow.kind === 'debtAmount' || flow.kind === 'debtPerson' || flow.kind === 'debtRepay') {
     await answerDebtFlow(ctx, deps, anchor, { ...input, flow });
     return;
   }

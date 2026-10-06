@@ -8,6 +8,8 @@ import {
   insertDebtPerson,
   listDebtOps,
   listDebtPeople,
+  listPersonOps,
+  softDeleteDebtOp,
   type DebtOpId,
   type NewDebtOp,
 } from './debts.js';
@@ -73,5 +75,17 @@ describe('debt operations', () => {
     expect(listDebtOps(db, USER)).toEqual([
       expect.objectContaining({ id: 'a', kind: 'lend', amountMinor: 500000, currency: 'RSD' }),
     ]);
+  });
+
+  it('lists a person’s live operations newest first, and soft-deletes one once', () => {
+    const { id: personId } = person(USER, 'Петя');
+    insertDebtOpOrGetExisting(db, op('a', { personId, occurredOn: '2026-10-01' as LocalDate }));
+    insertDebtOpOrGetExisting(db, op('b', { personId, kind: 'repaid_to_me', amountMinor: 1 }));
+    insertDebtOpOrGetExisting(db, op('c', { personId, amountMinor: 2 }));
+
+    expect(softDeleteDebtOp(db, 'c' as DebtOpId, NOW)).toBe(true);
+    expect(softDeleteDebtOp(db, 'c' as DebtOpId, NOW)).toBe(false);
+    expect(listPersonOps(db, USER, personId, 10).map((o) => o.id)).toEqual(['b', 'a']);
+    expect(listPersonOps(db, USER, personId, 1).map((o) => o.id)).toEqual(['b']);
   });
 });

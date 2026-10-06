@@ -1,5 +1,6 @@
 import type { CategoryId } from '../db/categories.js';
 import type { Db } from '../db/connection.js';
+import type { DebtPersonId } from '../db/debts.js';
 import type { ExpenseId } from '../db/expenses.js';
 import {
   clearPendingFlow,
@@ -72,9 +73,11 @@ export interface RecurringAskScreen {
   readonly dueOn: LocalDate;
 }
 
-// /debts (Plan 0013): the debts list, and the lend/borrow prompts and person picker it opens.
+// /debts (Plan 0013): the debts list, and the lend/borrow prompts and person picker it opens;
+// with `personId`, that person's card and its repayment prompts.
 export interface DebtsScreen {
   readonly name: 'debts';
+  readonly personId?: DebtPersonId;
 }
 
 export type Screen =
@@ -191,6 +194,13 @@ export interface DebtPersonFlow {
   readonly currency: CurrencyCode;
 }
 
+// [Мне вернули] / [Я вернул] on a person's card: a repayment of their balance in `currency`.
+export interface DebtRepayFlow {
+  readonly kind: 'debtRepay';
+  readonly personId: DebtPersonId;
+  readonly currency: CurrencyCode;
+}
+
 export type Flow =
   | CategoryFlow
   | EditFlow
@@ -200,7 +210,8 @@ export type Flow =
   | RecurringAmountFlow
   | ReminderTextFlow
   | DebtAmountFlow
-  | DebtPersonFlow;
+  | DebtPersonFlow
+  | DebtRepayFlow;
 
 type Deps = { readonly db: Db };
 
@@ -326,7 +337,11 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   ) {
     return { name, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
   }
-  if (name === 'debts' && parsed !== undefined) return { name };
+  if (name === 'debts' && parsed !== undefined) {
+    return typeof parsed.personId === 'number'
+      ? { name, personId: parsed.personId as DebtPersonId }
+      : { name };
+  }
   if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
@@ -357,6 +372,12 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
   }
   if (kind === 'reminderText' && parsed !== undefined) return { kind };
+  if (kind === 'debtRepay' && typeof parsed?.personId === 'number') {
+    const currency =
+      typeof parsed.currency === 'string' ? toCurrencyCode(parsed.currency) : undefined;
+    if (currency === undefined) return undefined;
+    return { kind, personId: parsed.personId as DebtPersonId, currency };
+  }
   const direction = parseDirection(parsed?.direction);
   if (kind === 'debtAmount' && direction !== undefined) return { kind, direction };
   if (kind === 'debtPerson' && direction !== undefined) {

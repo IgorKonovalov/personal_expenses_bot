@@ -1525,6 +1525,67 @@ export const messages = {
     empty: html`Отправьте имя.`,
     tooLong: html`Имя длиннее 40 символов.`,
   },
+  // A person's card: their balances, then their latest operations, newest first.
+  debtCard: ({
+    name,
+    balances,
+    history,
+  }: {
+    name: string;
+    balances: readonly Money[];
+    history: readonly { kind: DebtRecordedView['kind']; money: Money; occurredOn: LocalDate }[];
+  }): Html =>
+    joinHtml(
+      [
+        html`<b>${name}</b>`,
+        balances.length === 0
+          ? html`Долга нет.`
+          : joinHtml(
+              balances.map((b) =>
+                b.amountMinor > 0
+                  ? html`Должен вам ${formatMoney(b)}`
+                  : html`Вы должны ${formatMoney({ ...b, amountMinor: -b.amountMinor })}`,
+              ),
+              '\n',
+            ),
+        ...(history.length === 0
+          ? []
+          : [
+              joinHtml(
+                [
+                  html`<b>Последние операции</b>`,
+                  ...history.map(
+                    (op) =>
+                      html`${shortDate(op.occurredOn)} · ${DEBT_KIND_LABELS[op.kind]} ${formatMoney(op.money)}`,
+                  ),
+                ],
+                '\n',
+              ),
+            ]),
+      ],
+      '\n\n',
+    ),
+  repaidToMeButton: 'Мне вернули',
+  iRepaidButton: 'Я вернул',
+  repayCurrencyPrompt: (direction: 'toMe' | 'byMe'): Html =>
+    direction === 'toMe' ? html`Какой долг вам вернули?` : html`Какой долг вы вернули?`,
+  repayCurrencyButton: (balance: Money): string =>
+    formatMoney({ ...balance, amountMinor: Math.abs(balance.amountMinor) }),
+  repayAmountPrompt: (balance: Money): Html =>
+    html`Сколько вернули? Весь долг — ${formatMoney({ ...balance, amountMinor: Math.abs(balance.amountMinor) })}. Сумма в ${balance.currency}.`,
+  repayAllButton: 'Весь долг',
+  debtWrongCurrency: (currency: CurrencyCode): Html =>
+    html`Долг в ${currency}: вернуть его можно только в ${currency}.`,
+  debtTooMuch: (balance: Money): Html =>
+    html`Это больше долга: ${formatMoney({ ...balance, amountMinor: Math.abs(balance.amountMinor) })}.`,
+  debtDeleted: ({ kind, money, balance }: DebtRecordedView): Html =>
+    joinHtml(
+      [html`Удалено: ${DEBT_KIND_LABELS[kind]} ${formatMoney(money)}.`, debtLine(balance)],
+      '\n',
+    ),
+  debtDeletedToast: 'Удалено',
+  debtAlreadyDeleted: 'Уже удалено',
+  debtNotFound: 'Запись не найдена',
   // The operation, then the person's balance in its currency after it.
   debtRecorded: ({ kind, money, balance }: DebtRecordedView): Html =>
     joinHtml(

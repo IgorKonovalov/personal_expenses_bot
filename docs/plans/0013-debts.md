@@ -319,8 +319,8 @@ against the decrypted list. That always works, because debts are only recorded w
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | committed with this row |
-| 2: Borrowing, the person card, and repayments | dev | not started | |
+| 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | 3ddc64e |
+| 2: Borrowing, the person card, and repayments | dev | done | committed with this row |
 | 3: Splitting a bill with `/N` | dev | not started | |
 | 4: Group settle-up | dev | not started | |
 | 5: Sealed debts, help and docs | dev | not started | |
@@ -339,6 +339,13 @@ against the decrypted list. That always works, because debts are only recorded w
 - Phase 1: an amount that reads two ways (`1.200`) is refused with `debtAmountRefused` instead of
   being asked about.
 - Phase 1: `src/bot/callbacks.ts` needed no change.
+- Phase 2: edited `src/services/flowSessions.ts`, outside the phase's `Files touched`: the
+  repayment flow (`debtRepay`) and the card's `personId` on the debts screen live there.
+- Phase 2: callbacks the phase doesn't name: `dbt:list` ([« Назад] on the card),
+  `dbt:rp:<id>:<t|i>` ([Мне вернули] / [Я вернул]) and `dbt:all` ([Весь долг]). Only people with
+  a non-zero balance get a button on `/debts`.
+- Phase 2: [Удалить] edits the confirmation into `messages.debtDeleted` (the operation and the
+  person's balance after it) with the toast «Удалено».
 
 ### Close triggers
 

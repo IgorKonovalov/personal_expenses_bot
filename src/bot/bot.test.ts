@@ -6129,6 +6129,115 @@ describe('debts (Plan 0013)', () => {
     expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
   });
 
+  // Opens the person's card from /debts, returning the anchor.
+  async function openCard(bot: ReturnType<typeof debtsBot>, personId: number) {
+    const anchor = await bot.openDebts();
+    await bot.tapOn(`dbt:p:${personId}`, anchor);
+    return anchor;
+  }
+
+  it('[Мне вернули] 2000 of 5000 leaves 3000; [Весь долг] clears it, and the card keeps the history', async () => {
+    const bot = debtsBot();
+    await bot.lend('5000', 'Петя');
+    let anchor = await openCard(bot, 1);
+    await bot.tapOn('dbt:rp:1:t', anchor);
+    expect(bot.lastEdit()).toMatchObject({
+      text: 'Сколько вернули? Весь долг — 5 000.00 RSD. Сумма в RSD.',
+    });
+    await bot.say('2000');
+    expect(await bot.debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 3 000.00 RSD');
+
+    anchor = await openCard(bot, 1);
+    await bot.tapOn('dbt:rp:1:t', anchor);
+    await bot.tapOn('dbt:all', anchor);
+
+    expect(bot.ops()).toEqual([
+      expect.objectContaining({ kind: 'lend', amount_minor: 500000 }),
+      expect.objectContaining({ kind: 'repaid_to_me', amount_minor: 200000 }),
+      expect.objectContaining({ kind: 'repaid_to_me', amount_minor: 300000 }),
+    ]);
+    expect(await bot.debtsText()).toBe(messages.debtsScreen([]));
+    await openCard(bot, 1);
+    expect(bot.lastEdit()).toMatchObject({
+      text:
+        '<b>Петя</b>\n\nДолга нет.\n\n<b>Последние операции</b>\n' +
+        '2 окт · вам вернули 3 000.00 RSD\n2 окт · вам вернули 2 000.00 RSD\n' +
+        '2 окт · вы дали в долг 5 000.00 RSD',
+      reply_markup: { inline_keyboard: [[{ text: '« Назад', callback_data: 'dbt:list' }]] },
+    });
+  });
+
+  it('with 3000 RSD and 20 EUR owed, [Мне вернули] asks the currency; 20 USD and 25 EUR are refused', async () => {
+    const bot = debtsBot();
+    await bot.lend('3000', 'Петя');
+    await bot.lend('20 EUR', 1);
+    const anchor = await openCard(bot, 1);
+    await bot.tapOn('dbt:rp:1:t', anchor);
+    expect(bot.lastEdit()).toMatchObject({
+      text: 'Какой долг вам вернули?',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '20.00 EUR', callback_data: 'dbt:rc:1:EUR' }],
+          [{ text: '3 000.00 RSD', callback_data: 'dbt:rc:1:RSD' }],
+          [{ text: '« Назад', callback_data: 'dbt:p:1' }],
+        ],
+      },
+    });
+    await bot.tapOn('dbt:rc:1:EUR', anchor);
+    await bot.say('20 USD');
+    expect(bot.lastEdit()?.text).toBe(
+      'Долг в EUR: вернуть его можно только в EUR.\nСколько вернули? Весь долг — 20.00 EUR. Сумма в EUR.',
+    );
+    await bot.say('25');
+    expect(bot.lastEdit()?.text).toBe(
+      'Это больше долга: 20.00 EUR.\nСколько вернули? Весь долг — 20.00 EUR. Сумма в EUR.',
+    );
+
+    expect(bot.ops()).toHaveLength(2);
+  });
+
+  it('borrowing 20 EUR from Аня shows «вы должны»; [Я вернул] 20 clears it', async () => {
+    const bot = debtsBot();
+    const anchor = await bot.openDebts();
+    await bot.tapOn('dbt:new:b', anchor);
+    await bot.say('20 EUR');
+    await bot.say('Аня');
+    expect(bot.ops()).toEqual([
+      expect.objectContaining({ kind: 'borrow', amount_minor: 2000, currency: 'EUR' }),
+    ]);
+    expect(await bot.debtsText()).toBe('<b>Долги</b>\nАня — вы должны 20.00 EUR');
+
+    const card = await openCard(bot, 1);
+    await bot.tapOn('dbt:rp:1:i', card);
+    await bot.say('20');
+
+    expect(bot.ops()).toContainEqual(
+      expect.objectContaining({ kind: 'i_repaid', amount_minor: 2000, currency: 'EUR' }),
+    );
+    expect(await bot.debtsText()).toBe(messages.debtsScreen([]));
+  });
+
+  it('deleting the 2000 repayment brings Петя back to 5 000.00 RSD; a second tap answers «Уже удалено»', async () => {
+    const bot = debtsBot();
+    await bot.lend('5000', 'Петя');
+    const anchor = await openCard(bot, 1);
+    await bot.tapOn('dbt:rp:1:t', anchor);
+    await bot.say('2000');
+    const repayment = bot.db
+      .prepare("SELECT id FROM debt_ops WHERE kind = 'repaid_to_me'")
+      .pluck()
+      .get() as string;
+
+    await bot.tapOn(`dbt:del:${repayment}`, anchor);
+    await bot.tapOn(`dbt:del:${repayment}`, anchor);
+
+    const toasts = bot.calls
+      .filter((c) => c.method === 'answerCallbackQuery')
+      .map((c) => (c.payload as { text?: string }).text);
+    expect(toasts.slice(-2)).toEqual(['Удалено', 'Уже удалено']);
+    expect(await bot.debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 5 000.00 RSD');
+  });
+
   it('[Удалить] carries 44 bytes of callback data', () => {
     expect(Buffer.byteLength(debtDeleteData('00000000-0000-4000-8000-000000000001'))).toBe(44);
   });

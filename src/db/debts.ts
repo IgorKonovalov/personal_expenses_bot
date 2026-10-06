@@ -167,6 +167,34 @@ export function listDebtOps(db: Db, userId: UserId): DebtOp[] {
     .map(toOp);
 }
 
+// A person's last `limit` live operations, newest first.
+export function listPersonOps(
+  db: Db,
+  userId: UserId,
+  personId: DebtPersonId,
+  limit: number,
+): DebtOp[] {
+  return db
+    .prepare<[string, number, number], OpRow>(
+      `SELECT ${OP_COLUMNS} FROM debt_ops
+        WHERE user_id = ? AND person_id = ? AND deleted_at IS NULL
+        ORDER BY occurred_on DESC, created_at DESC, rowid DESC
+        LIMIT ?`,
+    )
+    .all(userId, personId, limit)
+    .map(toOp);
+}
+
+// Returns false when the operation was deleted already.
+export function softDeleteDebtOp(db: Db, id: DebtOpId, deletedAt: Date): boolean {
+  const { changes } = db
+    .prepare<[string, string]>(
+      'UPDATE debt_ops SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+    )
+    .run(deletedAt.toISOString(), id);
+  return changes === 1;
+}
+
 function toPerson(row: PersonRow): DebtPerson {
   return { id: row.id as DebtPersonId, userId: row.user_id as UserId, name: row.name };
 }

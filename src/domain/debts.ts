@@ -45,6 +45,23 @@ export function debtBalances<P>(ops: readonly DebtOpAmount<P>[]): DebtBalance<P>
   return balances;
 }
 
+// A repayment of a balance: they repay me what they owe (positive), I repay what I owe
+// (negative).
+export function repaymentKind(balanceMinor: number): 'repaid_to_me' | 'i_repaid' {
+  return balanceMinor > 0 ? 'repaid_to_me' : 'i_repaid';
+}
+
+export type RepaymentCheck =
+  { readonly kind: 'ok' } | { readonly kind: 'wrongCurrency' | 'tooMuch' | 'settled' };
+
+// A repayment closes in the debt's own currency (ADR-0030) and never past zero.
+export function checkRepayment(balance: Money, repayment: Money): RepaymentCheck {
+  if (balance.amountMinor === 0) return { kind: 'settled' };
+  if (repayment.currency !== balance.currency) return { kind: 'wrongCurrency' };
+  if (repayment.amountMinor > Math.abs(balance.amountMinor)) return { kind: 'tooMuch' };
+  return { kind: 'ok' };
+}
+
 // The /debts order: people who owe me first, then people I owe; each group by name, then by
 // currency.
 export function sortDebtLines<L extends Money & { readonly name: string }>(

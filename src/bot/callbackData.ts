@@ -308,6 +308,28 @@ export function debtPageData(page: number): string {
   return assertCallbackData(`dbt:pp:${page}`);
 }
 
+// A person's card: `dbt:p:<id>` opens it, `dbt:list` goes back to the list. [Мне вернули] /
+// [Я вернул] are `dbt:rp:<id>:<t|i>`; with several balances that way, `dbt:rc:<id>:<CUR>` picks
+// the currency (at most 26 bytes). [Весь долг] `dbt:all` repays the pending repayment's whole
+// balance.
+export const DEBTS_LIST = 'dbt:list';
+export const DEBT_PERSON = /^dbt:p:(\d{1,16})$/;
+export const DEBT_REPAY = /^dbt:rp:(\d{1,16}):([ti])$/;
+export const DEBT_REPAY_CURRENCY = /^dbt:rc:(\d{1,16}):([A-Z]{3})$/;
+export const DEBT_REPAY_ALL = 'dbt:all';
+
+export function debtPersonData(personId: number): string {
+  return assertCallbackData(`dbt:p:${personId}`);
+}
+
+export function debtRepayData(personId: number, direction: 'toMe' | 'byMe'): string {
+  return assertCallbackData(`dbt:rp:${personId}:${direction === 'toMe' ? 't' : 'i'}`);
+}
+
+export function debtRepayCurrencyData(personId: number, currency: CurrencyCode): string {
+  return assertCallbackData(`dbt:rc:${personId}:${currency}`);
+}
+
 // [Удалить] on a debt operation's confirmation: `dbt:del:<uuid>` (44 bytes). It works on any
 // confirmation, however old: the operation's stored state is the guard.
 export const DEBT_DELETE = /^dbt:del:([0-9a-f-]{36})$/;
