@@ -246,7 +246,7 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 | 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | c11768c |
 | 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | a839502 |
 | 3: The weekly push and the settings switches | dev | done | 5060242 |
-| 4: Sealed ledgers, help and docs | dev | done | committed with this row |
+| 4: Sealed ledgers, help and docs | dev | done | c8822f3 |
 | 5: A real month's push | human | not started | |
 
 ### Notes
@@ -279,7 +279,24 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 - Phase 4: [Показать] answers silently for a key with no `sent` row. A budget-period key is read
   back with the budget's current start day, or the key's day of the month when that day no
   longer starts a period there.
+- Followup, not acted on: reading a sealed ledger for a push or [Показать] goes through
+  `keys.privateKey`, which slides the 30-minute idle lock like any other read.
+- Followup, not acted on: the deploy that ships this sends September's push to every user with
+  expenses in it on the first tick, if it lands by 8 October 09:00 local (the 7-day window).
 
 ### Close triggers
+
+- **What shipped:** feature
+- **User-visible surface changed:** a scheduled private message: the monthly push («Итоги
+  сентября», or «Итоги периода DD.MM–DD.MM» for a budget starting on another day) and the
+  opt-in Monday push («Итоги недели …»), with a locked variant for a sealed ledger; `/settings`
+  gains [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл]; `/help` gains a line about the
+  pushes; messages: `periodSummaryPush`, `weeklySummaryPush`, `summaryLocked`, `pushDonateLine`,
+  `pushOffButton`, `pushShowButton`, `pushOff`, `pushMonthlyToggleOn/Off`,
+  `pushWeeklyToggleOn/Off`, `help`; callback data: `sum:off:<m|w>`, `sum:show:<m|w>:<key>`,
+  `set:pm`, `set:pw`; config/env keys: none; schema migrations: `0024_summary_push.sql`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 116 files,
+  1675 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (283 links).
+- **Outstanding `human` phases:** Phase 5 (a real month's push), not started.
 
 ## Followups
