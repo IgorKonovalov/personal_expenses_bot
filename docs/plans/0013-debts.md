@@ -389,6 +389,11 @@ against the decrypted list. That always works, because debts are only recorded w
   or `debt_ops`, so a deleted user's debts survive. No phase lists that file.
 - Not acted on: the `debtPerson` and `debtSplit` flow payloads hold amounts and currency in
   plaintext in `flow_sessions` for up to `FLOW_TTL_MS`, sealed ledger or not.
+- Fix round 1, M1 (existing debts left plaintext on enable): ef684d6. `sealUserDebts` seals every
+  plaintext person and operation, deleted ones included, in the enable transaction; a plaintext
+  debt row in a sealed ledger now throws.
+- Fix round 1, M2 (`/delete_account` left debts behind): 52c08fd. `deleteUserDebts` runs in the
+  deletion transaction.
 
 ### Close triggers
 
