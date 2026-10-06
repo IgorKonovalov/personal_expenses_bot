@@ -323,7 +323,7 @@ first, Phase 1 adds that delete to its deletion service.
 | 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | 8bc02c1 |
 | 2: A first message that isn't `/start` | dev | done | 52228f2 |
 | 3: The tips registry and the recording tips | dev | done | 8520ac7 |
-| 4: The feature tips and the group welcome | dev | done | committed with this row |
+| 4: The feature tips and the group welcome | dev | done | 4a8eed0 |
 | 5: A stranger's first contact | human | not started | |
 
 ### Notes
@@ -355,7 +355,24 @@ first, Phase 1 adds that delete to its deletion service.
   tip, and Phase 5 expects the first expense to bring one.
 - Phase 4: `src/bot/tips.ts` (outside this phase's list) passes `fromReceipt` through to the
   service.
+- Followup, not acted on: a receipt is recorded in «Другое» until its store is fetched, so a
+  user's first receipt brings `tipOther` ahead of `tipReceipt`.
+- Followup, not acted on: an expense recorded through the ambiguous-amount buttons
+  (`src/bot/handlers/ambiguous.ts`) offers no tip, because that path isn't among the plan's
+  text, receipt and bank-SMS paths.
 
 ### Close triggers
+
+- **What shipped:** feature
+- **User-visible surface changed:** commands: `/start` sends the new welcome and the setup check,
+  and replays them for an onboarded user; messages: `welcome` (rewritten, no arguments),
+  `setupCheck`, `setupAfterExpense`, `setupOkButton`, `setupEditButton`, `setupConfirmed`,
+  `tips.*` (one per registry key), `tipsOffButton`, `tipsOff`, `tipsToggleOn`, `tipsToggleOff`, a `/start`
+  line in `help`, and a `/month` and `/settings` line in `groupWelcome`; the settings hub gains
+  [Подсказки: вкл/выкл]; callback data: `onb:ok`, `onb:edit`, `tip:off`, `set:tips`;
+  config/env keys: none; schema migrations: `0022_onboarding.sql`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 110 files,
+  1568 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (269 links).
+- **Outstanding `human` phases:** Phase 5 (a stranger's first contact), owed after the deploy.
 
 ## Followups
