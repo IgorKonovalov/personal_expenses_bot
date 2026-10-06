@@ -283,7 +283,7 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | 3: review and corrections | dev | done | 3fee520 |
 | 4: user products | dev | done | 651178f |
 | 5: coverage report | dev | done | 94fc8b6 |
-| 6: real receipts | human | not started | |
+| 6: real receipts | human | owed | |
 
 ### Notes
 
