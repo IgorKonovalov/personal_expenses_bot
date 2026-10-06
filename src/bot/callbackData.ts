@@ -420,3 +420,10 @@ export const MORE_ACTION = /^more:([a-z]{2,5})$/;
 export function moreData(key: string): string {
   return assertCallbackData(`more:${key}`);
 }
+
+// The admin's row on that screen: `adm:<key>` (at most 9 bytes). Only the admin's taps run.
+export const ADMIN_ACTION = /^adm:([a-z]{3,5})$/;
+
+export function adminData(key: string): string {
+  return assertCallbackData(`adm:${key}`);
+}

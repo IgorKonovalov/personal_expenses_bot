@@ -83,7 +83,13 @@ export interface DebtsScreen {
   readonly splitOf?: ExpenseId;
 }
 
+// A [☰ Ещё] button's argument prompt (Plan 0034): its [Отмена] and /cancel need an anchor.
+export interface CommandArgScreen {
+  readonly name: 'commandArg';
+}
+
 export type Screen =
+  | CommandArgScreen
   | CategoriesScreen
   | SummaryScreen
   | ExpenseScreen
@@ -216,7 +222,22 @@ export interface DebtSplitFlow {
   readonly chosen: readonly DebtPersonId[];
 }
 
+// The commands a [☰ Ещё] button asks the argument for, then runs as `/<command> <answer>`.
+export const ARG_COMMANDS = ['block', 'unblock', 'refund', 'paysupport', 'tag'] as const;
+
+export type ArgCommand = (typeof ARG_COMMANDS)[number];
+
+function isArgCommand(value: unknown): value is ArgCommand {
+  return (ARG_COMMANDS as readonly unknown[]).includes(value);
+}
+
+export interface CommandArgFlow {
+  readonly kind: 'commandArg';
+  readonly command: ArgCommand;
+}
+
 export type Flow =
+  | CommandArgFlow
   | CategoryFlow
   | EditFlow
   | TimezoneFlow
@@ -360,6 +381,7 @@ export function routeText(
 // A row written by a later version, or damaged, reads as no screen rather than failing.
 function parseScreen(name: string, ctx: string): Screen | undefined {
   const parsed = parseObject(ctx);
+  if (name === 'commandArg' && parsed !== undefined) return { name };
   if (name === 'settings' && parsed !== undefined) {
     return typeof parsed.ledgerId === 'string'
       ? { name, ledgerId: parsed.ledgerId as LedgerId }
@@ -403,6 +425,9 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
 
 function parseFlow(kind: string, payload: string): Flow | undefined {
   const parsed = parseObject(payload);
+  if (kind === 'commandArg' && isArgCommand(parsed?.command)) {
+    return { kind, command: parsed.command };
+  }
   if (kind === 'setTimezone' && parsed !== undefined) {
     return typeof parsed.ledgerId === 'string'
       ? { kind, ledgerId: parsed.ledgerId as LedgerId }

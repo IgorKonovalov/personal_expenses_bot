@@ -155,7 +155,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerMenu(dm, options);
   registerCard(dm, options);
   registerCategory(dm, options);
-  registerText(dm, options);
+  registerText(dm, donateDeps);
   const download = telegramFileDownloader(options.token);
   registerStatement(dm, options, download);
   registerReceiptMedia(dm, options, download);
@@ -165,13 +165,21 @@ export function privateComposer(options: BotOptions): Composer<Context> {
 }
 
 // The slash-command lists the client shows: the DM list by default and in every private chat,
-// the group list in every group (ADR-0014), plus the profile description texts. A list set for
+// the DM list plus the admin commands in the admin's chat, the group list in every group
+// (ADR-0014), plus the profile description texts. A list set for
 // a narrower scope beats the default, so the private scope is written too: whatever was set
 // there before is overwritten on every boot. A failure costs only those, so boot continues.
-export async function registerCommands(bot: Bot, logger: Logger): Promise<void> {
+export async function registerCommands(
+  bot: Bot,
+  logger: Logger,
+  adminTelegramId: number,
+): Promise<void> {
   try {
     await bot.api.setMyCommands(messages.commands);
     await bot.api.setMyCommands(messages.commands, { scope: { type: 'all_private_chats' } });
+    await bot.api.setMyCommands([...messages.commands, ...messages.adminCommands], {
+      scope: { type: 'chat', chat_id: adminTelegramId },
+    });
     await bot.api.setMyCommands(messages.groupCommands, { scope: { type: 'all_group_chats' } });
   } catch (error) {
     logger.warn({ err: safeError(error) }, 'setMyCommands failed');

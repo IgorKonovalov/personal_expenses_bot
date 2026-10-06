@@ -723,6 +723,15 @@ export const messages = {
     { command: 'paysupport', description: 'Вопрос о пожертвовании или возврат' },
     { command: 'delete_account', description: 'Удалить аккаунт и личный учёт' },
   ],
+  // Added to the private list in the admin's own chat.
+  adminCommands: [
+    { command: 'invite', description: 'Новая ссылка-приглашение' },
+    { command: 'invites', description: 'Действующие ссылки' },
+    { command: 'stats', description: 'Статистика' },
+    { command: 'block', description: 'Заблокировать пользователя по id' },
+    { command: 'unblock', description: 'Разблокировать пользователя по id' },
+    { command: 'refund', description: 'Вернуть Stars по id платежа' },
+  ],
   // [☰ Ещё]: every private command that has no menu-bar button, as inline buttons.
   moreScreen: html`<b>Ещё</b>\nВсе остальные команды — кнопками.`,
   moreButtons: {
@@ -737,7 +746,24 @@ export const messages = {
     deleteAccount: 'Удалить аккаунт',
     unlock: 'Открыть учёт',
     lock: 'Закрыть учёт',
+    tag: 'Включить метку',
+    invite: 'Пригласить',
+    invites: 'Приглашения',
+    stats: 'Статистика',
+    block: 'Заблокировать',
+    unblock: 'Разблокировать',
+    refund: 'Вернуть Stars',
   },
+  // A more-screen button whose command needs an argument asks for it; the answer runs
+  // `/<command> <answer>`.
+  commandArgPrompt: {
+    block: html`Отправьте числовой Telegram id пользователя, которого заблокировать.`,
+    unblock: html`Отправьте числовой Telegram id пользователя, которого разблокировать.`,
+    refund: html`Отправьте id платежа, по которому вернуть Stars.`,
+    paysupport: html`Пожертвование ничего не открывает: бот одинаково бесплатный для всех. Чтобы попросить вернуть пожертвование, напишите просьбу одним сообщением — я передам её администратору.`,
+    tag: html`Отправьте метку, например «отпуск». Я добавлю её ко всем новым тратам, пока вы её не снимете.`,
+  },
+  commandArgCancelled: html`Отменено.`,
 
   welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
     joinHtml(

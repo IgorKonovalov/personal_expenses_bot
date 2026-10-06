@@ -1,4 +1,4 @@
-import type { Context, MiddlewareFn } from 'grammy';
+import { InlineKeyboard, type Context, type MiddlewareFn } from 'grammy';
 import type { User } from '../db/users.js';
 import { answerBudgetFlow, budgetScreen } from '../services/budget.js';
 import { showExpense } from '../services/changeCategory.js';
@@ -34,6 +34,7 @@ import {
 } from './handlers/recurring.js';
 import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
+import { answerCommandArg, type MoreDeps } from './handlers/more.js';
 import { answerSecretFlow } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { replyHtml } from './render/html.js';
@@ -85,6 +86,13 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const { screen } = anchor;
   // A summary starts no flow, so a cancel never has one to restore.
   if (screen.name === 'summary') return;
+  if (screen.name === 'commandArg') {
+    await renderAnchor(ctx, anchor, {
+      text: messages.commandArgCancelled,
+      markup: InlineKeyboard.from([]),
+    });
+    return;
+  }
   if (screen.name === 'expense') {
     // The card for the expense's stored state, as it was before the prompt.
     const shown = showExpense(deps, { user, expenseId: screen.expenseId });
@@ -152,7 +160,7 @@ async function answerEdit(
 // the screen back in the anchor; an invalid one re-asks there and keeps the flow pending.
 export async function answerFlow(
   ctx: Context,
-  deps: HandlerDeps,
+  deps: MoreDeps,
   input: {
     readonly user: User;
     readonly flow: Flow;
@@ -165,6 +173,11 @@ export async function answerFlow(
 
   if (isSecretFlow(flow)) {
     await answerSecretFlow(ctx, deps, anchor, { ...input, flow });
+    return;
+  }
+
+  if (flow.kind === 'commandArg') {
+    await answerCommandArg(ctx, deps, anchor, { ...input, flow });
     return;
   }
 

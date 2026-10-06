@@ -59,23 +59,35 @@ function inviteListView(deps: AdminDeps, telegramId: number) {
   return { text, markup };
 }
 
+// `/invite [<uses> <days>]` and [Пригласить], from the admin only: the caller checks.
+export async function sendInvite(ctx: Context, deps: AdminDeps, arg: string): Promise<void> {
+  const args = parseInviteArgs(arg);
+  if (args === undefined) {
+    await replyHtml(ctx, messages.inviteUsage);
+    return;
+  }
+  const invite = createInvite(deps, { ...args, now: deps.now() });
+  deps.logger.info({ updateId: ctx.update.update_id }, 'invite code created');
+  await replyHtml(
+    ctx,
+    messages.inviteCreated({ link: inviteLink(ctx.me.username, invite.code), ...args }),
+  );
+}
+
+// /invites and [Приглашения], from the admin only: the caller checks.
+export async function sendInvites(ctx: Context, deps: AdminDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const view = inviteListView(deps, ctx.from.id);
+  await replyHtml(ctx, view.text, { reply_markup: view.markup });
+}
+
 export function registerInvite(bot: Composer<Context>, deps: AdminDeps): void {
   bot.command('invite', async (ctx, next) => {
     if (ctx.from?.id !== deps.adminTelegramId) {
       await next();
       return;
     }
-    const args = parseInviteArgs(ctx.match);
-    if (args === undefined) {
-      await replyHtml(ctx, messages.inviteUsage);
-      return;
-    }
-    const invite = createInvite(deps, { ...args, now: deps.now() });
-    deps.logger.info({ updateId: ctx.update.update_id }, 'invite code created');
-    await replyHtml(
-      ctx,
-      messages.inviteCreated({ link: inviteLink(ctx.me.username, invite.code), ...args }),
-    );
+    await sendInvite(ctx, deps, ctx.match);
   });
 
   bot.command('invites', async (ctx, next) => {
@@ -83,8 +95,7 @@ export function registerInvite(bot: Composer<Context>, deps: AdminDeps): void {
       await next();
       return;
     }
-    const view = inviteListView(deps, ctx.from.id);
-    await replyHtml(ctx, view.text, { reply_markup: view.markup });
+    await sendInvites(ctx, deps);
   });
 
   bot.callbackQuery(INVITE_REVOKE, async (ctx, next) => {

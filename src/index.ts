@@ -84,7 +84,7 @@ const bot = createBot({
 });
 const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 
-await registerCommands(bot, logger);
+await registerCommands(bot, logger, config.adminTelegramId);
 // The Stars invoice links (ADR-0027). A failed preset is left out, and boot continues.
 await createDonationLinks(bot.api, logger, donationLinks);
 

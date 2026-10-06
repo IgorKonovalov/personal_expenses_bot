@@ -72,40 +72,43 @@ export async function sendTags(ctx: Context, deps: HandlerDeps): Promise<void> {
   await replyHtml(ctx, view.text, { reply_markup: view.markup });
 }
 
-export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
-  bot.command('tags', (ctx) => sendTags(ctx, deps));
-
-  // `/tag отпуск` sets the sticky tag of the active ledger; `/tag` alone shows it.
-  bot.command('tag', async (ctx) => {
-    if (ctx.from === undefined) return;
-    const user = ensureUser(deps, ctx.from.id, deps.now());
-    const offKeyboard = new InlineKeyboard().text(messages.stickyTagOffButton, STICKY_TAG_OFF);
-    if (ctx.match.trim() === '') {
-      const current = currentStickyTag(deps, user);
-      if (current.name === undefined) {
-        await replyHtml(ctx, messages.stickyTagNone);
-        return;
-      }
-      await replyHtml(
-        ctx,
-        messages.stickyTagCurrent({ ledger: current.ledger, name: current.name }),
-        {
-          reply_markup: offKeyboard,
-        },
-      );
-      return;
-    }
-    const result = setStickyTag(deps, user, ctx.match);
-    if (result.kind === 'invalid') {
-      await replyHtml(ctx, messages.stickyTagUsage);
+// `/tag отпуск` and [Включить метку]'s answer set the sticky tag of the active ledger; `/tag`
+// alone shows it.
+export async function sendTag(ctx: Context, deps: HandlerDeps, arg: string): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  const offKeyboard = new InlineKeyboard().text(messages.stickyTagOffButton, STICKY_TAG_OFF);
+  if (arg.trim() === '') {
+    const current = currentStickyTag(deps, user);
+    if (current.name === undefined) {
+      await replyHtml(ctx, messages.stickyTagNone);
       return;
     }
     await replyHtml(
       ctx,
-      result.sealed ? messages.stickyTagOnSealed(result) : messages.stickyTagOn(result),
-      { reply_markup: offKeyboard },
+      messages.stickyTagCurrent({ ledger: current.ledger, name: current.name }),
+      {
+        reply_markup: offKeyboard,
+      },
     );
-  });
+    return;
+  }
+  const result = setStickyTag(deps, user, arg);
+  if (result.kind === 'invalid') {
+    await replyHtml(ctx, messages.stickyTagUsage);
+    return;
+  }
+  await replyHtml(
+    ctx,
+    result.sealed ? messages.stickyTagOnSealed(result) : messages.stickyTagOn(result),
+    { reply_markup: offKeyboard },
+  );
+}
+
+export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
+  bot.command('tags', (ctx) => sendTags(ctx, deps));
+
+  bot.command('tag', (ctx) => sendTag(ctx, deps, ctx.match));
 
   bot.callbackQuery(STICKY_TAG_OFF, async (ctx) => {
     const user = ensureUser(deps, ctx.from.id, deps.now());

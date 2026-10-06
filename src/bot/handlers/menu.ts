@@ -1,5 +1,5 @@
 import type { Composer, Context } from 'grammy';
-import type { HandlerDeps } from '../bot.js';
+import type { AdminDeps } from '../bot.js';
 import { messages } from '../messages.js';
 import { sendBudget } from './budget.js';
 import { sendHelp } from './help.js';
@@ -12,7 +12,7 @@ interface MenuRoute {
   readonly label: string;
   // The command the button stands for; [☰ Ещё] stands for none.
   readonly command?: string;
-  readonly run: (ctx: Context, deps: HandlerDeps) => Promise<void>;
+  readonly run: (ctx: Context, deps: AdminDeps) => Promise<void>;
 }
 
 const ROUTES: readonly MenuRoute[] = [
@@ -40,7 +40,7 @@ export const MENU_BAR_COMMANDS: readonly string[] = ROUTES.flatMap((r) =>
 
 // A menu tap arrives as plain text. Only an exact label is a tap: `Сегодня` or `📊 Сегодня!`
 // falls through to the expense parser. Register before the text handler.
-export function registerMenu(bot: Composer<Context>, deps: HandlerDeps): void {
+export function registerMenu(bot: Composer<Context>, deps: AdminDeps): void {
   const routes = new Map(ROUTES.map((r) => [r.label, r.run]));
   bot.on('message:text', async (ctx, next) => {
     const route = routes.get(ctx.message.text);

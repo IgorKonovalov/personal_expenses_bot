@@ -243,8 +243,8 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | committed with this row |
-| 2: The admin row, argument prompts and the admin's command list | dev | not started | |
+| 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | 50ccc70 |
+| 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | committed with this row |
 | 3: A recorded receipt deletes its photo | dev | not started | |
 | 4: Notices shown once, and short replies that clean up after themselves | dev | not started | |
 | 5: Live check | human | not started | |
@@ -258,6 +258,14 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
   exemption list doesn't name it.
 - Phase 1: `createBot`'s DM side moved into an exported `privateComposer(options)`, so the guard
   test enumerates its `command` registrations by spying on `Composer.prototype.command`.
+- Phase 2: the argument prompt is a screen anchor (`commandArg` in `Screen`), so its [Отмена] and
+  `/cancel` take the existing ADR-0009 path; `restoreScreen` edits it to
+  `messages.commandArgCancelled`. An answer also edits the prompt to drop its [Отмена].
+- Phase 2: outside the phase's `Files touched`: `src/bot/handlers/text.ts` (`registerText` takes
+  `MoreDeps`, and `bot.ts` passes it the donate deps, so the answer reaches `notifyAdmin`) and
+  `src/bot/handlers/menu.ts` (takes `AdminDeps`, so the more screen knows the admin).
+- Phase 2: the admin buttons are three rows of two, not one row.
+- Phase 2: the block test blocks `SECOND_ALLOWED_ID`, the harness's second admitted user, not 42.
 
 ### Close triggers
 

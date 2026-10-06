@@ -410,10 +410,10 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers the private list from messages by default and in every private chat', async () => {
+  it('registers the private list by default and in every private chat, plus the admin commands in the admin chat', async () => {
     const { bot, calls } = createTestBot();
 
-    await registerCommands(bot, silentLogger());
+    await registerCommands(bot, silentLogger(), ADMIN_ID);
 
     expect(calls).toEqual([
       {
@@ -448,6 +448,21 @@ describe('command registration at boot', () => {
       },
       {
         method: 'setMyCommands',
+        payload: {
+          commands: [
+            ...messages.commands,
+            { command: 'invite', description: messages.adminCommands[0].description },
+            { command: 'invites', description: messages.adminCommands[1].description },
+            { command: 'stats', description: messages.adminCommands[2].description },
+            { command: 'block', description: messages.adminCommands[3].description },
+            { command: 'unblock', description: messages.adminCommands[4].description },
+            { command: 'refund', description: messages.adminCommands[5].description },
+          ],
+          scope: { type: 'chat', chat_id: ADMIN_ID },
+        },
+      },
+      {
+        method: 'setMyCommands',
         payload: { commands: messages.groupCommands, scope: { type: 'all_group_chats' } },
       },
       { method: 'setMyDescription', payload: { description: messages.botDescription } },
@@ -476,9 +491,15 @@ describe('command registration at boot', () => {
     await registerCommands(
       bot,
       createLogger('info', { write: (line: string) => void lines.push(line) }),
+      ADMIN_ID,
     );
 
-    expect(calls.map((c) => c.method)).toEqual(['setMyCommands', 'setMyCommands', 'setMyCommands']);
+    expect(calls.map((c) => c.method)).toEqual([
+      'setMyCommands',
+      'setMyCommands',
+      'setMyCommands',
+      'setMyCommands',
+    ]);
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
       level: 40,
@@ -494,6 +515,7 @@ describe('command registration at boot', () => {
     await registerCommands(
       bot,
       createLogger('info', { write: (line: string) => void lines.push(line) }),
+      ADMIN_ID,
     );
 
     expect(lines.map((l) => (JSON.parse(l) as { msg: string }).msg)).toEqual([
@@ -7386,93 +7408,270 @@ describe('tags (Plan 0012)', () => {
 
 describe('[☰ Ещё] (Plan 0034)', () => {
   const NOW = new Date('2026-10-06T10:00:00Z');
+  const label = messages.moreButtons;
+  type Button = { text: string; callback_data: string };
+  const more = (text: string, key: string): Button => ({ text, callback_data: `more:${key}` });
+  const adm = (text: string, key: string): Button => ({ text, callback_data: `adm:${key}` });
 
-  function moreKeyboard(lockRow: readonly { text: string; callback_data: string }[][] = []) {
-    const b = (text: string, key: string) => ({ text, callback_data: `more:${key}` });
-    const label = messages.moreButtons;
+  function moreKeyboard(opts: { lockRow?: Button[][]; admin?: boolean } = {}) {
     return {
       inline_keyboard: [
-        [b(label.recurring, 'rec'), b(label.debts, 'debt')],
-        [b(label.tags, 'tags'), b(label.export, 'exp')],
-        [b(label.changelog, 'chg'), b(label.donate, 'don')],
-        [b(label.paysupport, 'pay'), b(label.privacy, 'prv')],
-        [b(label.deleteAccount, 'del')],
-        ...lockRow,
+        [more(label.recurring, 'rec'), more(label.debts, 'debt')],
+        [more(label.tags, 'tags'), more(label.tag, 'tag')],
+        [more(label.export, 'exp'), more(label.changelog, 'chg')],
+        [more(label.donate, 'don'), more(label.paysupport, 'pay')],
+        [more(label.privacy, 'prv'), more(label.deleteAccount, 'del')],
+        ...(opts.lockRow ?? []),
+        ...(opts.admin === true
+          ? [
+              [adm(label.invite, 'inv'), adm(label.invites, 'invs')],
+              [adm(label.stats, 'stats'), adm(label.block, 'blk')],
+              [adm(label.unblock, 'unb'), adm(label.refund, 'ref')],
+            ]
+          : []),
       ],
     };
   }
 
-  function apiCalls(calls: readonly ApiCall[]): ApiCall[] {
-    return calls.filter((c) => c.method !== 'answerCallbackQuery');
+  // A fresh invite code is random: the payloads compare with it masked.
+  function apiCalls(calls: readonly ApiCall[]): unknown {
+    return JSON.parse(
+      JSON.stringify(calls.filter((c) => c.method !== 'answerCallbackQuery')).replace(
+        /start=[A-Za-z0-9_-]{11}/g,
+        'start=<code>',
+      ),
+    );
   }
 
-  it('answers the ☰ Ещё label with the more screen', async () => {
-    const { bot, calls } = createTestBot({ now: NOW });
+  function moreBot() {
+    const harness = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
+    withMessageIds(harness.bot);
+    let updateId = 0;
+    const send = (text: string, fromId = ADMIN_ID) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, text, fromId, messageId: updateId }),
+      );
+    const tap = (data: string, fromId = ADMIN_ID, messageId = 2) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, fromId, messageId }));
+    return { ...harness, send, tap };
+  }
 
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '☰ Ещё' }));
+  const pendingFlow = (db: Db) => db.prepare('SELECT kind FROM flow_sessions').pluck().all();
+
+  it("answers a user's ☰ Ещё with the more screen, and the admin's with the admin rows", async () => {
+    const { send, calls } = moreBot();
+
+    await send('☰ Ещё', SECOND_ALLOWED_ID);
+    await send('☰ Ещё', ADMIN_ID);
 
     expect(calls).toEqual([
       {
         method: 'sendMessage',
         payload: {
-          chat_id: ALLOWED_ID,
+          chat_id: SECOND_ALLOWED_ID,
           text: messages.moreScreen,
           reply_markup: moreKeyboard(),
+          ...htmlParseMode,
+        },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ADMIN_ID,
+          text: messages.moreScreen,
+          reply_markup: moreKeyboard({ admin: true }),
           ...htmlParseMode,
         },
       },
     ]);
   });
 
-  it.each(MORE_BUTTONS.map((b) => [b.key, b.command]))(
-    'answers more:%s exactly as /%s does',
-    async (key, command) => {
-      const typed = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
-      withMessageIds(typed.bot);
-      const tapped = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
-      withMessageIds(tapped.bot);
+  const ARG_COMMANDS = ['tag', 'paysupport', 'block', 'unblock', 'refund'];
+  const direct = MORE_BUTTONS.filter((b) => !ARG_COMMANDS.includes(b.command));
+  const withArg = MORE_BUTTONS.filter((b) => ARG_COMMANDS.includes(b.command));
 
-      await typed.bot.handleUpdate(textUpdate({ updateId: 1, text: `/${command}` }));
-      await tapped.bot.handleUpdate(callbackUpdate({ updateId: 1, data: `more:${key}` }));
+  it.each(direct.map((b) => [b.data, b.command]))(
+    'answers %s exactly as /%s does',
+    async (data, command) => {
+      const typed = moreBot();
+      const tapped = moreBot();
+
+      await typed.send(`/${command}`);
+      await tapped.tap(data);
 
       expect(typed.calls.length).toBeGreaterThan(0);
-      expect(apiCalls(tapped.calls)).toEqual(typed.calls);
+      expect(apiCalls(tapped.calls)).toEqual(apiCalls(typed.calls));
       expect(tapped.calls.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(1);
     },
   );
 
+  it.each(withArg.map((b) => [b.data, b.command]))(
+    '%s asks for the argument, and the answer runs /%s with it',
+    async (data, command) => {
+      const typed = moreBot();
+      const tapped = moreBot();
+
+      await typed.send(`/${command} отпуск`);
+      await tapped.tap(data);
+      const prompt = tapped.calls.filter((c) => c.method === 'sendMessage');
+      tapped.calls.length = 0;
+      await tapped.send('отпуск');
+
+      const key = command as keyof typeof messages.commandArgPrompt;
+      expect(prompt).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: ADMIN_ID,
+            text: messages.commandArgPrompt[key],
+            reply_markup: {
+              inline_keyboard: [[{ text: messages.cancelButton, callback_data: 'flow:cancel' }]],
+            },
+            ...htmlParseMode,
+          },
+        },
+      ]);
+      // The prompt loses its [Отмена], then the command answers as typed.
+      expect(tapped.calls[0]).toEqual({
+        method: 'editMessageText',
+        payload: {
+          chat_id: ADMIN_ID,
+          message_id: 101,
+          text: messages.commandArgPrompt[key],
+          reply_markup: { inline_keyboard: [] },
+          ...htmlParseMode,
+        },
+      });
+      expect(apiCalls(tapped.calls.slice(1))).toEqual(apiCalls(typed.calls));
+      expect(pendingFlow(tapped.db)).toEqual([null]);
+    },
+  );
+
+  it('[Заблокировать] then an id blocks that user exactly as /block <id> does', async () => {
+    const typed = moreBot();
+    const tapped = moreBot();
+    await typed.send('/start', SECOND_ALLOWED_ID);
+    await tapped.send('/start', SECOND_ALLOWED_ID);
+    typed.calls.length = 0;
+    tapped.calls.length = 0;
+    const blocked = (db: Db) =>
+      db
+        .prepare(
+          'SELECT blocked_at IS NOT NULL FROM users WHERE id IN (SELECT user_id FROM auth_identities WHERE external_id = ?)',
+        )
+        .pluck()
+        .get(String(SECOND_ALLOWED_ID));
+
+    await typed.send(`/block ${SECOND_ALLOWED_ID}`);
+    await tapped.tap('adm:blk');
+    await tapped.send(String(SECOND_ALLOWED_ID));
+
+    expect(sentTexts(typed.calls)).toEqual([messages.blocked(SECOND_ALLOWED_ID)]);
+    expect(sentTexts(tapped.calls.filter((c) => c.method === 'sendMessage'))).toEqual([
+      messages.commandArgPrompt.block,
+      messages.blocked(SECOND_ALLOWED_ID),
+    ]);
+    expect(blocked(typed.db)).toBe(1);
+    expect(blocked(tapped.db)).toBe(1);
+  });
+
+  it("refuses a non-numeric answer with /block's own usage", async () => {
+    const { send, tap, calls } = moreBot();
+
+    await tap('adm:blk');
+    await send('Петя');
+
+    expect(sentTexts(calls.filter((c) => c.method === 'sendMessage')).at(-1)).toBe(
+      messages.blockUsage,
+    );
+  });
+
+  it('[Отмена] on the prompt ends the flow with nothing changed', async () => {
+    const { send, tap, calls, db } = moreBot();
+    await send('/start', SECOND_ALLOWED_ID);
+    await tap('adm:blk');
+    calls.length = 0;
+
+    // The welcome took message 101, the prompt 102.
+    await tap('flow:cancel', ADMIN_ID, 102);
+    await send(String(SECOND_ALLOWED_ID));
+
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([
+      {
+        method: 'editMessageText',
+        payload: {
+          chat_id: ADMIN_ID,
+          message_id: 102,
+          text: messages.commandArgCancelled,
+          reply_markup: { inline_keyboard: [] },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    expect(
+      db.prepare('SELECT COUNT(*) FROM users WHERE blocked_at IS NOT NULL').pluck().get(),
+    ).toBe(0);
+    expect(sentTexts(calls.filter((c) => c.method === 'sendMessage'))).not.toContain(
+      messages.blocked(SECOND_ALLOWED_ID),
+    );
+  });
+
+  it('runs the command once for a redelivered answer', async () => {
+    const { bot, tap, calls } = moreBot();
+    await tap('more:tag');
+    calls.length = 0;
+    const answer = textUpdate({ updateId: 50, text: 'отпуск', messageId: 50 });
+
+    await bot.handleUpdate(answer);
+    await bot.handleUpdate(answer);
+
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1);
+  });
+
+  it('answers a forged adm:* tap from a non-admin as an unknown button and changes nothing', async () => {
+    const { tap, calls, db } = moreBot();
+
+    await tap('adm:blk', SECOND_ALLOWED_ID);
+    await tap('adm:inv', SECOND_ALLOWED_ID);
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1' } },
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+    ]);
+    expect(pendingFlow(db)).toEqual([]);
+    expect(db.prepare('SELECT COUNT(*) FROM invite_codes').pluck().get()).toBe(0);
+  });
+
   it('offers [Открыть учёт] for a locked sealed ledger and [Закрыть учёт] for an unlocked one', async () => {
-    const { bot, calls, db, keys } = createTestBot({ now: NOW });
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
-    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    const { send, calls, db, keys } = moreBot();
+    await send('/start', SECOND_ALLOWED_ID);
+    const user = findUserByIdentity(db, 'telegram', String(SECOND_ALLOWED_ID));
     if (user === undefined) throw new Error('setup: no user');
     const keyDeps = { db, logger: silentLogger(), keys };
     const ledger = await sealPersonalLedger(keyDeps, user, NOW);
     keys.lock(ledger.id);
     calls.length = 0;
 
-    await bot.handleUpdate(textUpdate({ updateId: 2, text: '☰ Ещё' }));
+    await send('☰ Ещё', SECOND_ALLOWED_ID);
     await unlockPersonalLedger(keyDeps, user, NOW);
-    await bot.handleUpdate(textUpdate({ updateId: 3, text: '☰ Ещё' }));
+    await send('☰ Ещё', SECOND_ALLOWED_ID);
 
     const markups = calls.map((c) => (c.payload as { reply_markup: unknown }).reply_markup);
     expect(markups).toEqual([
-      moreKeyboard([[{ text: messages.moreButtons.unlock, callback_data: 'more:unl' }]]),
-      moreKeyboard([[{ text: messages.moreButtons.lock, callback_data: 'more:lock' }]]),
+      moreKeyboard({ lockRow: [[more(label.unlock, 'unl')]] }),
+      moreKeyboard({ lockRow: [[more(label.lock, 'lock')]] }),
     ]);
   });
 
   it('clears a pending flow before the command runs, as a typed command does', async () => {
-    const { bot, db } = createTestBot({ now: NOW });
-    withMessageIds(bot);
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/settings' }));
-    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'set:tzother', messageId: 101 }));
-    const pending = () => db.prepare('SELECT kind FROM flow_sessions').pluck().get();
-    expect(pending()).toBe('setTimezone');
+    const { send, tap, db } = moreBot();
+    await send('/settings');
+    await tap('set:tzother', ADMIN_ID, 101);
+    expect(pendingFlow(db)).toEqual(['setTimezone']);
 
-    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'more:prv' }));
+    await tap('more:prv');
 
-    expect(pending()).toBeNull();
+    expect(pendingFlow(db)).toEqual([null]);
   });
 
   describe('the guard: every private command has a button', () => {
@@ -7480,8 +7679,6 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     // carries [Отмена], /recover is offered by the unlock prompt, and /categories is a button on
     // the settings hub.
     const REACHED_ELSEWHERE = ['start', 'cancel', 'recover', 'categories'];
-    // Plan 0034 Phase 2 adds their buttons.
-    const NOT_YET = ['tag', 'invite', 'invites', 'block', 'unblock', 'stats', 'refund'];
 
     function privateCommands(): string[] {
       const spy = vi.spyOn(Composer.prototype, 'command');
@@ -7513,15 +7710,16 @@ describe('[☰ Ещё] (Plan 0034)', () => {
         ...MENU_BAR_COMMANDS,
         ...MORE_BUTTONS.map((b) => b.command),
         ...REACHED_ELSEWHERE,
-        ...NOT_YET,
       ]);
       return commands.filter((c) => !covered.has(c));
     }
 
-    it('finds the private commands, and none without a button', () => {
+    it('finds the private and admin commands, and none without a button', () => {
       const commands = privateCommands();
 
-      expect(commands).toEqual(expect.arrayContaining(['today', 'recurring', 'delete_account']));
+      expect(commands).toEqual(
+        expect.arrayContaining(['today', 'recurring', 'delete_account', 'tag', 'block', 'refund']),
+      );
       expect(withoutButton(commands)).toEqual([]);
     });
 
