@@ -49,6 +49,7 @@ const NOW = new Date('2026-09-30T10:00:00Z');
 interface HarnessOptions {
   readonly failMethods?: readonly string[];
   readonly now?: Date;
+  readonly tips?: boolean;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -617,12 +618,31 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
 
     calls.length = 0;
     await dm(ALLOWED_ID, `/start e_${b}`, 81);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]?.payload).toMatchObject({ chat_id: ALLOWED_ID, text: messages.welcome });
+    expect(calls).toMatchObject([{ payload: { chat_id: ALLOWED_ID, text: messages.welcome } }]);
 
     calls.length = 0;
     await dm(STRANGER_ID, `/start e_${b}`, 82);
     expect(calls).toMatchObject([{ payload: { text: messages.invitationOnly } }]);
+  });
+
+  it("leaves a member's tips alone when they open another member's deep link", async () => {
+    const { db, calls, say, dm } = await bound({ tips: true });
+    await say(ALLOWED_ID, '5 минут буду', 14, { firstName: 'Анна' });
+    await say(SECOND_ALLOWED_ID, '500 такси', 15, { firstName: 'Вера' });
+    const vera = userOf(db, SECOND_ALLOWED_ID)?.id;
+    db.prepare("INSERT INTO user_tips VALUES (?, 'tipOther', ?)").run(vera, NOW.toISOString());
+    db.prepare('UPDATE users SET tips_off = 1 WHERE id = ?').run(vera);
+    const tipsBefore = db.prepare('SELECT * FROM user_tips WHERE user_id = ?').all(vera);
+    calls.length = 0;
+
+    await dm(SECOND_ALLOWED_ID, `/start e_${expenseIdOf(db, 14)}`, 83);
+
+    expect(calls).toMatchObject([
+      { payload: { chat_id: SECOND_ALLOWED_ID, text: messages.welcome } },
+    ]);
+    expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(vera)).toBe(1);
+    expect(db.prepare('SELECT * FROM user_tips WHERE user_id = ?').all(vera)).toEqual(tipsBefore);
+    expect(tipsBefore).toHaveLength(1);
   });
 
   it("refuses A's undo, category change and amount edit of B's group expense in the service, writing nothing", async () => {
@@ -1107,7 +1127,7 @@ describe('group lifecycle and ledger settings (Phase 4)', () => {
     calls.length = 0;
 
     await dm(SECOND_ALLOWED_ID, `/start gs_${ledgerId}`, 191);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(sentText(calls[0])).toBe(messages.welcome);
     expect(
       db.prepare("SELECT COUNT(*) FROM flow_sessions WHERE screen = 'settings'").pluck().get(),

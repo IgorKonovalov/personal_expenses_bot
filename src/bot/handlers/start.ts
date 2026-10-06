@@ -35,6 +35,8 @@ export function ensureUser(deps: HandlerDeps, telegramUserId: number, now: Date)
 // the group /settings `/start gs_<ledger uuid>`.
 const EXPENSE_PAYLOAD = /^e_([0-9a-f-]{36})$/;
 const LEDGER_SETTINGS_PAYLOAD = /^gs_([0-9a-f-]{36})$/;
+// An invite code, the shape the access middleware redeems before this handler runs.
+const INVITE_PAYLOAD = /^[A-Za-z0-9_-]{11}$/;
 
 // The welcome, with the menu keyboard.
 export async function sendWelcome(ctx: Context): Promise<void> {
@@ -54,15 +56,22 @@ export async function sendSetupCheck(ctx: Context, text: Html): Promise<void> {
   });
 }
 
-// /start: a never-onboarded user is marked onboarded just before the setup check goes out; an
-// onboarded one replays the tour, tips reset and on.
-async function sendTour(ctx: Context, deps: HandlerDeps, user: User): Promise<void> {
+// /start: a never-onboarded user is marked onboarded just before the setup check goes out. An
+// onboarded one replays the tour, tips reset and on, only under `mayReplay`; otherwise they get
+// the welcome alone.
+async function sendTour(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  { mayReplay }: { mayReplay: boolean },
+): Promise<void> {
   const now = deps.now();
-  const replay = isOnboarded(deps, user);
-  if (replay) replayOnboarding(deps, user);
+  const onboarded = isOnboarded(deps, user);
+  if (onboarded && mayReplay) replayOnboarding(deps, user);
   await sendWelcome(ctx);
+  if (onboarded && !mayReplay) return;
   // A concurrent first update claimed it and sends the check itself.
-  if (!replay && !claimOnboarding(deps, user, now)) return;
+  if (!onboarded && !claimOnboarding(deps, user, now)) return;
   await sendSetupCheck(ctx, messages.setupCheck(setupCheckView(deps, user, now)));
 }
 
@@ -72,7 +81,7 @@ export function registerStart(bot: Composer<Context>, deps: HandlerDeps): void {
     const user = ensureUser(deps, ctx.from.id, deps.now());
     const expenseId = EXPENSE_PAYLOAD.exec(ctx.match)?.[1] as ExpenseId | undefined;
     if (expenseId !== undefined) {
-      // The author's own expense only; any other payload gets the tour.
+      // The author's own expense only; anyone else falls through to the tour below.
       const shown = showExpense(deps, { user, expenseId });
       if (shown.kind === 'card' && shown.expense.createdBy === user.id) {
         const card = cardFor(cardView(deps, user, shown));
@@ -81,9 +90,13 @@ export function registerStart(bot: Composer<Context>, deps: HandlerDeps): void {
       }
     }
     const ledgerId = LEDGER_SETTINGS_PAYLOAD.exec(ctx.match)?.[1] as LedgerId | undefined;
-    // The ledger's owner only; anyone else gets the tour.
+    // The ledger's owner only; anyone else falls through to the tour below.
     if (ledgerId !== undefined && (await sendLedgerSettings(ctx, deps, user, ledgerId))) return;
-    await sendTour(ctx, deps, user);
+    // A group card's [Изменить в личке] is open to every member, so an unresolved deep link must
+    // not reset the tips: only a bare /start or an invite code replays.
+    await sendTour(ctx, deps, user, {
+      mayReplay: ctx.match === '' || INVITE_PAYLOAD.test(ctx.match),
+    });
   });
 
   // [Да, всё верно]: the check becomes the confirmation, with no keyboard. A repeat edits it to

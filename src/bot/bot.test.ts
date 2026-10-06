@@ -8108,6 +8108,15 @@ describe('onboarding (Plan 0015)', () => {
     );
   });
 
+  it('sends the welcome and the check for a new user whose first /start is an unresolved deep link', async () => {
+    const { send, calls, onboardedAt } = onboardingBot();
+
+    await send('/start e_00000000-0000-4000-8000-000000000999');
+
+    expect(sentTexts(calls)).toEqual([WELCOME, CHECK]);
+    expect(onboardedAt()).toBe(NOW.toISOString());
+  });
+
   it("replays for an onboarded user: their tips start over and switch on, notices and others' tips stay", async () => {
     const { send, calls, db, userId, onboardedAt } = onboardingBot({ onboarding: false });
     await send('/help');
