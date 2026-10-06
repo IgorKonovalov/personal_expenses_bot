@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { listActiveCategories } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
+import { setExpenseCategory, type ExpenseId } from '../db/expenses.js';
+import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { parseRaiffeisenRs } from '../domain/statements/raiffeisenRs.js';
@@ -14,7 +17,7 @@ import {
 import type { StatementPurchase } from '../domain/statements/types.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
-import { previewStatement, recordStatement } from './importStatement.js';
+import { pendingStatementPreview, previewStatement, recordStatement } from './importStatement.js';
 import { provisionUser } from './provisionUser.js';
 import { recordBankSms } from './recordBankSms.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
@@ -56,7 +59,9 @@ function purchasesOf(rows: readonly StatementRowFixture[]): readonly StatementPu
 function preview(rows: readonly StatementRowFixture[] = TWO_PAGE_ROWS, now = NOW) {
   const parsed = parseRaiffeisenRs(statementLines(rows, { rowsPerPage: 6 }));
   if (parsed.kind !== 'statement') throw new Error('synthetic statement did not parse');
-  return previewStatement(deps, { user: alice, ...parsed, now });
+  const result = previewStatement(deps, { user: alice, ...parsed, now });
+  if (result.kind !== 'preview') throw new Error(`expected a preview, got ${result.kind}`);
+  return result;
 }
 
 function stored() {
@@ -156,6 +161,59 @@ describe('matching recorded expenses (ADR-0032)', () => {
       count: 0,
     });
     expect(stored()).toHaveLength(6);
+  });
+});
+
+describe('limits and categories', () => {
+  it('refuses more than 1000 purchases and holds nothing', () => {
+    const one = purchasesOf([cardRow('02.09.2026', '1.00', 'PRIMER')])[0];
+    if (one === undefined) throw new Error('setup');
+    const purchases = Array.from({ length: 1001 }, (_, ordinal) => ({ ...one, ordinal }));
+
+    expect(previewStatement(deps, { user: alice, period: undefined, purchases, now: NOW })).toEqual(
+      { kind: 'tooLong' },
+    );
+    expect(pendingStatementPreview(deps, { user: alice, now: NOW })).toEqual({ kind: 'expired' });
+    expect(
+      previewStatement(deps, {
+        user: alice,
+        period: undefined,
+        purchases: purchases.slice(0, 1000),
+        now: NOW,
+      }),
+    ).toMatchObject({ kind: 'preview' });
+  });
+
+  it('records a merchant previously re-categorised to Продукты under Продукты', () => {
+    preview([cardRow('02.09.2026', '300.00', 'KAFE PRIMER')]);
+    recordStatement(deps, { user: alice, now: NOW });
+    const ledgerId = db.prepare('SELECT ledger_id FROM expenses').pluck().get() as LedgerId;
+    const groceries = listActiveCategories(db, ledgerId).find((c) => c.name === 'Продукты');
+    if (groceries === undefined) throw new Error('setup: no Продукты');
+    const firstId = db.prepare('SELECT id FROM expenses').pluck().get() as ExpenseId;
+    expect(setExpenseCategory(db, firstId, groceries.id, NOW)).toBe(true);
+
+    preview([cardRow('20.09.2026', '450.00', 'KAFE PRIMER')]);
+    recordStatement(deps, { user: alice, now: NOW });
+
+    expect(
+      db
+        .prepare(
+          `SELECT c.name FROM expenses e JOIN categories c ON c.id = e.category_id
+            WHERE e.occurred_on = '2026-09-20'`,
+        )
+        .pluck()
+        .all(),
+    ).toEqual(['Продукты']);
+  });
+
+  it('shows the pending preview again for a page tap, and nothing once expired', () => {
+    const first = preview();
+
+    expect(pendingStatementPreview(deps, { user: alice, now: NOW })).toEqual(first);
+    expect(
+      pendingStatementPreview(deps, { user: alice, now: new Date(NOW.getTime() + 11 * 60_000) }),
+    ).toEqual({ kind: 'expired' });
   });
 });
 

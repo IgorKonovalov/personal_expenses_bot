@@ -11,10 +11,19 @@ interface TextItem {
   readonly transform: readonly number[];
 }
 
+export type PdfText =
+  | { readonly kind: 'lines'; readonly lines: readonly PositionedLine[] }
+  // More pages than `maxPages`: no page was read.
+  | { readonly kind: 'tooManyPages'; readonly pages: number };
+
 // Every page's text items grouped into lines by baseline, top to bottom, each line's cells
-// sorted by x. Whitespace-only items are dropped, so a PDF with no text gives []. The bytes are
-// read in memory and never written anywhere.
-export async function readPdfLines(bytes: Uint8Array): Promise<PositionedLine[]> {
+// sorted by x. Whitespace-only items are dropped, so a PDF with no text gives no lines. A file
+// pdf.js can't open rejects with its error. The bytes are read in memory and never written
+// anywhere.
+export async function readPdfLines(
+  bytes: Uint8Array,
+  options: { readonly maxPages?: number } = {},
+): Promise<PdfText> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   // pdf.js takes ownership of the buffer it is given, so it gets a copy.
   const task = pdfjs.getDocument({
@@ -25,6 +34,9 @@ export async function readPdfLines(bytes: Uint8Array): Promise<PositionedLine[]>
   });
   try {
     const doc = await task.promise;
+    if (doc.numPages > (options.maxPages ?? Infinity)) {
+      return { kind: 'tooManyPages', pages: doc.numPages };
+    }
     const lines: PositionedLine[] = [];
     for (let number = 1; number <= doc.numPages; number++) {
       const page = await doc.getPage(number);
@@ -37,7 +49,7 @@ export async function readPdfLines(bytes: Uint8Array): Promise<PositionedLine[]>
       lines.push(...groupLines(number, height, items));
       page.cleanup();
     }
-    return lines;
+    return { kind: 'lines', lines };
   } finally {
     await task.destroy();
   }

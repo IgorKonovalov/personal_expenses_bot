@@ -33,6 +33,12 @@ import { historyCategory, storeExpense, type RecordDeps } from './recordExpense.
 const STATEMENT_TIMEZONE = 'Europe/Belgrade';
 const STAMP_HOUR = 12;
 
+// The caps that bound an import's memory (ADR-0033): the file, refused before download; its
+// pages, refused before any is read; and its card purchases.
+export const MAX_STATEMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_STATEMENT_PAGES = 30;
+export const MAX_STATEMENT_PURCHASES = 1000;
+
 type ImportDeps = RecordDeps & Partial<Pick<KeyDeps, 'keys'>>;
 
 export interface StatementPreview {
@@ -94,23 +100,18 @@ function pick(
   return purchases.filter((_, index) => states[index] === wanted);
 }
 
-// Holds the statement's purchases for the active ledger and describes the preview.
-export function previewStatement(
+function describePreview(
   deps: ImportDeps,
-  input: {
-    readonly user: User;
+  user: User,
+  ledger: Ledger,
+  statement: {
     readonly period: StatementPeriod | undefined;
     readonly purchases: readonly StatementPurchase[];
-    readonly now: Date;
   },
 ): StatementPreview {
-  const { db, logger } = deps;
-  const { user, period, purchases } = input;
-  const ledger = findActiveLedger(db, user.id);
-  if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  const { period, purchases } = statement;
   const states = classify(deps, user, ledger.id, purchases);
-  startStatementFlow(deps, user, { ledgerId: ledger.id, period, purchases }, input.now);
-  const preview: StatementPreview = {
+  return {
     kind: 'preview',
     ledger,
     period,
@@ -119,6 +120,26 @@ export function previewStatement(
     matched: pick(purchases, states, 'matched'),
     imported: pick(purchases, states, 'imported'),
   };
+}
+
+// Holds the statement's purchases for the active ledger and describes the preview. A statement
+// over the purchase cap is refused and nothing is held.
+export function previewStatement(
+  deps: ImportDeps,
+  input: {
+    readonly user: User;
+    readonly period: StatementPeriod | undefined;
+    readonly purchases: readonly StatementPurchase[];
+    readonly now: Date;
+  },
+): StatementPreview | { readonly kind: 'tooLong' } {
+  const { db, logger } = deps;
+  const { user, period, purchases } = input;
+  if (purchases.length > MAX_STATEMENT_PURCHASES) return { kind: 'tooLong' };
+  const ledger = findActiveLedger(db, user.id);
+  if (ledger === undefined) throw new Error(`user ${user.id} has no active ledger`);
+  const preview = describePreview(deps, user, ledger, { period, purchases });
+  startStatementFlow(deps, user, { ledgerId: ledger.id, period, purchases }, input.now);
   logger.info(
     {
       userId: user.id,
@@ -131,6 +152,20 @@ export function previewStatement(
     'statement previewed',
   );
   return preview;
+}
+
+// The pending statement's preview again, for a page tap: classified against the ledger as it is
+// now, the flow left as it is.
+export function pendingStatementPreview(
+  deps: ImportDeps,
+  input: { readonly user: User; readonly now: Date },
+): StatementPreview | { readonly kind: 'expired' } {
+  const { user, now } = input;
+  const flow = pendingStatementFlow(deps, user, now);
+  if (flow === undefined) return { kind: 'expired' };
+  const ledger = findLedgerForMember(deps.db, flow.ledgerId, user.id);
+  if (ledger === undefined) return { kind: 'expired' };
+  return describePreview(deps, user, ledger, flow);
 }
 
 export type RecordStatementResult =

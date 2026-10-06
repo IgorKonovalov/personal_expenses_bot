@@ -22,7 +22,11 @@ import { parseExpenseText } from '../domain/expenseText.js';
 import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { buildPdf } from '../domain/statements/testing/buildPdf.js';
-import { statementPdf, TWO_PAGE_ROWS } from '../domain/statements/testing/raiffeisenStatement.js';
+import {
+  cardRow,
+  statementPdf,
+  TWO_PAGE_ROWS,
+} from '../domain/statements/testing/raiffeisenStatement.js';
 import { monthOf, weekOf } from '../domain/periods.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
@@ -6221,6 +6225,166 @@ describe('bank statements (Plan 0027)', () => {
     expect(
       db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE occurred_on = '2026-09-20'").get(),
     ).toEqual({ n: 0 });
+  });
+
+  describe('paging, limits and errors', () => {
+    // 25 purchases of 1.00 to 25.00 RSD, one per day from 1 September.
+    const ROWS_25 = Array.from({ length: 25 }, (_, index) =>
+      cardRow(
+        `${String(index + 1).padStart(2, '0')}.09.2026`,
+        `${index + 1}.00`,
+        `PRODAVNICA PRIMER ${index + 1}`,
+      ),
+    );
+    const rowLines = (text: unknown) =>
+      String(text)
+        .split('\n')
+        .filter((line) => / · PRODAVNICA PRIMER /.test(line));
+
+    it('pages a 25-row preview 10, 10 and 5 rows', async () => {
+      const { sendPdf, tap, calls } = statementBot();
+
+      await sendPdf(statementPdf(ROWS_25));
+      await tap('stm:p:2');
+      await tap('stm:p:3');
+
+      const shown = calls.filter(
+        (call) => call.method === 'sendMessage' || call.method === 'editMessageText',
+      );
+      const payloads = shown.map(
+        (call) =>
+          call.payload as {
+            text: string;
+            reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
+          },
+      );
+      expect(payloads.map((p) => rowLines(p.text).length)).toEqual([10, 10, 5]);
+      expect(rowLines(payloads[0]?.text)[0]).toBe('01.09 · 1.00 RSD · PRODAVNICA PRIMER 1');
+      expect(rowLines(payloads[2]?.text).at(-1)).toBe('25.09 · 25.00 RSD · PRODAVNICA PRIMER 25');
+      expect(payloads.map((p) => p.reply_markup.inline_keyboard)).toEqual([
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: '1/3', callback_data: 'stm:p:1' },
+            { text: messages.pagerNext, callback_data: 'stm:p:2' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: messages.pagerPrev, callback_data: 'stm:p:1' },
+            { text: '2/3', callback_data: 'stm:p:2' },
+            { text: messages.pagerNext, callback_data: 'stm:p:3' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+        [
+          [{ text: 'Записать все (25)', callback_data: 'stm:all' }],
+          [
+            { text: messages.pagerPrev, callback_data: 'stm:p:2' },
+            { text: '3/3', callback_data: 'stm:p:3' },
+          ],
+          [{ text: 'Отмена', callback_data: 'stm:x' }],
+        ],
+      ]);
+    });
+
+    it('lists a row already recorded after the new ones, marked «уже записано»', async () => {
+      const { send, sendPdf, calls } = statementBot();
+      await send('450 кофе 21.09');
+      calls.length = 0;
+
+      await sendPdf(TWO_PAGE_PDF);
+
+      const text = String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]);
+      expect(text.split('\n').at(-1)).toBe('20.09 · 450.00 RSD · KAFE PRIMER · уже записано');
+    });
+
+    it('does not download a document reported at 6 MB', async () => {
+      const { sendPdf, calls } = statementBot();
+
+      await sendPdf(TWO_PAGE_PDF, { fileSize: 6 * 1024 * 1024 });
+
+      expect(calls.map((call) => call.method)).toEqual(['sendMessage']);
+      expect(fetched).toEqual([]);
+      expect(sentTexts(calls)).toEqual([messages.statementTooLarge]);
+    });
+
+    it('answers a PDF with no text layer with statementNoText', async () => {
+      const { sendPdf, calls, db } = statementBot();
+
+      await sendPdf(buildPdf([[], []]));
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementNoText,
+      ]);
+    });
+
+    it('refuses a PDF over 30 pages with statementTooLong', async () => {
+      const { sendPdf, calls } = statementBot();
+
+      await sendPdf(statementPdf(ROWS_25.concat(ROWS_25.slice(0, 6)), { rowsPerPage: 1 }));
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementTooLong,
+      ]);
+    });
+
+    it('answers a file pdf.js cannot open with statementUnreadable, logging the error class', async () => {
+      const { sendPdf, calls, logLines } = statementBot({ logLevel: 'info' });
+
+      await sendPdf(new TextEncoder().encode('%PDF-1.4 broken'));
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.statementUnreadable,
+      ]);
+      const reads = logLines.filter((line) => line.includes('statement read'));
+      expect(reads).toHaveLength(1);
+      expect(JSON.parse(String(reads[0]))).toMatchObject({
+        level: 30,
+        outcome: 'unreadable',
+        error: expect.stringMatching(/^[A-Za-z]+$/) as unknown,
+      });
+      expect(String(reads[0])).not.toContain('broken');
+    });
+
+    it('answers an expired preview’s buttons with flowExpired and records nothing', async () => {
+      const { sendPdf, tap, calls, db } = statementBot();
+      await sendPdf(TWO_PAGE_PDF);
+      db.prepare("UPDATE flow_sessions SET expires_at = '2026-10-02T08:00:00.000Z'").run();
+      calls.length = 0;
+
+      await tap('stm:p:2');
+      await tap('stm:all');
+      await tap('stm:dup');
+
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+        messages.flowExpired,
+        messages.flowExpired,
+        messages.flowExpired,
+      ]);
+    });
+
+    it('logs no merchant, amount or account number at any level above debug', async () => {
+      const { send, sendPdf, tap, logLines } = statementBot({ logLevel: 'info' });
+      await send('450 кофе 21.09');
+
+      await sendPdf(TWO_PAGE_PDF);
+      await tap('stm:p:1');
+      await tap('stm:dup');
+      await sendPdf(TWO_PAGE_PDF);
+
+      expect(logLines.some((line) => line.includes('statement recorded'))).toBe(true);
+      for (const line of logLines) {
+        const content = logContent(line);
+        expect(content).not.toMatch(
+          /PRIMER|EXAMPLE|AMSTERDAM|OSLOBO|\b(?:450|45000|1,234\.56|123456|1500|15\.00|175685|2,000\.00|200000)\b|0{13}/,
+        );
+      }
+    });
   });
 
   it('does not load pdfjs-dist with the bot wiring, only for a PDF', async () => {

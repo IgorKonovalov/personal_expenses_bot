@@ -8,6 +8,12 @@ import {
 } from '../domain/statements/testing/raiffeisenStatement.js';
 import { readPdfLines } from './pdf.js';
 
+async function linesOf(bytes: Uint8Array) {
+  const text = await readPdfLines(bytes);
+  if (text.kind !== 'lines') throw new Error(`expected lines, got ${text.kind}`);
+  return text.lines;
+}
+
 describe('readPdfLines', () => {
   it('reads a page back as lines of cells that reproduce its rows', async () => {
     const bytes = buildPdf([
@@ -41,7 +47,7 @@ describe('readPdfLines', () => {
       ],
     ]);
 
-    const lines = await readPdfLines(bytes);
+    const lines = await linesOf(bytes);
 
     expect(lines).toEqual([
       {
@@ -85,7 +91,7 @@ describe('readPdfLines', () => {
       [{ y: 40, cells: [{ x: 20, text: 'druga' }] }],
     ]);
 
-    const lines = await readPdfLines(bytes);
+    const lines = await linesOf(bytes);
 
     expect(lines.map((line) => [line.page, line.cells[0]?.text])).toEqual([
       [1, 'prva'],
@@ -94,7 +100,7 @@ describe('readPdfLines', () => {
   });
 
   it('reads a synthetic statement PDF into the purchases its lines hold', async () => {
-    const lines = await readPdfLines(statementPdf(TWO_PAGE_ROWS, { rowsPerPage: 6 }));
+    const lines = await linesOf(statementPdf(TWO_PAGE_ROWS, { rowsPerPage: 6 }));
 
     expect(parseRaiffeisenRs(lines)).toEqual(
       parseRaiffeisenRs(statementLines(TWO_PAGE_ROWS, { rowsPerPage: 6 })),
@@ -103,7 +109,23 @@ describe('readPdfLines', () => {
   });
 
   it('gives no lines for a PDF without text', async () => {
-    expect(await readPdfLines(buildPdf([[], []]))).toEqual([]);
+    expect(await readPdfLines(buildPdf([[], []]))).toEqual({ kind: 'lines', lines: [] });
+  });
+
+  it('reads no page of a PDF over the page cap', async () => {
+    const pages = Array.from({ length: 31 }, () => [{ y: 40, cells: [{ x: 20, text: 'x' }] }]);
+
+    expect(await readPdfLines(buildPdf(pages), { maxPages: 30 })).toEqual({
+      kind: 'tooManyPages',
+      pages: 31,
+    });
+    expect(await readPdfLines(buildPdf(pages.slice(1)), { maxPages: 30 })).toMatchObject({
+      kind: 'lines',
+    });
+  });
+
+  it('rejects bytes that are not a PDF', async () => {
+    await expect(readPdfLines(new TextEncoder().encode('not a pdf'))).rejects.toThrow();
   });
 
   it('leaves the caller’s bytes intact', async () => {

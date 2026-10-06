@@ -300,8 +300,8 @@ interface StatementPurchase {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: a statement PDF records its card purchases | dev | done | 0685667 |
-| 2: Already recorded, and sending the file twice | dev | done | committed with this row |
-| 3: Paging, limits, errors and categories | dev | not started | |
+| 2: Already recorded, and sending the file twice | dev | done | d39404f |
+| 3: Paging, limits, errors and categories | dev | done | committed with this row |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real statement | human | not started | |
 
@@ -336,6 +336,17 @@ interface StatementPurchase {
   sealed (ADR-0020), alongside `sms:` and `rcpt:`.
 - Phase 2: one full-suite run timed out in `ledgerKeys.test.ts` (the recovery test, 5 s). This
   phase doesn't touch it, and the rerun passed.
+- Phase 3: the preview pages one list: the new rows, then the matched rows, each matched row
+  suffixed « · уже записано». It has no separate heading. Rows already imported are not listed.
+  The pager row sits between the record buttons and [Отмена].
+- Phase 3: `readPdfLines` now returns `{ kind: 'lines' } | { kind: 'tooManyPages' }` and takes
+  `maxPages`. The page cap is checked before any page is read. A PDF with no text lines answers
+  `statementNoText` whatever it is, so a scanned PDF that isn't a statement gets it too, not the
+  help reply. The 5 MB refusal likewise applies to any PDF.
+- Phase 3: the unreadable log line carries the error's `name` only. The cap on purchases is in
+  `previewStatement`, which then holds no flow.
+- Phase 3: the expired-button done-when is tested by moving the session's `expires_at` into the
+  past, since the harness clock is fixed.
 
 ### Close triggers
 

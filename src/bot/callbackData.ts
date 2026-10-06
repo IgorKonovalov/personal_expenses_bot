@@ -240,6 +240,12 @@ export const FLOW_CANCEL = 'flow:cancel';
 // none carries an id.
 export const STATEMENT_RECORD_ALL = 'stm:all';
 export const STATEMENT_RECORD_WITH_MATCHED = 'stm:dup';
+// The preview's 1-based row page: `stm:p:<page>` (at most 10 bytes).
+export const STATEMENT_PAGE = /^stm:p:(\d{1,4})$/;
+
+export function statementPageData(page: number): string {
+  return assertCallbackData(`stm:p:${page}`);
+}
 export const STATEMENT_CANCEL = 'stm:x';
 
 // Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the

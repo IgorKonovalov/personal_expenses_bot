@@ -165,8 +165,8 @@ interface SummaryView {
   readonly people?: PeopleView | undefined;
 }
 
-// A bank statement's preview (Plan 0027): the new purchases a tap would record. Merchants are
-// bank text and go through `html`.
+// A bank statement's preview (Plan 0027): the new purchases a tap would record, and one page of
+// the listed rows. Merchants are bank text and go through `html`.
 interface StatementPreviewView {
   readonly period: { readonly from: LocalDate; readonly to: LocalDate } | undefined;
   readonly ledger: LedgerRef;
@@ -174,12 +174,15 @@ interface StatementPreviewView {
   readonly purchaseCount: number;
   // Rows already in the ledger: matched to a recorded expense, or imported before.
   readonly alreadyCount: number;
-  readonly fresh: readonly StatementRowView[];
+  readonly fresh: readonly Money[];
+  // The page's rows: new ones first, then the ones a recorded expense covers (`already`).
+  readonly rows: readonly StatementRowView[];
 }
 
 interface StatementRowView extends Money {
   readonly date: LocalDate;
   readonly merchant: string;
+  readonly already: boolean;
 }
 
 const MONTHS = [
@@ -386,13 +389,11 @@ function moneyTotals(rows: readonly Money[]): string {
     .join(', ');
 }
 
-// `12.09 · 450.00 RSD · KAFE PRIMER`
+// `12.09 · 450.00 RSD · KAFE PRIMER`, with ` · уже записано` for a row a recorded expense covers.
 function statementRowLine(row: StatementRowView): Html {
-  return html`${row.date.slice(8, 10)}.${row.date.slice(5, 7)} · ${formatMoney(row)} · ${shownDescription(row.merchant)}`;
+  const line = html`${row.date.slice(8, 10)}.${row.date.slice(5, 7)} · ${formatMoney(row)} · ${shownDescription(row.merchant)}`;
+  return row.already ? joinHtml([line, html`уже записано`], ' · ') : line;
 }
-
-// How many new rows the preview lists.
-const STATEMENT_ROWS_SHOWN = 10;
 
 // In a statement preview, in place of [Записать все] when every row is already recorded.
 const statementNothingNew = html`Новых покупок нет: всё из выписки уже записано.`;
@@ -903,13 +904,14 @@ export const messages = {
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
 
   // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
-  // the first of them, above [Записать все (N)] and [Отмена].
+  // one page of rows, above [Записать все (N)], the pager and [Отмена].
   statementPreview: ({
     period,
     ledger,
     purchaseCount,
     alreadyCount,
     fresh,
+    rows,
   }: StatementPreviewView): Html => {
     const title =
       period === undefined
@@ -921,14 +923,8 @@ export const messages = {
     ];
     // ADR-0032: the same amount and currency within a day, or recorded by an earlier import.
     if (alreadyCount > 0) lines.push(html`Уже записано: ${alreadyCount}`);
-    if (fresh.length === 0) lines.push(statementNothingNew);
-    if (fresh.length > 0) {
-      lines.push(html`На сумму: ${moneyTotals(fresh)}`, html``);
-      lines.push(...fresh.slice(0, STATEMENT_ROWS_SHOWN).map(statementRowLine));
-      if (fresh.length > STATEMENT_ROWS_SHOWN) {
-        lines.push(html`…и ещё ${fresh.length - STATEMENT_ROWS_SHOWN}`);
-      }
-    }
+    lines.push(fresh.length === 0 ? statementNothingNew : html`На сумму: ${moneyTotals(fresh)}`);
+    if (rows.length > 0) lines.push(html``, ...rows.map(statementRowLine));
     return joinHtml(lines, '\n');
   },
   statementRecordAllButton: (n: number): string => `Записать все (${n})`,
@@ -948,6 +944,12 @@ export const messages = {
       ? html`Ничего нового: все покупки из выписки уже записаны.`
       : html`Записано в «${ledgerName(ledger)}»: ${purchaseCountWords(count)} на ${moneyTotals(totals)}.`,
   statementRecordedToast: 'Выписка записана',
+  // Refusals, before any row is read (ADR-0033's caps).
+  statementTooLarge: html`Файл больше 5 МБ, такую выписку я не читаю. Выгрузите в e-banking период покороче.`,
+  statementTooLong: html`Выписка слишком длинная: больше 30 страниц или 1000 покупок. Выгрузите в e-banking период покороче.`,
+  // A PDF with no text layer: a scan or a photo.
+  statementNoText: html`В этом PDF нет текста, похоже на скан. Скачайте выписку в e-banking в формате PDF и отправьте файл.`,
+  statementUnreadable: html`Не удалось прочитать этот PDF. Скачайте выписку в e-banking заново и отправьте ещё раз.`,
   statementCancelled: html`Выписка не записана.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
