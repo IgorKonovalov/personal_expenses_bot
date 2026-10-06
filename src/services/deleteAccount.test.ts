@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
+import { insertNoticeSeen } from '../db/notices.js';
 import { insertRuleOrGetExisting, type RuleId } from '../db/recurring.js';
 import type { User } from '../db/users.js';
 import type { LocalDate } from '../domain/time.js';
@@ -103,6 +104,28 @@ describe('deleteAccount', () => {
     expect(db.prepare('SELECT COUNT(*) FROM ledgers').pluck().get()).toBe(0);
     expect(db.prepare('SELECT COUNT(*) FROM flow_sessions').pluck().get()).toBe(0);
     expect(isAccountDeleted(deps(), alice.id)).toBe(true);
+  });
+
+  it("deletes the user's one-time notices and no one else's", () => {
+    let k = 0;
+    const newId = () => `20000000-0000-4000-8000-${String(++k).padStart(12, '0')}`;
+    const bob = provisionUser(
+      { ...deps(), newId },
+      {
+        provider: 'telegram',
+        externalId: '1002',
+        defaultTimezone: 'Europe/Belgrade',
+        defaultCurrency: 'RSD',
+        now: NOW,
+      },
+    ).user;
+    insertNoticeSeen(db, alice.id, 'stray_help', NOW);
+    insertNoticeSeen(db, alice.id, 'edit_hint', NOW);
+    insertNoticeSeen(db, bob.id, 'stray_help', NOW);
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT user_id FROM user_notices').pluck().all()).toEqual([bob.id]);
   });
 
   it("deletes the user's debt people and operations, split lends included, and no one else's", () => {

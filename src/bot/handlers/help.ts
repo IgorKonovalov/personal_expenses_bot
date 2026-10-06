@@ -1,12 +1,31 @@
 import type { Composer, Context } from 'grammy';
+import { seenNotice } from '../../services/notices.js';
+import type { HandlerDeps } from '../bot.js';
 import { menuKeyboard } from '../keyboards.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { replyHtml, sendTransient } from '../render/html.js';
+import { ensureUser } from './start.js';
 
-// The help reply: /help, the ❓ menu button, unknown commands, text that isn't an expense, and
-// anything that isn't text.
+// The help reply: /help and the ❓ menu button, every time.
 export async function sendHelp(ctx: Context): Promise<void> {
   await replyHtml(ctx, messages.help, { reply_markup: menuKeyboard() });
+}
+
+// Input the bot can't read (an unknown command, text that isn't an expense, a sticker): the full
+// help the first time (ADR-0037), then a one-line pointer to it that deletes itself.
+export async function sendStrayReply(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const now = deps.now();
+  if (seenNotice(deps, ensureUser(deps, ctx.from.id, now), 'stray_help', now)) {
+    await sendHelp(ctx);
+    return;
+  }
+  await sendTransient(ctx, messages.notUnderstood, (error) => {
+    deps.logger.warn(
+      { updateId: ctx.update.update_id, err: error instanceof Error ? error.name : typeof error },
+      'transient reply delete failed',
+    );
+  });
 }
 
 export function registerHelp(bot: Composer<Context>): void {

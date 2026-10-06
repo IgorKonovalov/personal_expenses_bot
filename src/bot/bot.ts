@@ -151,7 +151,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   // Admin commands: from anyone else they fall through to the unknown-command reply.
   registerInvite(dm, options);
   registerAdmin(dm, options);
-  registerUnknownCommand(dm);
+  registerUnknownCommand(dm, options);
   registerMenu(dm, options);
   registerCard(dm, options);
   registerCategory(dm, options);
@@ -159,7 +159,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   const download = telegramFileDownloader(options.token);
   registerStatement(dm, options, download);
   registerReceiptMedia(dm, options, download);
-  registerNonText(dm);
+  registerNonText(dm, options);
   registerEdited(dm, options);
   return dm;
 }

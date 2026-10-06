@@ -16,6 +16,7 @@ import {
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
 import { encryptionState, isLocked } from '../../services/ledgerKeys.js';
+import { seenNotice } from '../../services/notices.js';
 import { effectiveTimezone } from '../../services/recordExpense.js';
 import {
   answerAsk,
@@ -160,13 +161,20 @@ function reminderPickerView(deps: HandlerDeps, user: User, text: string): Screen
   };
 }
 
-// The reminder text prompt, with a refusal line above it when an answer failed. It says the
-// text is stored plaintext while the personal ledger is sealed.
-function reminderPromptView(deps: HandlerDeps, user: User, refusal?: Html): ScreenView {
-  const prompt =
-    encryptionState(deps, user).kind === 'off'
-      ? messages.reminderTextPrompt
-      : messages.reminderTextPromptSealed;
+// The reminder text prompt, with a refusal line above it when an answer failed. While the
+// personal ledger is sealed, the first prompt ever says the text is stored plaintext
+// (ADR-0037); a re-ask never repeats it.
+function reminderPromptView(
+  deps: HandlerDeps,
+  user: User,
+  opts: { readonly firstAsk: boolean; readonly refusal?: Html },
+): ScreenView {
+  const { refusal } = opts;
+  const warn =
+    opts.firstAsk &&
+    encryptionState(deps, user).kind !== 'off' &&
+    seenNotice(deps, user, 'reminder_plaintext', deps.now());
+  const prompt = warn ? messages.reminderTextPromptSealed : messages.reminderTextPrompt;
   return {
     text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
     markup: InlineKeyboard.from([cancelRow()]),
@@ -189,7 +197,10 @@ export async function answerReminder(
     await renderAnchor(
       ctx,
       anchor,
-      reminderPromptView(deps, user, messages.reminderTextRefused[result.reason]),
+      reminderPromptView(deps, user, {
+        firstAsk: false,
+        refusal: messages.reminderTextRefused[result.reason],
+      }),
     );
     return;
   }
@@ -481,7 +492,13 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
     if (tap === undefined) return;
     startFlow(deps, tap.user, { kind: 'reminderText' }, deps.now());
     await ctx.answerCallbackQuery();
-    await showRecurring(ctx, deps, tap, { name: 'recurring' }, reminderPromptView(deps, tap.user));
+    await showRecurring(
+      ctx,
+      deps,
+      tap,
+      { name: 'recurring' },
+      reminderPromptView(deps, tap.user, { firstAsk: true }),
+    );
   });
 
   // The rule and the anchor's move back to the list commit together, so a second tap finds no

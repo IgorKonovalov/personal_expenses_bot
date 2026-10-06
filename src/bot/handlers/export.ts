@@ -13,6 +13,7 @@ import {
   type LedgerExport,
 } from '../../services/exportLedger.js';
 import { isLocked } from '../../services/ledgerKeys.js';
+import { seenNotice } from '../../services/notices.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   EXPORT_BACK,
@@ -142,32 +143,36 @@ export async function showFormatStep(ctx: Context, range: string): Promise<void>
 // /export and its [☰ Ещё] button: the range step for the active ledger.
 export async function sendExportPicker(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
-  const state = activeExportState(deps, ensureUser(deps, ctx.from.id, deps.now()));
+  const now = deps.now();
+  const user = ensureUser(deps, ctx.from.id, now);
+  const state = activeExportState(deps, user);
   if (isLocked(state)) {
     await replyHtml(ctx, messages.ledgerLocked);
     return;
   }
-  const step = rangeStep(state.sealed);
+  // The sealed ledger's plaintext-copy warning is shown once (ADR-0037).
+  const step = rangeStep(state.sealed && seenNotice(deps, user, 'export_plaintext', now));
   await replyHtml(ctx, step.text, { reply_markup: step.markup });
 }
 
 export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void {
   const guard = createTapGuard();
-  // The picker's state for the tapping user's active ledger; a locked ledger answers locked.
-  const pickerState = (telegramId: number) =>
-    activeExportState(deps, ensureUser(deps, telegramId, deps.now()));
 
   bot.command('export', (ctx) => sendExportPicker(ctx, deps));
 
   bot.callbackQuery(EXPORT_RANGE, (ctx) => showFormatStep(ctx, ctx.match[1] ?? ''));
 
+  // The tapping user's active ledger; a locked ledger answers locked. The warning was shown with
+  // the first range step, so the step it goes back to carries it only if it was never seen.
   bot.callbackQuery(EXPORT_BACK, async (ctx) => {
-    const state = pickerState(ctx.from.id);
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const state = activeExportState(deps, user);
     if (isLocked(state)) {
       await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
       return;
     }
-    await showRangeStep(ctx, state.sealed);
+    await showRangeStep(ctx, state.sealed && seenNotice(deps, user, 'export_plaintext', now));
   });
 
   bot.callbackQuery(EXPORT_FORMAT, async (ctx) => {

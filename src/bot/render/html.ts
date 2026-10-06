@@ -50,6 +50,24 @@ export function replyHtml(ctx: Context, body: Html, extra: ReplyOther = {}): Pro
   return ctx.reply(body, { ...extra, ...htmlParseMode });
 }
 
+// How long a transient reply stays in the chat (ADR-0037).
+export const TRANSIENT_MS = 60_000;
+
+// A reply that only matters for a moment: sent now, deleted TRANSIENT_MS later by an in-process
+// timer. A restart before the timer fires leaves it in the chat (ADR-0037). The timer doesn't
+// hold the process open, and a failed delete is handed to `onDeleteFailed`, never thrown.
+export async function sendTransient(
+  ctx: Context,
+  body: Html,
+  onDeleteFailed: (error: unknown) => void,
+): Promise<void> {
+  const sent = await replyHtml(ctx, body);
+  const { api } = ctx;
+  setTimeout(() => {
+    api.deleteMessage(sent.chat.id, sent.message_id).catch(onDeleteFailed);
+  }, TRANSIENT_MS).unref();
+}
+
 type SendOther = Omit<NonNullable<Parameters<Api['sendMessage']>[2]>, 'parse_mode'>;
 
 // Sends outside any update, e.g. at boot or from the scheduler. A private chat's id is the

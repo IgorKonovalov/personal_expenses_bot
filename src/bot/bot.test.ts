@@ -342,16 +342,17 @@ describe('input that is not an expense text', () => {
       },
     ],
     ['voice', { voice: { file_id: 'v', file_unique_id: 'v', duration: 1 } }],
-  ])('answers a %s with the help reply and writes nothing', async (_kind, content) => {
+  ])('answers a first %s with the help reply and records nothing', async (_kind, content) => {
     const { bot, calls, db } = createTestBot();
-    const before = tableCounts(db);
 
     await bot.handleUpdate(messageUpdate(1, content));
 
     expect(calls).toEqual([
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
-    expect(tableCounts(db)).toEqual(before);
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    // The only write besides provisioning: the help is now seen (ADR-0037).
+    expect(db.prepare('SELECT notice FROM user_notices').pluck().all()).toEqual(['stray_help']);
   });
 
   function editedUpdate(updateId: number, messageId: number, text: string): Update {
@@ -368,7 +369,7 @@ describe('input that is not an expense text', () => {
     };
   }
 
-  it('hints on an edit of a recorded or deleted expense and changes nothing', async () => {
+  it('hints on the first edit of a recorded or deleted expense only, and changes nothing', async () => {
     const { bot, calls, db } = createTestBot();
     await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 coffee' }));
     await bot.handleUpdate(textUpdate({ updateId: 2, messageId: 11, text: '50 tea' }));
@@ -385,8 +386,20 @@ describe('input that is not an expense text', () => {
       method: 'sendMessage',
       payload: { chat_id: ALLOWED_ID, text: messages.editedMessageHint, ...htmlParseMode },
     };
-    expect(calls).toEqual([hint, hint]);
+    expect(calls).toEqual([hint]);
     expect(db.prepare('SELECT * FROM expenses ORDER BY id').all()).toEqual(rows);
+  });
+
+  it('hints on an edit of a deleted expense', async () => {
+    const { bot, calls, db } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '450 coffee' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: `exp:undo:${EXPENSE_ID}` }));
+    expect(db.prepare('SELECT deleted_at IS NOT NULL FROM expenses').pluck().all()).toEqual([1]);
+    calls.length = 0;
+
+    await bot.handleUpdate(editedUpdate(3, 10, '500 coffee'));
+
+    expect(sentTexts(calls)).toEqual([messages.editedMessageHint]);
   });
 
   it('ignores an edit of any other message and writes nothing', async () => {
@@ -7769,5 +7782,154 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     it('names a new command registered with no button', () => {
       expect(withoutButton([...privateCommands(), 'brand_new'])).toEqual(['brand_new']);
     });
+  });
+});
+
+describe('notices shown once (Plan 0034, ADR-0037)', () => {
+  const NOW = new Date('2026-10-06T10:00:00Z');
+  const sticker = (updateId: number): Update => ({
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1_790_000_000,
+      chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+      from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+      sticker: {
+        file_id: 's',
+        file_unique_id: 's',
+        type: 'regular',
+        width: 1,
+        height: 1,
+        is_animated: false,
+        is_video: false,
+      },
+    },
+  });
+
+  function noticeBot() {
+    const harness = createTestBot({ now: NOW });
+    const lastMessageId = withMessageIds(harness.bot);
+    let updateId = 0;
+    const send = (text: string) =>
+      harness.bot.handleUpdate(textUpdate({ updateId: ++updateId, text, messageId: updateId }));
+    const tap = (data: string, messageId: number) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    const sendSticker = () => harness.bot.handleUpdate(sticker(++updateId));
+    return { ...harness, send, tap, sendSticker, lastMessageId };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('answers the first sticker with the full help and the second with a line deleted after 60 s', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const { sendSticker, calls, lastMessageId } = noticeBot();
+
+    await sendSticker();
+    await sendSticker();
+    const transientId = lastMessageId();
+
+    expect(sentTexts(calls)).toEqual([messages.help, messages.notUnderstood]);
+    expect(messages.notUnderstood).toBe('Не понял. Как записать трату — в «❓ Помощь».');
+    calls.length = 0;
+
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(calls).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls).toEqual([
+      { method: 'deleteMessage', payload: { chat_id: ALLOWED_ID, message_id: transientId } },
+    ]);
+  });
+
+  it('still answers /help and ❓ Помощь with the full help after that', async () => {
+    const { send, sendSticker, calls } = noticeBot();
+    await sendSticker();
+    await sendSticker();
+    calls.length = 0;
+
+    await send('/help');
+    await send('❓ Помощь');
+
+    expect(sentTexts(calls)).toEqual([messages.help, messages.help]);
+  });
+
+  it('answers an unknown command and a non-expense text with the line once the help was seen', async () => {
+    const { send, calls } = noticeBot();
+
+    await send('/foo');
+    await send('/bar');
+    await send('привет');
+
+    expect(sentTexts(calls)).toEqual([
+      messages.help,
+      messages.notUnderstood,
+      messages.notUnderstood,
+    ]);
+  });
+
+  it('gives two concurrent first stickers one full help', async () => {
+    const { bot, calls } = noticeBot();
+
+    await Promise.all([bot.handleUpdate(sticker(1)), bot.handleUpdate(sticker(2))]);
+
+    expect(sentTexts(calls).sort()).toEqual([messages.help, messages.notUnderstood].sort());
+  });
+
+  async function sealedNoticeBot() {
+    const harness = noticeBot();
+    await harness.send('/start');
+    const user = findUserByIdentity(harness.db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    await sealPersonalLedger(
+      { db: harness.db, logger: silentLogger(), keys: harness.keys },
+      user,
+      NOW,
+    );
+    harness.calls.length = 0;
+    return harness;
+  }
+
+  it('warns about the plaintext copy on the first /export of a sealed ledger only', async () => {
+    const { send, calls, db, keys } = await sealedNoticeBot();
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    // A sealed ledger exports only while unlocked.
+    await unlockPersonalLedger({ db, logger: silentLogger(), keys }, user, NOW);
+
+    await send('/export');
+    await send('/export');
+
+    expect(sentTexts(calls)).toEqual([
+      messages.exportRangePrompt(true),
+      messages.exportRangePrompt(false),
+    ]);
+    expect(messages.exportRangePrompt(true)).not.toBe(messages.exportRangePrompt(false));
+  });
+
+  it('says the reminder text is plaintext on the first reminder prompt of a sealed ledger only', async () => {
+    const { send, tap, calls, lastMessageId } = await sealedNoticeBot();
+
+    await send('/recurring');
+    await tap('rec:rem', lastMessageId());
+    await send('/recurring');
+    await tap('rec:rem', lastMessageId());
+
+    const prompts = calls
+      .filter((c) => c.method === 'editMessageText')
+      .map((c) => (c.payload as { text: string }).text);
+    expect(prompts).toEqual([messages.reminderTextPromptSealed, messages.reminderTextPrompt]);
+  });
+
+  it('/delete_account leaves no notice row for the user', async () => {
+    const { send, tap, sendSticker, db } = noticeBot();
+    await sendSticker();
+    await send('/export');
+    expect(db.prepare('SELECT COUNT(*) FROM user_notices').pluck().get()).toBe(1);
+
+    await send('/delete_account');
+    await tap('acct:del', 2);
+
+    expect(db.prepare('SELECT COUNT(*) FROM user_notices').pluck().get()).toBe(0);
   });
 });

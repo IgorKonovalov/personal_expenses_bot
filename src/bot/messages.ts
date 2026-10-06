@@ -964,6 +964,8 @@ export const messages = {
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
     { command: 'help', description: 'Как записать трату группы' },
   ],
+  // Stray input once the full help was seen (ADR-0037): one line, deleted after a minute.
+  notUnderstood: html`Не понял. Как записать трату — в «${menu.help}».`,
   editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
   tooManyTags: html`Больше 5 меток на одну трату не бывает. Ничего не записано. Отправьте, например, «450 кофе #отпуск #рим».`,
   // /tags (ADR-0029): one page of the ledger's tags, most recently used first.

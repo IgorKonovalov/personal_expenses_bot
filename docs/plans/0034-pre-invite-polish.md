@@ -245,8 +245,8 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 |---|---|---|---|
 | 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | 50ccc70 |
 | 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | e6a8e4d |
-| 3: A recorded receipt deletes its photo | dev | done, see Notes | committed with this row |
-| 4: Notices shown once, and short replies that clean up after themselves | dev | not started | |
+| 3: A recorded receipt deletes its photo | dev | done, see Notes | 4419af7 |
+| 4: Notices shown once, and short replies that clean up after themselves | dev | done, see Notes | committed with this row |
 | 5: Live check | human | not started | |
 
 ### Notes
@@ -267,6 +267,16 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 - Phase 2: the admin buttons are three rows of two, not one row.
 - Phase 2: the block test blocks `SECOND_ALLOWED_ID`, the harness's second admitted user, not 42.
 - Phase 3: README's [☰ Ещё] paragraph also gained Phase 2's buttons and the admin's command list.
+- Phase 4: the migration is `0021_user_notices.sql`, and `NOTICES` lives in `src/db/notices.ts`
+  beside the repository.
+- Phase 4: `sendTransient(ctx, body, onDeleteFailed)` takes a callback for a failed delete; tests
+  drive the 60 s with Vitest fake timers, not an injected timer.
+- Phase 4: stray input now provisions the user and writes the `stray_help` row, so the three
+  "answers a … with the help reply and writes nothing" tests now assert no expense and that one
+  notice row instead of unchanged table counts.
+- Phase 4: [« Назад] on the export picker also reads `export_plaintext`, so it shows the warning
+  only if the notice was never seen.
+- Phase 4: `src/bot/flows.ts` and `src/bot/testHarness.ts` weren't touched.
 
 ### Close triggers
 

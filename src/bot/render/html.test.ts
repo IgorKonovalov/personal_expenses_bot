@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import type { Context } from 'grammy';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { messages } from '../messages.js';
 import { createTestBot, textUpdate } from '../testHarness.js';
-import { escapeHtml, html, htmlParseMode, joinHtml, type Html } from './html.js';
+import {
+  TRANSIENT_MS,
+  escapeHtml,
+  html,
+  htmlParseMode,
+  joinHtml,
+  sendTransient,
+  type Html,
+} from './html.js';
 
 describe('html', () => {
   it('escapes every interpolated value and trusts the static parts', () => {
@@ -52,5 +61,62 @@ describe('replyHtml', () => {
     expect(htmlParseMode).toEqual({ parse_mode: 'HTML' });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.payload).toMatchObject({ parse_mode: 'HTML' });
+  });
+});
+
+describe('sendTransient', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // A context whose reply is message 7 in chat 1001, recording what the API is asked.
+  function fakeContext(deleteMessage: () => Promise<true>) {
+    const calls: unknown[][] = [];
+    const ctx = {
+      reply: (...args: unknown[]) => {
+        calls.push(['reply', ...args]);
+        return Promise.resolve({ chat: { id: 1001 }, message_id: 7 });
+      },
+      api: {
+        deleteMessage: (...args: unknown[]) => {
+          calls.push(['deleteMessage', ...args]);
+          return deleteMessage();
+        },
+      },
+    } as unknown as Context;
+    return { ctx, calls };
+  }
+
+  it('sends the reply and deletes it after 60 seconds, not before', async () => {
+    const { ctx, calls } = fakeContext(() => Promise.resolve(true));
+    const failed = vi.fn();
+
+    await sendTransient(ctx, html`Не понял.`, failed);
+    expect(calls).toEqual([['reply', 'Не понял.', htmlParseMode]]);
+
+    await vi.advanceTimersByTimeAsync(TRANSIENT_MS - 1);
+    expect(calls).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(TRANSIENT_MS).toBe(60_000);
+    expect(calls).toEqual([
+      ['reply', 'Не понял.', htmlParseMode],
+      ['deleteMessage', 1001, 7],
+    ]);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it('hands a failed delete to the callback instead of throwing', async () => {
+    const error = new Error('message to delete not found');
+    const { ctx } = fakeContext(() => Promise.reject(error));
+    const failed = vi.fn();
+
+    await sendTransient(ctx, html`Не понял.`, failed);
+    await vi.advanceTimersByTimeAsync(TRANSIENT_MS);
+
+    expect(failed).toHaveBeenCalledWith(error);
   });
 });

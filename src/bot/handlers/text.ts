@@ -13,7 +13,7 @@ import { joinHtml, replyHtml } from '../render/html.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
 import { cardFor, cardView } from './card.js';
 import { offerSplit } from './debts.js';
-import { sendHelp } from './help.js';
+import { sendStrayReply } from './help.js';
 import type { MoreDeps } from './more.js';
 import { answerReceipt } from './receipt.js';
 import { ensureUser } from './start.js';
@@ -137,7 +137,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
           await replyHtml(ctx, messages.flowExpired);
           return;
         }
-        await sendHelp(ctx);
+        await sendStrayReply(ctx, deps);
         return;
       case 'readingUnavailable':
         throw new Error('no reading was chosen for a text message');
