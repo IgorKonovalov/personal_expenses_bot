@@ -1,8 +1,8 @@
 # ADR-0038: Long lists collapse in Telegram's expandable quote, and the user's recorded messages are deleted only when they opt in
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06)
 > **Date:** 2026-10-06
-> **Related plan(s):** [Plan 0035](../plans/0035-collapsed-lists-period-items-tidy-chat.md)
+> **Related plan(s):** [Plan 0035](../plans/done/0035-collapsed-lists-period-items-tidy-chat.md)
 
 ## Context
 

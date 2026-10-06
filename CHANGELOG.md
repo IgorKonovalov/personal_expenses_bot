@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.23.0 (2026-10-06)
+
+From Plan 0035 (collapsed lists, period items, tidy chat).
+
+- A fetched receipt's card shows its items folded under the shop line: a tap opens them. A list
+  too long for one message stays behind [Позиции].
+- /week and /month fold their category lines under the total, in private and in groups.
+- /today, /week and /month gain [Позиции]: the period's receipt items grouped by category, each
+  category folded under its total and item count, items sorted by name, with a pager and
+  [« Назад].
+- `/settings` gains [Убирать мои сообщения: вкл/выкл], off by default: once your message has
+  recorded an expense, the bot deletes it after sending the card.
+
 ## 0.22.0 (2026-10-06)
 
 From Plan 0015 (onboarding).

@@ -14,13 +14,13 @@ status and date. What a plan did lives in the plan.
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0035](0035-collapsed-lists-period-items-tidy-chat.md) | Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat | approved (2026-10-06) |
 | [0036](0036-product-prices-across-months.md) | Product prices across months: receipt items grouped into products, with spend, amount and unit price per month | approved (2026-10-06) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0035](done/0035-collapsed-lists-period-items-tidy-chat.md) | Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat | done (2026-10-06): built as planned, one minor and one nit fixed at close, one nit open, Phase 6 live check owed, v0.23.0 |
 | [0015](done/0015-onboarding.md) | Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant | done (2026-10-06): built as planned after one fix pass, two followups open, Phase 5 day one passed, next-day tipForeign owed, v0.22.0 |
 | [0034](done/0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | done (2026-10-06): built as planned, one minor fixed at close, one minor open, Phase 5 live check passed, v0.21.0 |
 | [0012](done/0012-tags-projects.md) | Tags for projects: `#отпуск` on an expense, and a report per tag | done (2026-10-06): built as planned, one minor fixed at close, five minors and three nits open, Phase 6 real trip owed, v0.20.0 |

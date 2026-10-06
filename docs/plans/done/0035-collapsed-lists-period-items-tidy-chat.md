@@ -1,11 +1,12 @@
 # 0035: Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat
 
-> **Status:** in-progress (2026-10-06)
+> **Status:** done (2026-10-06): built as planned, one minor and one nit fixed at close, one nit
+> open, Phase 6 live check owed, v0.23.0
 > **Created:** 2026-10-06
-> **Related ADRs:** [ADR-0038](../adrs/0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md)
-> (collapse and tidy chat), [ADR-0011](../adrs/0011-navigation-model.md) (cards and the screen
-> anchor), [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
+> **Related ADRs:** [ADR-0038](../../adrs/0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md)
+> (collapse and tidy chat), [ADR-0011](../../adrs/0011-navigation-model.md) (cards and the screen
+> anchor), [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
 
 ## TL;DR
 
@@ -370,5 +371,167 @@ page), and one key for the tidy switch in the `set:` family.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 112 files,
   1608 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (283 links).
 - **Outstanding `human` phases:** Phase 6 (live check on a phone and the desktop), not started.
+
+## Close review
+
+### Plan 0035 review, round 1 (tip 4d3ca27)
+
+**Verdict:** Clean. All five `dev` phases are built as planned, every named done-when has a real
+assertion behind it and the gate is green. The one minor finding is a README that doesn't yet
+describe the new [Позиции] buttons, the folded receipt card or the tidy switch. Phase 6 (`human`,
+`Blocks merge: no`) is owed after the merge.
+
+#### Gate (run in this session, at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 112 files, 1608 tests passed
+- `node scripts/check-doc-links.mjs`: exit 0, 283 relative links resolve
+
+#### Lens 1: alignment with the plan and ADRs
+
+The implementation log maps phases 1 to 5 to commits 371a6f9, b381ba3, 9b8f76b, d4dfeee and
+c7d3a54, and `git log main..HEAD` matches. Every phase has exactly one in-vocabulary owner tag.
+I read the assertion of every done-when:
+
+- **Phase 1** (`src/bot/bot.test.ts`, describe `fiscal receipts`):
+  - "folds a fetched receipt card's items" asserts the exact text
+    `…\n<blockquote expandable>1. Хлеб × 0.535 — 79.99 RSD\n2. Молоко — 149.00 RSD</blockquote>`
+    and a keyboard without [Позиции].
+  - "keeps [Позиции] and no quote" uses 80 items of 60 characters, asserts the unfolded text and
+    a keyboard that keeps [Позиции].
+  - The escape test asserts `&lt;b&gt;Shop&lt;/b&gt;` and the escaped item inside the quote.
+  - The worker test runs `startReceiptWorker` with a stub fetcher and asserts the exact folded
+    `editMessageText`.
+  - Group cards use `group/card.ts`, which doesn't touch `cardView`. `withItems` in
+    `handlers/card.ts` gates on the author and on `receiptItems`, which refuses a locked ledger.
+- **Phase 2:** `messages.test.ts` asserts the exact string `<b>1 132.98 RSD</b>\n<blockquote
+  expandable>Еда: 613.98\nДом: 399.00\nТранспорт: 120.00</blockquote>` (61398 + 39900 + 12000 =
+  113298), plus the unchanged no-expenses rendering.
+- **Phase 3:**
+  - `services/periodItems.test.ts` records the fixture through `recordReceipt` with computed
+    `occurred_on`. It asserts:
+    - The week: Еда 61398, items Кофе 07.10, Молоко 05.10, Хлеб 05.10, Хлеб 06.10, then Дом 39900.
+    - October: Еда 68997 with five items, Дом 39900, no Сыр.
+    - The shared-ledger exclusion in both directions, and `withoutReceipt` = 1.
+    - The locked ledger, then the unlocked one read from the folded payload.
+  - `bot.test.ts` asserts the exact edited page, including `<b>Еда</b>`, the quote and the four Еда
+    lines. It also asserts that back restores the identical week text.
+  - The paging test checks that every page's `visibleLength` is at most 4096, the
+    `(продолжение)` line on page 2, and that all 150 items appear once, in order.
+  - The callback-length test checks `itm:d:2026-10-06:99` through `assertCallbackData`.
+- **Phase 4:** the harness test asserts the /today keyboard `itm:d:2026-10-06:1`, then an exact
+  page with Дом above Еда, no dates, no Кофе and no Сыр, with back to `itm:today` restoring the
+  same text and markup. A second test checks that a day without receipts has no `reply_markup`.
+- **Phase 5:**
+  - A recorded `450 кофе` asserts 45000 and the call order `['sendMessage', 'deleteMessage']`
+    with message 12. With the switch off, there is no delete.
+  - `привет` and an invalid amount trigger no delete. The group text triggers no delete.
+  - An ambiguous amount: no delete before the tap, then a delete of message 20.
+  - A failed delete keeps the row and the card, and the single warn has `updateId` 2 and no
+    `450` or `кофе`.
+  - The migration test in `db/users.test.ts` replays migrations below 0023, then 0023, and reads 0.
+
+The log records these deviations honestly, and none reverses ADR-0038 or the plan's intent:
+- the back label is `« Назад`
+- [Позиции] also shows on empty periods
+- `activePeriodItems` takes no clock
+- group summaries fold too, through the shared `messages.periodSummary`
+- `ux-telegram` wasn't asked, so the plan's fallback copy is used
+
+#### Lens 2: layering
+
+`itemGroups.ts` is pure and imports only domain types. `periodItems.ts` uses db and ledgerKeys
+with no grammY import. SQL stays in `db/receiptItems.ts` and `db/users.ts`. The copy
+(`periodItemsButton`, `tidyChatToggleOn/Off`, the page header, `Трат без чека`) lives in
+`messages.ts`.
+
+#### Lens 3: correctness
+
+- **Money:** category totals are integer sums of `total_minor` per currency (`totalsOf`), never
+  converted, and rendered through `formatMoney`. There is no float arithmetic.
+- **Time:** period membership is decided by the stored local `occurred_on`
+  (`listLedgerExpensesBetween`). Receipt F (22:30Z, 07.10 local) defends it in both the service
+  test and the harness test.
+- **Idempotency:** the items view is read-only. A tidy delete on a redelivered update fails into
+  a warn.
+- **Privacy:** the warn holds the update id and the error name only. Item names go through
+  `shownDescription`/`html`.
+- **Telegram limits:** the callback data is at most 21 bytes and checked. Pages are cut by visible
+  length. The entity count isn't counted, which the plan accepts as a risk for Phase 6.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **The README doesn't describe the user-visible surface this plan changed.**
+   - **Where:** `README.md:27` (`/today`), `README.md:28` (`/week`, `/month`), `README.md:33`
+     (`/settings`), `README.md:126` (receipt card).
+   - **What:**
+     - The `/today` and `/week`/`/month` rows don't mention [Позиции].
+     - The `/settings` row lists [Подсказки: вкл/выкл] but not [Убирать мои сообщения: вкл/выкл].
+     - The receipt bullet still says the fetched card "gains [Позиции], which lists the items in
+       the same message". Now the card folds its items in an expandable quote and keeps
+       [Позиции] only when they don't fit.
+     - Nothing says the /week and /month category lines are folded.
+   - **Why it matters:** the README is the user-facing reference, and the plan's close triggers
+     list each of these surfaces.
+   - **Suggested fix:** extend the four spots:
+     - `/today`: "[Позиции] when the day's receipts list items: the day's receipt items by
+       category".
+     - `/week`, `/month`: "categories folded under the total; [Позиции] lists the period's receipt
+       items by category, sorted by name, with a pager and [« Назад]".
+     - `/settings`: add "[Убирать мои сообщения: вкл/выкл], which deletes your message once it has
+       recorded an expense".
+     - Receipt bullet: "shows its items folded under `Магазин · 12 позиций` (a tap opens them);
+       a list too long for one message stays behind [Позиции]".
+
+##### nit
+
+1. **Two plan rules have no test.**
+   - **Where:** `src/bot/messages.ts` (`periodItemPages`, the shared-ledger header line), and
+     `src/bot/handlers/text.ts:57` and `:198` (the receipt-link and bank-SMS tidy deletes).
+   - **What:** the plan's rules name the shared-ledger header line (`Только чеки, которые
+     записали вы.`) and the tidy delete for a receipt link and a bank SMS. The implementation
+     log says openly that none of these has a test.
+   - **Why it matters:** no done-when asks for them, so this isn't a gap against the plan. A
+     regression in either path would still pass the suite.
+   - **Suggested fix:** a harness case each, in a later touch of these files.
+2. **Two comments were reflowed by hand.**
+   - **Where:** `src/bot/handlers/text.ts:26` and `src/bot/handlers/settings.ts:68`.
+   - **What:** the edited comments now have a line far over the house width, and a line broken
+     mid-sentence (`chat switches. [Другой…] asks for` / `// an IANA name …`).
+   - **Suggested fix:** rewrap both comments.
+
+#### Bookkeeping owed at close
+
+- Flip ADR-0038 from `proposed` to `accepted` and refresh `docs/adrs/README.md`.
+- Flip the plan's `Status:` to `done` and `git mv` it to `docs/plans/done/`. Fix the inbound link
+  in ADR-0038 (`../plans/0035-…` → `../plans/done/0035-…`) and the plan's outbound `../adrs/`
+  links, then run `node scripts/check-doc-links.mjs`.
+- Refresh `docs/plans/README.md`: the row goes to recently closed, and bump the next free number.
+- Bump the minor version (a feature plan): `package.json`, `CHANGELOG.md`, and a
+  `versionAnnouncements` entry in `src/bot/messages.ts` naming the folded receipt items, [Позиции]
+  on /today, /week and /month, and the tidy switch.
+- Phase 6 (`human`, live check on mobile and Desktop, including the busiest month for the entity
+  limit) stays owed. It doesn't block the merge.
+- The minor README finding above, if the close session's lane allows it. Otherwise it goes to a
+  followup.
+
+### Resolved at close
+
+- minor 1 (README): fixed in a3e63eb.
+- nit 2 (comment rewrap in `text.ts` and `settings.ts`): fixed in 1952eae.
+- nit 1 (untested shared-ledger header line and receipt-link/bank-SMS tidy deletes): open.
+- Phase 6 (live check on a phone and the desktop): owed.
+- No earlier review rounds.
 
 ## Followups
