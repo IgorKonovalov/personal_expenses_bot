@@ -9,6 +9,7 @@ import { registerGroupHelp } from './help.js';
 import { registerGroupSettings } from './settings.js';
 import { registerGroupSettle } from './settle.js';
 import { registerGroupSummary } from './summary.js';
+import { registerGroupTags } from './tags.js';
 import { registerGroupText } from './text.js';
 
 // Every update from a group or supergroup (ADR-0014). Group interaction is stateless: no
@@ -47,6 +48,7 @@ export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   registerGroupHelp(group, deps);
   registerGroupSettings(group, deps);
   registerGroupSettle(group, deps);
+  registerGroupTags(group, deps);
   registerGroupText(group, deps);
   group.use(() => undefined);
   return group;

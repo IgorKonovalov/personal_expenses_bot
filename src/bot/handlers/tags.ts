@@ -30,7 +30,7 @@ interface View {
 }
 
 // The page's tags two per row, then the pager when there is one.
-function listView(list: TagList, requested: number): View {
+export function listView(list: TagList, requested: number): View {
   const shown = pageOf(list.tags, requested);
   const buttons = shown.items.map((tag) =>
     InlineKeyboard.text(messages.tagButton(tag.name), tagShowData(tagHash(tag.name))),
@@ -46,7 +46,7 @@ function listView(list: TagList, requested: number): View {
 }
 
 // The list, or tagsEmpty once no tag is left, edited into the tapped message.
-async function editList(ctx: Context, list: TagList, page: number): Promise<void> {
+export async function editList(ctx: Context, list: TagList, page: number): Promise<void> {
   if (list.tags.length === 0) {
     await editHtml(ctx, messages.tagsEmpty);
     return;

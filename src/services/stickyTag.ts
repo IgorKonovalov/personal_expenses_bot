@@ -35,12 +35,9 @@ export type SetStickyTagResult =
 
 // `/tag отпуск` or `/tag #отпуск`: the sticky tag of the user's active ledger.
 export function setStickyTag(deps: Deps, user: User, text: string): SetStickyTagResult {
-  const word = text.trim();
-  const name = toTagName(word.startsWith('#') ? word.slice(1) : word);
-  if (name === undefined) return { kind: 'invalid' };
   const ledger = activeLedger(deps, user);
-  setMemberStickyTag(deps.db, ledger.id, user.id, name);
-  return { kind: 'set', ledger, name };
+  const name = setLedgerStickyTag(deps, { ledgerId: ledger.id, userId: user.id, text });
+  return name === undefined ? { kind: 'invalid' } : { kind: 'set', ledger, name };
 }
 
 // The user's sticky tag in the active ledger, for `/tag` with no argument.
@@ -55,6 +52,21 @@ export function currentStickyTag(
 // Clears the sticky tag of the user's active ledger; a second clear writes nothing.
 export function clearStickyTag(deps: Deps, user: User): void {
   setMemberStickyTag(deps.db, activeLedger(deps, user).id, user.id, null);
+}
+
+// The group forms (ADR-0014): the bound ledger's sticky tag of the member who sent the command.
+export function setLedgerStickyTag(
+  deps: Deps,
+  input: { readonly ledgerId: LedgerId; readonly userId: UserId; readonly text: string },
+): TagName | undefined {
+  const word = input.text.trim();
+  const name = toTagName(word.startsWith('#') ? word.slice(1) : word);
+  if (name !== undefined) setMemberStickyTag(deps.db, input.ledgerId, input.userId, name);
+  return name;
+}
+
+export function clearLedgerStickyTag(deps: Deps, ledgerId: LedgerId, userId: UserId): void {
+  setMemberStickyTag(deps.db, ledgerId, userId, null);
 }
 
 function activeLedger({ db }: Deps, user: User): Ledger {

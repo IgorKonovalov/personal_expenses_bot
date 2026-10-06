@@ -830,9 +830,15 @@ export const messages = {
   // The group card, for an expense that fell through to «Другое», a reaction Telegram refused,
   // or a /card reply.
   groupExpenseCard: (view: GroupCardView): Html => {
-    const { category } = view.expense;
-    const line = groupExpenseLine(view);
-    return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
+    const { category, tags = [] } = view.expense;
+    return joinHtml(
+      [
+        groupExpenseLine(view),
+        ...(category === null ? [] : [html`${category.name}`]),
+        ...(tags.length === 0 ? [] : [html`${tagWords(tags)}`]),
+      ],
+      ' · ',
+    );
   },
   groupExpenseDeleted: (view: GroupCardView): Html =>
     joinHtml([html`Удалено.`, groupExpenseLine(view)], ' '),
@@ -901,6 +907,8 @@ export const messages = {
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'budget', description: 'Бюджет группы: сколько осталось' },
     { command: 'settle', description: 'Кто кому должен: расчёт поровну' },
+    { command: 'tags', description: 'Метки группы и траты по ним' },
+    { command: 'tag', description: 'Метка для всех ваших новых трат, например /tag отпуск' },
     { command: 'export', description: 'Выгрузить траты группы в CSV или Excel' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
@@ -934,6 +942,8 @@ export const messages = {
   stickyTagUsage: html`Укажите одну метку: буквы, цифры или _, до 32 знаков. Например, «/tag отпуск».`,
   stickyTagOff: html`Метка снята. Новые траты записываются без неё.`,
   stickyTagOffButton: 'Снять метку',
+  // /tag in a group from someone who has recorded nothing there yet.
+  groupStickyTagNotMember: html`Сначала запишите здесь хотя бы одну трату, например «450 кафе».`,
   // A tag button whose tag no live expense carries any more; the list is shown again.
   tagGone: 'Этой метки больше нет',
   // The tag's total, count and dates, then each currency's categories by amount; the first
@@ -1170,6 +1180,16 @@ export const messages = {
     empty: html`Описание не может быть пустым.`,
     invalidDate: html`Не удалось разобрать дату.`,
     futureDate: html`Эта дата ещё не наступила.`,
+    noTags: html`Не нашёл ни одной метки: метка начинается с #.`,
+    tooManyTags: html`Больше 5 меток на одну трату не бывает.`,
+  },
+  editTagsButton: 'Метки',
+  // The tags prompt (ADR-0029): the answer replaces every tag of the expense.
+  tagsPrompt: (current: readonly string[]): Html => {
+    const prompt = html`Отправьте метки через пробел, например «#отпуск #рим», или «-», чтобы убрать все.`;
+    return current.length === 0
+      ? prompt
+      : joinHtml([html`Сейчас: ${tagWords(current)}.`, prompt], ' ');
   },
   expenseEditedToast: 'Трата изменена',
   dateUnchanged: 'Эта дата уже выбрана',

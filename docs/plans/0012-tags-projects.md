@@ -270,8 +270,8 @@ const MAX_TAGS_PER_EXPENSE = 5;
 |---|---|---|---|
 | 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | cdb24c3 |
 | 2: The per-tag report | dev | done | d41c71c |
-| 3: The sticky trip tag | dev | done | committed with this row |
-| 4: Editing tags, the card, and groups | dev | not started | |
+| 3: The sticky trip tag | dev | done | 43bdd58 |
+| 4: Editing tags, the card, and groups | dev | done | committed with this row |
 | 5: Sealed ledgers, export, help | dev | not started | |
 | 6: A trip in real use | human | not started | |
 
@@ -291,6 +291,17 @@ const MAX_TAGS_PER_EXPENSE = 5;
 - Phase 3: the migration is `0020_sticky_tag.sql`. `tag:off` clears the sticky tag of the
   viewer's active ledger at tap time. `/tag` did not join `messages.commands`. The bank SMS path
   is covered by the shared `withStickyTag` call, with no test of its own.
+- Phase 4: files changed outside `Files touched`: `src/db/expenses.ts` (`setExpenseTags`, which
+  writes only a row with `sealed IS NULL`), `src/services/tagSummary.ts` (`groupLedgerTags`,
+  `groupTagReport`), `src/services/stickyTag.ts` (`setLedgerStickyTag`,
+  `clearLedgerStickyTag`) and `src/bot/handlers/tags.ts` (exports `listView` and `editList` for
+  the group). `src/bot/handlers/card.ts`, `src/bot/flows.ts` and `src/bot/group/text.ts`
+  (listed) are unchanged.
+- Phase 4: `exp:ef:<uuid>:g` is 45 bytes, not 46. A tag edit answer keeps its `#tag` words and
+  drops any other word. In a sealed ledger a tag edit wrote nothing until Phase 5.
+- Phase 4: in a group, `/tag` from a sender who has recorded nothing there answers
+  `groupStickyTagNotMember`. `/tag` with no argument answers the usage, with no current-tag view.
+  Group `tag:off` clears the tapper's own sticky tag.
 
 ### Close triggers
 

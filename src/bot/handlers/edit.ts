@@ -42,6 +42,7 @@ const FIELD_FLOWS: Record<EditField, EditFlow['kind']> = {
   a: 'editAmount',
   d: 'editDescription',
   t: 'editDate',
+  g: 'editTags',
 };
 
 function refusalLine(refusal: EditAnswerRefusal): Html {
@@ -66,7 +67,9 @@ export function editPromptView(
       ? messages.amountPrompt(expense)
       : kind === 'editDescription'
         ? messages.descriptionPrompt(expense.description)
-        : messages.datePrompt({ date: expense.occurredOn, today });
+        : kind === 'editTags'
+          ? messages.tagsPrompt(expense.tags)
+          : messages.datePrompt({ date: expense.occurredOn, today });
   const quick =
     kind === 'editDate'
       ? [
@@ -111,6 +114,7 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
           InlineKeyboard.text(messages.editAmountButton, editFieldData(expenseId, 'a')),
           InlineKeyboard.text(messages.editDescriptionButton, editFieldData(expenseId, 'd')),
           InlineKeyboard.text(messages.editDateButton, editFieldData(expenseId, 't')),
+          InlineKeyboard.text(messages.editTagsButton, editFieldData(expenseId, 'g')),
         ],
         backRow(showExpenseData(expenseId)),
       ]),

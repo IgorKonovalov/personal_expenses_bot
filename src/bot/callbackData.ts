@@ -75,13 +75,13 @@ export function showExpenseData(expenseId: ExpenseId): string {
 }
 
 // The edit flow on the card: [Изменить] `exp:edit:<uuid>` (45 bytes) opens the field picker,
-// `exp:ef:<uuid>:<a|d|t>` (45 bytes) picks amount, description or date, and a date quick button
-// `exp:dt:<uuid>:<YYYY-MM-DD>` (54 bytes) carries the absolute date it sets.
+// `exp:ef:<uuid>:<a|d|t|g>` (45 bytes) picks amount, description, date or tags, and a date quick
+// button `exp:dt:<uuid>:<YYYY-MM-DD>` (54 bytes) carries the absolute date it sets.
 export const EDIT_EXPENSE = /^exp:edit:([0-9a-f-]{36})$/;
-export const EDIT_FIELD = /^exp:ef:([0-9a-f-]{36}):([adt])$/;
+export const EDIT_FIELD = /^exp:ef:([0-9a-f-]{36}):([adtg])$/;
 export const SET_EXPENSE_DATE = /^exp:dt:([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/;
 
-export type EditField = 'a' | 'd' | 't';
+export type EditField = 'a' | 'd' | 't' | 'g';
 
 export function editExpenseData(expenseId: ExpenseId): string {
   return assertCallbackData(`exp:edit:${expenseId}`);

@@ -297,6 +297,23 @@ export function setExpenseDescription(
   return changes === 1;
 }
 
+// A plaintext row's tags (ADR-0029); a sealed row is never touched here.
+export function setExpenseTags(
+  db: Db,
+  id: ExpenseId,
+  tags: readonly TagName[],
+  updatedAt: Date,
+): boolean {
+  const stored = encodeTags(tags);
+  const { changes } = db
+    .prepare<[string | null, string, string, string | null]>(
+      `UPDATE expenses SET tags = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL AND sealed IS NULL AND tags IS NOT ?`,
+    )
+    .run(stored, updatedAt.toISOString(), id, stored);
+  return changes === 1;
+}
+
 // A sealed row's edit or category change (ADR-0020): the whole payload is sealed again by the
 // caller, so the blob is replaced, with the currency (plaintext) and the stamp the change
 // carries. The new blob is sealed under the row's own id, so a recurring occurrence stops naming

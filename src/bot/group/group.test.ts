@@ -29,6 +29,7 @@ import { htmlParseMode } from '../render/html.js';
 import {
   ALLOWED_ID,
   GROUP_ID,
+  GROUP_TITLE,
   SECOND_ALLOWED_ID,
   STRANGER_ID,
   callbackUpdate,
@@ -1493,5 +1494,48 @@ describe('/settle (Plan 0013)', () => {
     expect(test.calls.find((c) => c.method === 'sendMessage')?.payload).toMatchObject({
       text: expect.stringContaining('Test: -150.00 RSD') as unknown,
     });
+  });
+});
+
+describe('tags in a bound group (Plan 0012)', () => {
+  function tagsIn(db: Db) {
+    return db
+      .prepare('SELECT description, tags FROM expenses WHERE ledger_id = ? ORDER BY rowid')
+      .all(groupLedgerId(db));
+  }
+
+  it("applies A's sticky tag to A's expenses only", async () => {
+    const test = await bound();
+
+    await test.say(ALLOWED_ID, '/tag отпуск', 1);
+    expect(sentText(test.calls.at(-1))).toBe(
+      messages.stickyTagOn({ ledger: { kind: 'shared', name: GROUP_TITLE }, name: 'отпуск' }),
+    );
+    await test.say(ALLOWED_ID, '450 кафе #рим', 2);
+    await test.say(STRANGER_ID, '300 такси', 3);
+
+    expect(tagsIn(test.db)).toEqual([
+      { description: 'кафе', tags: 'рим отпуск' },
+      { description: 'такси', tags: null },
+    ]);
+  });
+
+  it('answers /tag from someone who has recorded nothing there', async () => {
+    const test = await bound();
+
+    await test.say(STRANGER_ID, '/tag отпуск', 1);
+
+    expect(sentText(test.calls.at(-1))).toBe(messages.groupStickyTagNotMember);
+  });
+
+  it("lists the tags of both members' expenses on /tags", async () => {
+    const test = await bound();
+    await test.say(ALLOWED_ID, '450 кафе #рим', 1);
+    await test.say(STRANGER_ID, '300 такси #рим', 2);
+    test.calls.length = 0;
+
+    await test.say(STRANGER_ID, '/tags', 3);
+
+    expect(sentText(test.calls.at(-1))).toBe(`<b>Метки — «${GROUP_TITLE}»</b>\n#рим — 750.00 RSD`);
   });
 });

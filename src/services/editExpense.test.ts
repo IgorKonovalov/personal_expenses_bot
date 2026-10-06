@@ -92,6 +92,37 @@ function pending(): unknown {
   return routeText(deps, { user: alice, inputKey: 'tg:1001:999', now: NOW }).kind;
 }
 
+describe('answerEditFlow: tags (ADR-0029)', () => {
+  const tagsColumn = () => db.prepare('SELECT tags FROM expenses').pluck().get();
+
+  it('replaces the tags with the answer, and «-» clears them', () => {
+    expect(answer('editTags', '#Ремонт #дом #ремонт')).toMatchObject({
+      kind: 'editable',
+      changed: true,
+      expense: { tags: ['ремонт', 'дом'] },
+    });
+    expect(tagsColumn()).toBe('ремонт дом');
+
+    expect(answer('editTags', '-')).toMatchObject({ changed: true, expense: { tags: [] } });
+    expect(tagsColumn()).toBeNull();
+    expect(answer('editTags', '-')).toMatchObject({ changed: false });
+  });
+
+  it('refuses a text with no tag and keeps the tags and the flow', () => {
+    answer('editTags', '#отпуск');
+
+    expect(answer('editTags', 'кофе')).toMatchObject({ kind: 'invalid', reason: 'noTags' });
+    expect(tagsColumn()).toBe('отпуск');
+    expect(pending()).toBe('flow');
+  });
+
+  it('refuses an expense-shaped answer and six tags', () => {
+    expect(answer('editTags', '450 кофе #рим')).toMatchObject({ reason: 'expenseShaped' });
+    expect(answer('editTags', '#a #b #c #d #e #f')).toMatchObject({ reason: 'tooManyTags' });
+    expect(tagsColumn()).toBeNull();
+  });
+});
+
 describe('answerEditFlow: amount', () => {
   it('sets 1 200 as 120000 in the expense currency and stamps updated_at', () => {
     expect(answer('editAmount', '1 200')).toMatchObject({

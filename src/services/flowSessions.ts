@@ -109,7 +109,7 @@ export type CategoryFlow =
 
 // Editing one field of an expense from its card.
 export interface EditFlow {
-  readonly kind: 'editAmount' | 'editDescription' | 'editDate';
+  readonly kind: 'editAmount' | 'editDescription' | 'editDate' | 'editTags';
   readonly expenseId: ExpenseId;
 }
 
@@ -117,6 +117,7 @@ const EDIT_FLOW_KINDS: ReadonlySet<string> = new Set<EditFlow['kind']>([
   'editAmount',
   'editDescription',
   'editDate',
+  'editTags',
 ]);
 
 export function isEditFlow(flow: Flow): flow is EditFlow {
@@ -408,7 +409,10 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
       : { kind };
   }
   if (
-    (kind === 'editAmount' || kind === 'editDescription' || kind === 'editDate') &&
+    (kind === 'editAmount' ||
+      kind === 'editDescription' ||
+      kind === 'editDate' ||
+      kind === 'editTags') &&
     typeof parsed?.expenseId === 'string'
   ) {
     return { kind, expenseId: parsed.expenseId as ExpenseId };

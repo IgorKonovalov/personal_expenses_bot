@@ -11,9 +11,11 @@ import {
   type TagTotal,
 } from '../domain/tags.js';
 import { openExpenses, type KeyDeps, type Locked } from './ledgerKeys.js';
+import { boundGroupLedger } from './periodSummary.js';
 import type { RecordDeps } from './recordExpense.js';
 
 type Deps = Pick<RecordDeps, 'db'> & Pick<KeyDeps, 'keys'>;
+type GroupDeps = Deps & Pick<RecordDeps, 'logger' | 'defaultTimezone'>;
 
 export interface TagList {
   readonly ledger: Ledger;
@@ -50,7 +52,31 @@ export function activeLedgerTagReport(
 ): TagReportResult {
   const ledger = findActiveLedger(deps.db, input.user.id);
   if (ledger === undefined) throw new Error(`user ${input.user.id} has no active ledger`);
-  const opened = liveExpenses(deps, input.user.id, ledger);
+  return tagReport(deps, input.user.id, ledger, input);
+}
+
+// A bound group's tags (ADR-0014): read through the binder's membership, so anyone in the chat
+// sees them. Undefined for an unbound chat. A shared ledger is never sealed.
+export function groupLedgerTags(deps: GroupDeps, chatId: number): TagList | Locked | undefined {
+  const bound = boundGroupLedger(deps, chatId);
+  return bound === undefined ? undefined : ledgerTags(deps, bound.readerId, bound.ledger);
+}
+
+export function groupTagReport(
+  deps: GroupDeps,
+  input: { readonly chatId: number; readonly hash: string; readonly pageSize: number },
+): TagReportResult | undefined {
+  const bound = boundGroupLedger(deps, input.chatId);
+  return bound === undefined ? undefined : tagReport(deps, bound.readerId, bound.ledger, input);
+}
+
+function tagReport(
+  deps: Deps,
+  readerId: UserId,
+  ledger: Ledger,
+  input: { readonly hash: string; readonly pageSize: number },
+): TagReportResult {
+  const opened = liveExpenses(deps, readerId, ledger);
   if (opened.kind === 'locked') return opened;
   const { expenses, rateOf } = opened;
   const tags = summarizeTags(expenses, ledger.defaultCurrency, rateOf);

@@ -2021,6 +2021,7 @@ describe('editing an expense from its card', () => {
             { text: 'Сумма', callback_data: `exp:ef:${ID}:a` },
             { text: 'Описание', callback_data: `exp:ef:${ID}:d` },
             { text: 'Дата', callback_data: `exp:ef:${ID}:t` },
+            { text: 'Метки', callback_data: `exp:ef:${ID}:g` },
           ],
           [{ text: '« Назад', callback_data: `exp:show:${ID}` }],
         ],
@@ -7258,6 +7259,24 @@ describe('tags (Plan 0012)', () => {
       );
       expect(db.prepare('SELECT tags FROM expenses').pluck().all()).toEqual(['отпуск']);
     });
+  });
+
+  it('edits #отпуск to #ремонт from the card, so /tags lists #ремонт alone', async () => {
+    const { say, tap, calls } = tagBot();
+    await say('450 кофе #отпуск', 1);
+    const id = '00000000-0000-4000-8000-000000000003';
+
+    await tap(`exp:ef:${id}:g`);
+    expect(lastText(calls)).toBe(
+      'Сейчас: #отпуск. Отправьте метки через пробел, например «#отпуск #рим», или «-», чтобы убрать все.',
+    );
+    await say('#ремонт', 2);
+    expect(lastText(calls)).toBe(
+      'Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны · #ремонт',
+    );
+
+    await say('/tags', 3);
+    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#ремонт — 450.00 RSD');
   });
 
   it('keeps a 32-letter Cyrillic tag button at 14 bytes', () => {

@@ -5,6 +5,7 @@ import {
   setExpenseAmount,
   setExpenseDate,
   setExpenseDescription,
+  setExpenseTags,
   type Expense,
   type ExpenseId,
   type StoredExpense,
@@ -16,6 +17,7 @@ import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseDateSuffix } from '../domain/dateText.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
+import { MAX_TAGS_PER_EXPENSE, tagOfWord, uniqueTags, type TagName } from '../domain/tags.js';
 import { localDateOf, parseLocalDate, type LocalDate } from '../domain/time.js';
 import {
   cancelFlow,
@@ -28,7 +30,7 @@ import {
 import { isLocked, openExpense, resealed, type KeyDeps, type Locked } from './ledgerKeys.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 
-// Editing an expense's amount, description or date from its card (ADR-0011), each through an
+// Editing an expense's amount, description, date or tags from its card (ADR-0011), each through an
 // ADR-0009 text flow; the date also through quick buttons. Only the creator edits, and only a
 // live expense. Every write is compare-and-set, so the same value writes nothing. An expense of
 // a sealed ledger (ADR-0020) is edited only while unlocked; an amount or description edit seals
@@ -92,7 +94,16 @@ export function startEdit(
 }
 
 export type EditAnswerRefusal =
-  | { readonly reason: 'invalidAmount' | 'expenseShaped' | 'empty' | 'invalidDate' | 'futureDate' }
+  | {
+      readonly reason:
+        | 'invalidAmount'
+        | 'expenseShaped'
+        | 'empty'
+        | 'invalidDate'
+        | 'futureDate'
+        | 'noTags'
+        | 'tooManyTags';
+    }
   | {
       readonly reason: 'ambiguousAmount';
       readonly readings: readonly AmountReading[];
@@ -202,6 +213,14 @@ export function answerEditFlow(
         edited = { ...expense, occurredOn: suffix.date };
         break;
       }
+      case 'editTags': {
+        const tags = parseTagsAnswer(text);
+        if (tags === undefined) return refuse({ reason: 'noTags' });
+        if (tags.length > MAX_TAGS_PER_EXPENSE) return refuse({ reason: 'tooManyTags' });
+        changed = setExpenseTags(db, expense.id, tags, now);
+        edited = { ...expense, tags };
+        break;
+      }
     }
     completeFlow(deps, user, input.inputKey);
     if (changed) {
@@ -242,6 +261,14 @@ export function setDateFromButton(
     const { ledger } = found;
     return { kind: 'editable', expense: { ...found.expense, occurredOn: date }, ledger, changed };
   })();
+}
+
+// The answer to the tags prompt, which replaces the expense's tags: `-` for none, else its
+// `#tag` words. Undefined for a text with no tag word.
+function parseTagsAnswer(text: string): TagName[] | undefined {
+  if (text === '-') return [];
+  const tags = uniqueTags(text.split(/\s+/).flatMap((word) => tagOfWord(word) ?? []));
+  return tags.length === 0 ? undefined : tags;
 }
 
 type AmountAnswer =
