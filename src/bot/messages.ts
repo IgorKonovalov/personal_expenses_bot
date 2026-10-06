@@ -1,6 +1,7 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { ExportRange } from '../domain/export/rows.js';
+import { collapseTail, type Change } from '../domain/deltas.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import type { Schedule } from '../domain/schedule.js';
 import type { LocalDate } from '../domain/time.js';
@@ -203,6 +204,26 @@ interface SummaryView {
   // The currencies left in their own blocks for want of a rate. Absent is empty.
   readonly unconverted?: readonly CurrencyCode[] | undefined;
   readonly people?: PeopleView | undefined;
+}
+
+// A summary push's report: the converted block with each change against the period before, then
+// each currency with no rate, with no change.
+interface PushReportView {
+  readonly period: { readonly kind: 'month'; readonly from: LocalDate; readonly to: LocalDate };
+  readonly converted:
+    | {
+        readonly currency: CurrencyCode;
+        readonly totalMinor: number;
+        readonly change: Change;
+        readonly lines: readonly {
+          readonly name: string | null;
+          readonly amountMinor: number;
+          readonly change: Change;
+        }[];
+      }
+    | undefined;
+  readonly convertedFrom: readonly Money[];
+  readonly unconverted: SummaryView['currencies'];
 }
 
 // A period's receipt items by category (ADR-0038): the viewer's own receipts only. A day range
@@ -471,6 +492,95 @@ function expenseCountWords(n: number): string {
   if (ones === 1) return `${n} расход`;
   if (ones >= 2 && ones <= 4) return `${n} расхода`;
   return `${n} расходов`;
+}
+
+// `1 категория`, `2 категории`, `5 категорий`, `21 категория`.
+function categoryCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} категорий`;
+  if (ones === 1) return `${n} категория`;
+  if (ones >= 2 && ones <= 4) return `${n} категории`;
+  return `${n} категорий`;
+}
+
+// A push lists this many categories per currency; the rest collapse into one line.
+const PUSH_CATEGORIES = 10;
+
+// `+3 100.00, +33%`, `−3 100.00, −25%`, `0.00, 0%`, or `новое` with nothing before.
+function changeText(change: Change, currency: CurrencyCode): string {
+  if (change.kind === 'new') return 'новое';
+  const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '');
+  const amount = amountOnly({ amountMinor: Math.abs(change.deltaMinor), currency });
+  return `${sign(change.deltaMinor)}${amount}, ${sign(change.percent)}${Math.abs(change.percent)}%`;
+}
+
+// `и ещё 2 категории: 1 000.00 RSD` under the first PUSH_CATEGORIES lines; nothing when none
+// were cut.
+function collapsedLines<T extends { readonly amountMinor: number }>(
+  lines: readonly T[],
+  currency: CurrencyCode,
+  line: (shown: T) => Html,
+): Html[] {
+  const { shown, rest } = collapseTail(lines, PUSH_CATEGORIES);
+  return [
+    ...shown.map(line),
+    ...(rest === undefined
+      ? []
+      : [
+          html`и ещё ${categoryCountWords(rest.count)}: ${formatMoney({ amountMinor: rest.amountMinor, currency })}`,
+        ]),
+  ];
+}
+
+// A push's report blocks: the converted total and categories with their changes, each currency
+// with no rate on its own, then the conversion notes.
+function pushReportBlocks(view: PushReportView): Html[] {
+  const { converted } = view;
+  const convertedBlock =
+    converted === undefined
+      ? []
+      : [
+          joinHtml(
+            [
+              html`<b>${view.convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}</b> (${changeText(converted.change, converted.currency)})`,
+              ...collapsedLines(
+                converted.lines,
+                converted.currency,
+                (line) =>
+                  html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: converted.currency })} (${changeText(line.change, converted.currency)})`,
+              ),
+            ],
+            '\n',
+          ),
+        ];
+  const unconvertedBlocks = view.unconverted.map((c) =>
+    joinHtml(
+      [
+        html`<b>${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`,
+        ...collapsedLines(
+          c.lines,
+          c.currency,
+          (line) =>
+            html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: c.currency })}`,
+        ),
+      ],
+      '\n',
+    ),
+  );
+  return [
+    ...convertedBlock,
+    ...unconvertedBlocks,
+    ...conversionNotes(
+      view.convertedFrom,
+      view.unconverted.map((c) => c.currency),
+    ),
+  ];
+}
+
+// The push's title: `Итоги сентября`.
+function pushTitle(period: PushReportView['period']): string {
+  return `Итоги ${GENITIVE_MONTHS[dateParts(period.from).month] ?? ''}`;
 }
 
 // An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
@@ -1892,6 +2002,13 @@ export const messages = {
       '\n\n',
     );
   },
+  // The summary push (ADR-0031): the closed period's report, sent at 09:00 local the day after
+  // it ends. Each total and category carries its change against the period before.
+  periodSummaryPush: (view: PushReportView): Html =>
+    joinHtml([html`<b>${pushTitle(view.period)}</b>`, ...pushReportBlocks(view)], '\n\n'),
+  pushOffButton: 'Отключить',
+  pushOff: (push: 'monthly' | 'weekly'): string =>
+    `${push === 'monthly' ? 'Итоги месяца' : 'Итоги недели'} больше не придут. Включить: /settings`,
   // Recurring expenses (Plan 0025, ADR-0031). Occurrences fire at 09:00 in the ledger's zone.
   repeatButton: 'Повторять',
   repeatPicker: (view: ExpenseView): Html =>

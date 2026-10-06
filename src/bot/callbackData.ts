@@ -202,6 +202,14 @@ export function summaryPageData(period: Period): string {
   return assertCallbackData(`sum:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }
 
+// [Отключить] under a summary push: `sum:off:m` the monthly push, `sum:off:w` the weekly one
+// (9 bytes). A set-to-value, so a second tap switches nothing more.
+export const SUMMARY_PUSH_OFF = /^sum:off:([mw])$/;
+
+export function summaryPushOffData(push: 'monthly' | 'weekly'): string {
+  return assertCallbackData(`sum:off:${push === 'monthly' ? 'm' : 'w'}`);
+}
+
 // [Позиции] on /week and /month and its pager (ADR-0038): `itm:w:<Monday YYYY-MM-DD>:<page>`,
 // `itm:m:<YYYY-MM>:<page>`, 1-based pages (at most 19 bytes). They act on the summary screen's
 // ledger, so only its anchor accepts them.

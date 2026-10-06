@@ -227,6 +227,61 @@ export function setTidyChat(db: Db, userId: UserId, on: boolean): boolean {
   );
 }
 
+// The summary push switches: `monthly` for the closed month or budget period, `weekly` for the
+// closed week.
+export type PushKind = 'monthly' | 'weekly';
+
+const PUSH_COLUMN: Record<PushKind, string> = { monthly: 'monthly_push', weekly: 'weekly_push' };
+
+export function findPushOn(db: Db, userId: UserId, kind: PushKind): boolean {
+  const on = db
+    .prepare<[string], number>(`SELECT ${PUSH_COLUMN[kind]} FROM users WHERE id = ?`)
+    .pluck()
+    .get(userId);
+  if (on === undefined) throw new Error(`user ${userId} does not exist`);
+  return on === 1;
+}
+
+// Returns false when the switch was already in that state.
+export function setPushOn(db: Db, userId: UserId, kind: PushKind, on: boolean): boolean {
+  const column = PUSH_COLUMN[kind];
+  return (
+    db
+      .prepare<[number, string, number]>(
+        `UPDATE users SET ${column} = ? WHERE id = ? AND ${column} <> ?`,
+      )
+      .run(on ? 1 : 0, userId, on ? 1 : 0).changes > 0
+  );
+}
+
+// A user with a summary push on, and the private chat it goes to.
+export interface PushRecipient {
+  readonly user: User;
+  readonly telegramId: number;
+  readonly monthly: boolean;
+  readonly weekly: boolean;
+}
+
+// Every user with either push on who can still be written to: not blocked, not deleted, with a
+// Telegram identity.
+export function listPushRecipients(db: Db): PushRecipient[] {
+  return db
+    .prepare<[], UserRow & { external_id: string; monthly_push: number; weekly_push: number }>(
+      `SELECT u.id, u.timezone, u.active_ledger_id, i.external_id, u.monthly_push, u.weekly_push
+         FROM users u JOIN auth_identities i ON i.user_id = u.id AND i.provider = 'telegram'
+        WHERE (u.monthly_push = 1 OR u.weekly_push = 1)
+          AND u.blocked_at IS NULL AND u.deleted_at IS NULL
+        ORDER BY u.id`,
+    )
+    .all()
+    .map((row) => ({
+      user: toUser(row),
+      telegramId: Number(row.external_id),
+      monthly: row.monthly_push === 1,
+      weekly: row.weekly_push === 1,
+    }));
+}
+
 function toUser(row: UserRow): User {
   return {
     id: row.id as UserId,

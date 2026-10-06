@@ -5,6 +5,7 @@ import { createDonationLinks, type DonationLinks } from './bot/handlers/donate.j
 import { messages } from './bot/messages.js';
 import { startReceiptWorker } from './bot/receiptWorker.js';
 import { recurringProvider } from './bot/recurringProvider.js';
+import { summaryProvider } from './bot/summaryProvider.js';
 import { loadConfig } from './config.js';
 import { startBackups, type BackupSchedule } from './db/backup.js';
 import { openDatabase } from './db/connection.js';
@@ -111,25 +112,23 @@ const rateWorker = startRateWorker({
   fetchList: createNbsFetcher(),
 });
 
-// Per-ledger jobs at 09:00 local (ADR-0031): a tick now, then every minute.
+// Per-ledger jobs at 09:00 local (ADR-0031): a tick now, then every minute. Recurring rules,
+// then the summary pushes.
+const scheduledDeps = {
+  db,
+  logger,
+  newId: randomUUID,
+  now: () => new Date(),
+  defaultTimezone: config.defaultTimezone,
+  defaultCurrency: config.defaultCurrency,
+  keys,
+};
 const scheduler = startScheduler({
   logger,
   now: () => new Date(),
   providers: [
-    register(
-      recurringProvider(
-        {
-          db,
-          logger,
-          newId: randomUUID,
-          now: () => new Date(),
-          defaultTimezone: config.defaultTimezone,
-          defaultCurrency: config.defaultCurrency,
-          keys,
-        },
-        bot.api,
-      ),
-    ),
+    register(recurringProvider(scheduledDeps, bot.api)),
+    register(summaryProvider(scheduledDeps, bot.api)),
   ],
 });
 

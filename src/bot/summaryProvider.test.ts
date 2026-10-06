@@ -1,0 +1,238 @@
+import { randomUUID } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
+import type { CategoryId } from '../db/categories.js';
+import { insertExpenseOrGetExisting, type ExpenseId } from '../db/expenses.js';
+import type { LedgerId } from '../db/ledgers.js';
+import type { UserId } from '../db/users.js';
+import type { CurrencyCode } from '../domain/currencies.js';
+import type { LocalDate } from '../domain/time.js';
+import { createLogger } from '../logger.js';
+import { register } from '../scheduler/types.js';
+import { runTick } from '../scheduler/worker.js';
+import type { HandlerDeps } from './bot.js';
+import { messages } from './messages.js';
+import { htmlParseMode } from './render/html.js';
+import { summaryProvider } from './summaryProvider.js';
+import { ALLOWED_ID, callbackUpdate, createTestBot, textUpdate } from './testHarness.js';
+
+// A Europe/Belgrade user (the harness default) whose personal ledger exists from 20 August.
+async function pushBot() {
+  const clock = new Date('2026-08-20T10:00:00Z');
+  const harness = createTestBot({ now: clock });
+  await harness.bot.handleUpdate(textUpdate({ updateId: 1, text: '/today' }));
+  const { db } = harness;
+  const ledgerId = db
+    .prepare("SELECT id FROM ledgers WHERE kind = 'personal'")
+    .pluck()
+    .get() as LedgerId;
+  const userId = db.prepare('SELECT id FROM users').pluck().get() as UserId;
+  const deps: HandlerDeps = {
+    db,
+    logger: createLogger('silent'),
+    newId: randomUUID,
+    now: () => clock,
+    defaultTimezone: 'Europe/Belgrade',
+    defaultCurrency: 'RSD',
+    keys: harness.keys,
+  };
+  const providers = [register(summaryProvider(deps, harness.bot.api))];
+  const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
+  let n = 0;
+  // A plaintext expense in a preset's category, or in none.
+  const add = (
+    occurredOn: string,
+    amountMinor: number,
+    preset: string | null,
+    currency: CurrencyCode = 'RSD',
+  ) => {
+    const categoryId =
+      preset === null
+        ? undefined
+        : (db
+            .prepare('SELECT id FROM categories WHERE ledger_id = ? AND preset_key = ?')
+            .pluck()
+            .get(ledgerId, preset) as CategoryId);
+    insertExpenseOrGetExisting(db, {
+      id: `10000000-0000-4000-8000-${String(++n).padStart(12, '0')}` as ExpenseId,
+      ledgerId,
+      createdBy: userId,
+      amountMinor,
+      currency,
+      description: 'синтетика',
+      occurredAt: new Date(`${occurredOn}T10:00:00Z`),
+      occurredOn: occurredOn as LocalDate,
+      sourceKey: `test:${String(n)}`,
+      createdAt: clock,
+      ...(categoryId === undefined ? {} : { categoryId }),
+    });
+  };
+  harness.calls.length = 0;
+  return { ...harness, ledgerId, tick, add };
+}
+
+const sent = (calls: { method: string; payload: unknown }[]) =>
+  calls.filter((c) => c.method === 'sendMessage').map((c) => (c.payload as { text: string }).text);
+
+const offKeyboard = {
+  inline_keyboard: [[{ text: messages.pushOffButton, callback_data: 'sum:off:m' }]],
+};
+
+describe('the summary provider: the monthly push', () => {
+  it('sends «Итоги сентября» at 09:00 CEST on 1 October, not a minute before, and once', async () => {
+    const { calls, tick, add } = await pushBot();
+    add('2026-08-10', 930000, 'cafe');
+    add('2026-09-10', 1240000, 'cafe');
+
+    await tick('2026-10-01T06:59:00Z');
+    expect(calls).toEqual([]);
+
+    await tick('2026-10-01T07:00:00Z');
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: [
+            '<b>Итоги сентября</b>',
+            '',
+            '<b>12 400.00 RSD</b> (+3 100.00, +33%)',
+            'Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)',
+          ].join('\n'),
+          reply_markup: offKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+
+    calls.length = 0;
+    await tick('2026-10-01T07:01:00Z');
+    await tick('2026-10-01T21:00:00Z');
+    expect(calls).toEqual([]);
+  });
+
+  it('shows a decrease as «−3 100.00» and «−25%», and a category absent before as «новое»', async () => {
+    const { calls, tick, add } = await pushBot();
+    add('2026-08-10', 1240000, 'cafe');
+    add('2026-09-10', 930000, 'cafe');
+    add('2026-09-11', 50000, 'transport');
+
+    await tick('2026-10-01T07:00:00Z');
+
+    expect(sent(calls)).toEqual([
+      [
+        '<b>Итоги сентября</b>',
+        '',
+        '<b>9 800.00 RSD</b> (−2 600.00, −21%)',
+        'Кафе и рестораны: 9 300.00 RSD (−3 100.00, −25%)',
+        'Транспорт: 500.00 RSD (новое)',
+      ].join('\n'),
+    ]);
+  });
+
+  it('sends nothing on 9 October to a user with no row: the 1 October push is over 7 days old', async () => {
+    const { calls, db, tick, add } = await pushBot();
+    add('2026-09-10', 1240000, 'cafe');
+
+    await tick('2026-10-09T07:00:00Z');
+
+    expect(calls).toEqual([]);
+    expect(db.prepare('SELECT COUNT(*) FROM summary_pushes').pluck().get()).toBe(0);
+  });
+
+  it('still sends on 8 October at 09:00, exactly 7 days after the due instant', async () => {
+    const { calls, tick, add } = await pushBot();
+    add('2026-09-10', 1240000, 'cafe');
+
+    await tick('2026-10-08T07:00:00Z');
+
+    expect(sent(calls)).toHaveLength(1);
+  });
+
+  it('sends nothing for a September with no expenses and leaves one `empty` row', async () => {
+    const { calls, db, ledgerId, tick, add } = await pushBot();
+    add('2026-08-10', 930000, 'cafe');
+
+    await tick('2026-10-01T07:00:00Z');
+    await tick('2026-10-01T08:00:00Z');
+
+    expect(calls).toEqual([]);
+    expect(
+      db.prepare('SELECT ledger_id, kind, period_key, outcome FROM summary_pushes').all(),
+    ).toEqual([{ ledger_id: ledgerId, kind: 'period', period_key: '2026-09', outcome: 'empty' }]);
+  });
+
+  it('[Отключить] sets monthly_push to 0 and takes the keyboard away; October then sends nothing', async () => {
+    const { bot, calls, db, tick, add } = await pushBot();
+    add('2026-09-10', 1240000, 'cafe');
+    add('2026-10-10', 1240000, 'cafe');
+    await tick('2026-10-01T07:00:00Z');
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:off:m' }));
+
+    expect(db.prepare('SELECT monthly_push FROM users').pluck().get()).toBe(0);
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-10', text: messages.pushOff('monthly') },
+      },
+      {
+        method: 'editMessageReplyMarkup',
+        payload: { chat_id: ALLOWED_ID, message_id: 2, reply_markup: { inline_keyboard: [] } },
+      },
+    ]);
+
+    calls.length = 0;
+    // 1 November, 09:00 CET.
+    await tick('2026-11-01T08:00:00Z');
+    expect(calls).toEqual([]);
+  });
+
+  it('fires at 09:00 CET once the clocks went back: 1 November is 08:00 UTC', async () => {
+    const { calls, tick, add } = await pushBot();
+    add('2026-10-10', 1240000, 'cafe');
+
+    await tick('2026-11-01T07:59:00Z');
+    expect(calls).toEqual([]);
+    await tick('2026-11-01T08:00:00Z');
+    expect(sent(calls)).toEqual([
+      [
+        '<b>Итоги октября</b>',
+        '',
+        '<b>12 400.00 RSD</b> (новое)',
+        'Кафе и рестораны: 12 400.00 RSD (новое)',
+      ].join('\n'),
+    ]);
+  });
+
+  it('collapses the categories past the top 10 into one line with their sum', async () => {
+    const { calls, tick, add } = await pushBot();
+    const presets = [
+      'groceries',
+      'cafe',
+      'transport',
+      'housing',
+      'health',
+      'clothes',
+      'fun',
+      'telecom',
+      'gifts',
+      'other',
+    ];
+    // 2 000.00 down to 1 100.00 RSD, «Другое» the 10th; the uncategorized 70.00 is the 11th.
+    presets.forEach((preset, i) => {
+      add('2026-09-10', 200000 - i * 10000, preset);
+    });
+    add('2026-09-11', 5000, null);
+    add('2026-09-12', 2000, null);
+
+    await tick('2026-10-01T07:00:00Z');
+
+    const lines = sent(calls)[0]?.split('\n') ?? [];
+    expect(lines).toHaveLength(2 + 1 + 10 + 1);
+    expect(lines.slice(-2)).toEqual([
+      'Другое: 1 100.00 RSD (новое)',
+      'и ещё 1 категория: 70.00 RSD',
+    ]);
+  });
+});

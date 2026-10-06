@@ -85,6 +85,7 @@ import {
   setCategoryData,
   showExpenseData,
   summaryPageData,
+  summaryPushOffData,
   tagShowData,
   undoExpenseData,
 } from './callbackData.js';
@@ -1912,6 +1913,12 @@ describe('callback data', () => {
     const data = setCategoryData(EXPENSE_ID as ExpenseId, 1_234_567_890_123_456 as CategoryId);
     expect(data).toMatch(new RegExp(`^exp:setcat:${EXPENSE_ID}:\\d{16}$`));
     expect(Buffer.byteLength(data, 'utf8')).toBeLessThanOrEqual(64);
+  });
+
+  it('is sum:off:m and sum:off:w under a summary push, 9 bytes', () => {
+    expect(summaryPushOffData('monthly')).toBe('sum:off:m');
+    expect(summaryPushOffData('weekly')).toBe('sum:off:w');
+    expect(Buffer.byteLength(summaryPushOffData('monthly'), 'utf8')).toBe(9);
   });
 
   it('asserts the 64-byte limit', () => {

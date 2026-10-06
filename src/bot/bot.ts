@@ -47,6 +47,7 @@ import { access } from './middleware/access.js';
 import { onboarding } from './middleware/onboarding.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { replyHtml, type Html } from './render/html.js';
+import { registerSummaryPush } from './summaryProvider.js';
 
 export interface HandlerDeps {
   readonly db: Db;
@@ -136,6 +137,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
+  registerSummaryPush(dm, options);
   registerItems(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);

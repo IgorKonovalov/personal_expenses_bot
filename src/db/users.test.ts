@@ -7,11 +7,16 @@ import { openDatabase, type Db } from './connection.js';
 import { runMigrations } from './migrate.js';
 import {
   findOnboarding,
+  findPushOn,
   findTidyChat,
+  insertIdentity,
   insertUser,
+  listPushRecipients,
   markOnboarded,
+  setPushOn,
   setTidyChat,
   setTipsOff,
+  setUserBlocked,
   updateUserTimezone,
   type UserId,
 } from './users.js';
@@ -110,6 +115,78 @@ describe('tidy chat switch', () => {
 
     expect(setTidyChat(db, USER, false)).toBe(true);
     expect(findTidyChat(db, USER)).toBe(false);
+  });
+});
+
+describe('summary push switches', () => {
+  function identify(id: UserId, telegramId: string) {
+    insertIdentity(db, { provider: 'telegram', externalId: telegramId, userId: id });
+  }
+
+  it('starts with the monthly push on and the weekly one off', () => {
+    expect(findPushOn(db, USER, 'monthly')).toBe(true);
+    expect(findPushOn(db, USER, 'weekly')).toBe(false);
+  });
+
+  it('sets one switch for that user only, reporting whether it changed', () => {
+    expect(setPushOn(db, USER, 'monthly', false)).toBe(true);
+    expect(setPushOn(db, USER, 'monthly', false)).toBe(false);
+    expect(findPushOn(db, USER, 'monthly')).toBe(false);
+    expect(findPushOn(db, USER, 'weekly')).toBe(false);
+    expect(findPushOn(db, OTHER, 'monthly')).toBe(true);
+
+    expect(setPushOn(db, USER, 'weekly', true)).toBe(true);
+    expect(findPushOn(db, USER, 'weekly')).toBe(true);
+  });
+
+  it('lists the users with a push on and a Telegram identity, not blocked or deleted', () => {
+    identify(USER, '1001');
+    identify(OTHER, '1002');
+    insertUser(db, { id: 'user-c' as UserId, timezone: 'Europe/Moscow', createdAt: NOW });
+    identify('user-c' as UserId, '1003');
+    insertUser(db, { id: 'user-d' as UserId, timezone: 'Europe/Moscow', createdAt: NOW });
+    setPushOn(db, OTHER, 'monthly', false);
+    setUserBlocked(db, 'user-c' as UserId, NOW);
+
+    expect(listPushRecipients(db)).toEqual([
+      {
+        user: { id: USER, timezone: 'Europe/Belgrade', activeLedgerId: null },
+        telegramId: 1001,
+        monthly: true,
+        weekly: false,
+      },
+    ]);
+
+    setPushOn(db, OTHER, 'weekly', true);
+    expect(listPushRecipients(db).map((r) => [r.user.id, r.monthly, r.weekly])).toEqual([
+      [USER, true, false],
+      [OTHER, false, true],
+    ]);
+  });
+});
+
+describe('migration 0024: summary pushes', () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('turns the monthly push on and leaves the weekly one off for a user present before it', () => {
+    const migrations = fileURLToPath(new URL('./migrations/', import.meta.url));
+    dir = mkdtempSync(join(tmpdir(), 'migrations-'));
+    for (const file of readdirSync(migrations).filter((f) => f < '0024')) {
+      copyFileSync(join(migrations, file), join(dir, file));
+    }
+    const old = openDatabase(':memory:');
+    runMigrations(old, NOW, dir);
+    insertUser(old, { id: USER, timezone: 'Europe/Belgrade', createdAt: NOW });
+
+    expect(runMigrations(old, NOW)).toContain('0024');
+
+    expect(findPushOn(old, USER, 'monthly')).toBe(true);
+    expect(findPushOn(old, USER, 'weekly')).toBe(false);
   });
 });
 

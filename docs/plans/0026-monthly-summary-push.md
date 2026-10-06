@@ -1,6 +1,6 @@
 # 0026: Monthly summary push: last period's report arrives on its own
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0025](done/0025-recurring-expenses-and-reminders.md) (the scheduler),
 > [Plan 0019](done/0019-encrypted-personal-ledger.md) (the locked variant), [Plan 0028](done/0028-donations.md) (`/donate`)
@@ -243,13 +243,24 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | not started | |
+| 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | committed with this row |
 | 2: Budget periods, the budget's end, the top 3 and the footer | dev | not started | |
 | 3: The weekly push and the settings switches | dev | not started | |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real month's push | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/services/deleteAccount.ts` (+ test) is outside `Files touched`. It deletes the
+  personal ledger's `summary_pushes` rows before the ledger, per the Risks bullet on Plan 0029
+  (which landed first); without it the `REFERENCES ledgers(id)` foreign key fails
+  `/delete_account` for any user who got a push.
+- Phase 1: `src/bot/callbacks.ts` is unchanged; the `sum:off` handler lives in
+  `src/bot/summaryProvider.ts` (`registerSummaryPush`), registered from `bot.ts`.
+- Phase 1: the [Отключить] tap, the 7-day window and the done-when values are tested in
+  `src/bot/summaryProvider.test.ts`; `bot.test.ts` gains only the `sum:off` byte check.
+- Phase 1: category lines read «Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)» as in the
+  TL;DR, not with `/month`'s bare amount, and are not folded into an expandable quote.
 
 ### Close triggers
 

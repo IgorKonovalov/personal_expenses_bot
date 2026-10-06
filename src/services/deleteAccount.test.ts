@@ -4,6 +4,7 @@ import { runMigrations } from '../db/migrate.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { insertNoticeSeen } from '../db/notices.js';
 import { insertRuleOrGetExisting, type RuleId } from '../db/recurring.js';
+import { claimSummaryPush } from '../db/summaryPushes.js';
 import type { User } from '../db/users.js';
 import { insertTipShown } from '../db/userTips.js';
 import type { LocalDate } from '../domain/time.js';
@@ -127,6 +128,25 @@ describe('deleteAccount', () => {
     expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
 
     expect(db.prepare('SELECT user_id FROM user_notices').pluck().all()).toEqual([bob.id]);
+  });
+
+  it("deletes the personal ledger's summary push claims", () => {
+    const ledgerId = db
+      .prepare("SELECT id FROM ledgers WHERE kind = 'personal'")
+      .pluck()
+      .get() as LedgerId;
+    claimSummaryPush(db, {
+      ledgerId,
+      kind: 'period',
+      periodKey: '2026-09',
+      outcome: 'sent',
+      createdAt: NOW,
+    });
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT COUNT(*) FROM summary_pushes').pluck().get()).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) FROM ledgers').pluck().get()).toBe(0);
   });
 
   it("deletes the user's tips and no one else's", () => {
