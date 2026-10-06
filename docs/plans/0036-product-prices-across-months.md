@@ -1,6 +1,6 @@
 # 0036: Product prices across months: receipt items grouped into products, with spend, amount and unit price per month
 
-> **Status:** draft
+> **Status:** approved (2026-10-06)
 > **Created:** 2026-10-06
 > **Depends on:** [Plan 0030](0030-mini-app-charts-and-qr-scan.md) Phase 1 (chart mode and the
 > payload contract in `webapp/`) for Phase 6 only. Phases 1 to 5 don't depend on it.
