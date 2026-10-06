@@ -8201,6 +8201,21 @@ describe('onboarding (Plan 0015)', () => {
       expect(onboardedAt()).toBe(NOW.toISOString());
     });
 
+    it('leaves the currency line out of the check when the first expense is in another currency', async () => {
+      const { send, calls, db } = onboardingBot();
+
+      await send('12,50 EUR такси');
+
+      expect(db.prepare('SELECT amount_minor, currency FROM expenses').all()).toEqual([
+        { amount_minor: 1250, currency: 'EUR' },
+      ]);
+      expect(sentTexts(calls)).toEqual([
+        'Записано в «Личные расходы»: <b>12.50 EUR</b> — такси · Транспорт',
+        WELCOME,
+        CHECK,
+      ]);
+    });
+
     // With tips on, the second message would also bring the first tip (Phase 3).
     it('answers the second message with its confirmation only', async () => {
       const { send, calls } = onboardingBot({ tips: false });

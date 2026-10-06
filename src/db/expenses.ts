@@ -190,6 +190,24 @@ export function findExpenseById(db: Db, id: ExpenseId): StoredExpense | undefine
   return row === undefined ? undefined : toStoredExpense(row);
 }
 
+// The currency of `createdBy`'s earliest live expense in the ledger, sealed ones included (the
+// currency is plaintext on every row); undefined when they have none.
+export function findFirstLiveExpenseCurrency(
+  db: Db,
+  ledgerId: LedgerId,
+  createdBy: UserId,
+): CurrencyCode | undefined {
+  const currency = db
+    .prepare<[string, string], string>(
+      `SELECT currency FROM expenses
+        WHERE ledger_id = ? AND created_by = ? AND deleted_at IS NULL
+        ORDER BY created_at, rowid LIMIT 1`,
+    )
+    .pluck()
+    .get(ledgerId, createdBy);
+  return currency === undefined ? undefined : toCurrencyCode(currency);
+}
+
 // The ledger's live (not deleted) expenses, sealed ones included; only `createdBy`'s when given.
 export function countLiveExpenses(db: Db, ledgerId: LedgerId, createdBy?: UserId): number {
   return createdBy === undefined

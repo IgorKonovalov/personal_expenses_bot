@@ -1,6 +1,6 @@
 import { TZDate } from '@date-fns/tz';
 import { format } from 'date-fns';
-import { countLiveExpenses } from '../db/expenses.js';
+import { findFirstLiveExpenseCurrency } from '../db/expenses.js';
 import { findActiveLedger } from '../db/ledgers.js';
 import {
   findOnboarding,
@@ -41,11 +41,17 @@ export function pendingOnboarding(
   return user === undefined || findOnboarding(db, user.id).onboardedAt !== null ? undefined : user;
 }
 
-// Whether the user has a live expense of their own in the active ledger: on first contact, the
-// message just handled recorded it.
-export function hasOwnExpense({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean {
+// Whether the user's first live expense in the active ledger is in its default currency: on first
+// contact, the message just handled recorded it. An expense in another currency, or none, is false.
+export function firstExpenseInDefaultCurrency(
+  { db }: Pick<ServiceDeps, 'db'>,
+  user: User,
+): boolean {
   const ledger = findActiveLedger(db, user.id);
-  return ledger !== undefined && countLiveExpenses(db, ledger.id, user.id) > 0;
+  return (
+    ledger !== undefined &&
+    findFirstLiveExpenseCurrency(db, ledger.id, user.id) === ledger.defaultCurrency
+  );
 }
 
 export function isOnboarded({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean {

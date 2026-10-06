@@ -6,6 +6,7 @@ import { openDatabase, type Db } from './connection.js';
 import {
   countLiveExpenses,
   findExpenseById,
+  findFirstLiveExpenseCurrency,
   findHistoryCategory,
   findTakenSourceKeys,
   insertExpenseOrGetExisting,
@@ -111,6 +112,35 @@ describe('countLiveExpenses', () => {
     expect(countLiveExpenses(db, LEDGER_A, USER_A)).toBe(1);
     expect(countLiveExpenses(db, LEDGER_A, USER_B)).toBe(1);
     expect(countLiveExpenses(db, LEDGER_B, USER_A)).toBe(0);
+  });
+});
+
+describe('findFirstLiveExpenseCurrency', () => {
+  it("reads the currency of the author's earliest live expense in the ledger", () => {
+    insertMember(db, { ledgerId: LEDGER_A, userId: USER_B, role: 'member' });
+    expect(findFirstLiveExpenseCurrency(db, LEDGER_A, USER_A)).toBeUndefined();
+
+    const at = (iso: string, id: string, currency: 'RSD' | 'EUR', createdBy = USER_A) =>
+      insertExpenseOrGetExisting(db, {
+        id: id as ExpenseId,
+        ledgerId: LEDGER_A,
+        createdBy,
+        amountMinor: 1250,
+        currency,
+        description: 'taxi',
+        occurredAt: NOW,
+        occurredOn: DAY,
+        sourceKey: `tg:1:${id}`,
+        createdAt: new Date(iso),
+      });
+    at('2026-09-29T09:00:00Z', 'exp-b', 'RSD', USER_B);
+    at('2026-09-29T09:30:00Z', 'exp-1', 'EUR');
+    at('2026-09-29T10:00:00Z', 'exp-2', 'RSD');
+    expect(findFirstLiveExpenseCurrency(db, LEDGER_A, USER_A)).toBe('EUR');
+
+    softDeleteExpense(db, 'exp-1' as ExpenseId, NOW);
+    expect(findFirstLiveExpenseCurrency(db, LEDGER_A, USER_A)).toBe('RSD');
+    expect(findFirstLiveExpenseCurrency(db, LEDGER_B, USER_A)).toBeUndefined();
   });
 });
 

@@ -8,7 +8,7 @@ import { createLogger } from '../logger.js';
 import { createLedgerKeyring } from './ledgerKeys.js';
 import {
   claimOnboarding,
-  hasOwnExpense,
+  firstExpenseInDefaultCurrency,
   isOnboarded,
   pendingOnboarding,
   replayOnboarding,
@@ -105,15 +105,19 @@ describe('onboarding', () => {
     expect(pendingOnboarding(deps(), 1001)).toBeUndefined();
   });
 
-  it('says whether the user has a live expense of their own in the active ledger', () => {
-    const user = provision('1001');
-    expect(hasOwnExpense(deps(), user)).toBe(false);
+  it("says whether the user's first expense in the active ledger is in its default currency", () => {
+    const record = (user: User, text: string, sourceKey: string) =>
+      recordExpense(
+        { ...deps(), keys: createLedgerKeyring(() => NOW) },
+        { user, text, sourceKey, occurredAt: NOW, now: NOW },
+      );
+    const rsd = provision('1001');
+    expect(firstExpenseInDefaultCurrency(deps(), rsd)).toBe(false);
+    record(rsd, '450 кофе', 'tg:1:1');
+    expect(firstExpenseInDefaultCurrency(deps(), rsd)).toBe(true);
 
-    recordExpense(
-      { ...deps(), keys: createLedgerKeyring(() => NOW) },
-      { user, text: '450 кофе', sourceKey: 'tg:1:1', occurredAt: NOW, now: NOW },
-    );
-
-    expect(hasOwnExpense(deps(), user)).toBe(true);
+    const eur = provision('1002');
+    record(eur, '12,50 EUR такси', 'tg:2:1');
+    expect(firstExpenseInDefaultCurrency(deps(), eur)).toBe(false);
   });
 });
