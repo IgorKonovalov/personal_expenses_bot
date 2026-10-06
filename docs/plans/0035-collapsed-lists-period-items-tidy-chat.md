@@ -1,6 +1,6 @@
 # 0035: Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat
 
-> **Status:** draft
+> **Status:** approved (2026-10-06)
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0038](../adrs/0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md)
 > (collapse and tidy chat), [ADR-0011](../adrs/0011-navigation-model.md) (cards and the screen

@@ -15,7 +15,7 @@ status and date. What a plan did lives in the plan.
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0035](0035-collapsed-lists-period-items-tidy-chat.md) | Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat | draft (2026-10-06) |
+| [0035](0035-collapsed-lists-period-items-tidy-chat.md) | Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat | approved (2026-10-06) |
 
 ## Recently closed
 
