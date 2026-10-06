@@ -305,7 +305,7 @@ page), and one key for the tidy switch in the `set:` family.
 | 2: summary categories folded | dev | done | b381ba3 |
 | 3: period items on /week, /month | dev | done | 9b8f76b |
 | 4: period items on /today | dev | done | d4dfeee |
-| 5: tidy chat | dev | done | committed with this row |
+| 5: tidy chat | dev | done | c7d3a54 |
 | 6: live check | human | not started | |
 
 ### Notes
@@ -349,6 +349,26 @@ page), and one key for the tidy switch in the `set:` family.
 - Phase 5: the receipt-link and bank-SMS tidy deletes have no test; the done-whens' typed-expense,
   non-expense, group, ambiguous, failed-delete and migration cases do.
 
+- Followup noticed, not acted on: pages of the items view are cut by visible length only, not by
+  entity count (the plan's Risks). A dense month can still hit Telegram's entity limit; Phase 6's
+  busiest-month check is where that would show.
+- Followup noticed, not acted on: the 48-hour delete window means a redelivered or late update
+  older than that fails the tidy delete and logs a warn, as the plan accepts.
+
 ### Close triggers
+
+- **What shipped:** feature
+- **User-visible surface changed:** commands: `/today` gains [Позиции] when the day's receipts
+  list items, `/week` and `/month` gain [Позиции] under the pager, `/settings` gains
+  [Убирать мои сообщения: вкл/выкл]; a fetched receipt's card folds its items in
+  `<blockquote expandable>` and drops [Позиции] when they fit; /week, /month and group summaries
+  fold their category lines; messages: `expenseRecorded` (folded items), `foldsReceiptItems`,
+  `periodSummary` (folded lines), `periodItemsButton`, `periodItemPages`, `tidyChatToggleOn`,
+  `tidyChatToggleOff`; callback data: `itm:w:<Monday>:<page>`, `itm:m:<YYYY-MM>:<page>`,
+  `itm:d:<YYYY-MM-DD>:<page>`, `itm:today`, `set:tidy`; config/env keys: none; schema
+  migrations: `0023_tidy_chat.sql`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 112 files,
+  1608 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (283 links).
+- **Outstanding `human` phases:** Phase 6 (live check on a phone and the desktop), not started.
 
 ## Followups
