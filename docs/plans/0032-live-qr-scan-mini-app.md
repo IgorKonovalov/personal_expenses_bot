@@ -71,8 +71,10 @@ flowchart LR
   the page shows a `webapp/src/messages.ts` line instead and sends nothing.
 - **Files touched:** `webapp/index.html`, `webapp/src/main.ts`, `webapp/src/scan.ts`,
   `webapp/src/scan.test.ts`, `webapp/src/messages.ts`, `webapp/tsconfig.json`, `package.json`
-  (`build:webapp` script; vitest and eslint cover `webapp/`), `.github/workflows/pages.yml`,
-  `scripts/pages-workflow.test.mjs`, `src/config.ts`, `.env.example`, `src/bot/keyboards.ts`,
+  (`build:webapp` script), `vitest.config.ts` (`include` gains `webapp/src/**/*.test.ts`),
+  `eslint.config.js` (covers `webapp/`), `.github/workflows/pages.yml`,
+  `scripts/pages-workflow.test.mjs`, `src/config.ts`, `src/index.ts` (passes `WEBAPP_URL` into
+  `createBot`), `src/bot/testHarness.ts`, `.env.example`, `src/bot/keyboards.ts`,
   `src/bot/handlers/help.ts`, `src/bot/handlers/start.ts`, `src/bot/handlers/menu.ts`,
   `src/bot/handlers/webAppData.ts`, `src/bot/bot.ts`, `src/bot/messages.ts`,
   `src/bot/bot.test.ts`, `README.md` (Mini App section, `WEBAPP_URL`), `CLAUDE.md` ("Where things
