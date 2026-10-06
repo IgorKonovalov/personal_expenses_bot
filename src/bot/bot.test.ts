@@ -54,6 +54,8 @@ import {
   BUDGET_LIMIT,
   BUDGET_OPEN,
   BUDGET_START_DAY,
+  ONBOARDING_EDIT,
+  ONBOARDING_OK,
   RECOVERY_SAVED,
   SETTINGS_ENCRYPTION,
   assertCallbackData,
@@ -153,10 +155,20 @@ const menuKeyboard = {
   resize_keyboard: true,
 };
 const withMenu = { reply_markup: menuKeyboard, ...htmlParseMode };
-// The welcome for a user on the defaults.
 const WELCOME =
-  'Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.' +
-  '\n\nЧасовой пояс: Белград (Europe/Belgrade). Валюта: RSD. Изменить: /settings.';
+  'Здравствуйте! Я веду учёт трат.' +
+  '\n\nОтправьте сумму и описание, например «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».' +
+  '\n\nИтоги открываются кнопками меню внизу, остальные команды — в «☰ Ещё». Подробности: /help.' +
+  '\n\nВаши траты видны только вам. Выгрузить всё: /export. Как хранятся данные: /privacy.';
+// The setup check's buttons.
+const setupKeyboard = {
+  inline_keyboard: [
+    [
+      { text: 'Да, всё верно', callback_data: 'onb:ok' },
+      { text: 'Изменить', callback_data: 'onb:edit' },
+    ],
+  ],
+};
 
 function expenseCount(db: Db): unknown {
   return db.prepare('SELECT COUNT(*) AS n FROM expenses').get();
@@ -211,6 +223,16 @@ describe('menu and help', () => {
       {
         method: 'sendMessage',
         payload: { chat_id: ALLOWED_ID, text: WELCOME, ...withMenu },
+      },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          // 22:10 UTC on 29 September is 00:10 on 30 September in Belgrade.
+          text: 'Проверьте настройки:\nЧасовой пояс: Белград, у вас сейчас 00:10?\nВалюта по умолчанию: RSD',
+          reply_markup: setupKeyboard,
+          ...htmlParseMode,
+        },
       },
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
@@ -2963,8 +2985,8 @@ describe('/week and /month', () => {
     const db = openDatabase(':memory:');
     runMigrations(db, NOW);
     let ids = 0;
-    // The /start reply takes 100, so the first screen after it is 101.
-    let messageId = 99;
+    // The /start welcome and setup check take 99 and 100, so the first screen after them is 101.
+    let messageId = 98;
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
@@ -4335,7 +4357,8 @@ describe('/settings hub and the timezone picker', () => {
       const before = totalChanges();
       calls.length = 0;
 
-      await tap('set:cur:EUR', 102);
+      // The welcome and setup check took 101 and 102.
+      await tap('set:cur:EUR', 103);
 
       expect(totalChanges()).toBe(before);
       expect(calls).toEqual([
@@ -7681,8 +7704,8 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     await tap('adm:blk');
     calls.length = 0;
 
-    // The welcome took message 101, the prompt 102.
-    await tap('flow:cancel', ADMIN_ID, 102);
+    // The welcome and setup check took messages 101 and 102, the prompt 103.
+    await tap('flow:cancel', ADMIN_ID, 103);
     await send(String(SECOND_ALLOWED_ID));
 
     expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([
@@ -7690,7 +7713,7 @@ describe('[☰ Ещё] (Plan 0034)', () => {
         method: 'editMessageText',
         payload: {
           chat_id: ADMIN_ID,
-          message_id: 102,
+          message_id: 103,
           text: messages.commandArgCancelled,
           reply_markup: { inline_keyboard: [] },
           ...htmlParseMode,
@@ -7964,5 +7987,155 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     await tap('acct:del', 2);
 
     expect(db.prepare('SELECT COUNT(*) FROM user_notices').pluck().get()).toBe(0);
+  });
+});
+
+describe('onboarding (Plan 0015)', () => {
+  // 14:05 on 1 October in Belgrade: CEST is UTC+2 until 2026-10-25.
+  const NOW = new Date('2026-10-01T12:05:00Z');
+  const CHECK = messages.setupCheck({
+    timezone: 'Europe/Belgrade',
+    localTime: '14:05',
+    currency: 'RSD',
+  });
+
+  function onboardingBot(opts: { onboarding?: boolean } = {}) {
+    const harness = createTestBot({ now: NOW, onboarding: opts.onboarding ?? true });
+    const lastMessageId = withMessageIds(harness.bot);
+    let updateId = 0;
+    const send = (text: string, fromId = ALLOWED_ID) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, text, fromId, messageId: updateId, date: NOW }),
+      );
+    const tap = (data: string, messageId: number) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    const userId = (telegramId = ALLOWED_ID): UserId => {
+      const user = findUserByIdentity(harness.db, 'telegram', String(telegramId));
+      if (user === undefined) throw new Error('setup: no user');
+      return user.id;
+    };
+    const onboardedAt = (telegramId = ALLOWED_ID) =>
+      harness.db
+        .prepare('SELECT onboarded_at FROM users WHERE id = ?')
+        .pluck()
+        .get(userId(telegramId));
+    return { ...harness, send, tap, lastMessageId, userId, onboardedAt };
+  }
+
+  it("answers a new user's /start with the welcome and the setup check, then marks them onboarded", async () => {
+    const { send, calls, onboardedAt } = onboardingBot();
+
+    await send('/start');
+
+    expect(calls).toEqual([
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: WELCOME, ...withMenu } },
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: 'Проверьте настройки:\nЧасовой пояс: Белград, у вас сейчас 14:05?\nВалюта по умолчанию: RSD',
+          reply_markup: setupKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    expect(onboardedAt()).toBe(NOW.toISOString());
+  });
+
+  it('[Да, всё верно] edits the check to the confirmation, and a second tap raises no error', async () => {
+    const { send, tap, calls, lastMessageId } = onboardingBot();
+    await send('/start');
+    const check = lastMessageId();
+    calls.length = 0;
+
+    await tap('onb:ok', check);
+    await tap('onb:ok', check);
+
+    const confirmed = {
+      method: 'editMessageText',
+      payload: {
+        chat_id: ALLOWED_ID,
+        message_id: check,
+        text: 'Настройки сохранены: Белград, RSD. Изменить их можно в /settings.',
+        ...htmlParseMode,
+      },
+    };
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-2' } },
+      confirmed,
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-3' } },
+      confirmed,
+    ]);
+  });
+
+  it('[Изменить] turns the check into the settings hub, where a picked timezone is stored', async () => {
+    const { send, tap, calls, db, lastMessageId, userId } = onboardingBot();
+    await send('/start');
+    const check = lastMessageId();
+    calls.length = 0;
+
+    await tap('onb:edit', check);
+    await tap('set:tz', check);
+    await tap('set:tz:moscow', check);
+
+    const edits = calls.filter((c) => c.method === 'editMessageText');
+    expect(edits[0]?.payload).toMatchObject({
+      chat_id: ALLOWED_ID,
+      message_id: check,
+      text: messages.settingsScreen({
+        timezone: 'Europe/Belgrade',
+        ledger: { kind: 'personal', name: 'Личные расходы', defaultCurrency: 'RSD' },
+      }),
+    });
+    expect(edits).toHaveLength(3);
+    expect(db.prepare('SELECT timezone FROM users WHERE id = ?').pluck().get(userId())).toBe(
+      'Europe/Moscow',
+    );
+  });
+
+  it("replays for an onboarded user: their tips start over and switch on, notices and others' tips stay", async () => {
+    const { send, calls, db, userId, onboardedAt } = onboardingBot({ onboarding: false });
+    await send('/help');
+    await send('/help', SECOND_ALLOWED_ID);
+    const before = onboardedAt();
+    const insertTip = db.prepare("INSERT INTO user_tips VALUES (?, 'tipOther', ?)");
+    insertTip.run(userId(), NOW.toISOString());
+    insertTip.run(userId(SECOND_ALLOWED_ID), NOW.toISOString());
+    db.prepare("INSERT INTO user_notices VALUES (?, 'stray_help', ?)").run(
+      userId(),
+      NOW.toISOString(),
+    );
+    db.prepare('UPDATE users SET tips_off = 1 WHERE id = ?').run(userId());
+    calls.length = 0;
+
+    await send('/start');
+
+    expect(sentTexts(calls)).toEqual([WELCOME, CHECK]);
+    expect(onboardedAt()).toBe(before);
+    expect(db.prepare('SELECT user_id FROM user_tips').pluck().all()).toEqual([
+      userId(SECOND_ALLOWED_ID),
+    ]);
+    expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(userId())).toBe(0);
+    expect(db.prepare('SELECT user_id, notice FROM user_notices').all()).toEqual([
+      { user_id: userId(), notice: 'stray_help' },
+    ]);
+  });
+
+  it('/delete_account leaves no tip row for the user', async () => {
+    const { send, tap, db, userId } = onboardingBot({ onboarding: false });
+    await send('/help');
+    db.prepare("INSERT INTO user_tips VALUES (?, 'tipOther', ?)").run(userId(), NOW.toISOString());
+
+    await send('/delete_account');
+    await tap('acct:del', 2);
+
+    expect(db.prepare('SELECT COUNT(*) FROM user_tips').pluck().get()).toBe(0);
+  });
+
+  it('keeps onb:ok at 6 bytes and onb:edit at 8, inside the callback limit', () => {
+    expect(assertCallbackData(ONBOARDING_OK)).toBe('onb:ok');
+    expect(assertCallbackData(ONBOARDING_EDIT)).toBe('onb:edit');
+    expect(Buffer.byteLength(ONBOARDING_OK, 'utf8')).toBe(6);
+    expect(Buffer.byteLength(ONBOARDING_EDIT, 'utf8')).toBe(8);
   });
 });

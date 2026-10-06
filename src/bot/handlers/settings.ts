@@ -194,6 +194,26 @@ export async function sendSettings(ctx: Context, deps: HandlerDeps): Promise<voi
   await showScreen(ctx, deps, user, { name: 'settings' }, view);
 }
 
+// The personal hub edited into the tapped message, which becomes the anchor: the setup check's
+// [Изменить] (ADR-0028). A repeat tap re-renders the same hub.
+export async function showSettingsInPlace(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+): Promise<void> {
+  const tapped = ctx.callbackQuery?.message;
+  if (tapped === undefined) return;
+  const view = settingsView(deps, user);
+  if (view === undefined) throw new Error('the personal settings view always exists');
+  const anchor = {
+    chatId: tapped.chat.id,
+    messageId: tapped.message_id,
+    screen: { name: 'settings' } as const,
+  };
+  setAnchor(deps, user, anchor);
+  await renderAnchor(ctx, anchor, view);
+}
+
 interface SettingsTap extends ScreenTap {
   // The ledger the hub is scoped to; undefined for the user's own settings.
   readonly ledgerId: LedgerId | undefined;

@@ -147,6 +147,11 @@ export function setCategoryEssentialData(categoryId: CategoryId, essential: bool
   return assertCallbackData(`cat:ess:${categoryId}:${essential ? 1 : 0}`);
 }
 
+// The setup check on first contact (ADR-0028): [Да, всё верно] `onb:ok` confirms it in place,
+// [Изменить] `onb:edit` turns it into the settings hub. Both act on the tapped message only.
+export const ONBOARDING_OK = 'onb:ok';
+export const ONBOARDING_EDIT = 'onb:edit';
+
 // The /settings hub (ADR-0011). `set:open` shows the hub in the anchor, from any of its pickers
 // and from the categories or budget screen it opened.
 export const SETTINGS_OPEN = 'set:open';

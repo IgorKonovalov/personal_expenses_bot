@@ -42,6 +42,10 @@ export interface TestBotOptions {
   readonly failMethods?: readonly string[];
   // DONATE_URL.
   readonly donateUrl?: string;
+  // True: a new user gets the first-contact welcome and setup check (ADR-0028). False, the
+  // default: every user is onboarded the moment it is created, so a test's first message gets
+  // only its own reply.
+  readonly onboarding?: boolean;
 }
 
 // The admin, as in production: the first allowed id (ADR-0013).
@@ -51,6 +55,11 @@ export function createTestBot(options: TestBotOptions = {}) {
   const now = options.now ?? new Date('2026-09-29T22:10:00Z');
   const db: Db = openDatabase(':memory:');
   runMigrations(db, now);
+  if (options.onboarding !== true) {
+    db.exec(`CREATE TEMP TRIGGER test_onboarded AFTER INSERT ON users BEGIN
+               UPDATE users SET onboarded_at = NEW.created_at WHERE id = NEW.id;
+             END`);
+  }
   const logLines: string[] = [];
   let n = 0;
   const keys = createLedgerKeyring(() => now);

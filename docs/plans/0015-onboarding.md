@@ -1,6 +1,6 @@
 # 0015: Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the encryption tip),
 > [Plan 0024](done/0024-export-and-data-ownership.md) (`/export`), [Plan 0029](done/0029-opening-by-invite.md)
@@ -320,13 +320,20 @@ first, Phase 1 adds that delete to its deletion service.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a new user gets the welcome and the setup check | dev | not started | |
+| 1: Walking skeleton: a new user gets the welcome and the setup check | dev | done | committed with this row |
 | 2: A first message that isn't `/start` | dev | not started | |
 | 3: The tips registry and the recording tips | dev | not started | |
 | 4: The feature tips and the group welcome | dev | not started | |
 | 5: A stranger's first contact | human | not started | |
 
 ### Notes
+
+- Phase 1: files outside `Files touched`, approved by the user in session: `src/bot/testHarness.ts`
+  gains `createTestBot({ onboarding })`, off by default, where a temp trigger marks every new user
+  onboarded at creation; `src/bot/middleware/access.test.ts` and `src/bot/group/group.test.ts`
+  follow the argument-less `welcome` and the second /start message.
+- Phase 1: the `onb:ok` / `onb:edit` handlers live in `src/bot/handlers/start.ts`;
+  `src/bot/callbacks.ts` is unchanged.
 
 ### Close triggers
 

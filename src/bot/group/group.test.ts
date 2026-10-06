@@ -617,11 +617,8 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
 
     calls.length = 0;
     await dm(ALLOWED_ID, `/start e_${b}`, 81);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.payload).toMatchObject({
-      chat_id: ALLOWED_ID,
-      text: messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
-    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.payload).toMatchObject({ chat_id: ALLOWED_ID, text: messages.welcome });
 
     calls.length = 0;
     await dm(STRANGER_ID, `/start e_${b}`, 82);
@@ -1110,10 +1107,8 @@ describe('group lifecycle and ledger settings (Phase 4)', () => {
     calls.length = 0;
 
     await dm(SECOND_ALLOWED_ID, `/start gs_${ledgerId}`, 191);
-    expect(calls).toHaveLength(1);
-    expect(sentText(calls[0])).toBe(
-      messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
-    );
+    expect(calls).toHaveLength(2);
+    expect(sentText(calls[0])).toBe(messages.welcome);
     expect(
       db.prepare("SELECT COUNT(*) FROM flow_sessions WHERE screen = 'settings'").pluck().get(),
     ).toBe(0);

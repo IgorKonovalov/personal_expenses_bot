@@ -71,13 +71,8 @@ describe('access', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
 
     expect(calls).toMatchObject([
-      {
-        method: 'sendMessage',
-        payload: {
-          chat_id: ALLOWED_ID,
-          text: messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' }),
-        },
-      },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.welcome } },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID } },
     ]);
   });
 
@@ -107,10 +102,17 @@ describe('access', () => {
     await bot.handleUpdate(textUpdate({ updateId: 3, fromId: THIRD_ID, text: `/start ${code}` }));
     await bot.handleUpdate(textUpdate({ updateId: 4, fromId: FOURTH_ID, text: `/start ${code}` }));
 
-    const welcome = messages.welcome({ timezone: 'Europe/Belgrade', currency: 'RSD' });
+    const { welcome } = messages;
+    const check = messages.setupCheck({
+      timezone: 'Europe/Belgrade',
+      localTime: '00:10',
+      currency: 'RSD',
+    });
     expect(calls).toMatchObject([
       { payload: { chat_id: STRANGER_ID, text: welcome } },
+      { payload: { chat_id: STRANGER_ID, text: check } },
       { payload: { chat_id: THIRD_ID, text: welcome } },
+      { payload: { chat_id: THIRD_ID, text: check } },
       { payload: { chat_id: FOURTH_ID, text: messages.inviteInvalid } },
     ]);
     expect(admittedAt(db, STRANGER_ID)).toBe('2026-09-29T22:10:00.000Z');

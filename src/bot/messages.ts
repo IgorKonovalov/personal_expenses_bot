@@ -539,6 +539,12 @@ function timezoneName(iana: string): string {
   return entry === undefined ? iana : `${timezoneLabels[entry.slug]} (${iana})`;
 }
 
+// `Белград`; a zone typed through [Другой…] shows as its IANA name.
+function timezoneCity(iana: string): string {
+  const entry = timezoneByIana(iana);
+  return entry === undefined ? iana : timezoneLabels[entry.slug];
+}
+
 // `2026-09-28` -> `28 сентября`, or `5 октября 2025` when the year differs from `sentOn`'s.
 function shownDate(date: LocalDate, sentOn: LocalDate): string {
   const day = dayMonth.format(new Date(`${date}T00:00:00Z`));
@@ -766,14 +772,38 @@ export const messages = {
   },
   commandArgCancelled: html`Отменено.`,
 
-  welcome: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
+  // First contact and the /start replay (ADR-0028): the welcome carries the menu keyboard, the
+  // setup check its own inline buttons.
+  welcome: joinHtml(
+    [
+      html`Здравствуйте! Я веду учёт трат.`,
+      html`Отправьте сумму и описание, например «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».`,
+      html`Итоги открываются кнопками меню внизу, остальные команды — в «${menu.more}». Подробности: /help.`,
+      html`Ваши траты видны только вам. Выгрузить всё: /export. Как хранятся данные: /privacy.`,
+    ],
+    '\n\n',
+  ),
+  setupCheck: ({
+    timezone,
+    localTime,
+    currency,
+  }: {
+    timezone: string;
+    localTime: string;
+    currency: CurrencyCode;
+  }): Html =>
     joinHtml(
       [
-        html`Здравствуйте! Отправьте трату, например «450 кофе», и я её запишу. Итоги за сегодня: /today.`,
-        html`Часовой пояс: ${timezoneName(timezone)}. Валюта: ${currency}. Изменить: /settings.`,
+        html`Проверьте настройки:`,
+        html`Часовой пояс: ${timezoneCity(timezone)}, у вас сейчас ${localTime}?`,
+        html`Валюта по умолчанию: ${currency}`,
       ],
-      '\n\n',
+      '\n',
     ),
+  setupOkButton: 'Да, всё верно',
+  setupEditButton: 'Изменить',
+  setupConfirmed: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
+    html`Настройки сохранены: ${timezoneCity(timezone)}, ${currency}. Изменить их можно в /settings.`,
   // Admission (ADR-0024): a stranger's first private message, and a deep link that admits no one.
   invitationOnly: html`Бот работает по приглашениям. Попросите ссылку у того, кто вас пригласил.`,
   inviteInvalid: html`Ссылка недействительна или истекла.`,
@@ -922,6 +952,7 @@ export const messages = {
       html`/tags — метки и траты по ним, /tag — метка для всех новых трат`,
       html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
+      html`/start — знакомство заново: настройки и подсказки`,
       html`/cancel — отменить ввод`,
       html`/unlock и /lock — открыть и закрыть зашифрованный учёт, /recover — восстановить доступ по коду`,
       html`/privacy — какие данные хранятся и кто их видит`,

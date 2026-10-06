@@ -162,6 +162,49 @@ export function updateUserTimezone(db: Db, userId: UserId, timezone: string): bo
   );
 }
 
+// The onboarding state (ADR-0028): when the setup check was sent (null: never), and whether
+// the user switched tips off.
+export interface Onboarding {
+  readonly onboardedAt: Date | null;
+  readonly tipsOff: boolean;
+}
+
+export function findOnboarding(db: Db, userId: UserId): Onboarding {
+  const row = db
+    .prepare<[string], { onboarded_at: string | null; tips_off: number }>(
+      'SELECT onboarded_at, tips_off FROM users WHERE id = ?',
+    )
+    .get(userId);
+  if (row === undefined) throw new Error(`user ${userId} does not exist`);
+  return {
+    onboardedAt: row.onboarded_at === null ? null : new Date(row.onboarded_at),
+    tipsOff: row.tips_off === 1,
+  };
+}
+
+// Sets `onboarded_at` unless it is already set. True when this call set it, so of two
+// concurrent first contacts only one sends the setup check.
+export function markOnboarded(db: Db, userId: UserId, at: Date): boolean {
+  return (
+    db
+      .prepare<[string, string]>(
+        'UPDATE users SET onboarded_at = ? WHERE id = ? AND onboarded_at IS NULL',
+      )
+      .run(at.toISOString(), userId).changes > 0
+  );
+}
+
+// Returns false when the switch was already in that state.
+export function setTipsOff(db: Db, userId: UserId, off: boolean): boolean {
+  return (
+    db
+      .prepare<[number, string, number]>(
+        'UPDATE users SET tips_off = ? WHERE id = ? AND tips_off <> ?',
+      )
+      .run(off ? 1 : 0, userId, off ? 1 : 0).changes > 0
+  );
+}
+
 function toUser(row: UserRow): User {
   return {
     id: row.id as UserId,
