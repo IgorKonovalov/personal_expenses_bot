@@ -336,7 +336,7 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 
 ### Notes
 
-- Phase 1: the migration is `0013_admission.sql`. Redemption runs in the access middleware
+- Phase 1: the migration is `0014_admission.sql`. Redemption runs in the access middleware
   (`src/bot/middleware/access.ts`), not in `src/bot/handlers/start.ts`, because
   `clearFlowOnCommand` provisions the sender before any command handler; `start.ts` is unchanged
   (it already ignores an unknown payload). Only an 11-character base64url payload is taken as a
@@ -398,7 +398,7 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
 
 ### Close triggers
 
-- **What shipped:** migration `0013_admission.sql`; `src/services/admission.ts`,
+- **What shipped:** migration `0014_admission.sql`; `src/services/admission.ts`,
   `src/db/invites.ts`, `src/bot/middleware/access.ts` (replaces `allowlist.ts`),
   `src/bot/middleware/rateLimit.ts`, `src/bot/handlers/invite.ts`, `admin.ts`,
   `deleteAccount.ts`, `privacy.ts`, `src/services/deleteAccount.ts`, the receipt cap in
@@ -409,11 +409,10 @@ all well under 64 bytes. The deep-link payload is the bare code (11 characters o
   истекла.», «Лимит чеков на сегодня исчерпан, попробуйте завтра.», «удалённый участник» (was
   «Без имени» in group reports); `/help` gains two lines. Env: `ADMIN_TELEGRAM_ID` (required),
   `ADMIT_TELEGRAM_IDS` (optional); a set `ALLOWED_TELEGRAM_IDS` fails the boot.
-- **Gate at the tip (56b6444):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
-  0, 77 files, 1027 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit
-  0, 242 relative links resolve.
-- **Outstanding `human` phases:** Phase 6 (fill the `PRIVACY.md` contact, rename the VPS env
-  before the deploy, deploy, test `/invite` with a second account).
+- **Gate at the tip (9152406):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 87 files, 1168 tests passed; `node scripts/check-doc-links.mjs` exit 0, 259 relative links
+  resolve.
+- **Outstanding `human` phases:** Phase 7 (deploy and open; blocks merge: no).
 
 ## Followups
 
