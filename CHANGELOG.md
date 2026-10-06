@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.19.0 (2026-10-06)
+
+From Plan 0013 (debts).
+
+- /debts shows who owes you and whom you owe, per person and per currency. [Я дал в долг] and
+  [Я взял в долг] ask for the amount, then the person, picked by button or typed once. A person's
+  card records full or partial repayments, always in the debt's own currency. Debts never count
+  as spending.
+- `1000 кафе /3` records your share as the expense and asks which people owe you the rest, each
+  recorded as a loan.
+- /settle in a group splits every group expense equally per currency among the members, shows the
+  fewest transfers that square it, and records a transfer with [Перевёл].
+- In an encrypted ledger, names and amounts of debts are sealed, including debts recorded before
+  encryption was switched on. /delete_account deletes the user's debts.
+
 ## 0.18.0 (2026-10-06)
 
 From Plan 0027 (bank statement import).

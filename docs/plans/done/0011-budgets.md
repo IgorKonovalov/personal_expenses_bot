@@ -270,7 +270,7 @@ Illustrative copy (ux-telegram may reword it; it lives in `messages.ts`):
 - **Income, balances, "free money" and 50/20/30.** The bot records expenses only.
 - **Budget history** (last period's result, rollover between periods). Each period starts fresh.
 - **Tags/projects and debts:** [Plan 0012](../0012-tags-projects.md) and
-  [Plan 0013](../0013-debts.md).
+  [Plan 0013](0013-debts.md).
 
 ## Implementation log
 

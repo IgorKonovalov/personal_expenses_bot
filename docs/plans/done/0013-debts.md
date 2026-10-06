@@ -1,13 +1,13 @@
 # 0013: Debts: who owes whom, closed in the currency they were opened in
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned after one fix pass, four minors and two nits open as followups, Phase 6 real debts and group owed, v0.19.0
 > **Created:** 2026-09-30
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
-> **Related ADRs:** [ADR-0030](../adrs/0030-debts-as-operations-settle-up-per-currency.md) (the debt and settle-up model),
-> [ADR-0003](../adrs/0003-currency-conversion-at-report-time.md) (original amounts),
-> [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (flows),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
+> **Related ADRs:** [ADR-0030](../../adrs/0030-debts-as-operations-settle-up-per-currency.md) (the debt and settle-up model),
+> [ADR-0003](../../adrs/0003-currency-conversion-at-report-time.md) (original amounts),
+> [ADR-0009](../../adrs/0009-persisted-flow-sessions.md) (flows),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
 
 ## TL;DR
 
@@ -409,4 +409,131 @@ against the decrypted list. That always works, because debts are only recorded w
   `dbt:sp:<id>`, `dbt:spok`, `dbt:spx`, `stl:t:<i>:<8 hex>`, `stl:join`, `stl:del:<uuid>`.
 - `/N` in an expense text is read as a split. `/help`, the group help and README.md changed.
 
+## Close review
+
+Closed on 2026-10-06 by the conductor's close session, from the round 2 review at ff4bccd.
+Phase 6 (`human`, does not block merge) stays owed.
+
+### Earlier rounds, resolved
+
+- Round 1 major M1 (existing debts left plaintext when encryption is switched on): fixed in
+  ef684d6.
+- Round 1 major M2 (`/delete_account` left debts behind): fixed in 52c08fd.
+
+### Round 2 review, at ff4bccd
+
+**Verdict:** Both round 1 majors are fixed and pinned by tests, so the plan is clean to close. Four
+minors and two nits from round 1 still hold, and none of them blocks.
+
+#### Gate (run in the review session on the lane at ff4bccd)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 100 files, 1390 tests (round 1 had 1389; the M2 test is the new one, and
+  the M1 test replaced an old one)
+- `node scripts/check-doc-links.mjs`: exit 0, 261 relative links resolve
+
+#### Round 1 majors, re-checked
+
+**M1 (existing debts left plaintext when encryption is switched on): resolved in ef684d6.**
+
+- `src/services/sealLedger.ts:107` `sealUserDebts` lists the user's plaintext people
+  (`listPlaintextDebtPeople`) and plaintext operations, deleted ones included
+  (`listPlaintextDebtOps`, `WHERE sealed IS NULL`). It seals each one in place with guarded
+  `UPDATE … WHERE sealed IS NULL` helpers (`src/db/debts.ts`), which null `name`/`name_key` and
+  `kind`/`amount_minor`/`currency`. A row that is already sealed throws.
+- `src/services/ledgerKeys.ts:258` calls it inside the `enableEncryption` transaction, after rows
+  and rules and before `scrubAfterSealing`. The bindings are `debtPersonBinding(ledger.id, id)` /
+  `debtOpBinding(ledger.id, id)`, the same ones the Phase 5 write path uses. The read-back in the
+  test proves they match.
+- `src/services/debts.ts:110-127`: `openPerson` / `openOp` now throw on a plaintext row in a
+  sealed ledger, as the round 1 fix suggested.
+- Test `src/services/debts.test.ts:189` ("seals the debts recorded before sealing, deleted ones
+  included, and still reads them"). It lends 5000 and 700 to Петя, deletes the 700, and then
+  seals. It asserts one `debt_people` row with `name` and `name_key` NULL and no UTF-8 «Петя»
+  bytes in `sealed`. It asserts both `debt_ops` rows (the deleted one included) have `kind`,
+  `amount_minor` and `currency` NULL with `sealed` set. It asserts `debtLines` reads Петя 500000
+  RSD. It then asserts that typing «петя» reuses the sealed person (one row) and the balance
+  becomes 600000. That is strong enough for the claim.
+- No other path re-seals rows: `changePassphrase` re-wraps only the private key
+  (`ledgerKeys.ts:480-507`), and there is no disable path.
+
+**M2 (`/delete_account` left debts behind): resolved in 52c08fd.**
+
+- `src/db/debts.ts` `deleteUserDebts` deletes `debt_ops`, then `debt_people`, by `user_id`.
+  `src/services/deleteAccount.ts:53` calls it inside the deletion transaction, after
+  `deleteLedgerExpenses`. That order is safe because `debt_ops.expense_id` is
+  `ON DELETE SET NULL`. The header comment names the debts.
+- Test `src/services/deleteAccount.test.ts:108`. Alice lends to Петя and records a split
+  `1000 кафе` with a lend to Вася (an op with `expense_id` set). Bob lends to Аня. Before deletion
+  Alice has 2 ops and 2 people. After deletion she has 0 and 0, while Bob keeps 1 and 1. That pins
+  both completeness and scoping.
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+All four were raised in round 1. They still hold at ff4bccd. None was fixed, and none was recorded
+under the plan's `## Followups`, which was empty.
+
+- **m1. Phase 4's promised db and service tests were not written.** `src/db/transfers.test.ts`
+  and `src/services/settleUp.test.ts` do not exist, though Phase 4's Files touched names both.
+  Nothing directly pins the repeated-`source_key` return of `insertTransferOrGetExisting`, the
+  single success of `softDeleteTransfer`, or a cross-ledger `deleteTransfer` answering `notFound`.
+  Fix: add the two tests, or record them as a followup at close.
+- **m2. The group `/N` refusal has no test.** No test sends `1000 кафе /3` to a bound group and
+  asserts no expense plus `messages.splitInGroup` (`src/bot/group/text.ts:43`,
+  `src/services/recordExpense.ts:164`). The reply depends on the handler re-parsing the text after
+  `ignored`; a break would record the whole amount or stay silent. Fix: add the test in
+  `src/bot/group/group.test.ts`, or record it as a followup.
+- **m3. The split picker and the `/debts` list have no button cap.** `splitPickerView` lists
+  every person without paging, and `/debts` gives every person with a balance a button
+  (`src/bot/handlers/debts.ts`). Past Telegram's inline-keyboard limit the send fails silently.
+  Fix: page with `pageOf` / `pagerRow` as the person step does, or record it as a followup.
+- **m4. Debt flow payloads hold amounts in plaintext in a sealed ledger.** `debtPerson` /
+  `debtSplit` flow sessions keep `amountMinor`, `currency` and `each` in `flow_sessions` for up to
+  `FLOW_TTL_MS` (`src/services/flowSessions.ts`). For the life of the flow, this contradicts Phase
+  5's "amount… go into a sealed payload". Fix: compare with Plan 0019's expense flows; if those
+  are also plaintext, record a followup.
+
+#### nit
+
+- **n1. `messages.settleEven` is dead.** Defined at `src/bot/messages.ts:1751` and never used;
+  `settleScreen` inlines the same «Все в расчёте.». Fix: use it in `settleScreen`'s empty branch,
+  or delete it.
+- **n2. A settled person's card can't be reached from `/debts`.** Only people with a non-zero
+  balance get a button (`debtsListView`), so a fully repaid person's history is unreachable. A
+  design gap that follows the plan's wording. Fix: record it as a followup (for example, an
+  «Все люди» button).
+
+#### Bookkeeping at close
+
+- ADR-0030 accepted and `docs/adrs/README.md` refreshed.
+- Plan moved to `docs/plans/done/`, links repaired both ways, `node scripts/check-doc-links.mjs`
+  run.
+- Version bumped to 0.19.0 (minor: `/debts`, `/settle` and `/N`), with a `CHANGELOG.md` entry and
+  a `versionAnnouncements` entry.
+- The `/privacy` copy and `PRIVACY.md` don't mention debts yet. The `/privacy` copy is code in the
+  messages module, so both are recorded as a followup instead of being edited at close.
+- m1-m4, n1 and n2 are recorded under `## Followups`.
+- `docs/plans/README.md` refreshed. `CLAUDE.md` "Where things live" still matches the tree.
+
 ## Followups
+
+- m1: write `src/db/transfers.test.ts` and `src/services/settleUp.test.ts` (repeated
+  `source_key`, single `softDeleteTransfer` success, cross-ledger `deleteTransfer` → `notFound`).
+- m2: test the group `/N` refusal (`1000 кафе /3` in a bound group records nothing and answers
+  `messages.splitInGroup`).
+- m3: page the split picker and the `/debts` person buttons with `pageOf` / `pagerRow`.
+- m4: keep debt flow amounts out of plaintext `flow_sessions` in a sealed ledger, or record why
+  not, alongside Plan 0019's expense flows.
+- n1: use or delete `messages.settleEven`.
+- n2: make a settled person's card reachable from `/debts` (for example, an «Все люди» button).
+- Privacy: the `/privacy` copy and `PRIVACY.md` should say the bot stores the names of people the
+  user lends to or borrows from, and that the stored data includes debts.

@@ -1,8 +1,8 @@
 # ADR-0030: Debts are signed operations balanced per person and currency; group settle-up splits equally per currency
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0013 ([0013-debts.md](../plans/0013-debts.md))
+> **Related plan(s):** Plan 0013 ([0013-debts.md](../plans/done/0013-debts.md))
 
 ## Context
 
