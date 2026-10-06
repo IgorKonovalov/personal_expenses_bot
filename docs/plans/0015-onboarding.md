@@ -7,7 +7,9 @@
 > (`/start <code>`, `/privacy`)
 > **Related ADRs:** [ADR-0028](../adrs/0028-contextual-tips-registry.md) (the tips registry),
 > [ADR-0011](../adrs/0011-navigation-model.md) (menu and screens),
-> [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (flows)
+> [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (flows),
+> [ADR-0037](../adrs/0037-first-time-notices-and-transient-replies.md) (`user_notices`, kept apart
+> from tips)
 
 ## TL;DR
 
@@ -76,14 +78,16 @@ bot UI.
     setup check is sent.
   - `/start` from an onboarded user (the deep-link payloads `e_` and `gs_` keep their current
     handling) replays: it clears the user's `user_tips` rows, sets `tips_off` to 0, and sends the
-    same two messages.
+    same two messages. A replay leaves `user_notices` (ADR-0037) untouched: notices are never
+    replayed.
   - `onb:ok` edits the message to `setupConfirmed`, with no keyboard. `onb:edit` edits it into
     the settings hub (`set:open`'s screen, with the hub as the anchor). Both answer the callback,
     and a repeat is harmless.
   - Copy:
     - `welcome`: «Здравствуйте! Я веду учёт трат.» / «Отправьте сумму и описание, например
       «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».» /
-      «Итоги открываются кнопками меню внизу. Всё остальное описано в /help.» / «Ваши траты видны
+      «Итоги открываются кнопками меню внизу, остальные команды — в «☰ Ещё». Подробности: /help.»
+      (`☰ Ещё` interpolated from `messages.menu.more`) / «Ваши траты видны
       только вам. Выгрузить всё: /export. Как хранятся данные: /privacy.»
     - `setupCheck({ timezone, localTime, currency })`: «Проверьте настройки:» /
       «Часовой пояс: <город>, у вас сейчас <HH:MM>?» / «Валюта по умолчанию: <CUR>». `localTime`
@@ -92,10 +96,13 @@ bot UI.
     - `setupConfirmed({ timezone, currency })`: «Настройки сохранены: <город>, <CUR>. Изменить их
       можно в /settings.»
   - `/help` gains the line «/start — знакомство заново: настройки и подсказки».
+  - `deleteAccount` (`src/services/deleteAccount.ts`) also deletes the user's `user_tips` rows,
+    beside `deleteUserNotices` (Plan 0029 has landed, see Data shapes).
 - **Files touched:** `src/db/migrations/00NN_onboarding.sql`, `src/db/users.ts` (+ test),
   `src/db/userTips.ts` (+ test), `src/services/onboarding.ts` (+ test),
   `src/bot/handlers/start.ts`, `src/bot/handlers/settings.ts`, `src/bot/callbackData.ts`,
-  `src/bot/callbacks.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`.
+  `src/bot/callbacks.ts`, `src/bot/messages.ts`, `src/services/deleteAccount.ts` (+ test),
+  `src/bot/bot.test.ts`.
 - **Done when:**
   - A new user's `/start` produces exactly two messages, `welcome` with the reply menu and then
     `setupCheck`. Afterwards `onboarded_at` is set.
@@ -106,7 +113,8 @@ bot UI.
   - `onb:edit` shows the settings hub in the same message, and a timezone picked there is stored.
   - A user present before the migration has `onboarded_at` set, and their `/start` replays.
   - A replay deletes that user's `user_tips` rows and sets `tips_off` to 0, and leaves other users'
-    rows untouched.
+    rows untouched. It leaves that user's `user_notices` rows untouched.
+  - `/delete_account` leaves no `user_tips` row for the user.
   - The callback data `onb:ok` (6 bytes) and `onb:edit` (8 bytes) pass `assertCallbackData`.
 
 ### Phase 2: A first message that isn't `/start`
@@ -116,12 +124,16 @@ bot UI.
     (an expense is recorded and confirmed, a receipt is read, a command runs). After the
     handler's reply, the bot sends `welcome` and then `setupCheck`. When the user then has at
     least one expense, `setupCheck` starts with `setupAfterExpense`.
+  - Stray input (Plan 0034's `sendStrayReply`: an unknown command, text that isn't an expense, a
+    non-text message) from a user with `onboarded_at` NULL gets no stray reply: the welcome and the
+    setup check stand in for it, and `stray_help` is marked seen (the welcome points to /help).
   - A callback query or a group update never triggers onboarding.
   - Copy: `setupAfterExpense({ currency })`: «Трату выше я записал в <CUR>. Если валюта другая,
     нажмите под ней [Изменить] → [Сумма] и отправьте сумму с валютой, например «450 RUB».» (The
     amount edit accepts `<amount> <CUR>`: `parseAmountAnswer` in `src/services/editExpense.ts`.)
 - **Files touched:** `src/bot/middleware/onboarding.ts` (+ test), `src/bot/bot.ts`,
-  `src/services/onboarding.ts` (+ test), `src/bot/messages.ts`, `src/bot/bot.test.ts`.
+  `src/services/onboarding.ts` (+ test), `src/bot/handlers/help.ts`, `src/bot/messages.ts`,
+  `src/bot/bot.test.ts`.
 - **Done when:**
   - A new user's first message `450 кофе` records 45000 minor units in the default currency and
     replies with the usual confirmation, followed by `welcome`, then `setupCheck` opening with
@@ -132,6 +144,8 @@ bot UI.
     sent at most once, because `onboarded_at` is set by then.
   - A new user's first message `/today` gets the today screen, then the pair, without
     `setupAfterExpense`.
+  - A new user's first sticker gets exactly two messages, `welcome` then `setupCheck`, and no full
+    help. Their second sticker gets `notUnderstood`.
 
 ### Phase 3: The tips registry and the recording tips
 - **Owner skill:** dev
