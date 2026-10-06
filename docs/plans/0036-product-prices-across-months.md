@@ -281,8 +281,8 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | 1: /prices skeleton | dev | done | 878daa4 |
 | 2: amount and unit price | dev | done | ccc3e48 |
 | 3: review and corrections | dev | done | 3fee520 |
-| 4: user products | dev | done | committed with this row |
-| 5: coverage report | dev | not started | |
+| 4: user products | dev | done | 651178f |
+| 5: coverage report | dev | done | committed with this row |
 | 6: real receipts | human | not started | |
 
 ### Notes
@@ -326,6 +326,15 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
   product, so a second tap finds nothing and creates nothing. A name is refused when it
   matches a catalog product's name case-insensitively. A clash with the user's own product
   names is not checked.
+- Phase 5: both options are used. The report logic is in `src/tools/productsCoverage.ts` (with
+  `productsCoverage.test.ts`), so vitest can reach it. `scripts/products-coverage.ts` is the
+  entry and opens the file read-only (`fileMustExist`). The path comes from argv,
+  `DATABASE_PATH` or `./data/bot.sqlite`.
+- Phase 5: the report counts plaintext rows only, because a sealed ledger's items are
+  encrypted. Each ledger gets one block per currency. An item whose author answered "not a
+  product" counts as unmatched.
+- Phase 5: the CLI was smoke-run only against a missing lane path, where it refused to open
+  (`SQLITE_CANTOPEN`). It has not been run against any real database.
 
 ### Close triggers
 

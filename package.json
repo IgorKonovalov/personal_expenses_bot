@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "qr:corpus": "tsx scripts/qr-corpus.ts",
+    "products:coverage": "tsx scripts/products-coverage.ts",
     "prepare": "husky"
   },
   "lint-staged": {
