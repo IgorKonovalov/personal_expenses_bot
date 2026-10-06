@@ -374,6 +374,9 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   occurrences (Risks: "whichever plan lands second adds that"), and no phase lists it.
   `recurring_occurrences.expense_id` and `recurring_rules.ledger_id` reference rows it deletes,
   with foreign keys on. Not run.
+- Review round 1, finding 0 (blocker, `/delete_account` fails for a user with a rule): fixed in
+  01a3f74. `deleteUserOccurrences` and `deleteUserRules` in `src/db/recurring.ts`, outside
+  `Files touched`; tested in `src/services/deleteAccount.test.ts`.
 
 ### Close triggers
 
