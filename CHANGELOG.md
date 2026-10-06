@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.20.0 (2026-10-06)
+
+From Plan 0012 (tags for projects).
+
+- `450 кофе #отпуск #рим` records the expense with tags: `#words` leave the description, up to 5
+  per expense, and show on the confirmation and the card. [Изменить] → [Метки] replaces them.
+- /tags lists the ledger's tags with their all-time totals in the ledger's currency; a tag's
+  button shows its total by category, its expense count and its first and last date.
+- /tag отпуск adds a tag to every expense you record (text, receipt or bank SMS) until
+  [Снять метку]. In a group the sticky tag is the sender's own.
+- In an encrypted ledger, tags are sealed with the rest of the expense, and the sticky tag lasts
+  until the bot restarts. Export gains a Метки column after Описание.
+
 ## 0.19.0 (2026-10-06)
 
 From Plan 0013 (debts).

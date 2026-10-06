@@ -1,8 +1,8 @@
 # ADR-0029: Tags are `#words` stripped from the expense text and stored on the expense row
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06, at the close of Plan 0012)
 > **Date:** 2026-10-01
-> **Related plan(s):** Plan 0012 ([0012-tags-projects.md](../plans/0012-tags-projects.md))
+> **Related plan(s):** Plan 0012 ([0012-tags-projects.md](../plans/done/0012-tags-projects.md))
 
 ## Context
 

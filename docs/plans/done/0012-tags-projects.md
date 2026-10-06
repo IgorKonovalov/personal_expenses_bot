@@ -1,13 +1,14 @@
 # 0012: Tags for projects: `#отпуск` on an expense, and a report per tag
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned, one minor fixed at close, five minors and three
+> nits open, Phase 6 real trip owed, v0.20.0
 > **Created:** 2026-09-30
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
-> [Plan 0024](done/0024-export-and-data-ownership.md) (export gains a tags column)
-> **Related ADRs:** [ADR-0029](../adrs/0029-tags-on-the-expense-row.md) (tag syntax and storage),
-> [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),
-> [ADR-0008](../adrs/0008-category-suggestion-from-history.md) (learning by description),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the sealed payload carries tags),
+> [Plan 0024](0024-export-and-data-ownership.md) (export gains a tags column)
+> **Related ADRs:** [ADR-0029](../../adrs/0029-tags-on-the-expense-row.md) (tag syntax and storage),
+> [ADR-0004](../../adrs/0004-amount-parsing-rule.md) (amount parsing),
+> [ADR-0008](../../adrs/0008-category-suggestion-from-history.md) (learning by description),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
 
 ## TL;DR
 
@@ -331,4 +332,171 @@ const MAX_TAGS_PER_EXPENSE = 5;
 - `/tags` joined `messages.commands`; `/tags` and `/tag` joined `messages.groupCommands`. `/help`,
   README.md and the export's columns (Метки after Описание) changed.
 
+## Close review
+
+The round 1 review (tip 799c4c1), in full. No earlier round raised a finding, so no fix commit
+is credited here. Minor 3 (README drift) was repaired at close in a2be9fa. Phase 6 (`human`) is
+owed. Every other finding stays open.
+
+**Verdict:** Phases 1-5 are built as planned and every named done-when has a test with a real
+assertion. The gate is green. There are no blockers or majors: six minors (a stale-ledger
+[Снять метку], account deletion leaving `sticky_tag`, README drift, the group `/tag` with no
+argument, and two untested plumbing paths) and three nits. The plan can close once its
+bookkeeping is done. The minors can ride along or go to a followup.
+
+### Gate (run in the review session at 799c4c1)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: 103 files, 1460 tests, all pass.
+- `node scripts/check-doc-links.mjs`: exit 0, 267 relative links resolve.
+
+### Alignment
+
+- The phases map to commits as the log says: cdb24c3, d41c71c, 43bdd58, 22559ac, f5c0c7d. Phase 6
+  is `human`, does not block merge, and is owed. Each phase has a single, valid owner tag.
+- Assertions read against each done-when:
+  - P1, parsing: `expenseText.test.ts` checks `450 такси #Отпуск #рим вчера` → 45000, `такси`,
+    `['отпуск','рим']`, `2026-09-30` with `toStrictEqual`. It also covers de-duplication,
+    `кофе#отпуск`, `кофе #`, `450 #отпуск` invalid and six tags → `tooManyTags`. The NFC test really
+    feeds a decomposed `й`: checked by byte, and the expected value is composed.
+  - P1, nothing is recorded for six tags: `recordExpense.test.ts` and `bot.test.ts` assert zero rows.
+  - P1, the history description key: tested with `зюзя` (no keyword rule), and the row's
+    `description_key` is asserted. The log notes the deviation from the plan's `кофе` example.
+  - P1, `1 914.04 RSD`: `tags.test.ts` (191404), `tagSummary.test.ts` and `bot.test.ts` all check
+    the exact `/tags` text and keyboard. The soft-delete case is checked in the service and the bot.
+  - P2: the report's exact text (Транспорт 1 464.04 before Кафе 450.00, «2 расхода»), the range
+    «28.09–30.09», the 14-byte button with `assertCallbackData`, and `tagGone` plus the re-rendered
+    list are all asserted.
+  - P3: `['рим','отпуск']`, `['отпуск']` once, the receipt carrying the tag, two `tag:off` taps then
+    no tag, and the per-ledger scope with a switched active ledger are all asserted.
+  - P4: an edit to `#ремонт` leaves `/tags` listing `#ремонт` alone, `-` clears, `кофе` is refused
+    with the tags kept, and the group sticky tag is per member. The group `/tags` covers both members.
+  - P5: in a sealed ledger the `tags` column is NULL and no column holds «лечение». `/tags` answers
+    locked while locked and lists the tag after `/unlock`. The `ledger_members` column stays NULL,
+    and a new keyring records without the tag. The export done-when is tested only at
+    `expensesTable` level (see minor 5).
+- No ADR is reversed. The code follows ADR-0029: tags stripped before the date suffix, NFC lower
+  case, a cap of 5, a column in plaintext ledgers, the payload in sealed ones, grouping in the
+  domain, and a sticky tag held in memory for sealed ledgers. ADR-0029 is still `proposed`.
+- The implementation log is present, shorter than the phases section, and discloses its
+  deviations.
+
+### Layering, correctness
+
+- grammY appears only under `src/bot/`, and `src/domain/tags.ts` imports neither storage nor
+  Telegram. All copy is in `messages.ts`.
+- Money: tag totals reuse `summarizeConverted`, with per-expense conversion and no float math.
+- Time: dates are `occurred_on` only. The rate window comes from the ordered list
+  (`ORDER BY e.occurred_on`).
+- Idempotency: tags ride the expense's source key. `/tag` and `tag:off` are set-to-value, and
+  `setExpenseTags` and `setMemberStickyTag` are compare-and-set.
+- Privacy: no tag name reaches a log. The edit log records only `field`.
+- Callback data: `tag:s:<8 hex>` is 14 bytes, `tag:l:<n>` is at most 10, `tag:off` is 7, and
+  `exp:ef:<uuid>:g` is 45.
+
+### Findings
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+1. **[Снять метку] in a DM clears the wrong ledger's tag after a ledger switch.** (open)
+   - **Where:** `src/bot/handlers/tags.ts:107-112`, which calls `clearStickyTag` in
+     `src/services/stickyTag.ts:871`, and that resolves the *active* ledger at tap time.
+   - **What happens:** the `/tag` reply names ledger X («… в «X»…»). Switch the active ledger to
+     Y, then tap that old button. The tap clears Y's tag, which may be none, and edits the message
+     to «Метка снята. Новые траты записываются без неё.», but X keeps its sticky tag. Every later
+     expense in X is still tagged after the user was told the tag was off. The log discloses the
+     at-tap-time resolution, but not this consequence.
+   - **Fix:** carry the ledger in the data, `tag:off:<ledgerId>` (44 bytes). Clear it through
+     `clearLedgerStickyTag` after a membership check (`findLedgerForMember`). Keep the bare
+     `tag:off` regex for buttons already sent, or let them fall back to the active ledger. Add a
+     bot test: `/tag отпуск` in X, switch to Y, tap, and `300 такси` in X records no tag.
+2. **`/delete_account` leaves `ledger_members.sticky_tag` behind in shared ledgers.** (open)
+   - **Where:** `src/services/deleteAccount.ts:61`. It clears display names only, and
+     `src/db/ledgers.ts:251` (`clearMemberDisplayNames`) never touches `sticky_tag`.
+   - **Why it matters:** the plan's Privacy risk calls tag names user data, and ADR-0029 cites
+     `#лечение` and `#развод`. Account deletion scrubs the member's identifying fields in shared
+     ledgers, and this plan added a new member field the scrub misses. The log lists it as a
+     followup and left it unfixed.
+   - **Fix:** in `clearMemberDisplayNames`, or in a sibling the transaction calls, also run
+     `sticky_tag = NULL` for the user's memberships. Extend the delete-account test to assert it.
+3. **The README is stale on export and on the group commands.** (fixed at close in a2be9fa)
+   - `README.md:41`: the `/export` row lists every column ("the category, the description, the
+     shop and receipt link…") but not the new Метки column.
+   - `README.md:39`: the `/tag` row says "`/tag` alone shows it", which is false in a group, where
+     it answers the usage (minor 4).
+   - The group command table (`README.md` around line 98) has no `/tags` or `/tag` row, although
+     both joined `messages.groupCommands`.
+   - **Fix:** add «the tags» to the `/export` row. Qualify or fix the `/tag` claim. Add group rows
+     for `/tags` and `/tag`.
+4. **In a group, `/tag` with no argument answers the usage, not the current tag.** (open)
+   - **Where:** `src/bot/group/tags.ts:43-61`. `setLedgerStickyTag` is called with an empty match,
+     which is invalid, so the reply is `stickyTagUsage`.
+   - **Why it matters:** Phase 4 says `/tag` and `/tags` "work on the group's ledger". In private,
+     `/tag` alone shows the tag and its [Снять метку]. In a group, a member has no way to see the
+     current tag, or to clear it once the original reply has scrolled away. The usage text doesn't
+     say how to clear either. The log discloses it.
+   - **Fix:** mirror the private branch. On an empty match, reply `stickyTagCurrent` with the
+     off button, or `stickyTagNone`, through `stickyTagOf(deps, member.ledger.id, member.user.id)`.
+5. **The Phase 5 export done-when is tested at the domain level only.** (open)
+   - **Where:** `src/domain/export/rows.test.ts` feeds a hand-built `ExportExpense` with
+     `tags: ['отпуск','рим']`. `src/services/exportLedger.test.ts` only adds `tags: []` to an
+     untagged fixture, and the `/export` tests in `bot.test.ts` assert an empty Метки cell.
+   - **Why it matters:** the done-when is "an exported row for `450 кофе #отпуск #рим` has
+     `#отпуск #рим` in Метки". Nothing proves that a *recorded* expense's tags reach the file
+     through `exportOf` (`src/services/exportLedger.ts:134`), from either a plaintext or a sealed
+     ledger.
+   - **Fix:** in `exportLedger.test.ts`, record `450 кофе #отпуск #рим` and assert the row's
+     `tags`. Better, add a bot `/export` test whose CSV line reads `;кофе;#отпуск #рим;`.
+6. **Sealing a ledger with tagged history is untested.** (open)
+   - **Where:** `src/services/sealLedger.ts:70` carries `row.tags` into the payload, and
+     `src/db/expenses.ts:381` (`sealExpenseInPlace`) sets `tags = NULL`.
+   - **Why it matters:** this is the one path where plaintext tag names must leave the row. A
+     regression would either leak names in a sealed ledger or lose them silently. The log
+     discloses that no test covers it.
+   - **Fix:** a `sealLedger` test. Record `450 кофе #лечение` in a plaintext ledger and seal it.
+     Then assert `expenses.tags` is NULL and that the opened row (after unlock) has
+     `tags: ['лечение']`.
+
+#### nit
+
+1. The bank-SMS path's sticky tag (`src/services/recordBankSms.ts:89`) has no test of its own.
+   Phase 3's What names it, but its done-when names only the receipt. The log discloses the gap.
+   Add one assertion beside the receipt test. (open)
+2. Group edge cases fall through to silence, and the plan says nothing about them. (open)
+   - **Where:** `src/services/groupChats.ts:191`, `src/bot/group/text.ts:53`.
+   - **Six tags:** a group text that hits `tooManyTags`, from six text tags or five plus a sticky
+     tag, is mapped to `ignored` and gets no reply.
+   - **Sticky tag:** a recognised-category group expense is confirmed by a reaction alone, so the
+     sticky tag is never shown. That falls short of Phase 3's "the user always sees it applied".
+   - **Next step:** these are product calls, worth a `ux-telegram` look in a followup.
+3. `messages.tooManyTags` and `editRefusals.tooManyTags` (`src/bot/messages.ts:920`, `:1189`)
+   hardcode «5» instead of interpolating `MAX_TAGS_PER_EXPENSE`, so the copy drifts if the cap
+   changes. (open)
+
+### Bookkeeping owed at close (as the review listed it)
+
+- Plan `Status:` → `done` with the date and verdict, `git mv` the plan to `docs/plans/done/`, and
+  repair the links in both directions. ADR-0029's `../plans/0012-…` link is inbound, and the
+  plan's `done/0019…`, `done/0024…` and `../adrs/` links are outbound. Then run
+  `node scripts/check-doc-links.mjs`.
+- Accept ADR-0029 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`. Its row still reads `approved (2026-10-01)` while the plan
+  reads `in-progress`. Move it to recently closed and record Phase 6 as owed.
+- Bump the minor version, because this is a feature plan with new commands. Add the
+  `CHANGELOG.md` entry and the `versionAnnouncements` entry (ADR-0013).
+- Record the minors as followups if they don't go to a fix pass. Phase 6 (`human`) stays owed
+  after the merge.
+
 ## Followups
+
+- Minors 1, 2, 4, 5 and 6 and nits 1 to 3 of the close review above are open.
+- Phase 6 (`human`): a trip in real use, owed.
