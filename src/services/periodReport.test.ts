@@ -227,6 +227,37 @@ describe('dueSummaries and claimSummary', () => {
     });
   });
 
+  it('is the closed ISO week on Monday at 09:00 with the weekly push on, keyed by its Monday', () => {
+    setPushOn(db, user.id, 'monthly', false);
+    setPushOn(db, user.id, 'weekly', true);
+
+    expect(dueSummaries(deps, new Date('2026-10-05T06:59:00Z'))).toEqual([]);
+    const [due] = dueSummaries(deps, new Date('2026-10-05T07:00:00Z'));
+
+    expect(due).toMatchObject({
+      push: 'weekly',
+      kind: 'week',
+      period: { kind: 'week', from: '2026-09-28', to: '2026-10-04' },
+      previous: { from: '2026-09-21', to: '2026-09-27' },
+      periodKey: '2026-09-28',
+    });
+  });
+
+  it('gives a week no budget block and no top 3', () => {
+    setBudgetLimit(db, ledger.id, { limitMinor: 6000000, currency: 'RSD' }, NOW);
+    add('2026-09-29', 1000, 'cafe');
+
+    const result = periodReport(deps, {
+      ledger,
+      readerId: user.id,
+      period: { kind: 'week', from: '2026-09-28' as LocalDate, to: '2026-10-04' as LocalDate },
+      previous: { from: '2026-09-21' as LocalDate, to: '2026-09-27' as LocalDate },
+    });
+
+    expect(result).toMatchObject({ top: [], converted: { totalMinor: 1000 } });
+    expect(result).not.toHaveProperty('budget');
+  });
+
   it('is the calendar month for a budget starting on the 1st', () => {
     setBudgetStartDay(db, ledger.id, { startDay: 1, currency: 'RSD' }, NOW);
 

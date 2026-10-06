@@ -210,7 +210,7 @@ interface SummaryView {
 // each currency with no rate, with no change.
 interface PushReportView {
   readonly period: {
-    readonly kind: 'month' | 'budget';
+    readonly kind: 'month' | 'budget' | 'week';
     readonly from: LocalDate;
     readonly to: LocalDate;
   };
@@ -628,11 +628,17 @@ function dayDotMonth(date: LocalDate): string {
   return `${date.slice(8, 10)}.${date.slice(5, 7)}`;
 }
 
-// The push's title: `Итоги сентября`, or `Итоги периода 15.09–14.10` for a budget period.
+// The push's title: `Итоги сентября`, `Итоги периода 15.09–14.10` for a budget period, or
+// `Итоги недели 28 сентября – 4 октября`.
 function pushTitle(period: PushReportView['period']): string {
-  return period.kind === 'budget'
-    ? `Итоги периода ${dayDotMonth(period.from)}–${dayDotMonth(period.to)}`
-    : `Итоги ${GENITIVE_MONTHS[dateParts(period.from).month] ?? ''}`;
+  switch (period.kind) {
+    case 'budget':
+      return `Итоги периода ${dayDotMonth(period.from)}–${dayDotMonth(period.to)}`;
+    case 'week':
+      return `Итоги недели ${weekRange(period, GENITIVE_MONTHS)}`;
+    case 'month':
+      return `Итоги ${GENITIVE_MONTHS[dateParts(period.from).month] ?? ''}`;
+  }
 }
 
 // An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
@@ -1170,6 +1176,11 @@ export const messages = {
   // The tidy chat switch (ADR-0038): deletes the user's message once it has recorded an expense.
   tidyChatToggleOn: 'Убирать мои сообщения: вкл',
   tidyChatToggleOff: 'Убирать мои сообщения: выкл',
+  // The summary push switches.
+  pushMonthlyToggleOn: 'Итоги месяца: вкл',
+  pushMonthlyToggleOff: 'Итоги месяца: выкл',
+  pushWeeklyToggleOn: 'Итоги недели: вкл',
+  pushWeeklyToggleOff: 'Итоги недели: выкл',
   setupOkButton: 'Да, всё верно',
   setupEditButton: 'Изменить',
   setupConfirmed: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>
@@ -2073,6 +2084,20 @@ export const messages = {
       '\n\n',
     ),
   pushDonateLine,
+  // The weekly push, on Monday for the closed week: the totals and categories with their
+  // changes, and no budget, no largest expenses and no footer.
+  weeklySummaryPush: (view: PushReportView): Html =>
+    joinHtml(
+      [
+        html`<b>${pushTitle(view.period)}</b>`,
+        ...pushReportBlocks(view),
+        ...conversionNotes(
+          view.convertedFrom,
+          view.unconverted.map((c) => c.currency),
+        ),
+      ],
+      '\n\n',
+    ),
   pushOffButton: 'Отключить',
   pushOff: (push: 'monthly' | 'weekly'): string =>
     `${push === 'monthly' ? 'Итоги месяца' : 'Итоги недели'} больше не придут. Включить: /settings`,

@@ -9,7 +9,15 @@ import {
   type Ledger,
   type LedgerId,
 } from '../db/ledgers.js';
-import { findTidyChat, setTidyChat, updateUserTimezone, type User } from '../db/users.js';
+import {
+  findPushOn,
+  findTidyChat,
+  setPushOn,
+  setTidyChat,
+  updateUserTimezone,
+  type PushKind,
+  type User,
+} from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { canonicalTimezone, resolveTimezone } from '../domain/timezones.js';
@@ -17,7 +25,8 @@ import type { Logger } from '../logger.js';
 import { completeFlow, startFlow } from './flowSessions.js';
 import type { ServiceDeps } from './provisionUser.js';
 
-// The /settings use-cases: the user's timezone and the active ledger's default currency.
+// The /settings use-cases: the user's timezone, the active ledger's default currency and the
+// user's switches.
 // DEFAULT_TIMEZONE is both the new-user default and the fallback for a stored zone this runtime
 // doesn't know.
 
@@ -90,6 +99,27 @@ export function tidyChatOn({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean
 // Returns false when the switch was already in that state.
 export function switchTidyChat({ db }: Pick<ServiceDeps, 'db'>, user: User, on: boolean): boolean {
   return setTidyChat(db, user.id, on);
+}
+
+// The settings hub's summary push rows: the monthly push and the weekly one.
+export function summaryPushOn(
+  { db }: Pick<ServiceDeps, 'db'>,
+  user: User,
+  push: PushKind,
+): boolean {
+  return findPushOn(db, user.id, push);
+}
+
+// Returns false when the switch was already in that state.
+export function switchSummaryPush(
+  deps: Pick<SettingsDeps, 'db' | 'logger'>,
+  user: User,
+  push: PushKind,
+  on: boolean,
+): boolean {
+  const changed = setPushOn(deps.db, user.id, push, on);
+  if (changed) deps.logger.info({ userId: user.id, push, on }, 'summary push switched');
+  return changed;
 }
 
 export type LedgerTimezoneResult = { readonly kind: 'updated' | 'unchanged' | 'forbidden' };

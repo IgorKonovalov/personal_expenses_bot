@@ -244,8 +244,8 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | c11768c |
-| 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | committed with this row |
-| 3: The weekly push and the settings switches | dev | not started | |
+| 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | a839502 |
+| 3: The weekly push and the settings switches | dev | done | committed with this row |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real month's push | human | not started | |
 
@@ -267,6 +267,13 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
   out. A foreign one shows its recorded amount with «(≈ … RSD)» after it.
 - Phase 2: the budget line reads «<b>Бюджет:</b> 62 500.00 из 60 000.00 RSD, перерасход
   2 500.00 RSD». `src/bot/summaryProvider.ts` and `src/bot/bot.test.ts` are unchanged.
+- Phase 3: `src/services/periodReport.ts` (+ test) is outside `Files touched`: the weekly
+  occurrence is computed in `dueSummaries` there, and `periodReport` skips the budget block and
+  the top 3 for a week.
+- Phase 3: a week's `period_key` is its Monday (`2026-09-28`, the `periodKey` /pager form),
+  not the illustrative `2026-W40` of Data shapes.
+- Phase 3: the two hub rows sit between [Шифрование] and [Подсказки]. The weekly title reads
+  «Итоги недели 28 сентября – 4 октября».
 
 ### Close triggers
 

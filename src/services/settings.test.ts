@@ -15,6 +15,8 @@ import {
   setLedgerCurrency,
   setLedgerTimezone,
   startTimezoneFlow,
+  summaryPushOn,
+  switchSummaryPush,
   switchTidyChat,
   tidyChatOn,
   updateTimezone,
@@ -72,6 +74,29 @@ describe('userSettings', () => {
     const view = userSettings(deps, user);
     expect(view.timezone).toBe('Europe/Belgrade');
     expect(view.ledger).toMatchObject({ kind: 'personal', defaultCurrency: 'RSD' });
+  });
+});
+
+describe('summary push switches', () => {
+  it('starts monthly on and weekly off, and switches each alone, logging ids only', () => {
+    expect(summaryPushOn(deps, user, 'monthly')).toBe(true);
+    expect(summaryPushOn(deps, user, 'weekly')).toBe(false);
+
+    expect(switchSummaryPush(deps, user, 'weekly', true)).toBe(true);
+    expect(switchSummaryPush(deps, user, 'weekly', true)).toBe(false);
+    expect(summaryPushOn(deps, user, 'weekly')).toBe(true);
+    expect(summaryPushOn(deps, user, 'monthly')).toBe(true);
+
+    expect(switchSummaryPush(deps, user, 'monthly', false)).toBe(true);
+    expect(summaryPushOn(deps, user, 'monthly')).toBe(false);
+    expect(
+      logLines
+        .filter((l) => l.includes('summary push switched'))
+        .map((l) => JSON.parse(l) as Record<string, unknown>),
+    ).toMatchObject([
+      { userId: user.id, push: 'weekly', on: true },
+      { userId: user.id, push: 'monthly', on: false },
+    ]);
   });
 });
 

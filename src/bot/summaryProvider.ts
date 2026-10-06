@@ -51,7 +51,10 @@ function pushView(deps: HandlerDeps, due: DueSummary): ScreenView {
   });
   if (isLocked(report)) throw new Error(`ledger ${due.ledger.id} is locked`);
   return {
-    text: messages.periodSummaryPush(report),
+    text:
+      due.push === 'weekly'
+        ? messages.weeklySummaryPush(report)
+        : messages.periodSummaryPush(report),
     markup: InlineKeyboard.from([
       [InlineKeyboard.text(messages.pushOffButton, summaryPushOffData(due.push))],
     ]),

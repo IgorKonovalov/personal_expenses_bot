@@ -5,7 +5,7 @@ import type { CategoryId } from '../db/categories.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
-import type { UserId } from '../db/users.js';
+import { setPushOn, type UserId } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
@@ -242,6 +242,107 @@ describe('the summary provider: the monthly push', () => {
     expect(lines.slice(-2)).toEqual([
       'Другое: 1 100.00 RSD (новое)',
       'и ещё 1 категория: 70.00 RSD',
+    ]);
+  });
+});
+
+describe('the summary provider: the weekly push', () => {
+  const weekly = (db: Parameters<typeof setPushOn>[0]) => {
+    const userId = db.prepare('SELECT id FROM users').pluck().get() as UserId;
+    setPushOn(db, userId, 'weekly', true);
+  };
+
+  it('sends 28 September – 4 October on Monday 5 October at 09:00 CEST, once, with [Отключить] sum:off:w', async () => {
+    const { calls, db, tick, add } = await pushBot();
+    weekly(db);
+    // The monthly push would send September, still inside its 7 days.
+    db.prepare('UPDATE users SET monthly_push = 0').run();
+    add('2026-09-21', 930000, 'cafe');
+    add('2026-10-02', 1240000, 'cafe');
+    // In neither week.
+    add('2026-10-05', 5000, 'transport');
+
+    await tick('2026-10-05T06:59:00Z');
+    expect(calls).toEqual([]);
+    await tick('2026-10-05T07:00:00Z');
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: [
+            '<b>Итоги недели 28 сентября – 4 октября</b>',
+            '',
+            '<b>12 400.00 RSD</b> (+3 100.00, +33%)',
+            'Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)',
+          ].join('\n'),
+          reply_markup: {
+            inline_keyboard: [[{ text: messages.pushOffButton, callback_data: 'sum:off:w' }]],
+          },
+          ...htmlParseMode,
+        },
+      },
+    ]);
+    expect(
+      db.prepare("SELECT period_key FROM summary_pushes WHERE kind = 'week'").pluck().all(),
+    ).toEqual(['2026-09-28']);
+
+    calls.length = 0;
+    await tick('2026-10-05T07:01:00Z');
+    await tick('2026-10-06T07:00:00Z');
+    expect(calls).toEqual([]);
+  });
+
+  it('sends nothing with the weekly push off, the default', async () => {
+    const { calls, db, tick, add } = await pushBot();
+    add('2026-10-02', 1240000, 'cafe');
+
+    await tick('2026-10-05T07:00:00Z');
+
+    expect(calls).toEqual([]);
+    expect(
+      db.prepare("SELECT COUNT(*) FROM summary_pushes WHERE kind = 'week'").pluck().get(),
+    ).toBe(0);
+  });
+
+  it('[Отключить] on the weekly push turns it off, and the next Monday sends nothing', async () => {
+    const { bot, calls, db, tick, add } = await pushBot();
+    weekly(db);
+    add('2026-10-02', 1240000, 'cafe');
+    add('2026-10-07', 1240000, 'cafe');
+    await tick('2026-10-05T07:00:00Z');
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 10, data: 'sum:off:w' }));
+
+    expect(db.prepare('SELECT weekly_push, monthly_push FROM users').get()).toEqual({
+      weekly_push: 0,
+      monthly_push: 1,
+    });
+    expect(calls[0]).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: 'cb-10', text: messages.pushOff('weekly') },
+    });
+
+    calls.length = 0;
+    await tick('2026-10-12T07:00:00Z');
+    expect(calls).toEqual([]);
+  });
+
+  it('sends the monthly and the weekly push as separate messages, each once', async () => {
+    const { calls, db, tick, add } = await pushBot();
+    weekly(db);
+    add('2026-09-10', 1240000, 'cafe');
+    add('2026-10-02', 50000, 'transport');
+
+    await tick('2026-10-05T07:00:00Z');
+    await tick('2026-10-05T07:01:00Z');
+
+    const titles = sent(calls).map((text) => text.split('\n')[0]);
+    expect(titles).toEqual([
+      '<b>Итоги сентября</b>',
+      '<b>Итоги недели 28 сентября – 4 октября</b>',
     ]);
   });
 });

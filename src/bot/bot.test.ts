@@ -4439,6 +4439,8 @@ describe('/settings hub and the timezone picker', () => {
       ],
       [{ text: 'Категории', callback_data: 'set:cat' }],
       [{ text: 'Шифрование', callback_data: 'set:enc' }],
+      [{ text: 'Итоги месяца: вкл', callback_data: 'set:pm' }],
+      [{ text: 'Итоги недели: выкл', callback_data: 'set:pw' }],
       // Tips are off for a test user that isn't about them.
       [{ text: 'Подсказки: выкл', callback_data: 'set:tips' }],
       [{ text: 'Убирать мои сообщения: выкл', callback_data: 'set:tidy' }],
@@ -4481,6 +4483,40 @@ describe('/settings hub and the timezone picker', () => {
         payload: { callback_query_id: 'cb-3', text: messages.staleScreen },
       },
     ]);
+  });
+
+  it('[Итоги недели: выкл] turns the weekly push on and [Итоги месяца: вкл] the monthly one off, each re-rendered', async () => {
+    const { say, tap, calls, db } = settingsBot();
+    await say('/settings', 1);
+    calls.length = 0;
+
+    await tap('set:pw', 101);
+
+    expect(db.prepare('SELECT weekly_push, monthly_push FROM users').get()).toEqual({
+      weekly_push: 1,
+      monthly_push: 1,
+    });
+    const rows = (keyboard: { inline_keyboard: unknown[][] }) => keyboard.inline_keyboard;
+    const pushRows = (expected: [string, string]) =>
+      editOf(101, hubText(), {
+        inline_keyboard: rows(hubKeyboard).map((row, i) =>
+          i === 3
+            ? [{ text: expected[0], callback_data: 'set:pm' }]
+            : i === 4
+              ? [{ text: expected[1], callback_data: 'set:pw' }]
+              : row,
+        ),
+      });
+    expect(calls[1]).toEqual(pushRows(['Итоги месяца: вкл', 'Итоги недели: вкл']));
+
+    calls.length = 0;
+    await tap('set:pm', 101);
+
+    expect(db.prepare('SELECT weekly_push, monthly_push FROM users').get()).toEqual({
+      weekly_push: 1,
+      monthly_push: 0,
+    });
+    expect(calls[1]).toEqual(pushRows(['Итоги месяца: выкл', 'Итоги недели: вкл']));
   });
 
   it('pages the city list with the current zone marked, [Другой…] and [« Назад] below', async () => {

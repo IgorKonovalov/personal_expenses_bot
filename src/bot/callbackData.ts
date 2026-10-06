@@ -173,6 +173,10 @@ export const SETTINGS_TIPS = 'set:tips';
 // The personal hub's [Убирать мои сообщения: вкл/выкл] (ADR-0038): flips the tidy chat switch
 // and re-renders.
 export const SETTINGS_TIDY = 'set:tidy';
+// The personal hub's [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл]: flip the summary
+// push switch and re-render.
+export const SETTINGS_PUSH_MONTHLY = 'set:pm';
+export const SETTINGS_PUSH_WEEKLY = 'set:pw';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
 export const CURRENCY_PICKER = 'set:cur';
 export const SET_CURRENCY = /^set:cur:([A-Z]{3})$/;

@@ -23,7 +23,14 @@ import {
 } from '../domain/deltas.js';
 import { convert } from '../domain/fx.js';
 import type { Money } from '../domain/money.js';
-import { budgetPeriodOf, monthOf, periodKey, previous, type DateRange } from '../domain/periods.js';
+import {
+  budgetPeriodOf,
+  monthOf,
+  periodKey,
+  previous,
+  weekOf,
+  type DateRange,
+} from '../domain/periods.js';
 import { dueInstant } from '../domain/schedule.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import { budgetEnd, type BudgetEnd } from './budget.js';
@@ -41,10 +48,11 @@ type Deps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> & Pick<KeyDeps
 // brings the pushes, sends no stale reports.
 export const CATCH_UP_MS = 7 * 24 * 60 * 60 * 1000;
 
-// A closed report period, local dates, both ends inclusive: a calendar month, or the payday
-// period of the ledger's budget (ADR-0017).
+// A closed report period, local dates, both ends inclusive: a calendar month or the payday
+// period of the ledger's budget (ADR-0017) for the monthly push, a Monday-to-Sunday week for the
+// weekly one.
 export interface SummaryPeriod extends DateRange {
-  readonly kind: 'month' | 'budget';
+  readonly kind: 'month' | 'budget' | 'week';
 }
 
 // The report lists this many of the period's largest expenses.
@@ -72,7 +80,10 @@ export function dueSummaries(deps: Deps, now: Date): DueSummary[] {
     if (ledger === undefined) continue;
     const timeZone = effectiveTimezone(deps, recipient.user, ledger);
     const today = localDateOf(now, timeZone);
-    const candidates = recipient.monthly ? [monthly(deps, recipient, ledger, today)] : [];
+    const candidates = [
+      ...(recipient.monthly ? [monthly(deps, recipient, ledger, today)] : []),
+      ...(recipient.weekly ? [weekly(recipient, ledger, today)] : []),
+    ];
     for (const candidate of candidates) {
       const dueAt = dueInstant(addDays(candidate.period.to, 1), timeZone).getTime();
       if (now.getTime() < dueAt || now.getTime() - dueAt > CATCH_UP_MS) continue;
@@ -108,6 +119,20 @@ function monthly(
   return {
     ...base,
     period: { kind: 'month', from: closed.from, to: closed.to },
+    previous: previous(closed),
+    periodKey: periodKey(closed),
+  };
+}
+
+// The ISO week before the one holding `today`, keyed by its Monday.
+function weekly(recipient: PushRecipient, ledger: Ledger, today: LocalDate): DueSummary {
+  const closed = previous(weekOf(today));
+  return {
+    recipient,
+    ledger,
+    push: 'weekly',
+    kind: 'week',
+    period: { kind: 'week', from: closed.from, to: closed.to },
     previous: previous(closed),
     periodKey: periodKey(closed),
   };
@@ -159,9 +184,10 @@ export interface PeriodReport {
   readonly convertedFrom: readonly Money[];
   // Each currency with no rate, never added to anything and with no change shown.
   readonly unconverted: readonly CurrencySummary[];
-  // How the budget's limit ended over the period; absent without a limit.
+  // How the budget's limit ended over the period; absent without a limit, and for a week.
   readonly budget?: BudgetEnd;
-  // The TOP_EXPENSES largest expenses by converted amount; one with no rate isn't ranked.
+  // The TOP_EXPENSES largest expenses by converted amount; one with no rate isn't ranked. Empty
+  // for a week.
   readonly top: readonly TopExpense[];
 }
 
@@ -197,9 +223,12 @@ export function periodReport(
     ledger.defaultCurrency,
     rateLookupBetween(deps.db, input.previous.from, input.previous.to),
   );
-  const budget = budgetEnd(deps, { ledger, readerId: input.readerId, period: input.period });
+  const week = input.period.kind === 'week';
+  const budget = week
+    ? undefined
+    : budgetEnd(deps, { ledger, readerId: input.readerId, period: input.period });
   if (isLocked(budget)) return budget;
-  const ranked = current.flatMap((expense): TopExpense[] => {
+  const ranked = (week ? [] : current).flatMap((expense): TopExpense[] => {
     const converted = convert(expense, ledger.defaultCurrency, (currency) =>
       rateOf(currency, expense.occurredOn),
     );

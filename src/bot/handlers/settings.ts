@@ -22,6 +22,8 @@ import {
   setLedgerCurrency,
   setLedgerTimezone,
   startTimezoneFlow,
+  summaryPushOn,
+  switchSummaryPush,
   switchTidyChat,
   tidyChatOn,
   updateTimezone,
@@ -37,6 +39,8 @@ import {
   SETTINGS_ENCRYPTION,
   SETTINGS_OPEN,
   SETTINGS_PASSPHRASE,
+  SETTINGS_PUSH_MONTHLY,
+  SETTINGS_PUSH_WEEKLY,
   SETTINGS_TIDY,
   SETTINGS_TIPS,
   TIMEZONE_OTHER,
@@ -64,8 +68,8 @@ import { categoriesView } from './categories.js';
 import { ensureUser } from './start.js';
 
 // The /settings hub (ADR-0011): the user's timezone and the active ledger's default currency,
-// each changed in place in the anchor, a way into the categories screen, and the tips and tidy
-// chat switches. [Другой…] asks for an IANA name through a text flow (ADR-0009); flows.ts
+// each changed in place in the anchor, a way into the categories screen, and the tips, summary
+// push and tidy chat switches. [Другой…] asks for an IANA name through a text flow (ADR-0009); flows.ts
 // takes the answer.
 // Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
 // link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
@@ -89,6 +93,22 @@ export function settingsView(
           pickers,
           [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
           [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
+          [
+            InlineKeyboard.text(
+              summaryPushOn(deps, user, 'monthly')
+                ? messages.pushMonthlyToggleOn
+                : messages.pushMonthlyToggleOff,
+              SETTINGS_PUSH_MONTHLY,
+            ),
+          ],
+          [
+            InlineKeyboard.text(
+              summaryPushOn(deps, user, 'weekly')
+                ? messages.pushWeeklyToggleOn
+                : messages.pushWeeklyToggleOff,
+              SETTINGS_PUSH_WEEKLY,
+            ),
+          ],
           [
             InlineKeyboard.text(
               tipsOn(deps, user) ? messages.tipsToggleOn : messages.tipsToggleOff,
@@ -352,6 +372,25 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
   });
+
+  // The personal hub's [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл]: flip that summary
+  // push and re-render.
+  for (const [data, push] of [
+    [SETTINGS_PUSH_MONTHLY, 'monthly'],
+    [SETTINGS_PUSH_WEEKLY, 'weekly'],
+  ] as const) {
+    bot.callbackQuery(data, async (ctx) => {
+      const tap = await settingsTap(ctx, deps);
+      if (tap === undefined) return;
+      if (tap.ledgerId !== undefined) {
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+      }
+      switchSummaryPush(deps, tap.user, push, !summaryPushOn(deps, tap.user, push));
+      await ctx.answerCallbackQuery();
+      await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
+    });
+  }
 
   // [Сменить пароль] on the unlocked ledger's encryption screen.
   bot.callbackQuery(SETTINGS_PASSPHRASE, async (ctx) => {
