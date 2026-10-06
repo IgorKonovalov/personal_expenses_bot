@@ -59,19 +59,19 @@ export function insertMember(
   ).run(member.ledgerId, member.userId, member.role, member.displayName ?? null);
 }
 
-// Adds the user as a `member`, or, for an existing member of any role, only refreshes the
-// display name. Returns true when the membership is new.
+// Adds the user as a `member` joined at `joinedAt`, or, for an existing member of any role,
+// only refreshes the display name. Returns true when the membership is new.
 export function joinMember(
   db: Db,
-  member: { ledgerId: LedgerId; userId: UserId; displayName: string },
+  member: { ledgerId: LedgerId; userId: UserId; displayName: string; joinedAt: Date },
 ): boolean {
   const { changes } = db
-    .prepare<[string, string, string]>(
-      `INSERT INTO ledger_members (ledger_id, user_id, role, display_name)
-       VALUES (?, ?, 'member', ?)
+    .prepare<[string, string, string, string]>(
+      `INSERT INTO ledger_members (ledger_id, user_id, role, display_name, joined_at)
+       VALUES (?, ?, 'member', ?, ?)
        ON CONFLICT (ledger_id, user_id) DO NOTHING`,
     )
-    .run(member.ledgerId, member.userId, member.displayName);
+    .run(member.ledgerId, member.userId, member.displayName, member.joinedAt.toISOString());
   if (changes === 0) {
     db.prepare<[string, string, string, string]>(
       `UPDATE ledger_members SET display_name = ?
@@ -89,6 +89,31 @@ export function listMemberNames(db: Db, ledgerId: LedgerId): ReadonlyMap<UserId,
     )
     .all(ledgerId);
   return new Map(rows.map((row) => [row.user_id as UserId, row.display_name]));
+}
+
+export interface LedgerMember {
+  readonly userId: UserId;
+  // The Telegram first name last seen; null for one never seen or a deleted account.
+  readonly displayName: string | null;
+  // When the membership began; the ledger's creation for one that predates tracking it.
+  readonly joinedAt: Date;
+}
+
+// The ledger's members, earliest joined first.
+export function listMembers(db: Db, ledgerId: LedgerId): LedgerMember[] {
+  return db
+    .prepare<[string], { user_id: string; display_name: string | null; joined_at: string }>(
+      `SELECT m.user_id, m.display_name, COALESCE(m.joined_at, l.created_at) AS joined_at
+         FROM ledger_members m JOIN ledgers l ON l.id = m.ledger_id
+        WHERE m.ledger_id = ?
+        ORDER BY joined_at, m.user_id`,
+    )
+    .all(ledgerId)
+    .map((row) => ({
+      userId: row.user_id as UserId,
+      displayName: row.display_name,
+      joinedAt: new Date(row.joined_at),
+    }));
 }
 
 // The user's active ledger, only while the user is still a member of it.

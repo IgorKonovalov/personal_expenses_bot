@@ -321,8 +321,8 @@ against the decrypted list. That always works, because debts are only recorded w
 |---|---|---|---|
 | 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | 3ddc64e |
 | 2: Borrowing, the person card, and repayments | dev | done | be1fc27 |
-| 3: Splitting a bill with `/N` | dev | done | committed with this row |
-| 4: Group settle-up | dev | not started | |
+| 3: Splitting a bill with `/N` | dev | done | 828bb5e |
+| 4: Group settle-up | dev | done | committed with this row |
 | 5: Sealed debts, help and docs | dev | not started | |
 | 6: Real debts and a real group | human | not started | |
 
@@ -360,6 +360,19 @@ against the decrypted list. That always works, because debts are only recorded w
   member before the split is refused. No test covers the group's `splitInGroup` reply. The
   split tests are in `bot.test.ts`; `recordExpense.test.ts` and `services/debts.test.ts` gained
   none.
+- Phase 4: the migration is `0018_settle_up.sql`. `joinMember` takes a required `joinedAt`, so
+  `src/services/groupChats.ts`, outside the phase's `Files touched`, now passes the message's
+  `now`. `insertMember` (the owner, at binding) still writes no `joined_at`; `listMembers` reads a
+  NULL as the ledger's `created_at`.
+- Phase 4: no `src/db/transfers.test.ts` or `src/services/settleUp.test.ts` was written. The
+  done-whens are tested in `src/domain/settleUp.test.ts` and `src/bot/group/group.test.ts`.
+- Phase 4: the D done-when is tested as a member who joins on the group's today: they owe
+  nothing for an expense dated yesterday («вчера») and share one dated today. The dates are the
+  harness's 2026-09-29 and 2026-09-30, not 2026-10-04 and 2026-10-05.
+- Phase 4: [Я тоже участвую] provisions an unknown tapper (`provisionUser`) before joining
+  them. A stale [Перевёл] gets the `staleScreen` toast and the `/settle` message is re-rendered.
+  [Удалить] under a transfer edits it to `messages.transferDeleted` and does not re-render
+  `/settle`.
 
 ### Close triggers
 

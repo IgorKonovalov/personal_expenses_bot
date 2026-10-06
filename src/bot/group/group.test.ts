@@ -1383,3 +1383,115 @@ describe('/export in a group (Plan 0024)', () => {
     expect(messages.groupCommands.map((c) => c.command)).toContain('export');
   });
 });
+
+describe('/settle (Plan 0013)', () => {
+  type Markup = { inline_keyboard: { text: string; callback_data: string }[][] };
+  // A (Анна) pays 3000 RSD, B (Борис) 1000 RSD, and C (Test) joins with [Я тоже участвую].
+  async function threeMembers() {
+    const test = await bound();
+    await test.say(ALLOWED_ID, '3000 обед', 1, { firstName: 'Анна' });
+    await test.say(STRANGER_ID, '1000 такси', 2, { firstName: 'Борис' });
+    await test.tap(THIRD_ID, 'stl:join', { chatId: GROUP_ID, messageId: 90 });
+    let messageId = 10;
+    const settle = async () => {
+      test.calls.length = 0;
+      await test.say(ALLOWED_ID, '/settle', ++messageId);
+      const sent = test.calls.find((c) => c.method === 'sendMessage')?.payload as {
+        text: string;
+        reply_markup: Markup;
+      };
+      return sent;
+    };
+    const transfers = () =>
+      test.db.prepare('SELECT amount_minor FROM ledger_transfers WHERE deleted_at IS NULL').all();
+    return { ...test, settle, transfers };
+  }
+
+  const BOTH =
+    '<b>RSD</b>\nАнна: +1 666.67 RSD\nБорис: -333.34 RSD\nTest: -1 333.33 RSD\n' +
+    'Test → Анна: 1 333.33 RSD\nБорис → Анна: 333.34 RSD';
+
+  it('shows each balance (summing to 0) and the transfers C → A 1 333.33, then B → A 333.34', async () => {
+    const { settle } = await threeMembers();
+    const sent = await settle();
+
+    expect(sent.text).toBe(`Делим поровну на: Анна, Борис, Test\n\n${BOTH}`);
+    expect(sent.reply_markup.inline_keyboard.map((row) => row[0]?.text)).toEqual([
+      'Перевёл: Test → Анна',
+      'Перевёл: Борис → Анна',
+      'Я тоже участвую',
+    ]);
+    for (const row of sent.reply_markup.inline_keyboard) {
+      expect(Buffer.byteLength(row[0]?.callback_data ?? '')).toBeLessThanOrEqual(17);
+    }
+  });
+
+  it('[Перевёл] by C on C → A leaves only B → A; deleting the transfer restores both', async () => {
+    const test = await threeMembers();
+    const first = (await test.settle()).reply_markup.inline_keyboard[0]?.[0]?.callback_data ?? '';
+    test.calls.length = 0;
+    await test.tap(THIRD_ID, first, { chatId: GROUP_ID, messageId: 11 });
+    const recorded = test.calls.find((c) => c.method === 'sendMessage')?.payload as {
+      text: string;
+      reply_markup: Markup;
+    };
+    expect(recorded.text).toBe('Записан перевод: Test → Анна, 1 333.33 RSD.');
+    expect(test.transfers()).toEqual([{ amount_minor: 133333 }]);
+
+    const after = await test.settle();
+    expect(after.text).toContain('Борис → Анна: 333.34 RSD');
+    expect(after.text).not.toContain('Test → Анна');
+
+    const del = recorded.reply_markup.inline_keyboard[0]?.[0]?.callback_data ?? '';
+    expect(Buffer.byteLength(del)).toBe(44);
+    await test.tap(STRANGER_ID, del, { chatId: GROUP_ID, messageId: 12 });
+    expect(test.transfers()).toHaveLength(1);
+    await test.tap(THIRD_ID, del, { chatId: GROUP_ID, messageId: 12 });
+    expect((await test.settle()).text).toContain(BOTH);
+  });
+
+  it('a non-party tap and a tap after a new expense record nothing', async () => {
+    const test = await threeMembers();
+    const first = (await test.settle()).reply_markup.inline_keyboard[0]?.[0]?.callback_data ?? '';
+    test.calls.length = 0;
+    await test.tap(STRANGER_ID, first, { chatId: GROUP_ID, messageId: 11 });
+    expect(test.calls.find((c) => c.method === 'answerCallbackQuery')?.payload).toMatchObject({
+      text: messages.settleNotParty,
+    });
+
+    await test.say(ALLOWED_ID, '300 кофе', 20, { firstName: 'Анна' });
+    test.calls.length = 0;
+    await test.tap(THIRD_ID, first, { chatId: GROUP_ID, messageId: 11 });
+    expect(test.calls.find((c) => c.method === 'answerCallbackQuery')?.payload).toMatchObject({
+      text: messages.staleScreen,
+    });
+    expect(test.transfers()).toEqual([]);
+  });
+
+  it('a 20 EUR expense adds a separate EUR section and changes no RSD figure', async () => {
+    const test = await threeMembers();
+    await test.say(ALLOWED_ID, '20 EUR пицца', 21, { firstName: 'Анна' });
+    const { text } = await test.settle();
+
+    expect(text).toContain(BOTH);
+    expect(text).toContain('<b>EUR</b>\nАнна: +13.32 EUR\nБорис: -6.66 EUR\nTest: -6.66 EUR');
+  });
+
+  it('a member joined today owes nothing for yesterday’s expense and shares today’s', async () => {
+    const test = await bound();
+    await test.say(ALLOWED_ID, '300 ужин вчера', 1, { firstName: 'Анна' });
+    await test.tap(THIRD_ID, 'stl:join', { chatId: GROUP_ID, messageId: 90 });
+    test.calls.length = 0;
+    await test.say(ALLOWED_ID, '/settle', 2);
+    expect(test.calls.find((c) => c.method === 'sendMessage')?.payload).toMatchObject({
+      text: 'Делим поровну на: Анна, Test\n\nВсе в расчёте.',
+    });
+
+    await test.say(ALLOWED_ID, '300 ужин', 3, { firstName: 'Анна' });
+    test.calls.length = 0;
+    await test.say(ALLOWED_ID, '/settle', 4);
+    expect(test.calls.find((c) => c.method === 'sendMessage')?.payload).toMatchObject({
+      text: expect.stringContaining('Test: -150.00 RSD') as unknown,
+    });
+  });
+});

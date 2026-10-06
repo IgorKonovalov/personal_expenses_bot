@@ -348,6 +348,21 @@ export function debtDeleteData(opId: string): string {
   return assertCallbackData(`dbt:del:${opId}`);
 }
 
+// /settle in a group (Plan 0013). [Перевёл] `stl:t:<i>:<8 hex>` (at most 17 bytes) records
+// transfer i of the list whose hash it carries; [Я тоже участвую] is `stl:join`; [Удалить]
+// under a recorded transfer is `stl:del:<uuid>` (44 bytes).
+export const SETTLE_TRANSFER = /^stl:t:(\d{1,2}):([0-9a-f]{8})$/;
+export const SETTLE_JOIN = 'stl:join';
+export const SETTLE_DELETE = /^stl:del:([0-9a-f-]{36})$/;
+
+export function settleTransferData(index: number, hash: string): string {
+  return assertCallbackData(`stl:t:${index}:${hash}`);
+}
+
+export function settleDeleteData(transferId: string): string {
+  return assertCallbackData(`stl:del:${transferId}`);
+}
+
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
 // sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
 // the active ledger in a DM, the chat's binding in a group.

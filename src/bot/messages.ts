@@ -786,6 +786,7 @@ export const messages = {
     { command: 'week', description: 'Траты за неделю по категориям и участникам' },
     { command: 'month', description: 'Траты за месяц по категориям и участникам' },
     { command: 'budget', description: 'Бюджет группы: сколько осталось' },
+    { command: 'settle', description: 'Кто кому должен: расчёт поровну' },
     { command: 'export', description: 'Выгрузить траты группы в CSV или Excel' },
     { command: 'card', description: 'Ответом на трату: показать её карточку' },
     { command: 'settings', description: 'Часовой пояс и валюта группы' },
@@ -1600,6 +1601,63 @@ export const messages = {
     html`Записано: по ${formatMoney(each)} должны вам ${names.join(', ')}. Все долги: /debts.`,
   splitSkipped: html`Долги не записаны. Трата осталась вашей долей.`,
   splitInGroup: html`В группе траты делятся поровну автоматически: /settle`,
+  // /settle in a group (ADR-0030). Names are members' Telegram first names (user text).
+  settleScreen: ({
+    names,
+    currencies,
+  }: {
+    names: readonly (string | null)[];
+    currencies: readonly {
+      currency: CurrencyCode;
+      balances: readonly { name: string | null; amountMinor: number }[];
+      transfers: readonly { from: string | null; to: string | null; amountMinor: number }[];
+    }[];
+  }): Html =>
+    joinHtml(
+      [
+        html`Делим поровну на: ${names.map((n) => n ?? DELETED_MEMBER).join(', ')}`,
+        ...(currencies.length === 0
+          ? [html`Все в расчёте.`]
+          : currencies.map(({ currency, balances, transfers }) =>
+              joinHtml(
+                [
+                  html`<b>${currency}</b>`,
+                  ...balances.map(
+                    (b) =>
+                      html`${b.name ?? DELETED_MEMBER}: ${b.amountMinor > 0 ? '+' : ''}${formatMoney({ amountMinor: b.amountMinor, currency })}`,
+                  ),
+                  ...transfers.map(
+                    (t) =>
+                      html`${t.from ?? DELETED_MEMBER} → ${t.to ?? DELETED_MEMBER}: ${formatMoney({ amountMinor: t.amountMinor, currency })}`,
+                  ),
+                ],
+                '\n',
+              ),
+            )),
+      ],
+      '\n\n',
+    ),
+  settleEven: html`Все в расчёте.`,
+  settleTransferButton: (from: string | null, to: string | null): string =>
+    `Перевёл: ${from ?? DELETED_MEMBER} → ${to ?? DELETED_MEMBER}`,
+  settleJoinButton: 'Я тоже участвую',
+  settleJoinedToast: 'Вы участвуете в расчёте',
+  settleAlreadyJoined: 'Вы уже участвуете',
+  settleNotParty: 'Отметить перевод может только тот, кто платит, или тот, кто получает',
+  transferRecorded: ({
+    from,
+    to,
+    money,
+  }: {
+    from: string | null;
+    to: string | null;
+    money: Money;
+  }): Html =>
+    html`Записан перевод: ${from ?? DELETED_MEMBER} → ${to ?? DELETED_MEMBER}, ${formatMoney(money)}.`,
+  transferDeleted: html`Перевод удалён. Пересчитать: /settle`,
+  transferDeletedToast: 'Перевод удалён',
+  transferAlreadyDeleted: 'Перевод уже удалён',
+  transferNotFound: 'Перевод не найден',
   // The operation, then the person's balance in its currency after it.
   debtRecorded: ({ kind, money, balance }: DebtRecordedView): Html =>
     joinHtml(

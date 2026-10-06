@@ -5,6 +5,7 @@ import {
   insertLedger,
   insertMember,
   joinMember,
+  listMembers,
   listMemberNames,
   updateLedgerCurrency,
   type LedgerId,
@@ -84,11 +85,13 @@ describe('insertLedger', () => {
 
 describe('joinMember', () => {
   it('adds a member with a display name, then only refreshes the name, keeping the role', () => {
-    expect(joinMember(db, { ledgerId: LEDGER, userId: STRANGER, displayName: 'Ира' })).toBe(true);
-    expect(joinMember(db, { ledgerId: LEDGER, userId: STRANGER, displayName: 'Ирина' })).toBe(
-      false,
-    );
-    expect(joinMember(db, { ledgerId: LEDGER, userId: OWNER, displayName: 'Аня' })).toBe(false);
+    const join = (userId: UserId, displayName: string, joinedAt: Date) =>
+      joinMember(db, { ledgerId: LEDGER, userId, displayName, joinedAt });
+    const joined = new Date('2026-10-05T10:00:00Z');
+    expect(join(STRANGER, 'Ира', joined)).toBe(true);
+    expect(join(STRANGER, 'Ирина', new Date('2026-10-09T10:00:00Z'))).toBe(false);
+    expect(join(OWNER, 'Аня', joined)).toBe(false);
+    expect(listMembers(db, LEDGER).find((m) => m.userId === STRANGER)?.joinedAt).toEqual(joined);
 
     expect(findMemberRole(db, LEDGER, STRANGER)).toBe('member');
     expect(findMemberRole(db, LEDGER, OWNER)).toBe('owner');

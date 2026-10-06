@@ -174,7 +174,12 @@ export function recordGroupExpense(
   }
   return db.transaction((): GroupRecordResult => {
     const user = ensureSender(deps, input.sender, timezone, input.now);
-    joinMember(db, { ledgerId: ledger.id, userId: user.id, displayName: input.sender.firstName });
+    joinMember(db, {
+      ledgerId: ledger.id,
+      userId: user.id,
+      displayName: input.sender.firstName,
+      joinedAt: input.now,
+    });
     const result = recordExpense(deps, {
       user,
       target: { kind: 'ledger', ledgerId: ledger.id },

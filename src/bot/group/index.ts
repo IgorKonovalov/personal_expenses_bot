@@ -7,6 +7,7 @@ import { registerGroupCard } from './card.js';
 import { registerGroupExport } from './export.js';
 import { registerGroupHelp } from './help.js';
 import { registerGroupSettings } from './settings.js';
+import { registerGroupSettle } from './settle.js';
 import { registerGroupSummary } from './summary.js';
 import { registerGroupText } from './text.js';
 
@@ -45,6 +46,7 @@ export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   registerGroupExport(group, deps);
   registerGroupHelp(group, deps);
   registerGroupSettings(group, deps);
+  registerGroupSettle(group, deps);
   registerGroupText(group, deps);
   group.use(() => undefined);
   return group;
