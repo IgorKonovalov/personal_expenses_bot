@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { CurrencyCode } from './currencies.js';
 import type { RateOf } from './fx.js';
-import { decodeTags, encodeTags, summarizeTags, toTagName, type TagName } from './tags.js';
+import {
+  decodeTags,
+  encodeTags,
+  findTagByHash,
+  summarizeTag,
+  summarizeTags,
+  tagHash,
+  toTagName,
+  type TagName,
+} from './tags.js';
 import type { LocalDate } from './time.js';
 
 const tag = (name: string) => name as TagName;
@@ -110,5 +119,75 @@ describe('summarizeTags', () => {
 
   it('is empty when no expense carries a tag', () => {
     expect(summarizeTags([item(100, 'RSD', '2026-09-28', [])], 'RSD', rateOf)).toEqual([]);
+  });
+});
+
+describe('tagHash / findTagByHash', () => {
+  it('is the first 8 hex digits of the SHA-256 of the UTF-8 name', () => {
+    // sha256('abc') = ba7816bf…
+    expect(tagHash(tag('abc'))).toBe('ba7816bf');
+    expect(tagHash(tag('я'.repeat(32)))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('finds the first name with the hash, and nothing for an unknown one', () => {
+    const names = [tag('рим'), tag('отпуск')];
+    expect(findTagByHash(names, tagHash(tag('отпуск')))).toBe('отпуск');
+    expect(findTagByHash(names, tagHash(tag('ремонт')))).toBeUndefined();
+  });
+});
+
+describe('summarizeTag', () => {
+  const cafe = { id: 1, name: 'Кафе и рестораны' };
+  const transport = { id: 2, name: 'Транспорт' };
+
+  it('totals 1 914.04 RSD over 2 expenses, Транспорт 1 464.04 before Кафе 450.00', () => {
+    const report = summarizeTag(
+      [
+        { ...item(45000, 'RSD', '2026-09-30', ['отпуск']), category: cafe },
+        { ...item(1250, 'EUR', '2026-09-30', ['отпуск']), category: transport },
+        { ...item(99900, 'RSD', '2026-09-30', ['рим']), category: cafe },
+      ],
+      tag('отпуск'),
+      'RSD',
+      rateOf,
+    );
+
+    expect(report).toEqual({
+      name: 'отпуск',
+      converted: {
+        currency: 'RSD',
+        totalMinor: 191404,
+        lines: [
+          { categoryId: 2, name: 'Транспорт', amountMinor: 146404 },
+          { categoryId: 1, name: 'Кафе и рестораны', amountMinor: 45000 },
+        ],
+      },
+      convertedFrom: [{ amountMinor: 1250, currency: 'EUR' }],
+      unconverted: [],
+      count: 2,
+      firstOn: '2026-09-30',
+      lastOn: '2026-09-30',
+    });
+  });
+
+  it('spans the first and last occurred_on, whatever the order', () => {
+    const report = summarizeTag(
+      [
+        item(100, 'RSD', '2026-09-30', ['отпуск']),
+        item(100, 'RSD', '2026-09-28', ['отпуск']),
+        item(100, 'RSD', '2026-09-29', ['отпуск']),
+      ],
+      tag('отпуск'),
+      'RSD',
+      rateOf,
+    );
+
+    expect(report).toMatchObject({ count: 3, firstOn: '2026-09-28', lastOn: '2026-09-30' });
+  });
+
+  it('is undefined for a tag no expense carries', () => {
+    expect(
+      summarizeTag([item(100, 'RSD', '2026-09-30', ['рим'])], tag('отпуск'), 'RSD', rateOf),
+    ).toBeUndefined();
   });
 });

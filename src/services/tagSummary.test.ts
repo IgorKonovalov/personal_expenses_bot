@@ -4,12 +4,13 @@ import { softDeleteExpense } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
+import { tagHash, type TagName } from '../domain/tags.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, type RecordDeps } from './recordExpense.js';
-import { activeLedgerTags } from './tagSummary.js';
+import { activeLedgerTagReport, activeLedgerTags } from './tagSummary.js';
 
 // Sent 12:00 local on 2026-09-30.
 const SENT = new Date('2026-09-30T10:00:00Z');
@@ -90,5 +91,41 @@ describe('activeLedgerTags', () => {
     record('450 кофе', 'tg:1001:1');
 
     expect(activeLedgerTags(deps, alice)).toMatchObject({ tags: [] });
+  });
+});
+
+describe('activeLedgerTagReport', () => {
+  const hash = (name: string) => tagHash(name as TagName);
+
+  it("reports the tag the hash names, with the list page it's on", () => {
+    record('450 кофе #отпуск', 'tg:1001:1');
+    record('12,50 EUR такси #отпуск', 'tg:1001:2');
+    record('100 хлеб #a', 'tg:1001:3');
+
+    const result = activeLedgerTagReport(deps, { user: alice, hash: hash('отпуск'), pageSize: 1 });
+
+    expect(result).toMatchObject({
+      kind: 'report',
+      ledger: { id: alice.activeLedgerId },
+      report: {
+        name: 'отпуск',
+        converted: { currency: 'RSD', totalMinor: 191404 },
+        count: 2,
+        firstOn: '2026-09-30',
+        lastOn: '2026-09-30',
+      },
+      // All three share one instant, so `a` sorts first by name: page 1 at one tag to a page.
+      page: 2,
+    });
+  });
+
+  it('is gone once the only expense with the tag is deleted, with the list as it is now', () => {
+    const only = record('300 такси #рим', 'tg:1001:1');
+    record('450 кофе #отпуск', 'tg:1001:2');
+    softDeleteExpense(db, only.id, SENT);
+
+    expect(
+      activeLedgerTagReport(deps, { user: alice, hash: hash('рим'), pageSize: 8 }),
+    ).toMatchObject({ kind: 'gone', list: { tags: [{ name: 'отпуск' }] } });
   });
 });

@@ -384,6 +384,14 @@ export function tagListPageData(page: number): string {
   return assertCallbackData(`tag:l:${page}`);
 }
 
+// A tag's button on /tags: `tag:s:<8 hex>` (14 bytes), the tagHash of its name, which the tap
+// resolves against the ledger's tags at that moment.
+export const TAG_SHOW = /^tag:s:([0-9a-f]{8})$/;
+
+export function tagShowData(hash: string): string {
+  return assertCallbackData(`tag:s:${hash}`);
+}
+
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
 // sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
 // the active ledger in a DM, the chat's binding in a group.

@@ -268,8 +268,8 @@ const MAX_TAGS_PER_EXPENSE = 5;
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | committed with this row |
-| 2: The per-tag report | dev | not started | |
+| 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | cdb24c3 |
+| 2: The per-tag report | dev | done | committed with this row |
 | 3: The sticky trip tag | dev | not started | |
 | 4: Editing tags, the card, and groups | dev | not started | |
 | 5: Sealed ledgers, export, help | dev | not started | |
@@ -285,6 +285,9 @@ const MAX_TAGS_PER_EXPENSE = 5;
 - Phase 1: the description-key done-when is tested with `450 зюзя`, which no keyword rule knows,
   filed under Кафе, then `450 зюзя #отпуск`. `450 кофе #отпуск` is checked too, but keyword rules
   alone would give it Кафе.
+- Phase 2: the report's count reads «2 расхода», through the existing `expenseCountWords`. Its
+  category lines carry the currency code (`Транспорт: 1 464.04 RSD`), where `/month` omits it.
+  [« Назад] goes to the page the tag sits on at tap time, not a page carried in the data.
 
 ### Close triggers
 

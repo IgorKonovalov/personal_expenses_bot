@@ -1,4 +1,5 @@
-import { summarizeConverted, type DatedMoney } from './aggregate.js';
+import { createHash } from 'node:crypto';
+import { summarizeConverted, type CurrencySummary, type DatedMoney } from './aggregate.js';
 import type { CurrencyCode } from './currencies.js';
 import type { RateOf } from './fx.js';
 import type { Money } from './money.js';
@@ -93,6 +94,54 @@ export function summarizeTags(
             : 1,
     )
     .map(({ total }) => total);
+}
+
+// The first 8 hex digits of the SHA-256 of the name's UTF-8: what a tag button carries, so its
+// callback_data stays 14 bytes whatever the name.
+export function tagHash(name: TagName): string {
+  return createHash('sha256').update(name, 'utf8').digest('hex').slice(0, 8);
+}
+
+// The first of `names` whose hash is `hash`; undefined when none is.
+export function findTagByHash(names: Iterable<TagName>, hash: string): TagName | undefined {
+  for (const name of names) if (tagHash(name) === hash) return name;
+  return undefined;
+}
+
+export interface TagReport {
+  readonly name: TagName;
+  // Everything with a rate, in the ledger's currency, by category, largest first; undefined
+  // when nothing converts.
+  readonly converted: CurrencySummary | undefined;
+  // The original totals of the foreign expenses inside `converted`, alphabetically.
+  readonly convertedFrom: readonly Money[];
+  // Per currency, what had no rate, alphabetically, never added to `converted`.
+  readonly unconverted: readonly CurrencySummary[];
+  readonly count: number;
+  readonly firstOn: LocalDate;
+  readonly lastOn: LocalDate;
+}
+
+// One tag's expenses: the total converted at each expense's day rate (ADR-0022), split by
+// category, with the count and the first and last occurred_on. Undefined when no expense
+// carries the tag.
+export function summarizeTag(
+  items: Iterable<TaggedMoney>,
+  name: TagName,
+  target: CurrencyCode,
+  rateOf: RateOf,
+): TagReport | undefined {
+  const tagged = [...items].filter((item) => item.tags.includes(name));
+  const [head] = tagged;
+  if (head === undefined) return undefined;
+  const days = tagged.map((item) => item.occurredOn).sort();
+  return {
+    name,
+    ...summarizeConverted(tagged, target, rateOf),
+    count: tagged.length,
+    firstOn: days[0] ?? head.occurredOn,
+    lastOn: days.at(-1) ?? head.occurredOn,
+  };
 }
 
 function groupByTag<T extends TaggedMoney>(items: Iterable<T>): Map<TagName, T[]> {

@@ -115,6 +115,28 @@ interface TagTotalView {
   readonly unconverted: readonly Money[];
 }
 
+// One currency's block of a tag report: its total, then its categories by amount.
+interface TagBlockView {
+  readonly currency: CurrencyCode;
+  readonly totalMinor: number;
+  // `name` null: the expenses without a category.
+  readonly lines: readonly { readonly name: string | null; readonly amountMinor: number }[];
+}
+
+// A tag's report (ADR-0029): the converted block first, then each currency with no rate.
+interface TagReportView {
+  readonly ledger: LedgerRef;
+  readonly report: {
+    readonly name: string;
+    readonly converted: TagBlockView | undefined;
+    readonly convertedFrom: readonly Money[];
+    readonly unconverted: readonly TagBlockView[];
+    readonly count: number;
+    readonly firstOn: LocalDate;
+    readonly lastOn: LocalDate;
+  };
+}
+
 interface AmbiguousView {
   readonly readings: readonly Money[];
 }
@@ -541,6 +563,15 @@ function tagTotals({ converted, unconverted }: TagTotalView): string {
     .join(', ');
 }
 
+// `28.09–30.09`, `30.09` for one day, `28.12.2025–02.01.2026` across a year.
+function tagDateRange(first: LocalDate, last: LocalDate): string {
+  const short = (date: LocalDate) => `${date.slice(8, 10)}.${date.slice(5, 7)}`;
+  if (first === last) return short(first);
+  return first.slice(0, 4) === last.slice(0, 4)
+    ? `${short(first)}–${short(last)}`
+    : `${numericDate(first)}–${numericDate(last)}`;
+}
+
 // `Ира: <b>2.00 RSD</b> — минуты буду`, or `Ира за 28 сентября: …` with a date.
 function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
   const when = expense.occurredOn === sentOn ? '' : ` за ${shownDate(expense.occurredOn, sentOn)}`;
@@ -893,6 +924,45 @@ export const messages = {
       ],
       '\n',
     ),
+  tagButton: (name: string): string => `#${name}`,
+  // A tag button whose tag no live expense carries any more; the list is shown again.
+  tagGone: 'Этой метки больше нет',
+  // The tag's total, count and dates, then each currency's categories by amount; the first
+  // block is `≈` when it holds converted spending, and the conversion notes close it.
+  tagReport: ({ ledger, report }: TagReportView): Html => {
+    const header = joinHtml(
+      [
+        html`<b>#${report.name} — «${ledgerName(ledger)}»</b>`,
+        html`${tagDateRange(report.firstOn, report.lastOn)} · ${expenseCountWords(report.count)}`,
+      ],
+      '\n',
+    );
+    const converted = report.converted === undefined ? [] : [report.converted];
+    const approximate = report.convertedFrom.length > 0;
+    const blocks = [...converted, ...report.unconverted].map((block, index) =>
+      joinHtml(
+        [
+          html`<b>${index < converted.length && approximate ? '≈ ' : ''}${formatMoney({ amountMinor: block.totalMinor, currency: block.currency })}</b>`,
+          ...block.lines.map(
+            (line) =>
+              html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: block.currency })}`,
+          ),
+        ],
+        '\n',
+      ),
+    );
+    return joinHtml(
+      [
+        header,
+        ...blocks,
+        ...conversionNotes(
+          report.convertedFrom,
+          report.unconverted.map((block) => block.currency),
+        ),
+      ],
+      '\n\n',
+    );
+  },
   invalidAmount: html`Не удалось разобрать сумму. Отправьте, например, «450 кофе» или «12,50 EUR такси». Тысячи отделяйте пробелом: «1 200 обед».`,
   futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
 

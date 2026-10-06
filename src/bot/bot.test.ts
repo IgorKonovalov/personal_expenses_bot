@@ -33,6 +33,7 @@ import {
   TWO_PAGE_ROWS,
 } from '../domain/statements/testing/raiffeisenStatement.js';
 import { monthOf, weekOf } from '../domain/periods.js';
+import { tagHash, type TagName } from '../domain/tags.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions } from '../domain/version.js';
 import { VARIANTS } from '../fiscal/qrPixels.js';
@@ -74,6 +75,7 @@ import {
   setCategoryData,
   showExpenseData,
   summaryPageData,
+  tagShowData,
   undoExpenseData,
 } from './callbackData.js';
 import { CHANGELOG_RECENT, messages } from './messages.js';
@@ -7070,6 +7072,7 @@ describe('tags (Plan 0012)', () => {
 
   const lastText = (calls: readonly ApiCall[]) =>
     (calls.at(-1)?.payload as { text?: string } | undefined)?.text;
+  const hashOf = (name: string) => tagHash(name as TagName);
 
   it('confirms 450 кофе #отпуск with the tag after the category', async () => {
     const { say, calls, db } = tagBot();
@@ -7116,10 +7119,71 @@ describe('tags (Plan 0012)', () => {
       payload: {
         chat_id: ALLOWED_ID,
         text: '<b>Метки — «Личные расходы»</b>\n#отпуск — 1 914.04 RSD',
-        reply_markup: { inline_keyboard: [] },
+        reply_markup: {
+          inline_keyboard: [[{ text: '#отпуск', callback_data: `tag:s:${hashOf('отпуск')}` }]],
+        },
         ...htmlParseMode,
       },
     });
+  });
+
+  it('reports #отпуск: 1 914.04 RSD over 2 expenses, Транспорт before Кафе, then back', async () => {
+    const { say, tap, calls, db } = tagBot();
+    storeEurRate(db);
+    await say('450 кофе #отпуск', 1);
+    await say('12,50 EUR такси #отпуск', 2);
+    await say('300 хлеб', 3);
+
+    await tap(`tag:s:${hashOf('отпуск')}`);
+
+    expect(calls.at(-1)).toEqual({
+      method: 'editMessageText',
+      payload: {
+        chat_id: ALLOWED_ID,
+        message_id: 50,
+        text:
+          '<b>#отпуск — «Личные расходы»</b>\n29.09 · 2 расхода\n\n' +
+          '<b>≈ 1 914.04 RSD</b>\nТранспорт: 1 464.04 RSD\nКафе и рестораны: 450.00 RSD\n\n' +
+          'Включая 12.50 EUR по курсу НБС на день траты.',
+        reply_markup: {
+          inline_keyboard: [[{ text: messages.backButton, callback_data: 'tag:l:1' }]],
+        },
+        ...htmlParseMode,
+      },
+    });
+  });
+
+  it('shows the range 28.09–30.09 for expenses on the 28th and the 30th', async () => {
+    const { say, tap, calls } = tagBot();
+    await say('450 кофе #отпуск 28.09', 1);
+    await say('300 такси #отпуск', 2, new Date('2026-09-30T10:00:00Z'));
+
+    await tap(`tag:s:${hashOf('отпуск')}`);
+
+    expect(lastText(calls)).toContain('28.09–30.09 · 2 расхода');
+  });
+
+  it('answers tagGone and shows the list again once the tag is gone', async () => {
+    const { say, tap, calls } = tagBot();
+    await say('450 кофе #отпуск', 1);
+    await say('300 такси #рим', 2);
+    await tap(`exp:undo:00000000-0000-4000-8000-000000000004`);
+    calls.length = 0;
+
+    await tap(`tag:s:${hashOf('рим')}`);
+
+    expect(calls[0]).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: expect.any(String) as string, text: messages.tagGone },
+    });
+    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
+  });
+
+  it('keeps a 32-letter Cyrillic tag button at 14 bytes', () => {
+    const data = tagShowData(hashOf('я'.repeat(32)));
+
+    expect(Buffer.byteLength(data, 'utf8')).toBe(14);
+    expect(assertCallbackData(data)).toBe(data);
   });
 
   it('drops a deleted expense from /tags, and answers tagsEmpty once none is left', async () => {
@@ -7155,6 +7219,14 @@ describe('tags (Plan 0012)', () => {
     );
     expect(first.reply_markup).toEqual({
       inline_keyboard: [
+        ...[
+          [9, 8],
+          [7, 6],
+          [5, 4],
+          [3, 2],
+        ].map((pair) =>
+          pair.map((i) => ({ text: `#t${i}`, callback_data: `tag:s:${hashOf(`t${i}`)}` })),
+        ),
         [
           { text: '1/2', callback_data: 'tag:l:1' },
           { text: messages.pagerNext, callback_data: 'tag:l:2' },
