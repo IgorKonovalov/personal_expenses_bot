@@ -175,6 +175,40 @@ export function findMemberRole(db: Db, ledgerId: LedgerId, userId: UserId): Ledg
     .get(ledgerId, userId);
 }
 
+// The member's sticky tag in a plaintext ledger (ADR-0029); undefined for none or a non-member.
+export function findMemberStickyTag(
+  db: Db,
+  ledgerId: LedgerId,
+  userId: UserId,
+): string | undefined {
+  return (
+    db
+      .prepare<[string, string], string | null>(
+        'SELECT sticky_tag FROM ledger_members WHERE ledger_id = ? AND user_id = ?',
+      )
+      .pluck()
+      .get(ledgerId, userId) ?? undefined
+  );
+}
+
+// Sets the member's sticky tag, or clears it with null. Returns false when it already holds the
+// value: nothing is written.
+export function setMemberStickyTag(
+  db: Db,
+  ledgerId: LedgerId,
+  userId: UserId,
+  tag: string | null,
+): boolean {
+  return (
+    db
+      .prepare<[string | null, string, string, string | null]>(
+        `UPDATE ledger_members SET sticky_tag = ?
+          WHERE ledger_id = ? AND user_id = ? AND sticky_tag IS NOT ?`,
+      )
+      .run(tag, ledgerId, userId, tag).changes > 0
+  );
+}
+
 // Returns false when the ledger already has this currency: nothing is written.
 export function updateLedgerCurrency(db: Db, ledgerId: LedgerId, currency: CurrencyCode): boolean {
   return (

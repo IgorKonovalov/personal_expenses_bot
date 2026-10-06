@@ -4,11 +4,12 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { findHistoryCategory, setExpenseCategory, type ExpenseId } from '../db/expenses.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
-import type { User } from '../db/users.js';
+import { setActiveLedger, type User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring, type LedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
 import { recordExpense, restoreExpense, undoExpense, type RecordDeps } from './recordExpense.js';
+import { clearStickyTag, setStickyTag } from './stickyTag.js';
 import { sealPersonalLedger } from './testing/sealLedger.js';
 import { seedLedgerCategories } from './seedCategories.js';
 
@@ -442,6 +443,67 @@ describe('recordExpense picks a category', () => {
     archiveCategory(db, cafeId, PROCESSED);
 
     expect(presetOf('450 кофе', 'tg:1001:10')).toBe('other');
+  });
+});
+
+describe('recordExpense with a sticky tag (ADR-0029)', () => {
+  function tagsOf(text: string, sourceKey: string): unknown {
+    const result = record(alice, text, sourceKey);
+    if (result.kind !== 'recorded') return result.kind;
+    return result.expense.tags;
+  }
+
+  it('adds the sticky tag after the text tags, once', () => {
+    setStickyTag(deps, alice, 'отпуск');
+
+    expect(tagsOf('300 такси #рим', 'tg:1001:1')).toEqual(['рим', 'отпуск']);
+    expect(tagsOf('300 такси #отпуск', 'tg:1001:2')).toEqual(['отпуск']);
+    expect(db.prepare('SELECT tags FROM expenses ORDER BY rowid').pluck().all()).toEqual([
+      'рим отпуск',
+      'отпуск',
+    ]);
+  });
+
+  it('counts the sticky tag toward the cap of 5', () => {
+    setStickyTag(deps, alice, 'отпуск');
+
+    expect(tagsOf('300 такси #a #b #c #d #e', 'tg:1001:1')).toBe('tooManyTags');
+    expect(tagsOf('300 такси #a #b #c #d #отпуск', 'tg:1001:2')).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'отпуск',
+    ]);
+  });
+
+  it('records no tag once it is cleared', () => {
+    setStickyTag(deps, alice, 'отпуск');
+    clearStickyTag(deps, alice);
+
+    expect(tagsOf('300 такси', 'tg:1001:1')).toEqual([]);
+  });
+
+  it('stays with the ledger it was set in when the active ledger changes', () => {
+    const set = setStickyTag(deps, alice, 'отпуск');
+    if (set.kind !== 'set') throw new Error('not set');
+    const other = 'ledger-other' as LedgerId;
+    insertLedger(db, {
+      id: other,
+      kind: 'shared',
+      name: 'Family',
+      defaultCurrency: 'RSD',
+      timezone: 'Europe/Belgrade',
+      ownerUserId: alice.id,
+      createdAt: PROCESSED,
+    });
+    insertMember(db, { ledgerId: other, userId: alice.id, role: 'owner' });
+    seedLedgerCategories(db, other, PROCESSED);
+    setActiveLedger(db, alice.id, other);
+
+    expect(tagsOf('300 такси', 'tg:1001:1')).toEqual([]);
+    setActiveLedger(db, alice.id, set.ledger.id);
+    expect(tagsOf('300 такси', 'tg:1001:2')).toEqual(['отпуск']);
   });
 });
 

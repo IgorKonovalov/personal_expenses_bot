@@ -269,8 +269,8 @@ const MAX_TAGS_PER_EXPENSE = 5;
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: `#отпуск` is stored and `/tags` lists it | dev | done | cdb24c3 |
-| 2: The per-tag report | dev | done | committed with this row |
-| 3: The sticky trip tag | dev | not started | |
+| 2: The per-tag report | dev | done | d41c71c |
+| 3: The sticky trip tag | dev | done | committed with this row |
 | 4: Editing tags, the card, and groups | dev | not started | |
 | 5: Sealed ledgers, export, help | dev | not started | |
 | 6: A trip in real use | human | not started | |
@@ -288,6 +288,9 @@ const MAX_TAGS_PER_EXPENSE = 5;
 - Phase 2: the report's count reads «2 расхода», through the existing `expenseCountWords`. Its
   category lines carry the currency code (`Транспорт: 1 464.04 RSD`), where `/month` omits it.
   [« Назад] goes to the page the tag sits on at tap time, not a page carried in the data.
+- Phase 3: the migration is `0020_sticky_tag.sql`. `tag:off` clears the sticky tag of the
+  viewer's active ledger at tap time. `/tag` did not join `messages.commands`. The bank SMS path
+  is covered by the shared `withStickyTag` call, with no test of its own.
 
 ### Close triggers
 

@@ -12,6 +12,7 @@ import {
   storeExpense,
   type RecordDeps,
 } from './recordExpense.js';
+import { stickyTagOf, withStickyTag } from './stickyTag.js';
 
 export interface RecordBankSmsInput {
   readonly user: User;
@@ -85,6 +86,7 @@ export function recordBankSms(
     createdAt: input.now,
     category: { id: category.id, name: category.name },
     descriptionKey: key,
+    tags: withStickyTag([], stickyTagOf(deps, ledger.id, user.id)),
   });
   if (stored.kind === 'sealedDuplicate') return stored;
   const { expense, created } = stored;

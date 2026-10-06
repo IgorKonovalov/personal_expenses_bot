@@ -27,6 +27,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { splitShares } from '../domain/debts.js';
 import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
+import { MAX_TAGS_PER_EXPENSE } from '../domain/tags.js';
 import { localDateOf } from '../domain/time.js';
 import { resolveTimezone } from '../domain/timezones.js';
 import type { Logger } from '../logger.js';
@@ -42,6 +43,7 @@ import {
 } from './ledgerKeys.js';
 import type { ServiceDeps } from './provisionUser.js';
 import { resolveUserTimezone } from './settings.js';
+import { stickyTagOf, withStickyTag } from './stickyTag.js';
 
 export interface RecordDeps extends ServiceDeps {
   readonly logger: Logger;
@@ -168,6 +170,9 @@ export function recordExpense(
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
   if (parsed.kind === 'futureDate') return { kind: 'futureDate' };
   if (parsed.kind !== 'expense') return parsed;
+  // The member's sticky tag joins the text's own, and counts toward the cap (ADR-0029).
+  const tags = withStickyTag(parsed.tags, stickyTagOf(deps, ledger.id, user.id));
+  if (tags.length > MAX_TAGS_PER_EXPENSE) return { kind: 'tooManyTags' };
   // A split records the user's own share; the others' parts become debts once they are named.
   const split =
     parsed.split === undefined
@@ -197,7 +202,7 @@ export function recordExpense(
     createdAt: input.now,
     category: { id: category.id, name: category.name },
     descriptionKey: key,
-    tags: parsed.tags,
+    tags,
   });
   if (stored.kind === 'sealedDuplicate') return stored;
   const { expense, created } = stored;

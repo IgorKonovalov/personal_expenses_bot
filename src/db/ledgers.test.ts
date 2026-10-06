@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from './connection.js';
 import {
   findMemberRole,
+  findMemberStickyTag,
   insertLedger,
   insertMember,
   joinMember,
   listMembers,
   listMemberNames,
+  setMemberStickyTag,
   updateLedgerCurrency,
   type LedgerId,
 } from './ledgers.js';
@@ -46,6 +48,21 @@ beforeEach(() => {
 function currencyOf(id: LedgerId): unknown {
   return db.prepare('SELECT default_currency FROM ledgers WHERE id = ?').pluck().get(id);
 }
+
+describe('sticky tags (ADR-0029)', () => {
+  it("sets, reads and clears one member's sticky tag, leaving the other member's", () => {
+    expect(setMemberStickyTag(db, LEDGER, OWNER, 'отпуск')).toBe(true);
+    expect(setMemberStickyTag(db, LEDGER, OWNER, 'отпуск')).toBe(false);
+
+    expect(findMemberStickyTag(db, LEDGER, OWNER)).toBe('отпуск');
+    expect(findMemberStickyTag(db, LEDGER, MEMBER)).toBeUndefined();
+    expect(findMemberStickyTag(db, LEDGER, STRANGER)).toBeUndefined();
+
+    expect(setMemberStickyTag(db, LEDGER, OWNER, null)).toBe(true);
+    expect(setMemberStickyTag(db, LEDGER, OWNER, null)).toBe(false);
+    expect(findMemberStickyTag(db, LEDGER, OWNER)).toBeUndefined();
+  });
+});
 
 describe('insertLedger', () => {
   it('refuses a shared ledger without a timezone and stores nothing (ADR-0015)', () => {

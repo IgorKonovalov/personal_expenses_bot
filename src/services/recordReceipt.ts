@@ -20,6 +20,7 @@ import type { DecodedReceipt } from '../domain/receipts/types.js';
 import { localDateOf, localDayWindow } from '../domain/time.js';
 import { isSealedLedger, plaintext } from './ledgerKeys.js';
 import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
+import { stickyTagOf, withStickyTag } from './stickyTag.js';
 
 export interface RecordReceiptInput {
   readonly user: User;
@@ -102,6 +103,7 @@ export function recordReceipt(deps: RecordDeps, input: RecordReceiptInput): Reco
       createdAt: input.now,
       categoryId: category.id,
       descriptionKey: descriptionKey(input.placeholder),
+      tags: withStickyTag([], stickyTagOf(deps, ledger.id, user.id)),
     });
     if (stored.created) {
       insertReceipt(db, {

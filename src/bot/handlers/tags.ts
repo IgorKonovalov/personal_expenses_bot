@@ -1,20 +1,28 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import { tagHash } from '../../domain/tags.js';
 import { isLocked } from '../../services/ledgerKeys.js';
+import { clearStickyTag, currentStickyTag, setStickyTag } from '../../services/stickyTag.js';
 import {
   activeLedgerTagReport,
   activeLedgerTags,
   type TagList,
 } from '../../services/tagSummary.js';
 import type { HandlerDeps } from '../bot.js';
-import { TAG_LIST_PAGE, TAG_SHOW, tagListPageData, tagShowData } from '../callbackData.js';
+import {
+  STICKY_TAG_OFF,
+  TAG_LIST_PAGE,
+  TAG_SHOW,
+  tagListPageData,
+  tagShowData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow } from '../nav.js';
 import { editHtml, replyHtml, type Html } from '../render/html.js';
 import { ensureUser } from './start.js';
 
 // /tags (ADR-0029): the active ledger's tags with their all-time totals, PAGE_SIZE to a page,
-// each a button to its report. Every tap is stateless: it reads the viewer's active ledger again.
+// each a button to its report. /tag sets the sticky tag. Every tap is stateless: it reads the
+// viewer's active ledger again.
 
 interface View {
   readonly text: Html;
@@ -62,6 +70,41 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
     }
     const view = listView(list, 1);
     await replyHtml(ctx, view.text, { reply_markup: view.markup });
+  });
+
+  // `/tag отпуск` sets the sticky tag of the active ledger; `/tag` alone shows it.
+  bot.command('tag', async (ctx) => {
+    if (ctx.from === undefined) return;
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const offKeyboard = new InlineKeyboard().text(messages.stickyTagOffButton, STICKY_TAG_OFF);
+    if (ctx.match.trim() === '') {
+      const current = currentStickyTag(deps, user);
+      if (current.name === undefined) {
+        await replyHtml(ctx, messages.stickyTagNone);
+        return;
+      }
+      await replyHtml(
+        ctx,
+        messages.stickyTagCurrent({ ledger: current.ledger, name: current.name }),
+        {
+          reply_markup: offKeyboard,
+        },
+      );
+      return;
+    }
+    const result = setStickyTag(deps, user, ctx.match);
+    if (result.kind === 'invalid') {
+      await replyHtml(ctx, messages.stickyTagUsage);
+      return;
+    }
+    await replyHtml(ctx, messages.stickyTagOn(result), { reply_markup: offKeyboard });
+  });
+
+  bot.callbackQuery(STICKY_TAG_OFF, async (ctx) => {
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    clearStickyTag(deps, user);
+    await ctx.answerCallbackQuery();
+    await editHtml(ctx, messages.stickyTagOff);
   });
 
   bot.callbackQuery(TAG_LIST_PAGE, async (ctx) => {

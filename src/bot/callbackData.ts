@@ -392,6 +392,10 @@ export function tagShowData(hash: string): string {
   return assertCallbackData(`tag:s:${hash}`);
 }
 
+// [Снять метку] under /tag: clears the sticky tag of the viewer's active ledger. A set-to-value,
+// so a second tap clears nothing more.
+export const STICKY_TAG_OFF = 'tag:off';
+
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
 // sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
 // the active ledger in a DM, the chat's binding in a group.

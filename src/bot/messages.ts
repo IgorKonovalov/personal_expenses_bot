@@ -925,6 +925,15 @@ export const messages = {
       '\n',
     ),
   tagButton: (name: string): string => `#${name}`,
+  // The sticky tag (ADR-0029), set with /tag in the active ledger.
+  stickyTagOn: ({ ledger, name }: { ledger: LedgerRef; name: string }): Html =>
+    html`Метка #${name} включена: я добавлю её к каждой новой трате в «${ledgerName(ledger)}», пока вы её не снимете.`,
+  stickyTagCurrent: ({ ledger, name }: { ledger: LedgerRef; name: string }): Html =>
+    html`Сейчас к каждой новой трате в «${ledgerName(ledger)}» добавляется метка #${name}.`,
+  stickyTagNone: html`Постоянной метки нет. Отправьте, например, «/tag отпуск» — и я добавлю #отпуск к каждой новой трате, пока вы её не снимете.`,
+  stickyTagUsage: html`Укажите одну метку: буквы, цифры или _, до 32 знаков. Например, «/tag отпуск».`,
+  stickyTagOff: html`Метка снята. Новые траты записываются без неё.`,
+  stickyTagOffButton: 'Снять метку',
   // A tag button whose tag no live expense carries any more; the list is shown again.
   tagGone: 'Этой метки больше нет',
   // The tag's total, count and dates, then each currency's categories by amount; the first

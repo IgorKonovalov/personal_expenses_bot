@@ -7179,6 +7179,87 @@ describe('tags (Plan 0012)', () => {
     expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
   });
 
+  describe('the sticky tag', () => {
+    const offKeyboard = {
+      inline_keyboard: [[{ text: messages.stickyTagOffButton, callback_data: 'tag:off' }]],
+    };
+
+    it('turns on with /tag отпуск and tags 300 такси #рим as #рим #отпуск', async () => {
+      const { say, calls, db } = tagBot();
+
+      await say('/tag Отпуск', 1);
+      expect(calls.at(-1)?.payload).toMatchObject({
+        text: messages.stickyTagOn({
+          ledger: { kind: 'personal', name: 'Personal' },
+          name: 'отпуск',
+        }),
+        reply_markup: offKeyboard,
+      });
+
+      await say('300 такси #рим', 2);
+      expect(lastText(calls)).toBe(
+        'Записано в «Личные расходы»: <b>300.00 RSD</b> — такси · Транспорт · #рим #отпуск',
+      );
+      await say('300 такси #отпуск', 3);
+      expect(db.prepare('SELECT tags FROM expenses ORDER BY rowid').pluck().all()).toEqual([
+        'рим отпуск',
+        'отпуск',
+      ]);
+    });
+
+    it('shows the current tag with /tag, or stickyTagNone, and the usage for a bad name', async () => {
+      const { say, calls } = tagBot();
+
+      await say('/tag', 1);
+      expect(lastText(calls)).toBe(messages.stickyTagNone);
+      await say('/tag два слова', 2);
+      expect(lastText(calls)).toBe(messages.stickyTagUsage);
+      await say('/tag отпуск', 3);
+      await say('/tag', 4);
+      expect(calls.at(-1)?.payload).toMatchObject({
+        text: messages.stickyTagCurrent({
+          ledger: { kind: 'personal', name: 'Personal' },
+          name: 'отпуск',
+        }),
+        reply_markup: offKeyboard,
+      });
+    });
+
+    it('[Снять метку] clears it, a second tap is harmless, and 300 такси has no tag', async () => {
+      const { say, tap, calls, db } = tagBot();
+      await say('/tag отпуск', 1);
+
+      await tap('tag:off');
+      await tap('tag:off');
+      expect(
+        calls.filter((c) => c.method === 'editMessageText').map((c) => c.payload),
+      ).toMatchObject([{ text: messages.stickyTagOff }, { text: messages.stickyTagOff }]);
+
+      await say('300 такси', 2);
+      expect(lastText(calls)).toBe(
+        'Записано в «Личные расходы»: <b>300.00 RSD</b> — такси · Транспорт',
+      );
+      expect(db.prepare('SELECT tags FROM expenses').pluck().all()).toEqual([null]);
+    });
+
+    it('tags a receipt recorded while it is set', async () => {
+      const sent = new Date('2026-10-01T08:00:00Z');
+      const { bot, calls, db } = createTestBot({ now: sent });
+      await bot.handleUpdate(
+        textUpdate({ updateId: 1, messageId: 1, text: '/tag отпуск', date: sent }),
+      );
+
+      await bot.handleUpdate(
+        textUpdate({ updateId: 2, messageId: 2, text: buildRsUrl(), date: sent }),
+      );
+
+      expect(lastText(calls)).toBe(
+        'Записано в «Личные расходы»: <b>829.12 RSD</b> — Чек · Другое · #отпуск',
+      );
+      expect(db.prepare('SELECT tags FROM expenses').pluck().all()).toEqual(['отпуск']);
+    });
+  });
+
   it('keeps a 32-letter Cyrillic tag button at 14 bytes', () => {
     const data = tagShowData(hashOf('я'.repeat(32)));
 
