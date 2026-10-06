@@ -247,7 +247,7 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 | 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | a839502 |
 | 3: The weekly push and the settings switches | dev | done | 5060242 |
 | 4: Sealed ledgers, help and docs | dev | done | c8822f3 |
-| 5: A real month's push | human | not started | |
+| 5: A real month's push | human | owed | |
 
 ### Notes
 
