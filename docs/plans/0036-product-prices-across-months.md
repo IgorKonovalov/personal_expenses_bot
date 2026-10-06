@@ -2,8 +2,6 @@
 
 > **Status:** approved (2026-10-06)
 > **Created:** 2026-10-06
-> **Depends on:** [Plan 0030](0030-mini-app-charts-and-qr-scan.md) Phase 1 (chart mode and the
-> payload contract in `webapp/`) for Phase 6 only. Phases 1 to 5 don't depend on it.
 > **Related ADRs:** [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md)
 > (matching and unit-price math), [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md)
 > (static Mini App), [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (the review flow's state),
@@ -14,7 +12,7 @@
 A new `/prices` command lists the products the user buys: «Молоко», «Хлеб», «Бананы». Each one
 gathers every receipt item that names it, from any shop or brand. Tapping a product shows, per
 month, what was spent, how much was bought (litres, kilograms or pieces) and the price per unit,
-plus the all-time totals. A [📈 График] button opens it as a chart in the Mini App. Products are
+plus the all-time totals. The Mini App chart is a followup, once Plan 0030 lands. Products are
 recognized by built-in keyword rules. Names the rules miss wait in a short review queue, and
 each correction is remembered for that name. The first thing the user sees: `/prices`, tap
 «Молоко», and October's 153.50 RSD per litre next to September's 139.00.
@@ -31,8 +29,8 @@ product per item, and a unit price that doesn't change just because the pack siz
 
 Built-in keyword rules plus per-user overrides map item names to generic products. Unit prices
 are computed in exact integers, and a month's price is weighted by amount (ADR-0039). The view
-is text in the chat first, with the Mini App chart as the last dev phase, because the chart needs
-Plan 0030's chart mode. We rejected an LLM classifier (item names would leave the server), an
+is text in the chat. The Mini App chart is a followup plan, because it needs Plan 0030's chart
+mode, which isn't built yet. We rejected an LLM classifier (item names would leave the server), an
 all-manual mapping (the queue never empties), and exact-name comparison (no comparison across
 brands). The reasons are in ADR-0039.
 
@@ -63,7 +61,6 @@ flowchart LR
     C --> N
     S --> Q
     S --> A
-    P -- web_app button #d=payload --> W[webapp line chart]
 ```
 
 ## Implementation phases
@@ -200,31 +197,11 @@ Shared fixture for the done-whens: the user's personal ledger in RSD, timezone `
   `cokoladno mleko 0,2l` and `kesa` as unmatched. The test computes the expected sums from the
   fixture rows.
 
-### Phase 6: the price chart in the Mini App
-- **Owner skill:** dev
-- **What:** After Plan 0030 Phase 1 is merged, the product view gains [📈 График] as a `web_app`
-  button, in a private chat with `WEBAPP_URL` set. The payload carries, for the last 24 months
-  with purchases in the ledger's default currency: month, spend, amount and unit price. It adds
-  a new chart kind that draws unit price as a line and spend as bars beneath. Months in other
-  currencies appear as text lines under the chart, never on the same axis. Text comes formatted
-  from the bot, as Plan 0030 requires.
-- **Files touched:** `src/domain/chartPayload.ts`, `src/domain/chartPayload.test.ts`,
-  `src/bot/handlers/prices.ts`, `src/bot/messages.ts`, `webapp/src/payload.ts`,
-  `webapp/src/payload.test.ts`, `webapp/src/line.ts`, `webapp/src/line.test.ts`,
-  `webapp/src/main.ts`, `README.md` (Mini App section).
-- **Done when:** The «Молоко» payload from the Phase 2 fixture round-trips through
-  `decodeChartPayload` with two months: 2026-09 (spend 27800, 2000 ml, 13900) and 2026-10
-  (spend 45700, 2000 ml, 15350). A product name `<img src=x onerror=alert(1)>` creates no `img`
-  element. `webapp/index.html` and its CSP are unchanged. Payload size isn't fixed by this plan:
-  a product with 24 months encodes within the URL length Plan 0030 settled on, and a test asserts
-  it.
-
-### Phase 7: real receipts
+### Phase 6: real receipts
 - **Owner skill:** human
 - **What:** Run `pnpm products:coverage` on a copy of the production database. Pass on only the
   generic product words of the top unmatched names to a `dev` session as catalog additions (no
-  shop or personal data). Then check «Молоко» and two other products on a phone, including the
-  chart.
+  shop or personal data). Then check «Молоко» and two other products on a phone.
 - **Files touched:** none.
 - **Done when:** The user reports the coverage share before and after one catalog pass, and
   confirms that the monthly unit prices look right for three products.
@@ -268,10 +245,10 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 
 ## Risks & open questions
 
-- **Catalog coverage is unknown.** Phase 5 measures it and Phase 7 acts on it. The first catalog
+- **Catalog coverage is unknown.** Phase 5 measures it and Phase 6 acts on it. The first catalog
   is a guess built from common Serbian grocery words.
 - **Shop name formats are unverified.** The `/kg` marker and the size patterns come from typical
-  Serbian receipts, not a checked sample. The Phase 7 coverage report shows the misses.
+  Serbian receipts, not a checked sample. The Phase 6 coverage report shows the misses.
 - **Currency.** Months are kept per currency, and unit prices are never converted. The list
   ranks by spend in the ledger's default currency.
 - **Sealed ledgers** use the rules only and get no review. Rendering them requires an unlocked
@@ -286,6 +263,8 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 
 ## What this plan does NOT do
 
+- **No Mini App chart.** A followup plan adds [📈 График] (unit price as a line, spend as bars,
+  using Plan 0030's payload contract) once Plan 0030 Phase 1 is merged.
 - **No AI classification and no network calls** (ADR-0039).
 - **No exact-variant tracking** ("Imlek 2.8% 1L" as its own product). A product is generic, and a
   user product can stand in for a variant if the user wants one.
@@ -303,11 +282,14 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | 3: review and corrections | dev | not started | |
 | 4: user products | dev | not started | |
 | 5: coverage report | dev | not started | |
-| 6: Mini App chart | dev | not started | |
-| 7: real receipts | human | not started | |
+| 6: real receipts | human | not started | |
 
 ### Notes
 
 ### Close triggers
 
 ## Followups
+
+- A plan for the product price chart in the Mini App ([📈 График] on the product view), after Plan
+  0030 Phase 1. Its payload carries month, spend, amount and unit price for up to 24 months in the
+  ledger's default currency, and other currencies appear as text lines.
