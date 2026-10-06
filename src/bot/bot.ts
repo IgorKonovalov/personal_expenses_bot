@@ -29,6 +29,7 @@ import { registerMenu } from './handlers/menu.js';
 import { registerMore } from './handlers/more.js';
 import { registerEdited, registerNonText, registerUnknownCommand } from './handlers/other.js';
 import { registerPaySupport } from './handlers/paysupport.js';
+import { registerPrices } from './handlers/prices.js';
 import { registerPrivacy } from './handlers/privacy.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
 import { registerRecurring } from './handlers/recurring.js';
@@ -144,6 +145,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerRecurring(dm, options);
   registerDebts(dm, options);
   registerTags(dm, options);
+  registerPrices(dm, options);
   registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);

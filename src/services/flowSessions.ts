@@ -88,8 +88,15 @@ export interface CommandArgScreen {
   readonly name: 'commandArg';
 }
 
+// /prices (ADR-0039): the product list of `ledgerId` and the products it opens.
+export interface PricesScreen {
+  readonly name: 'prices';
+  readonly ledgerId: LedgerId;
+}
+
 export type Screen =
   | CommandArgScreen
+  | PricesScreen
   | CategoriesScreen
   | SummaryScreen
   | ExpenseScreen
@@ -387,7 +394,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       ? { name, ledgerId: parsed.ledgerId as LedgerId }
       : { name };
   }
-  if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
+  if ((name === 'summary' || name === 'prices') && typeof parsed?.ledgerId === 'string') {
     return { name, ledgerId: parsed.ledgerId as LedgerId };
   }
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {

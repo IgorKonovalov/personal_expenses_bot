@@ -23,6 +23,7 @@ import { sendDonate, type DonateDeps } from './donate.js';
 import { sendExportPicker } from './export.js';
 import { sendInvite, sendInvites } from './invite.js';
 import { sendPaySupport } from './paysupport.js';
+import { sendPrices } from './prices.js';
 import { sendPrivacy } from './privacy.js';
 import { sendRecurring } from './recurring.js';
 import { sendRefund } from './refund.js';
@@ -91,6 +92,7 @@ const BUTTONS: readonly MoreButton[] = [
   { key: 'debt', command: 'debts', label: label.debts, run: sendDebts },
   { key: 'tags', command: 'tags', label: label.tags, run: sendTags },
   { key: 'tag', command: 'tag', label: label.tag, run: ask('tag') },
+  { key: 'prc', command: 'prices', label: label.prices, run: sendPrices },
   { key: 'exp', command: 'export', label: label.export, run: sendExportPicker },
   { key: 'chg', command: 'changelog', label: label.changelog, run: (ctx) => sendChangelog(ctx) },
   { key: 'don', command: 'donate', label: label.donate, run: sendDonate },

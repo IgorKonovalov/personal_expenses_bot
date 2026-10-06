@@ -1061,6 +1061,7 @@ export const messages = {
     { command: 'recurring', description: 'Регулярные траты' },
     { command: 'debts', description: 'Долги: кто кому должен' },
     { command: 'tags', description: 'Метки: траты по поездкам и проектам' },
+    { command: 'prices', description: 'Цены продуктов из чеков по месяцам' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
@@ -1089,6 +1090,7 @@ export const messages = {
     recurring: 'Регулярные',
     debts: 'Долги',
     tags: 'Метки',
+    prices: 'Цены',
     export: 'Экспорт',
     changelog: 'Что нового',
     donate: 'Поддержать',
@@ -1334,6 +1336,7 @@ export const messages = {
       html`/recurring — регулярные траты и напоминания`,
       html`/debts — долги: кто кому должен`,
       html`/tags — метки и траты по ним, /tag — метка для всех новых трат`,
+      html`/prices — цены продуктов из чеков по месяцам`,
       html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
       html`/start — знакомство заново: настройки и подсказки`,
@@ -1417,6 +1420,55 @@ export const messages = {
   groupStickyTagNotMember: html`Сначала запишите здесь хотя бы одну трату, например «450 кафе».`,
   // A tag button whose tag no live expense carries any more; the list is shown again.
   tagGone: 'Этой метки больше нет',
+  // /prices (ADR-0039): products gathered from the viewer's receipt items, by 12-month spend.
+  pricesEmpty: html`Продуктов пока нет. Я собираю их из позиций чеков: отправьте фото QR-кода с чека или ссылку из него.`,
+  priceList: ({
+    ledger,
+    products,
+  }: {
+    readonly ledger: LedgerRef & { readonly defaultCurrency: CurrencyCode };
+    readonly products: readonly { readonly name: string; readonly recentMinor: number }[];
+  }): Html =>
+    joinHtml(
+      [
+        html`<b>Цены — «${ledgerName(ledger)}»</b>`,
+        html`Потрачено за 12 месяцев:`,
+        ...products.map(
+          (p) =>
+            html`${p.name} — ${formatMoney({ amountMinor: p.recentMinor, currency: ledger.defaultCurrency })}`,
+        ),
+        html``,
+        html`Нажмите продукт, чтобы увидеть траты по месяцам.`,
+      ],
+      '\n',
+    ),
+  productButton: (name: string): string => name,
+  // One product: per month, newest first, then all time.
+  productView: ({
+    ledger,
+    name,
+    months,
+    totals,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly name: string;
+    readonly months: readonly (Money & { readonly month: string })[];
+    readonly totals: readonly Money[];
+  }): Html =>
+    joinHtml(
+      [
+        html`<b>${name} — «${ledgerName(ledger)}»</b>`,
+        ...months.map(
+          (m) =>
+            html`${MONTHS[Number(m.month.slice(5, 7)) - 1] ?? ''} ${m.month.slice(0, 4)}: ${formatMoney(m)}`,
+        ),
+        html``,
+        html`Всего: ${totals.map(formatMoney).join(', ')}`,
+      ],
+      '\n',
+    ),
+  // A product button whose product no item names any more; the list is shown again.
+  productGone: 'Этого продукта больше нет в чеках',
   // The tag's total, count and dates, then each currency's categories by amount; the first
   // block is `≈` when it holds converted spending, and the conversion notes close it.
   tagReport: ({ ledger, report }: TagReportView): Html => {

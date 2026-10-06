@@ -449,6 +449,21 @@ export function tagShowData(hash: string): string {
   return assertCallbackData(`tag:s:${hash}`);
 }
 
+// /prices (ADR-0039). Only the current anchor accepts these, and they act on the anchor's
+// ledger. `prc:p:<page>` shows a 1-based page of the products (at most 10 bytes); `prc:o:<ref>`
+// opens one product, a ref being `b:<catalog key of at most 24 ASCII characters>` or
+// `u:<integer>` (at most 32 bytes).
+export const PRICES_PAGE = /^prc:p:(\d{1,4})$/;
+export const PRODUCT_OPEN = /^prc:o:(b:[a-z0-9_]{1,24}|u:\d{1,16})$/;
+
+export function pricesPageData(page: number): string {
+  return assertCallbackData(`prc:p:${page}`);
+}
+
+export function productOpenData(ref: string): string {
+  return assertCallbackData(`prc:o:${ref}`);
+}
+
 // [Снять метку] under /tag: clears the sticky tag of the viewer's active ledger. A set-to-value,
 // so a second tap clears nothing more.
 export const STICKY_TAG_OFF = 'tag:off';

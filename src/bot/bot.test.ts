@@ -478,18 +478,19 @@ describe('command registration at boot', () => {
             { command: 'recurring', description: messages.commands[4].description },
             { command: 'debts', description: messages.commands[5].description },
             { command: 'tags', description: messages.commands[6].description },
-            { command: 'categories', description: messages.commands[7].description },
-            { command: 'export', description: messages.commands[8].description },
-            { command: 'settings', description: messages.commands[9].description },
-            { command: 'unlock', description: messages.commands[10].description },
-            { command: 'lock', description: messages.commands[11].description },
-            { command: 'help', description: messages.commands[12].description },
-            { command: 'changelog', description: messages.commands[13].description },
-            { command: 'donate', description: messages.commands[14].description },
-            { command: 'tag', description: messages.commands[15].description },
-            { command: 'privacy', description: messages.commands[16].description },
-            { command: 'paysupport', description: messages.commands[17].description },
-            { command: 'delete_account', description: messages.commands[18].description },
+            { command: 'prices', description: messages.commands[7].description },
+            { command: 'categories', description: messages.commands[8].description },
+            { command: 'export', description: messages.commands[9].description },
+            { command: 'settings', description: messages.commands[10].description },
+            { command: 'unlock', description: messages.commands[11].description },
+            { command: 'lock', description: messages.commands[12].description },
+            { command: 'help', description: messages.commands[13].description },
+            { command: 'changelog', description: messages.commands[14].description },
+            { command: 'donate', description: messages.commands[15].description },
+            { command: 'tag', description: messages.commands[16].description },
+            { command: 'privacy', description: messages.commands[17].description },
+            { command: 'paysupport', description: messages.commands[18].description },
+            { command: 'delete_account', description: messages.commands[19].description },
           ],
         },
       },
@@ -8163,6 +8164,180 @@ describe('tags (Plan 0012)', () => {
   });
 });
 
+describe('/prices (Plan 0036)', () => {
+  // Tuesday 6 October 2026, 12:00 in Belgrade.
+  const NOW = new Date('2026-10-06T10:00:00Z');
+
+  async function pricesBot() {
+    const harness = createTestBot({ now: NOW });
+    withMessageIds(harness.bot, 100);
+    const { bot, db } = harness;
+    let updateId = 0;
+    const say = (text: string) =>
+      bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: updateId, text, date: NOW }));
+    const tap = (data: string, messageId: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    await say('/start');
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('user not provisioned');
+    const deps = {
+      db,
+      logger: silentLogger(),
+      newId: () => randomUUID(),
+      defaultTimezone: 'Europe/Belgrade',
+    };
+    let fiscal = 0;
+    // A receipt issued at noon of the local `day`, fetched with `items`.
+    const receipt = (day: string, items: readonly (readonly [string, string, number])[]) => {
+      const instant = new Date(`${day}T10:00:00Z`);
+      const result = recordReceipt(deps, {
+        user,
+        receipt: {
+          country: 'RS',
+          fiscalId: `FISCAL-${++fiscal}`,
+          merchantKey: 'rs:test',
+          totalMinor: items.reduce((sum, [, , minor]) => sum + minor, 0),
+          currency: 'RSD',
+          issuedAt: instant,
+          verifyUrl: `https://example.test/v/${fiscal}`,
+        },
+        placeholder: 'Чек',
+        occurredAt: instant,
+        now: NOW,
+      });
+      if (result.kind !== 'recorded') throw new Error(`receipt not recorded: ${result.kind}`);
+      markReceiptFetched(db, result.receipt.id, 'Test Market');
+      insertReceiptItems(
+        db,
+        result.receipt.id,
+        items.map(([name, quantity, totalMinor]) => ({ name, quantity, totalMinor })),
+      );
+      return result.expense.id;
+    };
+    // The plan's fixture, items 1 to 8.
+    const fixture = () => {
+      receipt('2026-09-12', [['MLEKO 2,8%MM 1L IMLEK', '2', 27800]]);
+      receipt('2026-10-02', [['MLEKO 0,5L MOJA KRAVICA', '2', 15800]]);
+      receipt('2026-10-05', [
+        ['МЛЕКО 1Л', '1', 14900],
+        ['HLEB BELI 500G', '1', 6500],
+        ['BANANA /KG', '1.245', 24900],
+        ['ČOKOLADNO MLEKO 0,2L', '1', 9900],
+        ['MLEKO IMLEK', '1', 15000],
+        ['KESA', '1', 300],
+      ]);
+    };
+    const anchor = () =>
+      db.prepare('SELECT anchor_message_id FROM flow_sessions').pluck().get() as number;
+    harness.calls.length = 0;
+    return { ...harness, user, say, tap, receipt, fixture, anchor };
+  }
+
+  const LIST =
+    '<b>Цены — «Личные расходы»</b>\nПотрачено за 12 месяцев:\n' +
+    'Молоко — 735.00 RSD\nБананы — 249.00 RSD\nХлеб — 65.00 RSD\n\n' +
+    'Нажмите продукт, чтобы увидеть траты по месяцам.';
+  const LIST_KEYBOARD = {
+    inline_keyboard: [
+      [
+        { text: 'Молоко', callback_data: 'prc:o:b:milk' },
+        { text: 'Бананы', callback_data: 'prc:o:b:bananas' },
+      ],
+      [{ text: 'Хлеб', callback_data: 'prc:o:b:bread' }],
+    ],
+  };
+
+  it('lists Молоко, Бананы, Хлеб by spend as the anchor, opens Молоко by month, and goes back', async () => {
+    const { say, tap, calls, fixture, anchor } = await pricesBot();
+    fixture();
+
+    await say('/prices');
+
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: LIST, reply_markup: LIST_KEYBOARD, ...htmlParseMode },
+      },
+    ]);
+    calls.length = 0;
+
+    await tap('prc:o:b:milk', anchor());
+
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toEqual({
+      chat_id: ALLOWED_ID,
+      message_id: anchor(),
+      text:
+        '<b>Молоко — «Личные расходы»</b>\nОктябрь 2026: 457.00 RSD\nСентябрь 2026: 278.00 RSD\n\n' +
+        'Всего: 735.00 RSD',
+      reply_markup: { inline_keyboard: [[{ text: '« Назад', callback_data: 'prc:p:1' }]] },
+      ...htmlParseMode,
+    });
+    calls.length = 0;
+
+    await tap('prc:p:1', anchor());
+
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text: LIST,
+      reply_markup: LIST_KEYBOARD,
+    });
+  });
+
+  it('answers with pricesEmpty when no receipt names a product', async () => {
+    const { say, calls, receipt } = await pricesBot();
+    receipt('2026-10-05', [['KESA', '1', 300]]);
+
+    await say('/prices');
+
+    expect(sentTexts(calls)).toEqual([messages.pricesEmpty]);
+  });
+
+  it('answers ledgerLocked for a locked sealed ledger', async () => {
+    const { say, calls, db, keys, user, fixture } = await pricesBot();
+    fixture();
+    const deps = { db, keys, logger: silentLogger(), newId: () => randomUUID() };
+    const ledger = await sealPersonalLedger(deps, user, NOW);
+    keys.lock(ledger.id);
+    calls.length = 0;
+
+    await say('/prices');
+
+    expect(sentTexts(calls)).toEqual([messages.ledgerLocked]);
+  });
+
+  it('toasts staleScreen for a tap on a message that is not the anchor', async () => {
+    const { say, tap, calls, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    calls.length = 0;
+
+    await tap('prc:o:b:milk', anchor() - 1);
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+      },
+    ]);
+  });
+
+  it('toasts productGone and shows the list for a product no item names', async () => {
+    const { say, tap, calls, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    calls.length = 0;
+
+    await tap('prc:o:b:eggs', anchor());
+
+    expect(calls[0]).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: expect.any(String) as string, text: messages.productGone },
+    });
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text: LIST,
+    });
+  });
+});
+
 describe('[☰ Ещё] (Plan 0034)', () => {
   const NOW = new Date('2026-10-06T10:00:00Z');
   const label = messages.moreButtons;
@@ -8175,9 +8350,10 @@ describe('[☰ Ещё] (Plan 0034)', () => {
       inline_keyboard: [
         [more(label.recurring, 'rec'), more(label.debts, 'debt')],
         [more(label.tags, 'tags'), more(label.tag, 'tag')],
-        [more(label.export, 'exp'), more(label.changelog, 'chg')],
-        [more(label.donate, 'don'), more(label.paysupport, 'pay')],
-        [more(label.privacy, 'prv'), more(label.deleteAccount, 'del')],
+        [more(label.prices, 'prc'), more(label.export, 'exp')],
+        [more(label.changelog, 'chg'), more(label.donate, 'don')],
+        [more(label.paysupport, 'pay'), more(label.privacy, 'prv')],
+        [more(label.deleteAccount, 'del')],
         ...(opts.lockRow ?? []),
         ...(opts.admin === true
           ? [

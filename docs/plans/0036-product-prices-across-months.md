@@ -1,6 +1,6 @@
 # 0036: Product prices across months: receipt items grouped into products, with spend, amount and unit price per month
 
-> **Status:** approved (2026-10-06)
+> **Status:** in-progress
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md)
 > (matching and unit-price math), [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md)
@@ -278,7 +278,7 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: /prices skeleton | dev | not started | |
+| 1: /prices skeleton | dev | done | committed with this row |
 | 2: amount and unit price | dev | not started | |
 | 3: review and corrections | dev | not started | |
 | 4: user products | dev | not started | |
@@ -286,6 +286,13 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | 6: real receipts | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/handlers/help.ts` is unchanged. The help text and the command list live in
+  `src/bot/messages.ts`, which now carries `/prices`.
+- Phase 1: the product view's back button is the shared `messages.backButton` ([« Назад]), not
+  [← Назад]. It returns to page 1 of the list.
+- Phase 1: no `catalog.test.ts`. The catalog-key check (unique, at most 24 ASCII characters)
+  is in `src/domain/products/match.test.ts`.
 
 ### Close triggers
 

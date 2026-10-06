@@ -1,8 +1,11 @@
+import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import type { FetchedItem } from '../domain/receipts/types.js';
+import type { LocalDate } from '../domain/time.js';
 import type { Db } from './connection.js';
 import type { ExpenseId } from './expenses.js';
 import type { LedgerId } from './ledgers.js';
 import type { ReceiptId } from './receipts.js';
+import type { UserId } from './users.js';
 
 // A receipt's line items, numbered from 1 in the order the tax site lists them. Insert them in
 // the transaction that marks the receipt fetched: a second insert would hit the primary key.
@@ -102,6 +105,51 @@ export function listFetchedReceiptItems(
     items.push({ position, name, quantity, totalMinor });
   }
   return [...byExpense].map(([expenseId, items]) => ({ expenseId, items }));
+}
+
+export interface DatedReceiptItem extends FetchedItem {
+  readonly occurredOn: LocalDate;
+  readonly currency: CurrencyCode;
+  readonly createdBy: UserId;
+}
+
+// The items of the fetched receipts behind one ledger's live plaintext expenses, each with its
+// expense's local day, currency and author, oldest first. A sealed row's items live in its
+// payload (ADR-0020), so none comes from here.
+export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptItem[] {
+  return db
+    .prepare<
+      [string],
+      {
+        name: string;
+        quantity: string;
+        total_minor: number;
+        occurred_on: string;
+        currency: string;
+        created_by: string;
+      }
+    >(
+      `SELECT i.name, i.quantity, i.total_minor, e.occurred_on, e.currency, e.created_by
+         FROM receipt_items i
+         JOIN receipts r ON r.id = i.receipt_id
+         JOIN expenses e ON e.id = r.expense_id
+        WHERE e.ledger_id = ? AND e.deleted_at IS NULL AND e.sealed IS NULL
+          AND r.fetch_state = 'fetched'
+        ORDER BY e.occurred_on, e.occurred_at, e.id, i.position`,
+    )
+    .all(ledgerId)
+    .map((row) => {
+      const currency = toCurrencyCode(row.currency);
+      if (currency === undefined) throw new Error('receipt item of an unknown currency');
+      return {
+        name: row.name,
+        quantity: row.quantity,
+        totalMinor: row.total_minor,
+        occurredOn: row.occurred_on as LocalDate,
+        currency,
+        createdBy: row.created_by as UserId,
+      };
+    });
 }
 
 export function countReceiptItems(db: Db, receiptId: ReceiptId): number {

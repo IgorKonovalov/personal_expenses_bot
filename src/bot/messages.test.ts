@@ -54,6 +54,33 @@ describe('periodSummary folds its category lines (ADR-0038)', () => {
   });
 });
 
+describe('/prices (ADR-0039)', () => {
+  it('renders a product by month, newest first, with every currency, then all time', () => {
+    const text = messages.productView({
+      ledger: { kind: 'shared', name: 'Семья' },
+      name: 'Молоко',
+      months: [
+        { month: '2026-10', amountMinor: 45700, currency: 'RSD' },
+        { month: '2026-10', amountMinor: 250, currency: 'EUR' },
+        { month: '2025-12', amountMinor: 27800, currency: 'RSD' },
+      ],
+      totals: [
+        { amountMinor: 73500, currency: 'RSD' },
+        { amountMinor: 250, currency: 'EUR' },
+      ],
+    });
+
+    expect(text).toBe(
+      '<b>Молоко — «Семья»</b>\nОктябрь 2026: 457.00 RSD\nОктябрь 2026: 2.50 EUR\n' +
+        'Декабрь 2025: 278.00 RSD\n\nВсего: 735.00 RSD, 2.50 EUR',
+    );
+  });
+
+  it('lists /prices in the help text', () => {
+    expect(messages.help).toContain('/prices — цены продуктов из чеков по месяцам');
+  });
+});
+
 describe('version announcements (ADR-0013)', () => {
   // The gate: a version bump in package.json without its announcement fails the suite.
   it('has an entry for the version in package.json', () => {

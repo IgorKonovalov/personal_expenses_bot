@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LocalDate } from '../domain/time.js';
 import { openDatabase, type Db } from './connection.js';
-import { insertExpenseOrGetExisting, type ExpenseId } from './expenses.js';
+import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from './expenses.js';
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
 import { runMigrations } from './migrate.js';
 import {
   countReceiptItems,
   insertReceiptItems,
   listFetchedReceiptItems,
+  listLedgerDatedItems,
   listLedgerReceiptItems,
   listReceiptItems,
 } from './receiptItems.js';
@@ -110,6 +111,28 @@ describe('receipt items', () => {
     expect(listFetchedReceiptItems(db, ['expense-1' as ExpenseId])).toEqual([
       { expenseId: 'expense-1', items: [] },
     ]);
+  });
+
+  it("dates a ledger's fetched items with their expense's day, currency and author", () => {
+    insertReceiptItems(db, RECEIPT, [
+      { name: 'Hljeb', quantity: '2', totalMinor: 240 },
+      { name: 'Sir', quantity: '0.535', totalMinor: 4010 },
+    ]);
+
+    expect(listLedgerDatedItems(db, 'ledger-a' as LedgerId)).toEqual([]);
+    markReceiptFetched(db, RECEIPT, 'Market');
+    const dated = {
+      occurredOn: '2026-10-01',
+      currency: 'EUR',
+      createdBy: 'user-a',
+    };
+    expect(listLedgerDatedItems(db, 'ledger-a' as LedgerId)).toEqual([
+      { name: 'Hljeb', quantity: '2', totalMinor: 240, ...dated },
+      { name: 'Sir', quantity: '0.535', totalMinor: 4010, ...dated },
+    ]);
+    expect(listLedgerDatedItems(db, 'ledger-b' as LedgerId)).toEqual([]);
+    softDeleteExpense(db, 'expense-1' as ExpenseId, NOW);
+    expect(listLedgerDatedItems(db, 'ledger-a' as LedgerId)).toEqual([]);
   });
 
   it('rejects a second insert of the same positions', () => {

@@ -84,8 +84,8 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const anchor = currentAnchor(deps, user);
   if (anchor === undefined) return;
   const { screen } = anchor;
-  // A summary starts no flow, so a cancel never has one to restore.
-  if (screen.name === 'summary') return;
+  // A summary and the prices list start no flow, so a cancel never has one to restore.
+  if (screen.name === 'summary' || screen.name === 'prices') return;
   if (screen.name === 'commandArg') {
     await renderAnchor(ctx, anchor, {
       text: messages.commandArgCancelled,
