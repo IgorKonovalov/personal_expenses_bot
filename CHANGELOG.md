@@ -2,6 +2,20 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.18.0 (2026-10-06)
+
+From Plan 0027 (bank statement import).
+
+- A Raiffeisen banka Srbija account statement PDF sent in the private chat previews its card
+  purchases: the period, the new rows paged 10 at a time, and the rows already recorded by hand,
+  receipt or SMS (same amount and currency within a day). [Записать все] records the new rows in
+  their original currency, with categories from history; [Записать и уже записанные] records the
+  matched rows too. Sending the same file again records nothing.
+- Files over 5 MB, over 30 pages or over 1000 purchases are refused, and a scanned PDF gets its
+  own answer. The file is read in memory and never stored. A sealed ledger takes a statement only
+  while unlocked.
+- New runtime dependency: `pdfjs-dist` 6.3.289, loaded only when a PDF is read.
+
 ## 0.17.0 (2026-10-06)
 
 From Plan 0025 (recurring expenses and reminders).

@@ -1,8 +1,8 @@
 # ADR-0032: A statement row counts as already recorded when a live expense matches its amount and currency within one day
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-06)
 > **Date:** 2026-10-02
-> **Related plan(s):** Plan 0027 ([0027-bank-statement-import.md](../plans/0027-bank-statement-import.md))
+> **Related plan(s):** Plan 0027 ([0027-bank-statement-import.md](../plans/done/0027-bank-statement-import.md))
 
 ## Context
 

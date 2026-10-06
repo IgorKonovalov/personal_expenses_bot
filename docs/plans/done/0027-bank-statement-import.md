@@ -1,12 +1,12 @@
 # 0027: Bank statement import: a Serbian bank's export file becomes expenses
 
-> **Status:** in-progress
+> **Status:** done (2026-10-06): built as planned, two minors open, Phase 5 real statement owed, v0.18.0
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed ledgers in Phase 4)
-> **Related ADRs:** [ADR-0032](../adrs/0032-statement-rows-match-recorded-expenses.md) (matching rows to recorded expenses),
-> [ADR-0033](../adrs/0033-pdf-statements-via-pdfjs-dist.md) (PDF via `pdfjs-dist`),
-> [ADR-0021](../adrs/0021-bank-sms-template-parsers-plain-expense.md) (bank SMS: original amount, plain expense),
-> [ADR-0008](../adrs/0008-category-suggestion-from-history.md) (categories)
+> **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (sealed ledgers in Phase 4)
+> **Related ADRs:** [ADR-0032](../../adrs/0032-statement-rows-match-recorded-expenses.md) (matching rows to recorded expenses),
+> [ADR-0033](../../adrs/0033-pdf-statements-via-pdfjs-dist.md) (PDF via `pdfjs-dist`),
+> [ADR-0021](../../adrs/0021-bank-sms-template-parsers-plain-expense.md) (bank SMS: original amount, plain expense),
+> [ADR-0008](../../adrs/0008-category-suggestion-from-history.md) (categories)
 
 ## TL;DR
 
@@ -377,6 +377,178 @@ interface StatementPurchase {
 - No migration. New callback data: `stm:all`, `stm:dup`, `stm:x`, `stm:p:<page>`.
 - `/help` and README.md changed. CLAUDE.md gained the `src/statements/` line.
 
+## Close review
+
+> Closed 2026-10-06 at v0.18.0. Round 1 was the only review round, so no earlier finding was
+> resolved by a fix round. Both minors stay open (each needs a code or test change). Phase 5
+> (`human`, a real statement) stays **owed** after the merge.
+
+### Plan 0027 review, round 1 (tip a1b87acd8d08cc9ca5be3d1d41e7d8e24af0c8f0)
+
+**Verdict:** Clean. Phases 1-4 deliver what the plan specifies, every named test defends its
+done-when, and the gate is green. There are two minor findings and no blocker or major, so a close
+session can close the plan. Phase 5 (`human`, `Blocks merge: no`) is owed after the merge.
+
+#### Gate (run in this session on the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 96 files, 1322 tests.
+- `node scripts/check-doc-links.mjs`: exit 0, 261 relative links resolve.
+- `git status` after the run: clean.
+
+#### Lens 1: alignment with the plan and ADRs
+
+- Phases 1-4 map to commits 0685667, d39404f, 0141854 and 712d76e. Each phase has one in-vocabulary
+  owner tag. Phase 5 is `human` and does not block the merge. The log is shorter than the phases
+  section.
+- I checked each logged deviation against the plan and accept them all:
+  - The statement flow is kept out of the `Flow` union, so `flows.ts`, `receipt.ts` and
+    `callbacks.ts` stay unchanged.
+  - `statementNothingNew` is a line in the preview, not a button replacement.
+  - «Уже записано» counts matched plus imported rows. The `stm:dup` button counts N + matched.
+  - A sealed ledger keys rows `sealed:<id>` (ADR-0020), so its re-send protection is the match.
+    `src/services/importStatement.test.ts:269` tests this.
+- ADR-0032 is implemented as written: one-to-one matching, the closest date first, ties broken by
+  the earlier `occurred_at` and then the lower id, on the original amount and currency
+  (`src/domain/statements/match.ts`). ADR-0033 is followed: the legacy build, a dynamic `import()`
+  only in `src/statements/pdf.ts`, and positioned lines. No ADR is silently reversed.
+- I opened each named test and read its assertion:
+  - **Two-page fixture.** `raiffeisenRs.test.ts:11` compares the whole result with `toEqual`. The
+    fixture `TWO_PAGE_ROWS` contains an ATM row, a fee, a salary and a `-450.00` reversal, and all
+    of them are absent from the result. The three-line merchant joins to «SUPERMARKET PRIMER NOVI
+    SAD BULEVAR OSLOBOĐENJA 1». The 0.30 EUR conversion charge is its own purchase.
+  - **Amounts.** `1,234.56 RSD` reads as 123456 and `15.00 USD` as 1500. `parseStatementAmount`
+    `it.each` asserts both values exactly.
+  - **The PDF adapter.** `pdf.test.ts:18` builds a synthetic PDF with its rows out of order. It
+    asserts the exact lines and cells, sorted top to bottom and then by x. A textless PDF gives
+    `{kind:'lines', lines: []}`.
+  - **Recording.** `importStatement.test.ts:284` asserts each row's `occurred_on`, amount, currency
+    and the 10:00Z noon-Belgrade stamp. `bot.test.ts:6091` checks the same through the bot.
+  - **Boot graph.** `bot.test.ts:6540` counts `pdfjs-dist` loads with `vi.doMock`. The count is 0
+    after the bot wiring handles `/start` and an expense, and 1 after a PDF read, which is the
+    positive control.
+  - **Phase 2.**
+    - 1 250 on the 12th matches a row on the 13th and not one on the 14th
+      (`importStatement.test.ts:100`, `match.test.ts:26`).
+    - Two 450 rows against one expense give one match and one new row.
+    - USD matches on the original amount, not on the RSD debit.
+    - A re-send plus taps records the rows once (`bot.test.ts:6167`).
+    - [Записать и уже записанные] records N+M = 6 (`bot.test.ts:6189`).
+  - **Phase 3.**
+    - The pages hold 10, 10 and 5 rows, with exact keyboards (`bot.test.ts:6249`).
+    - A file reported at 6 MB makes no fetch and no getFile call (`bot.test.ts:6309`).
+    - A textless PDF answers `statementNoText`.
+    - A merchant re-categorised to Продукты records under Продукты (`importStatement.test.ts:189`).
+    - The logger capture at info level finds no merchant, amount or zero-run account
+      (`bot.test.ts:6376`).
+  - **Phase 4.**
+    - A locked ledger answers `ledgerLocked`, with no expense and no `statementImport` session
+      (`bot.test.ts:6407`).
+    - After an unlock, 6 sealed rows open to the exact amounts (`bot.test.ts:6421`).
+    - No-disk test (`bot.test.ts:6459`): the data directory holds only `bot.db*` files, and none
+      contains `%PDF-`.
+
+#### Lens 2: layering and coupling
+
+- Only `src/bot/handlers/statement.ts` imports grammY. The template and the matcher are pure and
+  import no db or Telegram code. `pdfjs-dist` is imported only in `src/statements/pdf.ts`.
+- All copy lives in `src/bot/messages.ts`. Every callback string is built in
+  `src/bot/callbackData.ts`. `stm:p:<page>` is at most 10 bytes.
+- No god module: the handler orchestrates, and the service owns classification and recording.
+
+#### Lens 3: correctness
+
+- **Money.** `parseStatementAmount` works on digits by the currency's exponent, with no float. It
+  refuses fractions a zero-exponent currency can't hold and caps the input at 15 digits. The
+  sums are covered in minor finding 1.
+- **Time.**
+  - `occurred_on` is the row's date.
+  - `occurred_at` is 12:00 `Europe/Belgrade` through `TZDate`.
+  - `daysBetween` and `shiftDays` work on calendar strings in UTC, which is correct for local
+    dates.
+  - Time comes from injected `now`. No `new Date()` reads a clock.
+  - Minor finding 2 covers the untested timezone case.
+- **Idempotency.**
+  - Rows are classified again inside the recording transaction, and `cancelFlow` runs in the same
+    transaction, so a double tap answers `expired`.
+  - Each source key carries the row fingerprint, its ordinal and the ledger id.
+  - `findTakenSourceKeys` counts deleted rows as taken, so a deleted import does not come back.
+- **Privacy.**
+  - The handler logs size, line count, outcome and the error `name` only.
+  - The service logs counts.
+  - The fixtures are synthetic: card `0000`, an account of all zeros, PRIMER merchants.
+- **Telegram limits.** Merchants go through `html` and `shownDescription`, and a page holds 10
+  rows.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **Totals per currency are summed by hand in two places, bypassing the domain's guarded sum.**
+   - **What:** `totalsOf` (`src/services/importStatement.ts:293`) and `moneyTotals`
+     (`src/bot/messages.ts:382`) each add `amountMinor` into a `Map` with plain `number`
+     arithmetic. `sumByCurrency` in `src/domain/aggregate.ts:7` already does this, and it throws
+     `RangeError` when a total leaves the safe-integer range.
+   - **Why it matters:** the best-practices rule puts sums of minor units in the domain. These two
+     copies skip the overflow guard, and they can drift from the house totals.
+   - **Fix:** build both totals from `sumByCurrency`, which keeps first-seen order:
+     `[...sumByCurrency(purchases)].map(([currency, amountMinor]) => ({ amountMinor, currency }))`.
+     Then delete the local loops.
+2. **No test sends a statement for a ledger whose timezone isn't Europe/Belgrade.**
+   - **What:** every statement test provisions the user with `defaultTimezone: 'Europe/Belgrade'`
+     (`src/services/importStatement.test.ts:43`, and the bot harness).
+   - **Why it matters:** the plan's Risks (Time) says «`occurred_at` is 12:00 Belgrade, so a
+     ledger in another timezone still dates it the same day». In dev the row's timezone and the
+     ledger's timezone are the same zone, so nothing tests the claim. Noon Belgrade is 00:00 or
+     01:00 the next day in UTC+13 and UTC+14 zones. In those zones only the stored `occurred_on`
+     keeps the expense on the row's date.
+   - **Fix:** add a service test that provisions a user in `Pacific/Kiritimati` (UTC+14), or in
+     `America/Los_Angeles` plus a far-east zone. It records a fixture row and asserts
+     `occurred_on` equals the row's date. It also asserts the row is matched by an expense typed
+     on that local date.
+
+##### nit
+
+None.
+
+#### Bookkeeping owed (close session)
+
+- Flip the plan's `Status:` to `done`, with the close date and this verdict.
+  `git mv docs/plans/0027-bank-statement-import.md docs/plans/done/`.
+- Repair links in both directions:
+  - Inbound: `docs/adrs/0032-…` and `0033-…` link `../plans/0027-…`.
+  - Outbound: from the moved plan, `../adrs/` becomes `../../adrs/`, and `done/0019-…` becomes
+    `0019-…`.
+  - Run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0032 and ADR-0033 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`.
+- In `docs/plans/README.md`, move the 0027 row to recently closed.
+- Bump the version: minor, for a feature plan with a new runtime dependency. This means
+  `package.json`, a `CHANGELOG.md` entry and the `versionAnnouncements` entry (ADR-0013).
+- Phase 5 (`human`) stays owed after the merge. The close should name it as owed rather than
+  claim it.
+- These logged followups are not findings, because the plan specified the behaviour or accepted
+  it in Risks. Carry them to the plan's `## Followups`:
+  - Callback data carries no statement id, so a tap on an older preview acts on the pending
+    statement.
+  - A sealed ledger's pending flow holds the purchases in plaintext for the TTL.
+  - `pdf.ts` passes no standard-font or CMap data. Phase 5's real PDF is the check.
+
 ## Followups
 
 - XLSX and CSV templates for the same bank, once an anonymised sample exists.
+- Callback data carries no statement id, so a tap on an older preview acts on whichever
+  statement is pending now.
+- A pending statement flow holds the purchases (merchant, amount, date) as plaintext JSON in
+  `flow_sessions` for its TTL, in a sealed ledger too.
+- `pdf.ts` passes pdf.js no standard-font or CMap data. Phase 5's real PDF is the check.
+- Close minor 1: build the statement totals from `sumByCurrency` instead of the two local loops.
+- Close minor 2: a statement test for a ledger outside Europe/Belgrade (for example UTC+14).
