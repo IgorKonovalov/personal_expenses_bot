@@ -1,6 +1,6 @@
 # 0013: Debts: who owes whom, closed in the currency they were opened in
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-09-30
 > **Depends on:** [Plan 0019](done/0019-encrypted-personal-ledger.md) (sealed debts in Phase 5)
 > **Related ADRs:** [ADR-0030](../adrs/0030-debts-as-operations-settle-up-per-currency.md) (the debt and settle-up model),
@@ -319,7 +319,7 @@ against the decrypted list. That always works, because debts are only recorded w
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | not started | |
+| 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | committed with this row |
 | 2: Borrowing, the person card, and repayments | dev | not started | |
 | 3: Splitting a bill with `/N` | dev | not started | |
 | 4: Group settle-up | dev | not started | |
@@ -327,6 +327,18 @@ against the decrypted list. That always works, because debts are only recorded w
 | 6: Real debts and a real group | human | not started | |
 
 ### Notes
+
+- Phase 1: the migration is `0017_debts.sql`. `debt_ops.expense_id` is `ON DELETE SET NULL`, not
+  a plain reference: `/delete_account` hard-deletes personal-ledger expenses, and a plain
+  reference would fail it once a split lend points at one. It adds CHECKs tying the sealed and
+  plaintext columns together, and a unique `(user_id, name_key)` index.
+- Phase 1: the person picker pages with `dbt:pp:<page>`, a callback the phase doesn't name.
+- Phase 1: the confirmation (`messages.debtRecorded` with [Удалить]) is edited into the anchor
+  that held the prompt, not sent as a new reply. A tapped pick's source key is
+  `cb:<callback query id>`.
+- Phase 1: an amount that reads two ways (`1.200`) is refused with `debtAmountRefused` instead of
+  being asked about.
+- Phase 1: `src/bot/callbacks.ts` needed no change.
 
 ### Close triggers
 

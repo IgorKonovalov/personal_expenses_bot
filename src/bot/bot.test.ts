@@ -49,6 +49,7 @@ import {
   budgetScopeData,
   categoryPageData,
   categoryPickerData,
+  debtDeleteData,
   editExpenseData,
   editFieldData,
   receiptItemsData,
@@ -392,7 +393,7 @@ describe('input that is not an expense text', () => {
 });
 
 describe('command registration at boot', () => {
-  it('registers /today, /week, /month, /budget, /recurring, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
+  it('registers /today, /week, /month, /budget, /recurring, /debts, /categories, /export, /settings, /unlock, /lock, /help, /changelog and /donate from messages', async () => {
     const { bot, calls } = createTestBot();
 
     await registerCommands(bot, silentLogger());
@@ -407,14 +408,15 @@ describe('command registration at boot', () => {
             { command: 'month', description: messages.commands[2].description },
             { command: 'budget', description: messages.commands[3].description },
             { command: 'recurring', description: messages.commands[4].description },
-            { command: 'categories', description: messages.commands[5].description },
-            { command: 'export', description: messages.commands[6].description },
-            { command: 'settings', description: messages.commands[7].description },
-            { command: 'unlock', description: messages.commands[8].description },
-            { command: 'lock', description: messages.commands[9].description },
-            { command: 'help', description: messages.commands[10].description },
-            { command: 'changelog', description: messages.commands[11].description },
-            { command: 'donate', description: messages.commands[12].description },
+            { command: 'debts', description: messages.commands[5].description },
+            { command: 'categories', description: messages.commands[6].description },
+            { command: 'export', description: messages.commands[7].description },
+            { command: 'settings', description: messages.commands[8].description },
+            { command: 'unlock', description: messages.commands[9].description },
+            { command: 'lock', description: messages.commands[10].description },
+            { command: 'help', description: messages.commands[11].description },
+            { command: 'changelog', description: messages.commands[12].description },
+            { command: 'donate', description: messages.commands[13].description },
           ],
         },
       },
@@ -5965,5 +5967,169 @@ describe('/export (ADR-0026)', () => {
     expect(messages.commands.map((c) => c.command)).toContain('export');
     expect(messages.help).toContain('/export');
     expect(messages.groupHelp).toContain('/export');
+  });
+});
+
+describe('debts (Plan 0013)', () => {
+  const SENT_AT = new Date('2026-10-02T09:59:00Z');
+
+  // Sent messages get ids, so /debts becomes the anchor; every update has its own id.
+  function debtsBot() {
+    const harness = createTestBot({ now: new Date('2026-10-02T10:00:00Z') });
+    let messageId = 100;
+    harness.bot.api.config.use(async (prev, method, payload, signal) => {
+      const answer = await prev(method, payload, signal);
+      if (method !== 'sendMessage') return answer;
+      const chat = { id: (payload as { chat_id: number }).chat_id, type: 'private' };
+      return { ok: true, result: { message_id: ++messageId, date: 0, chat, text: '' } as never };
+    });
+    let updateId = 0;
+    const textOf = (text: string): Update => {
+      const id = ++updateId;
+      return textUpdate({ updateId: id, messageId: id, text, date: SENT_AT });
+    };
+    const handle = (update: Update) => harness.bot.handleUpdate(update);
+    const say = (text: string) => handle(textOf(text));
+    const tapOf = (data: string, message: number): Update =>
+      callbackUpdate({ updateId: ++updateId, data, messageId: message });
+    const tapOn = (data: string, message: number) => handle(tapOf(data, message));
+    // /debts, returning the anchor it sent.
+    const openDebts = async () => {
+      await say('/debts');
+      return messageId;
+    };
+    const lastSent = () =>
+      harness.calls.filter((c) => c.method === 'sendMessage').at(-1)?.payload as
+        { text: string; reply_markup?: unknown } | undefined;
+    const lastEdit = () =>
+      harness.calls.filter((c) => c.method === 'editMessageText').at(-1)?.payload as
+        { text: string; reply_markup?: unknown } | undefined;
+    const ops = () =>
+      harness.db
+        .prepare('SELECT kind, amount_minor, currency, occurred_on FROM debt_ops ORDER BY rowid')
+        .all();
+    const debtsText = async () => {
+      await openDebts();
+      return lastSent()?.text;
+    };
+    // [Я дал в долг], the amount, then a typed name or a picked person id.
+    const lend = async (amount: string, person: string | number) => {
+      const anchor = await openDebts();
+      await tapOn('dbt:new:l', anchor);
+      await say(amount);
+      if (typeof person === 'string') await say(person);
+      else await tapOn(`dbt:pick:${person}`, anchor);
+      return anchor;
+    };
+    return {
+      ...harness,
+      textOf,
+      handle,
+      say,
+      tapOf,
+      tapOn,
+      openDebts,
+      lastSent,
+      lastEdit,
+      ops,
+      debtsText,
+      lend,
+    };
+  }
+
+  it('[Я дал в долг], 5000, «Петя» records lend 500000 RSD, and /debts shows it', async () => {
+    const { lend, ops, lastEdit, debtsText, db } = debtsBot();
+
+    await lend('5000', 'Петя');
+
+    expect(ops()).toEqual([
+      { kind: 'lend', amount_minor: 500000, currency: 'RSD', occurred_on: '2026-10-02' },
+    ]);
+    const opId = db.prepare('SELECT id FROM debt_ops').pluck().get() as string;
+    expect(lastEdit()).toMatchObject({
+      text: 'Записано: вы дали в долг 5 000.00 RSD.\nПетя — должен вам 5 000.00 RSD',
+      reply_markup: { inline_keyboard: [[{ text: 'Удалить', callback_data: `dbt:del:${opId}` }]] },
+    });
+    expect(await debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 5 000.00 RSD');
+  });
+
+  it('a second lend of 20 EUR to Петя, picked by button, adds a separate EUR line', async () => {
+    const { lend, ops, lastEdit, debtsText, openDebts, tapOn, say } = debtsBot();
+    await lend('5000', 'Петя');
+    const anchor = await openDebts();
+    await tapOn('dbt:new:l', anchor);
+    await say('20 EUR');
+
+    expect(lastEdit()).toMatchObject({
+      text: 'Кому вы дали 20.00 EUR? Выберите человека или отправьте имя.',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Петя', callback_data: 'dbt:pick:1' }],
+          [{ text: 'Отмена', callback_data: 'flow:cancel' }],
+        ],
+      },
+    });
+    await tapOn('dbt:pick:1', anchor);
+
+    expect(ops()).toEqual([
+      expect.objectContaining({ kind: 'lend', amount_minor: 500000, currency: 'RSD' }),
+      expect.objectContaining({ kind: 'lend', amount_minor: 2000, currency: 'EUR' }),
+    ]);
+    expect(await debtsText()).toBe(
+      '<b>Долги</b>\nПетя — должен вам 20.00 EUR\nПетя — должен вам 5 000.00 RSD',
+    );
+  });
+
+  it('typing «петя» as a new name reuses Петя', async () => {
+    const { lend, db, debtsText } = debtsBot();
+    await lend('5000', 'Петя');
+    await lend('1000', 'петя');
+
+    expect(db.prepare('SELECT name FROM debt_people').pluck().all()).toEqual(['Петя']);
+    expect(await debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 6 000.00 RSD');
+  });
+
+  it('a redelivered final update records one operation, typed or tapped', async () => {
+    const { openDebts, tapOn, say, textOf, tapOf, handle, ops } = debtsBot();
+    let anchor = await openDebts();
+    await tapOn('dbt:new:l', anchor);
+    await say('5000');
+    const typed = textOf('Петя');
+    await handle(typed);
+    await handle(typed);
+
+    anchor = await openDebts();
+    await tapOn('dbt:new:l', anchor);
+    await say('100');
+    const tapped = tapOf('dbt:pick:1', anchor);
+    await handle(tapped);
+    await handle(tapped);
+
+    expect(ops()).toEqual([
+      expect.objectContaining({ amount_minor: 500000 }),
+      expect.objectContaining({ amount_minor: 10000 }),
+    ]);
+  });
+
+  it('/today and /month totals are unchanged by a debt', async () => {
+    const { say, lend, lastSent, db } = debtsBot();
+    await say('450 кофе');
+    const totals = async () => {
+      await say('/today');
+      const today = lastSent()?.text;
+      await say('/month');
+      return [today, lastSent()?.text];
+    };
+    const before = await totals();
+
+    await lend('5000', 'Петя');
+
+    expect(await totals()).toEqual(before);
+    expect(before[0]).toContain('450.00 RSD');
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+  });
+
+  it('[Удалить] carries 44 bytes of callback data', () => {
+    expect(Buffer.byteLength(debtDeleteData('00000000-0000-4000-8000-000000000001'))).toBe(44);
   });
 });

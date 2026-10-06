@@ -395,6 +395,31 @@ function shownDescription(description: string): string {
     : `${codePoints.slice(0, MAX_SHOWN_DESCRIPTION).join('')}…`;
 }
 
+// One person's balance in one currency. Positive: they owe the user.
+interface DebtLineView extends Money {
+  readonly name: string;
+}
+
+interface DebtRecordedView {
+  readonly kind: 'lend' | 'borrow' | 'repaid_to_me' | 'i_repaid';
+  readonly money: Money;
+  readonly balance: DebtLineView;
+}
+
+const DEBT_KIND_LABELS: Readonly<Record<DebtRecordedView['kind'], string>> = {
+  lend: 'вы дали в долг',
+  borrow: 'вы взяли в долг',
+  repaid_to_me: 'вам вернули',
+  i_repaid: 'вы вернули',
+};
+
+// `Петя — должен вам 5 000.00 RSD`, `Аня — вы должны 20.00 EUR`, `Петя — долга нет`.
+function debtLine({ name, amountMinor, currency }: DebtLineView): Html {
+  if (amountMinor === 0) return html`${name} — долга нет`;
+  const money = formatMoney({ amountMinor: Math.abs(amountMinor), currency });
+  return amountMinor > 0 ? html`${name} — должен вам ${money}` : html`${name} — вы должны ${money}`;
+}
+
 // Reply-keyboard labels. A text equal to a label is a menu tap, so no label may parse as an
 // expense (bot.test.ts pins this).
 const menu = {
@@ -572,6 +597,7 @@ export const messages = {
     { command: 'month', description: 'Траты за месяц по категориям' },
     { command: 'budget', description: 'Бюджет: лимит и остаток на сегодня' },
     { command: 'recurring', description: 'Регулярные траты' },
+    { command: 'debts', description: 'Долги: кто кому должен' },
     { command: 'categories', description: 'Категории: добавить, переименовать, скрыть' },
     { command: 'export', description: 'Выгрузить расходы в CSV или Excel' },
     { command: 'settings', description: 'Часовой пояс, валюта и шифрование' },
@@ -1477,6 +1503,34 @@ export const messages = {
   askRecordedToast: 'Записано',
   askForbidden: 'Ответить может только автор правила',
   askAmountSealedToast: 'В зашифрованном учёте записывается сумма из правила',
+
+  // Personal debts (ADR-0030). A person's name is user text; people are picked by button, so a
+  // name is never declined.
+  debtsScreen: (lines: readonly DebtLineView[]): Html =>
+    lines.length === 0
+      ? html`Долгов нет. Записать долг — кнопками ниже.`
+      : joinHtml([html`<b>Долги</b>`, ...lines.map(debtLine)], '\n'),
+  lendButton: 'Я дал в долг',
+  borrowButton: 'Я взял в долг',
+  debtAmountPrompt: (direction: 'lend' | 'borrow', currency: CurrencyCode): Html =>
+    direction === 'lend'
+      ? html`Сколько вы дали в долг? Например, «5000» или «20 EUR». Без валюты — ${currency}.`
+      : html`Сколько вы взяли в долг? Например, «5000» или «20 EUR». Без валюты — ${currency}.`,
+  debtAmountRefused: html`Не удалось разобрать сумму.`,
+  debtPersonPrompt: (direction: 'lend' | 'borrow', money: Money): Html =>
+    direction === 'lend'
+      ? html`Кому вы дали ${formatMoney(money)}? Выберите человека или отправьте имя.`
+      : html`У кого вы взяли ${formatMoney(money)}? Выберите человека или отправьте имя.`,
+  debtPersonRefused: {
+    empty: html`Отправьте имя.`,
+    tooLong: html`Имя длиннее 40 символов.`,
+  },
+  // The operation, then the person's balance in its currency after it.
+  debtRecorded: ({ kind, money, balance }: DebtRecordedView): Html =>
+    joinHtml(
+      [html`Записано: ${DEBT_KIND_LABELS[kind]} ${formatMoney(money)}.`, debtLine(balance)],
+      '\n',
+    ),
 
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,

@@ -23,6 +23,7 @@ import type { HandlerDeps } from './bot.js';
 import { budgetPromptView, budgetRefusal, budgetView } from './handlers/budget.js';
 import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
+import { answerDebtFlow, debtsScreenFor } from './handlers/debts.js';
 import { editPromptView } from './handlers/edit.js';
 import {
   answerReminder,
@@ -98,6 +99,10 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   if (screen.name === 'recurringAsk') {
     const view = askScreenFor(deps, user, screen);
     if (view !== undefined) await renderAnchor(ctx, anchor, view);
+    return;
+  }
+  if (screen.name === 'debts') {
+    await renderAnchor(ctx, anchor, debtsScreenFor(deps, user));
     return;
   }
   const view =
@@ -210,6 +215,11 @@ export async function answerFlow(
 
   if (flow.kind === 'reminderText') {
     await answerReminder(ctx, deps, anchor, input);
+    return;
+  }
+
+  if (flow.kind === 'debtAmount' || flow.kind === 'debtPerson') {
+    await answerDebtFlow(ctx, deps, anchor, { ...input, flow });
     return;
   }
 

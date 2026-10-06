@@ -15,6 +15,7 @@ import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import { registerDebts } from './handlers/debts.js';
 import { registerDeleteAccount } from './handlers/deleteAccount.js';
 import {
   registerDonate,
@@ -118,6 +119,7 @@ export function createBot(options: BotOptions): Bot {
   registerCategories(dm, options);
   registerBudget(dm, options);
   registerRecurring(dm, options);
+  registerDebts(dm, options);
   registerExport(dm, options);
   registerSettings(dm, options);
   registerUnlock(dm, options);

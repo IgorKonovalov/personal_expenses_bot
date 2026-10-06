@@ -289,6 +289,33 @@ export function askData(action: AskAction, ruleId: RuleId, dueOn: LocalDate): st
   return assertCallbackData(`rec:${action}:${ruleId}:${dueOn}`);
 }
 
+// The /debts screen (Plan 0013). Only the current anchor accepts these. `dbt:new:<l|b>` asks for
+// a loan's amount, lent or borrowed; the person picker's `dbt:pick:<id>` picks a known person
+// for the pending flow, and `dbt:pp:<page>` pages it (at most 25 bytes).
+export const DEBT_NEW = /^dbt:new:([lb])$/;
+export const DEBT_PICK = /^dbt:pick:(\d{1,16})$/;
+export const DEBT_PAGE = /^dbt:pp:(\d{1,4})$/;
+
+export function debtNewData(direction: 'lend' | 'borrow'): string {
+  return assertCallbackData(`dbt:new:${direction === 'lend' ? 'l' : 'b'}`);
+}
+
+export function debtPickData(personId: number): string {
+  return assertCallbackData(`dbt:pick:${personId}`);
+}
+
+export function debtPageData(page: number): string {
+  return assertCallbackData(`dbt:pp:${page}`);
+}
+
+// [Удалить] on a debt operation's confirmation: `dbt:del:<uuid>` (44 bytes). It works on any
+// confirmation, however old: the operation's stored state is the guard.
+export const DEBT_DELETE = /^dbt:del:([0-9a-f-]{36})$/;
+
+export function debtDeleteData(opId: string): string {
+  return assertCallbackData(`dbt:del:${opId}`);
+}
+
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
 // sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
 // the active ledger in a DM, the chat's binding in a group.

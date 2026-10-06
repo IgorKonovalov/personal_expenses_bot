@@ -11,6 +11,8 @@ import {
 import type { LedgerId } from '../db/ledgers.js';
 import type { RuleId } from '../db/recurring.js';
 import type { User } from '../db/users.js';
+import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
+import type { DebtDirection } from '../domain/debts.js';
 import type { LocalDate } from '../domain/time.js';
 
 // ADR-0009's session row, typed: the user's screen anchor (ADR-0011) and at most one pending
@@ -70,6 +72,11 @@ export interface RecurringAskScreen {
   readonly dueOn: LocalDate;
 }
 
+// /debts (Plan 0013): the debts list, and the lend/borrow prompts and person picker it opens.
+export interface DebtsScreen {
+  readonly name: 'debts';
+}
+
 export type Screen =
   | CategoriesScreen
   | SummaryScreen
@@ -77,7 +84,8 @@ export type Screen =
   | SettingsScreen
   | BudgetScreen
   | RecurringScreen
-  | RecurringAskScreen;
+  | RecurringAskScreen
+  | DebtsScreen;
 
 export interface ScreenAnchor {
   readonly chatId: number;
@@ -169,6 +177,20 @@ export interface ReminderTextFlow {
   readonly kind: 'reminderText';
 }
 
+// [Я дал в долг] / [Я взял в долг] on /debts: the amount, then the person, who is picked by
+// button or typed as a name.
+export interface DebtAmountFlow {
+  readonly kind: 'debtAmount';
+  readonly direction: DebtDirection;
+}
+
+export interface DebtPersonFlow {
+  readonly kind: 'debtPerson';
+  readonly direction: DebtDirection;
+  readonly amountMinor: number;
+  readonly currency: CurrencyCode;
+}
+
 export type Flow =
   | CategoryFlow
   | EditFlow
@@ -176,7 +198,9 @@ export type Flow =
   | BudgetFlow
   | SecretFlow
   | RecurringAmountFlow
-  | ReminderTextFlow;
+  | ReminderTextFlow
+  | DebtAmountFlow
+  | DebtPersonFlow;
 
 type Deps = { readonly db: Db };
 
@@ -222,6 +246,13 @@ export function cancelFlowIf(deps: Deps, user: User, matches: (flow: Flow) => bo
   const flow = parseFlow(pending.kind, pending.payload);
   if (flow === undefined || !matches(flow)) return false;
   return cancelFlow(deps, user);
+}
+
+// The pending flow while it is still answerable, for a tap that answers it.
+export function currentFlow(deps: Deps, user: User, now: Date): Flow | undefined {
+  const pending = findFlowSession(deps.db, user.id)?.pending ?? null;
+  if (pending === null || now.getTime() >= pending.expiresAt.getTime()) return undefined;
+  return parseFlow(pending.kind, pending.payload);
 }
 
 // The pending flow is an edit of this expense's field (any field when `kind` is omitted).
@@ -295,6 +326,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   ) {
     return { name, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
   }
+  if (name === 'debts' && parsed !== undefined) return { name };
   if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
@@ -325,6 +357,15 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
   }
   if (kind === 'reminderText' && parsed !== undefined) return { kind };
+  const direction = parseDirection(parsed?.direction);
+  if (kind === 'debtAmount' && direction !== undefined) return { kind, direction };
+  if (kind === 'debtPerson' && direction !== undefined) {
+    const currency =
+      typeof parsed?.currency === 'string' ? toCurrencyCode(parsed.currency) : undefined;
+    const { amountMinor } = parsed ?? {};
+    if (currency === undefined || !Number.isSafeInteger(amountMinor)) return undefined;
+    return { kind, direction, amountMinor: amountMinor as number, currency };
+  }
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
   if (isSecretKind(kind)) return { kind, ledgerId };
@@ -338,6 +379,10 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }
   return undefined;
+}
+
+function parseDirection(value: unknown): DebtDirection | undefined {
+  return value === 'lend' || value === 'borrow' ? value : undefined;
 }
 
 function parseObject(json: string): Record<string, unknown> | undefined {
