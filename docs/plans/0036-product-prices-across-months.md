@@ -282,7 +282,7 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 | 2: amount and unit price | dev | done | ccc3e48 |
 | 3: review and corrections | dev | done | 3fee520 |
 | 4: user products | dev | done | 651178f |
-| 5: coverage report | dev | done | committed with this row |
+| 5: coverage report | dev | done | 94fc8b6 |
 | 6: real receipts | human | not started | |
 
 ### Notes
@@ -335,8 +335,21 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
   product" counts as unmatched.
 - Phase 5: the CLI was smoke-run only against a missing lane path, where it refused to open
   (`SQLITE_CANTOPEN`). It has not been run against any real database.
+- Followups noticed and not acted on: the catalog's units and keywords are a first guess
+  (Phase 6 measures them). A pack size in another dimension (`JOGURT 180G` on a litre product)
+  stays unsized. A piece product with no `kom` size is unsized even when `quantity` counts
+  pieces. The product list's back button always returns to page 1.
 
 ### Close triggers
+
+- Phases 1–5 (`dev`) are done in 878daa4, ccc3e48, 3fee520, 651178f and 94fc8b6. Phase 6
+  (`human`, does not block merge) has not started.
+- Gate on the tip (94fc8b6): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  125 files and 1754 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs`
+  exit 0, 283 relative links resolve.
+- New migrations: `0025_item_products.sql` and `0026_user_products.sql`.
+- New command: `/prices`, in `messages.commands`, the help text and a [☰ Ещё] button (`more:prc`).
+- New script: `pnpm products:coverage`.
 
 ## Followups
 
