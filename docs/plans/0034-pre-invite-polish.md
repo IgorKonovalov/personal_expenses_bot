@@ -246,8 +246,8 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 | 1: Walking skeleton: the full command menu and [☰ Ещё] | dev | done, see Notes | 50ccc70 |
 | 2: The admin row, argument prompts and the admin's command list | dev | done, see Notes | e6a8e4d |
 | 3: A recorded receipt deletes its photo | dev | done, see Notes | 4419af7 |
-| 4: Notices shown once, and short replies that clean up after themselves | dev | done, see Notes | committed with this row |
-| 5: Live check | human | not started | |
+| 4: Notices shown once, and short replies that clean up after themselves | dev | done, see Notes | ee37e65 |
+| 5: Live check | human | not started, owed after the deploy | |
 
 ### Notes
 
@@ -280,9 +280,17 @@ Callback data (illustrative): `more:rec`, `more:debt`, `more:tags`, `more:tag`, 
 
 ### Close triggers
 
-- **What shipped:** feature / fix-only / docs-chore-only
-- **User-visible surface changed:** commands, messages, config/env keys, schema migrations (list them, or none)
-- **Gate at the tip:** the commands run (typecheck, lint, full test suite), exit codes, test counts
-- **Outstanding `human` phases:** which, or none
+- **What shipped:** feature
+- **User-visible surface changed:** commands: the private `/` list now also holds `/tag`,
+  `/privacy`, `/paysupport` and `/delete_account`, is written for `all_private_chats`, and the
+  admin's chat adds `/invite`, `/invites`, `/stats`, `/block`, `/unblock`, `/refund`; the menu bar
+  gains [☰ Ещё] with its more screen and argument prompts; messages: `menu.more`, `moreScreen`,
+  `moreButtons`, `adminCommands`, `commandArgPrompt`, `commandArgCancelled`, `notUnderstood`, a
+  help line for [☰ Ещё]; a recorded or duplicate receipt photo is deleted; stray input, the edit
+  hint and the sealed export/reminder warnings are shown once; config/env keys: none; schema
+  migrations: `0021_user_notices.sql`.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 105 files,
+  1508 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (268 links).
+- **Outstanding `human` phases:** Phase 5 (live check), owed after the deploy.
 
 ## Followups
