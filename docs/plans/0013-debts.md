@@ -324,7 +324,7 @@ against the decrypted list. That always works, because debts are only recorded w
 | 3: Splitting a bill with `/N` | dev | done | 828bb5e |
 | 4: Group settle-up | dev | done | f64bc9b |
 | 5: Sealed debts, help and docs | dev | done | a8b23ff |
-| 6: Real debts and a real group | human | not started | |
+| 6: Real debts and a real group | human | owed | |
 
 ### Notes
 
