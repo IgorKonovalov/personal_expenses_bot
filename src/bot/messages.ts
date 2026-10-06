@@ -209,7 +209,11 @@ interface SummaryView {
 // A summary push's report: the converted block with each change against the period before, then
 // each currency with no rate, with no change.
 interface PushReportView {
-  readonly period: { readonly kind: 'month'; readonly from: LocalDate; readonly to: LocalDate };
+  readonly period: {
+    readonly kind: 'month' | 'budget';
+    readonly from: LocalDate;
+    readonly to: LocalDate;
+  };
   readonly converted:
     | {
         readonly currency: CurrencyCode;
@@ -224,6 +228,21 @@ interface PushReportView {
     | undefined;
   readonly convertedFrom: readonly Money[];
   readonly unconverted: SummaryView['currencies'];
+  // How the budget's limit ended; absent without a limit.
+  readonly budget?: {
+    readonly currency: CurrencyCode;
+    readonly limitMinor: number;
+    readonly spentMinor: number;
+    readonly converted: boolean;
+  };
+  // The largest expenses, largest first: as recorded, and in the ledger's currency.
+  readonly top: readonly {
+    readonly occurredOn: LocalDate;
+    readonly money: Money;
+    readonly convertedMinor: number;
+    readonly currency: CurrencyCode;
+    readonly description: string;
+  }[];
 }
 
 // A period's receipt items by category (ADR-0038): the viewer's own receipts only. A day range
@@ -358,6 +377,9 @@ function amountOnly(money: Money): string {
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
 
 const helpDonateLine = html`Бот бесплатный. Поддержать: /donate`;
+
+// The monthly push's quiet footer (ADR-0027).
+const pushDonateLine = html`Бот бесплатный. Поддержать: /donate`;
 
 // What a converted report was converted from, and what it could not convert (ADR-0022). Empty
 // when nothing was foreign.
@@ -533,8 +555,8 @@ function collapsedLines<T extends { readonly amountMinor: number }>(
   ];
 }
 
-// A push's report blocks: the converted total and categories with their changes, each currency
-// with no rate on its own, then the conversion notes.
+// A push's report blocks: the converted total and categories with their changes, then each
+// currency with no rate on its own.
 function pushReportBlocks(view: PushReportView): Html[] {
   const { converted } = view;
   const convertedBlock =
@@ -568,19 +590,49 @@ function pushReportBlocks(view: PushReportView): Html[] {
       '\n',
     ),
   );
+  return [...convertedBlock, ...unconvertedBlocks];
+}
+
+// `<b>Бюджет:</b> 62 500.00 из 60 000.00 RSD, перерасход 2 500.00 RSD`, or `осталось …`.
+function pushBudgetBlock(budget: PushReportView['budget']): Html[] {
+  if (budget === undefined) return [];
+  const { currency, limitMinor, spentMinor } = budget;
+  const left = limitMinor - spentMinor;
   return [
-    ...convertedBlock,
-    ...unconvertedBlocks,
-    ...conversionNotes(
-      view.convertedFrom,
-      view.unconverted.map((c) => c.currency),
+    html`<b>Бюджет:</b> ${budget.converted ? '≈ ' : ''}${amountOnly({ amountMinor: spentMinor, currency })} из ${formatMoney({ amountMinor: limitMinor, currency })}, ${left < 0 ? 'перерасход' : 'осталось'} ${formatMoney({ amountMinor: Math.abs(left), currency })}`,
+  ];
+}
+
+// `10.09 · 12 400.00 RSD · кафе`; a foreign one adds `(≈ 1 175.00 RSD)` after its amount.
+function pushTopBlock(top: PushReportView['top']): Html[] {
+  if (top.length === 0) return [];
+  return [
+    joinHtml(
+      [
+        html`<b>Самые крупные траты</b>`,
+        ...top.map((e) => {
+          const converted =
+            e.money.currency === e.currency
+              ? ''
+              : ` (≈ ${formatMoney({ amountMinor: e.convertedMinor, currency: e.currency })})`;
+          return html`${dayDotMonth(e.occurredOn)} · ${formatMoney(e.money)}${converted} · ${shownDescription(e.description)}`;
+        }),
+      ],
+      '\n',
     ),
   ];
 }
 
-// The push's title: `Итоги сентября`.
+// `15.09` from a local date.
+function dayDotMonth(date: LocalDate): string {
+  return `${date.slice(8, 10)}.${date.slice(5, 7)}`;
+}
+
+// The push's title: `Итоги сентября`, or `Итоги периода 15.09–14.10` for a budget period.
 function pushTitle(period: PushReportView['period']): string {
-  return `Итоги ${GENITIVE_MONTHS[dateParts(period.from).month] ?? ''}`;
+  return period.kind === 'budget'
+    ? `Итоги периода ${dayDotMonth(period.from)}–${dayDotMonth(period.to)}`
+    : `Итоги ${GENITIVE_MONTHS[dateParts(period.from).month] ?? ''}`;
 }
 
 // An export's period by its file key: `сентябрь 2026`, `2026 год`, `всё время`.
@@ -2003,9 +2055,24 @@ export const messages = {
     );
   },
   // The summary push (ADR-0031): the closed period's report, sent at 09:00 local the day after
-  // it ends. Each total and category carries its change against the period before.
+  // it ends. Each total and category carries its change against the period before; then the
+  // budget's end, the largest expenses, the conversion notes and the /donate line.
   periodSummaryPush: (view: PushReportView): Html =>
-    joinHtml([html`<b>${pushTitle(view.period)}</b>`, ...pushReportBlocks(view)], '\n\n'),
+    joinHtml(
+      [
+        html`<b>${pushTitle(view.period)}</b>`,
+        ...pushReportBlocks(view),
+        ...pushBudgetBlock(view.budget),
+        ...pushTopBlock(view.top),
+        ...conversionNotes(
+          view.convertedFrom,
+          view.unconverted.map((c) => c.currency),
+        ),
+        pushDonateLine,
+      ],
+      '\n\n',
+    ),
+  pushDonateLine,
   pushOffButton: 'Отключить',
   pushOff: (push: 'monthly' | 'weekly'): string =>
     `${push === 'monthly' ? 'Итоги месяца' : 'Итоги недели'} больше не придут. Включить: /settings`,

@@ -6,9 +6,11 @@ import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import type { CategoryId } from '../db/categories.js';
+import type { LocalDate } from '../domain/time.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import {
   answerBudgetFlow,
+  budgetEnd,
   budgetScreen,
   clearCap,
   groupBudgetStatus,
@@ -121,6 +123,41 @@ describe('budgetStatus over a calendar month (ADR-0017)', () => {
     expect(s?.limit?.todayLeftMinor).toBe(51_774);
     expect(s?.limit?.periodLeftMinor).toBe(2_955_000);
     expect([...(s?.notCounted ?? [])]).toEqual([['EUR', 1_250]]);
+  });
+});
+
+describe('budgetEnd over a closed period', () => {
+  const october = { from: '2026-10-01' as LocalDate, to: '2026-10-31' as LocalDate };
+  const end = () => plain(budgetEnd(deps, { ledger, readerId: user.id, period: october }));
+
+  it('is undefined with no limit', () => {
+    expect(end()).toBeUndefined();
+  });
+
+  it('counts the whole period in scope against the limit, past today', () => {
+    setLimit('30000');
+    spend('450 кофе', OCT_1);
+    spend('300 такси', new Date('2026-10-31T12:00:00Z'));
+    // Outside the period.
+    spend('5000 ресторан', new Date('2026-11-01T12:00:00Z'));
+
+    expect(end()).toEqual({
+      currency: 'RUB',
+      limitMinor: 3_000_000,
+      spentMinor: 75_000,
+      converted: false,
+    });
+  });
+
+  it('leaves essential categories out under scope optional', () => {
+    setLimit('30000');
+    expect(setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_1 }).kind).toBe(
+      'set',
+    );
+    spend('450 кофе', OCT_1);
+    spend('300 такси', OCT_1);
+
+    expect(end()?.spentMinor).toBe(45_000);
   });
 });
 

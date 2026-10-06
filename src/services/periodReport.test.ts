@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { setBudgetLimit, setBudgetStartDay } from '../db/budgets.js';
 import type { CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from '../db/expenses.js';
@@ -140,6 +141,47 @@ describe('periodReport', () => {
     expect(result.unconverted.map((c) => [c.currency, c.totalMinor])).toEqual([['USD', 5000]]);
   });
 
+  it('ends the limit and ranks the top 3 by converted amount, leaving out one with no rate', () => {
+    setBudgetLimit(db, ledger.id, { limitMinor: 6000000, currency: 'RSD' }, NOW);
+    storeFxList(
+      db,
+      {
+        listDate: '2026-09-10' as LocalDate,
+        listNumber: 175,
+        rates: [{ currency: 'EUR', unit: 1, middleE4: 1175000 }],
+      },
+      NOW,
+    );
+    setFxDay(db, '2026-09-10' as LocalDate, '2026-09-10' as LocalDate, NOW);
+    add('2026-09-10', 1000, 'cafe', 'EUR');
+    add('2026-09-11', 100000, 'cafe');
+    add('2026-09-12', 100000, 'cafe');
+    add('2026-09-13', 50000, 'cafe');
+    add('2026-09-14', 999999, 'cafe', 'USD');
+
+    const result = report();
+
+    expect(result.budget).toEqual({
+      currency: 'RSD',
+      limitMinor: 6000000,
+      // 117500 + 100000 + 100000 + 50000; the USD one has no rate.
+      spentMinor: 367500,
+      converted: true,
+    });
+    expect(
+      result.top.map((e) => [
+        e.occurredOn,
+        e.convertedMinor,
+        e.money.currency,
+        e.money.amountMinor,
+      ]),
+    ).toEqual([
+      ['2026-09-10', 117500, 'EUR', 1000],
+      ['2026-09-11', 100000, 'RSD', 100000],
+      ['2026-09-12', 100000, 'RSD', 100000],
+    ]);
+  });
+
   it('reads a sealed ledger only while it is unlocked', async () => {
     add('2026-09-10', 1240000, 'cafe');
     await sealPersonalLedger(deps, user, NOW);
@@ -166,6 +208,30 @@ describe('dueSummaries and claimSummary', () => {
       kind: 'period',
       period: { kind: 'month', from: '2026-09-01', to: '2026-09-30' },
       previous: { from: '2026-08-01', to: '2026-08-31' },
+      periodKey: '2026-09',
+    });
+  });
+
+  it('is the closed payday period, keyed by its first day, for a budget starting on the 15th', () => {
+    setBudgetStartDay(db, ledger.id, { startDay: 15, currency: 'RSD' }, NOW);
+
+    expect(dueSummaries(deps, NOW)).toEqual([]);
+    expect(dueSummaries(deps, new Date('2026-10-15T06:59:00Z'))).toEqual([]);
+    const [due] = dueSummaries(deps, new Date('2026-10-15T07:00:00Z'));
+
+    expect(due).toMatchObject({
+      kind: 'period',
+      period: { kind: 'budget', from: '2026-09-15', to: '2026-10-14' },
+      previous: { from: '2026-08-15', to: '2026-09-14' },
+      periodKey: '2026-09-15',
+    });
+  });
+
+  it('is the calendar month for a budget starting on the 1st', () => {
+    setBudgetStartDay(db, ledger.id, { startDay: 1, currency: 'RSD' }, NOW);
+
+    expect(dueSummaries(deps, NOW)[0]).toMatchObject({
+      period: { kind: 'month', from: '2026-09-01', to: '2026-09-30' },
       periodKey: '2026-09',
     });
   });

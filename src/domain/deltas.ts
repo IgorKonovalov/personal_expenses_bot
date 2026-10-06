@@ -47,6 +47,26 @@ export function periodDeltas(
   }));
 }
 
+// What an expense is ranked by: its amount converted into the report's currency.
+export interface Ranked {
+  readonly id: string;
+  readonly occurredAt: Date;
+  readonly convertedMinor: number;
+}
+
+// The `n` largest by converted amount, largest first; a tie goes to the earlier `occurredAt`,
+// then the smaller id.
+export function topExpenses<T extends Ranked>(items: readonly T[], n: number): T[] {
+  return [...items]
+    .sort((a, b) => {
+      if (a.convertedMinor !== b.convertedMinor) return b.convertedMinor - a.convertedMinor;
+      const at = a.occurredAt.getTime() - b.occurredAt.getTime();
+      if (at !== 0) return at;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, n);
+}
+
 // The first `keep` lines, and what the rest add up to; `rest` is undefined when nothing is cut.
 export function collapseTail<T extends { readonly amountMinor: number }>(
   lines: readonly T[],

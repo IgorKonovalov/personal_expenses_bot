@@ -243,8 +243,8 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | committed with this row |
-| 2: Budget periods, the budget's end, the top 3 and the footer | dev | not started | |
+| 1: Walking skeleton: «Итоги сентября» arrives on 1 October | dev | done | c11768c |
+| 2: Budget periods, the budget's end, the top 3 and the footer | dev | done | committed with this row |
 | 3: The weekly push and the settings switches | dev | not started | |
 | 4: Sealed ledgers, help and docs | dev | not started | |
 | 5: A real month's push | human | not started | |
@@ -261,6 +261,12 @@ function percentChange(prevMinor: number, curMinor: number): number | undefined;
   `src/bot/summaryProvider.test.ts`; `bot.test.ts` gains only the `sum:off` byte check.
 - Phase 1: category lines read «Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)» as in the
   TL;DR, not with `/month`'s bare amount, and are not folded into an expandable quote.
+- Phase 2: a budget whose start day is 1 gets the calendar-month push («Итоги сентября», key
+  `2026-09`), not «Итоги периода 01.09–30.09»; the two periods are the same dates.
+- Phase 2: the top 3 ranks only expenses with a rate; one in a currency with no rate is left
+  out. A foreign one shows its recorded amount with «(≈ … RSD)» after it.
+- Phase 2: the budget line reads «<b>Бюджет:</b> 62 500.00 из 60 000.00 RSD, перерасход
+  2 500.00 RSD». `src/bot/summaryProvider.ts` and `src/bot/bot.test.ts` are unchanged.
 
 ### Close triggers
 

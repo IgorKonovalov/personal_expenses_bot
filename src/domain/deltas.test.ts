@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changeOf, collapseTail, percentChange, periodDeltas } from './deltas.js';
+import { changeOf, collapseTail, percentChange, periodDeltas, topExpenses } from './deltas.js';
 
 describe('percentChange', () => {
   it('rounds 310000 × 100 / 930000 = 33.33 to 33', () => {
@@ -81,6 +81,31 @@ describe('periodDeltas', () => {
         change: { kind: 'change', deltaMinor: -1000, percent: -50 },
       },
     ]);
+  });
+});
+
+describe('topExpenses', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('takes the three largest converted amounts, largest first', () => {
+    const items = [
+      { id: 'a', occurredAt: at('2026-09-01T10:00:00Z'), convertedMinor: 500 },
+      { id: 'b', occurredAt: at('2026-09-02T10:00:00Z'), convertedMinor: 117500 },
+      { id: 'c', occurredAt: at('2026-09-03T10:00:00Z'), convertedMinor: 90000 },
+      { id: 'd', occurredAt: at('2026-09-04T10:00:00Z'), convertedMinor: 100000 },
+    ];
+
+    expect(topExpenses(items, 3).map((e) => e.id)).toEqual(['b', 'd', 'c']);
+  });
+
+  it('breaks a tie by the earlier occurredAt, then the smaller id', () => {
+    const items = [
+      { id: 'z', occurredAt: at('2026-09-02T10:00:00Z'), convertedMinor: 1000 },
+      { id: 'y', occurredAt: at('2026-09-01T10:00:00Z'), convertedMinor: 1000 },
+      { id: 'x', occurredAt: at('2026-09-02T10:00:00Z'), convertedMinor: 1000 },
+    ];
+
+    expect(topExpenses(items, 3).map((e) => e.id)).toEqual(['y', 'x', 'z']);
   });
 });
 

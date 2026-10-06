@@ -17,7 +17,7 @@ import {
   listEssentialCategoryIds,
   type CategoryId,
 } from '../db/categories.js';
-import { listLedgerExpensesBetween } from '../db/expenses.js';
+import { listLedgerExpensesBetween, type Expense } from '../db/expenses.js';
 import { rateLookupBetween } from '../db/fxRates.js';
 import {
   findActiveLedger,
@@ -31,7 +31,7 @@ import { countInto, dayOfPeriod, isSafeLimit, remainders } from '../domain/budge
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
-import { budgetPeriodOf } from '../domain/periods.js';
+import { budgetPeriodOf, type DateRange } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
   cancelFlow,
@@ -120,10 +120,7 @@ export function budgetStatus(
   );
   if (opened.kind === 'locked') return opened;
   const all = opened.expenses;
-  // Scope `optional` leaves out essential categories; an uncategorised expense is optional.
-  const essential =
-    budget.scope === 'optional' ? listEssentialCategoryIds(db, ledger.id) : new Set<CategoryId>();
-  const expenses = all.filter((e) => e.category === null || !essential.has(e.category.id));
+  const expenses = inScope(deps, budget, all);
   const rateOf = rateLookupBetween(db, from, to);
   const inPeriod = countInto(expenses, budget.currency, rateOf);
   const throughToday = countInto(
@@ -166,6 +163,64 @@ export function budgetStatus(
         spentInPeriodMinor: inPeriod.countedMinor,
       }),
     },
+  };
+}
+
+// What the limit counts: scope `optional` leaves out essential categories, and an uncategorised
+// expense is optional.
+function inScope(
+  { db }: Pick<Deps, 'db'>,
+  budget: LedgerBudget,
+  expenses: readonly Expense[],
+): Expense[] {
+  const essential =
+    budget.scope === 'optional'
+      ? listEssentialCategoryIds(db, budget.ledgerId)
+      : new Set<CategoryId>();
+  return expenses.filter((e) => e.category === null || !essential.has(e.category.id));
+}
+
+// How a closed period's limit ended: the limit and what the period counted against it, in the
+// budget's currency (ADR-0023).
+export interface BudgetEnd {
+  readonly currency: CurrencyCode;
+  readonly limitMinor: number;
+  readonly spentMinor: number;
+  // True when foreign spending was converted into `spentMinor`.
+  readonly converted: boolean;
+}
+
+// The limit's end over `period`, read through `readerId`'s membership. Undefined when the ledger
+// has no limit; `locked` for a sealed ledger this process holds no key for.
+export function budgetEnd(
+  deps: Deps,
+  input: { readonly ledger: Ledger; readonly readerId: UserId; readonly period: DateRange },
+): BudgetEnd | Locked | undefined {
+  const { db } = deps;
+  const { ledger, period } = input;
+  const budget = findLedgerBudget(db, ledger.id);
+  if (budget?.limitMinor == null) return undefined;
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesBetween(db, {
+      ledgerId: ledger.id,
+      memberId: input.readerId,
+      from: period.from,
+      to: period.to,
+    }),
+  );
+  if (opened.kind === 'locked') return opened;
+  const counted = countInto(
+    inScope(deps, budget, opened.expenses),
+    budget.currency,
+    rateLookupBetween(db, period.from, period.to),
+  );
+  return {
+    currency: budget.currency,
+    limitMinor: budget.limitMinor,
+    spentMinor: counted.countedMinor,
+    converted: counted.converted,
   };
 }
 
