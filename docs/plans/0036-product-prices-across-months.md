@@ -280,8 +280,8 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 |---|---|---|---|
 | 1: /prices skeleton | dev | done | 878daa4 |
 | 2: amount and unit price | dev | done | ccc3e48 |
-| 3: review and corrections | dev | done | committed with this row |
-| 4: user products | dev | not started | |
+| 3: review and corrections | dev | done | 3fee520 |
+| 4: user products | dev | done | committed with this row |
 | 5: coverage report | dev | not started | |
 | 6: real receipts | human | not started | |
 
@@ -316,6 +316,16 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
   and names texts are dev's.
 - Phase 3: overrides are per user, not per ledger, so one answer applies in every plaintext
   ledger the user views. A sealed ledger ignores them.
+- Phase 4: the migration is `0026_user_products.sql`, with an index on `user_id`.
+- Phase 4: also touched files outside the phase's list. `src/services/productPrices.ts`
+  resolves `u:<id>` refs and lists user products next to the catalog.
+  `src/bot/callbackData.ts` gained `prc:new` and `prc:u:<unit>`.
+  `src/services/deleteAccount.test.ts` checks the deleted `user_products` rows.
+- Phase 4: the typed name waits for its unit on the anchor's screen
+  (`PricesScreen.newProduct`). The unit tap consumes it in the transaction that creates the
+  product, so a second tap finds nothing and creates nothing. A name is refused when it
+  matches a catalog product's name case-insensitively. A clash with the user's own product
+  names is not checked.
 
 ### Close triggers
 

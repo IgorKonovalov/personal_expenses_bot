@@ -91,12 +91,15 @@ export interface CommandArgScreen {
 // /prices (ADR-0039): the product list of `ledgerId` and the products it opens. A review holds
 // its normalized item names in `names` and the one being answered at `position`; with `product`,
 // the names are that product's, opened from its [Названия], and an answer goes back to it.
+// `newProduct` is the name typed for [Новый продукт], awaiting its unit: the step a unit tap
+// consumes, so a double tap creates one product.
 export interface PricesScreen {
   readonly name: 'prices';
   readonly ledgerId: LedgerId;
   readonly names?: readonly string[];
   readonly position?: number;
   readonly product?: string;
+  readonly newProduct?: string;
 }
 
 export type Screen =
@@ -248,8 +251,16 @@ export interface CommandArgFlow {
   readonly command: ArgCommand;
 }
 
+// [Новый продукт] in the /prices picker (ADR-0039): the new product's name, typed into the
+// anchor of the prices screen of `ledgerId`.
+export interface ProductNameFlow {
+  readonly kind: 'productName';
+  readonly ledgerId: LedgerId;
+}
+
 export type Flow =
   | CommandArgFlow
+  | ProductNameFlow
   | CategoryFlow
   | EditFlow
   | TimezoneFlow
@@ -403,7 +414,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
     return { name, ledgerId: parsed.ledgerId as LedgerId };
   }
   if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
-    const { names, position, product } = parsed;
+    const { names, position, product, newProduct } = parsed;
     const review =
       Array.isArray(names) && names.every((n) => typeof n === 'string') ? { names } : {};
     return {
@@ -412,6 +423,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       ...review,
       ...(Number.isSafeInteger(position) ? { position: position as number } : {}),
       ...(typeof product === 'string' ? { product } : {}),
+      ...(typeof newProduct === 'string' ? { newProduct } : {}),
     };
   }
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
@@ -514,7 +526,12 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   if (typeof parsed?.ledgerId !== 'string') return undefined;
   const ledgerId = parsed.ledgerId as LedgerId;
   if (isSecretKind(kind)) return { kind, ledgerId };
-  if (kind === 'categoryAdd' || kind === 'budgetLimit' || kind === 'budgetStartDay') {
+  if (
+    kind === 'categoryAdd' ||
+    kind === 'budgetLimit' ||
+    kind === 'budgetStartDay' ||
+    kind === 'productName'
+  ) {
     return { kind, ledgerId };
   }
   if (

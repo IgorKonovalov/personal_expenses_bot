@@ -1,6 +1,13 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
-import { setAnchor, type PricesScreen } from '../../services/flowSessions.js';
+import type { User } from '../../db/users.js';
+import {
+  setAnchor,
+  startFlow,
+  type PricesScreen,
+  type ProductNameFlow,
+  type ScreenAnchor,
+} from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import {
   activeProductList,
@@ -12,7 +19,9 @@ import {
 } from '../../services/productPrices.js';
 import {
   answerName,
+  createUserProduct,
   nameInfo,
+  nameNewProduct,
   pickerProducts,
   productNames,
   reviewableItems,
@@ -25,7 +34,9 @@ import {
   PRICES_PAGE,
   PRICES_REVIEW,
   PRODUCT_NAMES,
+  PRODUCT_NEW,
   PRODUCT_OPEN,
+  PRODUCT_UNIT,
   REVIEW_ANSWER,
   REVIEW_PAGE,
   namePickData,
@@ -33,14 +44,16 @@ import {
   pricesPageData,
   productNamesData,
   productOpenData,
+  productUnitData,
   reviewAnswerData,
   reviewPageData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { pageOf, pagerRow } from '../nav.js';
-import { replyHtml } from '../render/html.js';
+import { replyHtml, type Html } from '../render/html.js';
 import {
   backRow,
+  cancelRow,
   renderAnchor,
   requireScreen,
   showScreen,
@@ -223,6 +236,7 @@ function stepView(
   );
   const pager = pagerRow(shown, reviewPageData);
   if (pager.length > 0) rows.push(pager);
+  rows.push([InlineKeyboard.text(messages.newProductButton, PRODUCT_NEW)]);
   rows.push([
     InlineKeyboard.text(messages.notProductButton, reviewAnswerData(position, 'n')),
     InlineKeyboard.text(messages.skipNameButton, reviewAnswerData(position, 's')),
@@ -239,6 +253,100 @@ function stepView(
     }),
     markup: InlineKeyboard.from(rows),
   };
+}
+
+// What the anchor's prices screen shows while a review name is open, re-rendered after a
+// cancelled prompt: that name's picker. Undefined outside a review.
+export function pricesScreenFor(
+  deps: HandlerDeps,
+  user: User,
+  screen: PricesScreen,
+): ScreenView | undefined {
+  const { names, position, product } = screen;
+  if (names === undefined || position === undefined) return undefined;
+  const resolved = reviewableItems(deps, { user, ledgerId: screen.ledgerId });
+  if (resolved === undefined || resolved === 'sealed' || isLocked(resolved)) return undefined;
+  return stepView(resolved, { names, position, ...(product === undefined ? {} : { product }) }, 1);
+}
+
+function namePromptView(nameKey: string, refusal?: Html): ScreenView {
+  return {
+    text: messages.newProductPrompt(nameKey, refusal),
+    markup: InlineKeyboard.from([cancelRow()]),
+  };
+}
+
+// The answer to [Новый продукт]'s prompt. A valid name puts the unit picker in the anchor; an
+// invalid one re-asks there.
+export async function answerProductName(
+  ctx: Context,
+  deps: HandlerDeps,
+  anchor: ScreenAnchor | undefined,
+  input: {
+    readonly user: User;
+    readonly flow: ProductNameFlow;
+    readonly text: string;
+    readonly inputKey: string;
+  },
+): Promise<void> {
+  const result = nameNewProduct(deps, input);
+  if (anchor?.screen.name !== 'prices') return;
+  const nameKey = anchor.screen.names?.[anchor.screen.position ?? -1] ?? '';
+  switch (result.kind) {
+    case 'invalid':
+      await renderAnchor(
+        ctx,
+        anchor,
+        namePromptView(
+          nameKey,
+          result.reason === 'length'
+            ? messages.newProductRefused.length
+            : messages.newProductRefused.catalog(result.catalogName),
+        ),
+      );
+      return;
+    case 'gone': {
+      const view = pricesScreenFor(deps, input.user, anchor.screen);
+      if (view !== undefined) await renderAnchor(ctx, anchor, view);
+      return;
+    }
+    case 'named':
+      await renderAnchor(ctx, anchor, {
+        text: messages.unitPrompt(result.name),
+        markup: InlineKeyboard.from([
+          UNITS.map((unit) =>
+            InlineKeyboard.text(messages.unitButtons[unit], productUnitData(unit)),
+          ),
+          backRow(reviewPageData(1)),
+        ]),
+      });
+      return;
+  }
+}
+
+const UNITS = ['l', 'kg', 'pcs'] as const;
+
+// After the name at `position` was answered: back to the product its names were opened from,
+// or on to the queue's next name.
+async function afterAnswer(
+  ctx: Context,
+  deps: HandlerDeps,
+  tap: PricesTap,
+  position: number,
+): Promise<void> {
+  const { names, product } = tap.screen;
+  if (product !== undefined) {
+    await showProduct(ctx, deps, tap, product);
+    return;
+  }
+  if (names === undefined) {
+    await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    return;
+  }
+  const resolved = await reviewItems(ctx, deps, tap);
+  if (resolved === undefined) return;
+  const next = Math.max(tap.screen.position ?? 0, position + 1);
+  await showQueueFrom(ctx, deps, tap, resolved, names, next);
 }
 
 // The queue from `position` on: the first name some item still carries, or the list once none
@@ -333,9 +441,8 @@ export function registerPrices(bot: Composer<Context>, deps: HandlerDeps): void 
     if (tap === undefined) return;
     const position = Number(ctx.match[1]);
     const choice = ctx.match[2] ?? 's';
-    const { names, product } = tap.screen;
-    const nameKey = names?.[position];
-    if (names === undefined || nameKey === undefined) {
+    const nameKey = tap.screen.names?.[position];
+    if (nameKey === undefined) {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
@@ -356,14 +463,46 @@ export function registerPrices(bot: Composer<Context>, deps: HandlerDeps): void 
         return;
       }
     }
-    if (product !== undefined) {
-      await showProduct(ctx, deps, tap, product);
+    await afterAnswer(ctx, deps, tap, position);
+  });
+
+  // [Новый продукт]: the name prompt in the anchor, as a text flow.
+  bot.callbackQuery(PRODUCT_NEW, async (ctx) => {
+    const tap = await pricesTap(ctx, deps);
+    if (tap === undefined) return;
+    const nameKey = tap.screen.names?.[tap.screen.position ?? -1];
+    if (nameKey === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
     const resolved = await reviewItems(ctx, deps, tap);
     if (resolved === undefined) return;
-    const next = Math.max(tap.screen.position ?? 0, position + 1);
-    await showQueueFrom(ctx, deps, tap, resolved, names, next);
+    await ctx.answerCallbackQuery();
+    startFlow(deps, tap.user, { kind: 'productName', ledgerId: tap.screen.ledgerId }, deps.now());
+    await renderAnchor(ctx, tap.anchor, namePromptView(nameKey));
+  });
+
+  // A unit for the typed name: the product is created and the name under review assigned to it.
+  // A double tap finds the name consumed and changes nothing.
+  bot.callbackQuery(PRODUCT_UNIT, async (ctx) => {
+    const tap = await pricesTap(ctx, deps);
+    if (tap === undefined) return;
+    const unit = UNITS.find((u) => u === ctx.match[1]) ?? 'pcs';
+    const result = createUserProduct(deps, { user: tap.user, unit, now: deps.now() });
+    switch (result.kind) {
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
+      case 'sealed':
+        await ctx.answerCallbackQuery({ text: messages.staleScreen });
+        return;
+      case 'stale':
+        await ctx.answerCallbackQuery();
+        return;
+      case 'created':
+        await afterAnswer(ctx, deps, tap, tap.screen.position ?? 0);
+        return;
+    }
   });
 
   bot.callbackQuery(PRODUCT_NAMES, async (ctx) => {

@@ -8407,6 +8407,97 @@ describe('/prices (Plan 0036)', () => {
     expect(lastEdit(calls)?.text).toContain('Октябрь 2026: 307.00 RSD · 2 л · 153.50 RSD/л\n');
   });
 
+  it('creates Шоколадное молоко (л) from the review, once for a double-tapped unit', async () => {
+    const { say, tap, calls, db, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    await tap('prc:rv', anchor());
+    calls.length = 0;
+
+    await tap('prc:new', anchor());
+
+    expect(lastEdit(calls)).toEqual(
+      expect.objectContaining({
+        text: messages.newProductPrompt('cokoladno mleko 0,2l'),
+        reply_markup: {
+          inline_keyboard: [[{ text: messages.cancelButton, callback_data: 'flow:cancel' }]],
+        },
+      }),
+    );
+    calls.length = 0;
+
+    await say('молоко');
+
+    expect(lastEdit(calls)?.text).toBe(
+      messages.newProductPrompt(
+        'cokoladno mleko 0,2l',
+        messages.newProductRefused.catalog('Молоко'),
+      ),
+    );
+    calls.length = 0;
+
+    await say('Шоколадное молоко');
+
+    expect(lastEdit(calls)).toEqual(
+      expect.objectContaining({
+        text: messages.unitPrompt('Шоколадное молоко'),
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'л', callback_data: 'prc:u:l' },
+              { text: 'кг', callback_data: 'prc:u:kg' },
+              { text: 'шт', callback_data: 'prc:u:pcs' },
+            ],
+            [{ text: '« Назад', callback_data: 'prc:rp:1' }],
+          ],
+        },
+      }),
+    );
+    calls.length = 0;
+
+    await tap('prc:u:l', anchor());
+    await tap('prc:u:l', anchor());
+
+    expect(db.prepare('SELECT name, unit FROM user_products').all()).toEqual([
+      { name: 'Шоколадное молоко', unit: 'l' },
+    ]);
+    // The queue moved on to kesa once; the second tap edited nothing.
+    expect(calls.filter((c) => c.method === 'editMessageText')).toHaveLength(1);
+    expect(lastEdit(calls)?.text.split('\n')[1]).toBe('kesa');
+    calls.length = 0;
+
+    await say('/prices');
+
+    const list = sentTexts(calls).at(-1);
+    expect(list).toContain('Шоколадное молоко — 99.00 RSD');
+    calls.length = 0;
+    const id = db.prepare('SELECT id FROM user_products').pluck().get() as number;
+
+    await tap(`prc:o:u:${id}`, anchor());
+
+    expect(lastEdit(calls)?.text).toBe(
+      '<b>Шоколадное молоко — «Личные расходы»</b>\n' +
+        'Октябрь 2026: 99.00 RSD · 0.2 л · 495.00 RSD/л\n\n' +
+        'Всего: 99.00 RSD · 0.2 л · 495.00 RSD/л',
+    );
+  });
+
+  it('puts the review name back when the new product prompt is cancelled', async () => {
+    const { say, tap, calls, db, fixture, anchor } = await pricesBot();
+    fixture();
+    await say('/prices');
+    await tap('prc:rv', anchor());
+    await tap('prc:new', anchor());
+    calls.length = 0;
+
+    await tap('flow:cancel', anchor());
+
+    expect(lastEdit(calls)?.text).toContain(
+      '<b>Разбор названий</b> · 1 из 2\ncokoladno mleko 0,2l',
+    );
+    expect(db.prepare('SELECT kind FROM flow_sessions').pluck().all()).toEqual([null]);
+  });
+
   it('offers neither [Разобрать] nor [Названия] for a sealed ledger', async () => {
     const { say, tap, calls, db, keys, user, fixture, anchor } = await pricesBot();
     fixture();

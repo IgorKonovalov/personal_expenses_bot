@@ -1490,6 +1490,24 @@ export const messages = {
   namesButton: 'Названия',
   notProductButton: 'Не продукт',
   skipNameButton: 'Пропустить',
+  // [Новый продукт] in the picker: a name, then a unit, for the name under review.
+  newProductButton: 'Новый продукт',
+  newProductPrompt: (nameKey: string, refusal?: Html): Html =>
+    joinHtml(
+      [
+        ...(refusal === undefined ? [] : [refusal]),
+        html`Новый продукт для «${nameKey}». Как его назвать? Отправьте название до 40 знаков, например «Шоколадное молоко».`,
+      ],
+      '\n\n',
+    ),
+  newProductRefused: {
+    length: html`Название — от 1 до 40 знаков.`,
+    catalog: (name: string): Html =>
+      html`«${name}» уже есть в списке продуктов: выберите его кнопкой в разборе или отправьте другое название.`,
+  },
+  unitPrompt: (name: string): Html =>
+    html`«${name}»: в чём считать цену? За литр, за килограмм или за штуку.`,
+  unitButtons: { l: 'л', kg: 'кг', pcs: 'шт' } satisfies Record<Unit, string>,
   // One name of the review: which product it is. `step` counts the queue; a name opened from a
   // product's [Названия] has none.
   reviewStep: ({

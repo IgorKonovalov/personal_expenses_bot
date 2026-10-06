@@ -480,6 +480,15 @@ export function reviewPageData(page: number): string {
   return assertCallbackData(`prc:rp:${page}`);
 }
 
+// [Новый продукт] in the picker `prc:new` asks for a name; once it is typed, `prc:u:<unit>`
+// (at most 10 bytes) creates the product with that unit for the name under review.
+export const PRODUCT_NEW = 'prc:new';
+export const PRODUCT_UNIT = /^prc:u:(l|kg|pcs)$/;
+
+export function productUnitData(unit: 'l' | 'kg' | 'pcs'): string {
+  return assertCallbackData(`prc:u:${unit}`);
+}
+
 // [Названия] on a product `prc:nm:<ref>` lists the names counted under it into the anchor;
 // `prc:np:<page>` pages that list and `prc:nn:<index>` opens the picker for one of them.
 export const PRODUCT_NAMES = /^prc:nm:(b:[a-z0-9_]{1,24}|u:\d{1,16})$/;

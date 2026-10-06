@@ -7,6 +7,7 @@ import {
   type LedgerId,
 } from '../db/ledgers.js';
 import { listLedgerDatedItems } from '../db/receiptItems.js';
+import { listUserProducts } from '../db/userProducts.js';
 import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
@@ -42,8 +43,9 @@ import { effectiveTimezone, type RecordDeps } from './recordExpense.js';
 export type ProductDeps = Pick<RecordDeps, 'db' | 'logger' | 'defaultTimezone'> &
   Pick<KeyDeps, 'keys'>;
 
-// `b:<catalog key>`: what a product is stored and travels as in callback data.
-export type ProductRef = `b:${string}`;
+// `b:<catalog key>` or `u:<user_products.id>`: what a product is stored and travels as in
+// callback data.
+export type ProductRef = `b:${string}` | `u:${number}`;
 
 export interface Product {
   readonly ref: ProductRef;
@@ -101,10 +103,17 @@ export interface ProductView {
   readonly reviewable: boolean;
 }
 
-function catalogProducts(): Map<ProductRef, Product> {
-  return new Map(
-    CATALOG.map(({ key, name, unit }) => [`b:${key}`, { ref: `b:${key}`, name, unit }] as const),
-  );
+// The catalog in its order, then the user's own products, oldest first.
+function productsOf(deps: ProductDeps, user: User): Map<ProductRef, Product> {
+  const products: Product[] = [
+    ...CATALOG.map(({ key, name, unit }): Product => ({ ref: `b:${key}`, name, unit })),
+    ...listUserProducts(deps.db, user.id).map(({ id, name, unit }): Product => ({
+      ref: `u:${id}`,
+      name,
+      unit,
+    })),
+  ];
+  return new Map(products.map((product) => [product.ref, product]));
 }
 
 function ruleRef(nameKey: string): ProductRef | undefined {
@@ -147,7 +156,7 @@ function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean
 export function resolveItems(deps: ProductDeps, user: User, ledger: Ledger): LedgerItems | Locked {
   if (ledgerIsLocked(deps, ledger.id)) return LOCKED;
   const sealed = isSealedLedger(deps, ledger.id);
-  const products = catalogProducts();
+  const products = productsOf(deps, user);
   const answers = sealed ? new Map<string, string | null>() : listItemProducts(deps.db, user.id);
   const items = ownItems(deps, user, ledger, sealed).map((item) => {
     if (!answers.has(item.nameKey)) {

@@ -35,6 +35,7 @@ import {
 import { settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
 import { answerCommandArg, type MoreDeps } from './handlers/more.js';
+import { answerProductName, pricesScreenFor } from './handlers/prices.js';
 import { answerSecretFlow } from './handlers/unlock.js';
 import { messages } from './messages.js';
 import { replyHtml } from './render/html.js';
@@ -84,8 +85,14 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const anchor = currentAnchor(deps, user);
   if (anchor === undefined) return;
   const { screen } = anchor;
-  // A summary and the prices list start no flow, so a cancel never has one to restore.
-  if (screen.name === 'summary' || screen.name === 'prices') return;
+  // A summary starts no flow, so a cancel never has one to restore.
+  if (screen.name === 'summary') return;
+  if (screen.name === 'prices') {
+    // The review name the [Новый продукт] prompt was asked for.
+    const view = pricesScreenFor(deps, user, screen);
+    if (view !== undefined) await renderAnchor(ctx, anchor, view);
+    return;
+  }
   if (screen.name === 'commandArg') {
     await renderAnchor(ctx, anchor, {
       text: messages.commandArgCancelled,
@@ -178,6 +185,11 @@ export async function answerFlow(
 
   if (flow.kind === 'commandArg') {
     await answerCommandArg(ctx, deps, anchor, { ...input, flow });
+    return;
+  }
+
+  if (flow.kind === 'productName') {
+    await answerProductName(ctx, deps, anchor, { ...input, flow });
     return;
   }
 

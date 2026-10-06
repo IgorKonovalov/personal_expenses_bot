@@ -6,6 +6,7 @@ import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { insertNoticeSeen } from '../db/notices.js';
 import { insertRuleOrGetExisting, type RuleId } from '../db/recurring.js';
 import { claimSummaryPush } from '../db/summaryPushes.js';
+import { insertUserProduct } from '../db/userProducts.js';
 import type { User } from '../db/users.js';
 import { insertTipShown } from '../db/userTips.js';
 import type { LocalDate } from '../domain/time.js';
@@ -192,6 +193,27 @@ describe('deleteAccount', () => {
     expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
 
     expect(db.prepare('SELECT user_id FROM item_products').pluck().all()).toEqual([bob.id]);
+  });
+
+  it("deletes the user's own products and no one else's", () => {
+    let k = 0;
+    const newId = () => `20000000-0000-4000-8000-${String(++k).padStart(12, '0')}`;
+    const bob = provisionUser(
+      { ...deps(), newId },
+      {
+        provider: 'telegram',
+        externalId: '1002',
+        defaultTimezone: 'Europe/Belgrade',
+        defaultCurrency: 'RSD',
+        now: NOW,
+      },
+    ).user;
+    insertUserProduct(db, { userId: alice.id, name: 'Шоколадное молоко', unit: 'l', at: NOW });
+    insertUserProduct(db, { userId: bob.id, name: 'Орехи', unit: 'kg', at: NOW });
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT user_id FROM user_products').pluck().all()).toEqual([bob.id]);
   });
 
   it("deletes the user's debt people and operations, split lends included, and no one else's", () => {

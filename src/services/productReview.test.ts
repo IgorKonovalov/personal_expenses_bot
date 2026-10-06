@@ -8,9 +8,12 @@ import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring } from './ledgerKeys.js';
 import { activeProductList, ledgerProduct, type LedgerItems } from './productPrices.js';
+import { currentFlow, setAnchor, startFlow } from './flowSessions.js';
 import {
   answerName,
+  createUserProduct,
   nameInfo,
+  nameNewProduct,
   pickerProducts,
   productNames,
   reviewableItems,
@@ -199,6 +202,87 @@ describe('the picker', () => {
 
     expect(refs.slice(0, 3)).toEqual(['b:milk', 'b:bread', 'b:bananas']);
     expect(refs[3]).toBe('b:yogurt');
+  });
+});
+
+describe('a new product', () => {
+  // The review's first name, cokoladno mleko 0,2l, open in the anchor, with its name prompt.
+  function openNamePrompt(): void {
+    setAnchor(deps, user, {
+      chatId: 1001,
+      messageId: 100,
+      screen: { name: 'prices', ledgerId, names: reviewQueue(items()), position: 0 },
+    });
+    startFlow(deps, user, { kind: 'productName', ledgerId }, NOW);
+  }
+
+  const name = (text: string, inputKey = 'tg:1001:50') =>
+    nameNewProduct(deps, { user, flow: { kind: 'productName', ledgerId }, text, inputKey });
+  const create = () => createUserProduct(deps, { user, unit: 'l', now: NOW });
+  const productCount = () => db.prepare('SELECT COUNT(*) FROM user_products').pluck().get();
+
+  it('creates Шоколадное молоко (л) for cokoladno mleko: October 9900 over 200 ml, 495.00 per l', () => {
+    fixture();
+    openNamePrompt();
+
+    expect(name('  Шоколадное   молоко ')).toEqual({ kind: 'named', name: 'Шоколадное молоко' });
+    const created = create();
+
+    expect(created.kind).toBe('created');
+    const ref = created.kind === 'created' ? created.ref : '';
+    const list = activeProductList(deps, user, NOW);
+    if (isLocked(list)) throw new Error('a list expected');
+    expect(list.products.map((p) => [p.name, p.recentMinor])).toContainEqual([
+      'Шоколадное молоко',
+      9900,
+    ]);
+    const product = ledgerProduct(deps, { user, ledgerId, ref });
+    if (product === undefined || isLocked(product)) throw new Error('the product expected');
+    expect(product.months).toEqual([
+      {
+        month: '2026-10',
+        currency: 'RSD',
+        spentMinor: 9900,
+        sizedMinor: 9900,
+        amount: 200_000n,
+        unsized: 0,
+        unitPriceMinor: 49500,
+      },
+    ]);
+    expect(pickerProducts(items()).map((p) => p.name)).toContain('Шоколадное молоко');
+  });
+
+  it('creates one product for a double-tapped unit', () => {
+    fixture();
+    openNamePrompt();
+    name('Шоколадное молоко');
+
+    expect(create().kind).toBe('created');
+    expect(create()).toEqual({ kind: 'stale' });
+    expect(productCount()).toBe(1);
+  });
+
+  it('refuses молоко, pointing at the catalog Молоко, and keeps the prompt pending', () => {
+    fixture();
+    openNamePrompt();
+
+    expect(name('молоко')).toEqual({
+      kind: 'invalid',
+      reason: 'catalog',
+      catalogName: 'Молоко',
+    });
+    expect(currentFlow(deps, user, NOW)).toEqual({ kind: 'productName', ledgerId });
+    expect(create()).toEqual({ kind: 'stale' });
+    expect(productCount()).toBe(0);
+  });
+
+  it('refuses an empty name and one over 40 characters', () => {
+    fixture();
+    openNamePrompt();
+
+    expect(name('   ')).toEqual({ kind: 'invalid', reason: 'length' });
+    expect(name('я'.repeat(41))).toEqual({ kind: 'invalid', reason: 'length' });
+    expect(name('я'.repeat(40)).kind).toBe('named');
   });
 });
 
