@@ -7,17 +7,24 @@ import type { CurrencyCode } from '../../domain/currencies.js';
 import type { Money } from '../../domain/money.js';
 import type { Schedule } from '../../domain/schedule.js';
 import { localDateOf, parseLocalDate, type LocalDate } from '../../domain/time.js';
+import { findActiveLedger } from '../../db/ledgers.js';
 import {
   setAnchor,
+  startFlow,
   type RecurringAskScreen,
   type RecurringScreen,
+  type ScreenAnchor,
 } from '../../services/flowSessions.js';
 import { effectiveTimezone } from '../../services/recordExpense.js';
 import {
   answerAsk,
+  answerReminderText,
   askTarget,
   changeRuleMode,
+  createReminder,
   createRuleFromExpense,
+  reminderToday,
+  scheduleFor,
   deleteRule,
   listRules,
   ownRule,
@@ -36,6 +43,9 @@ import {
   ASK_RECORD,
   ASK_SKIP,
   RECURRING_LIST,
+  REMINDER_ADD,
+  REMINDER_EXPENSE,
+  REMINDER_SCHEDULE,
   REPEAT_EXPENSE,
   REPEAT_SCHEDULE,
   RULE_DELETE,
@@ -43,6 +53,7 @@ import {
   RULE_MODE,
   RULE_OPEN,
   askData,
+  reminderScheduleData,
   repeatScheduleData,
   ruleModeData,
   ruleOpenData,
@@ -50,7 +61,7 @@ import {
   undoExpenseData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
-import { editHtml, joinHtml, type Html } from '../render/html.js';
+import { editHtml, joinHtml, replyHtml, type Html } from '../render/html.js';
 import {
   backRow,
   cancelRow,
@@ -81,14 +92,13 @@ const askRefusalToast: Record<Exclude<AskRefusal['kind'], 'answered'>, string> =
 };
 
 function listItem(rule: RecurringRule): RuleListItem | undefined {
+  const base = { id: rule.id, mode: rule.mode, schedule: rule.schedule, nextDueOn: rule.nextDueOn };
+  if (rule.reminderText !== null) return { ...base, description: rule.reminderText };
   if (rule.template === null) return undefined;
   return {
-    id: rule.id,
-    mode: rule.mode,
+    ...base,
     description: rule.template.description,
     money: { amountMinor: rule.template.amountMinor, currency: rule.template.currency },
-    schedule: rule.schedule,
-    nextDueOn: rule.nextDueOn,
   };
 }
 
@@ -96,7 +106,8 @@ interface RuleListItem {
   readonly id: RuleId;
   readonly mode: RuleMode;
   readonly description: string;
-  readonly money: Money;
+  // Absent for a reminder.
+  readonly money?: Money;
   readonly schedule: Schedule;
   readonly nextDueOn: LocalDate;
 }
@@ -111,10 +122,65 @@ export function recurringListView(deps: HandlerDeps, user: User, header?: Html):
   const list = messages.recurringList({ rules: items, today: userToday(deps, user) });
   return {
     text: header === undefined ? list : joinHtml([header, list], '\n\n'),
-    markup: InlineKeyboard.from(
-      items.map((item) => [InlineKeyboard.text(messages.ruleButton(item), ruleOpenData(item.id))]),
-    ),
+    markup: InlineKeyboard.from([
+      ...items.map((item) => [
+        InlineKeyboard.text(messages.ruleButton(item), ruleOpenData(item.id)),
+      ]),
+      [InlineKeyboard.text(messages.addReminderButton, REMINDER_ADD)],
+    ]),
   };
+}
+
+// The reminder's schedule picker, from the user's today.
+function reminderPickerView(deps: HandlerDeps, user: User, text: string): ScreenView {
+  const today = reminderToday(deps, user, deps.now());
+  const choices: readonly ScheduleChoice[] = ['m', 'w', 'y'];
+  return {
+    text: messages.reminderSchedulePicker(text),
+    markup: InlineKeyboard.from([
+      ...choices.map((choice) => [
+        InlineKeyboard.text(
+          messages.scheduleLabel(scheduleFor(choice, today)),
+          reminderScheduleData(choice),
+        ),
+      ]),
+      backRow(RECURRING_LIST),
+    ]),
+  };
+}
+
+// The reminder text prompt, with a refusal line above it when an answer failed.
+function reminderPromptView(refusal?: Html): ScreenView {
+  const prompt = messages.reminderTextPrompt;
+  return {
+    text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
+    markup: InlineKeyboard.from([cancelRow()]),
+  };
+}
+
+// A typed reminder text: valid, the anchor holds it and shows the schedule picker; refused,
+// the prompt is asked again.
+export async function answerReminder(
+  ctx: Context,
+  deps: HandlerDeps,
+  anchor: ScreenAnchor | undefined,
+  input: { readonly user: User; readonly text: string; readonly inputKey: string },
+): Promise<void> {
+  const { user } = input;
+  const currency = findActiveLedger(deps.db, user.id)?.defaultCurrency ?? deps.defaultCurrency;
+  const result = answerReminderText(deps, { ...input, currency });
+  if (anchor === undefined) return;
+  if (result.kind === 'invalid') {
+    await renderAnchor(
+      ctx,
+      anchor,
+      reminderPromptView(messages.reminderTextRefused[result.reason]),
+    );
+    return;
+  }
+  const screen: RecurringScreen = { name: 'recurring', reminderText: result.text };
+  setAnchor(deps, user, { ...anchor, screen });
+  await renderAnchor(ctx, anchor, reminderPickerView(deps, user, result.text));
 }
 
 // One rule's screen, or undefined once it is gone.
@@ -123,6 +189,18 @@ export function ruleView(deps: HandlerDeps, user: User, ruleId: RuleId): ScreenV
   const item = rule === undefined ? undefined : listItem(rule);
   if (item === undefined) return undefined;
   const nextMode = item.mode === 'auto' ? 'ask' : 'auto';
+  // A reminder records nothing, so it has no mode.
+  const modeRow =
+    item.money === undefined
+      ? []
+      : [
+          [
+            InlineKeyboard.text(
+              nextMode === 'ask' ? messages.ruleAskModeButton : messages.ruleAutoModeButton,
+              ruleModeData(nextMode),
+            ),
+          ],
+        ];
   return {
     text: messages.recurringRuleScreen({
       rule: item,
@@ -130,12 +208,7 @@ export function ruleView(deps: HandlerDeps, user: User, ruleId: RuleId): ScreenV
       today: userToday(deps, user),
     }),
     markup: InlineKeyboard.from([
-      [
-        InlineKeyboard.text(
-          nextMode === 'ask' ? messages.ruleAskModeButton : messages.ruleAutoModeButton,
-          ruleModeData(nextMode),
-        ),
-      ],
+      ...modeRow,
       [InlineKeyboard.text(messages.ruleDeleteButton, RULE_DELETE)],
       backRow(RECURRING_LIST),
     ]),
@@ -148,6 +221,7 @@ export function recurringScreenFor(
   user: User,
   screen: RecurringScreen,
 ): ScreenView {
+  if (screen.reminderText !== undefined) return reminderPickerView(deps, user, screen.reminderText);
   const rule = screen.ruleId === undefined ? undefined : ruleView(deps, user, screen.ruleId);
   return rule ?? recurringListView(deps, user);
 }
@@ -332,7 +406,7 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
     }
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, {
-      text: messages.ruleDeleteConfirm(rule.template?.description ?? ''),
+      text: messages.ruleDeleteConfirm(rule.reminderText ?? rule.template?.description ?? ''),
       markup: InlineKeyboard.from([
         [InlineKeyboard.text(messages.ruleDeleteConfirmButton, RULE_DELETE_CONFIRM)],
         backRow(ruleOpenData(ruleId)),
@@ -357,6 +431,38 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       { name: 'recurring' },
       recurringListView(deps, tap.user, messages.ruleDeleted),
     );
+  });
+
+  bot.callbackQuery(REMINDER_ADD, async (ctx) => {
+    const tap = await recurringTap(ctx, deps);
+    if (tap === undefined) return;
+    startFlow(deps, tap.user, { kind: 'reminderText' }, deps.now());
+    await ctx.answerCallbackQuery();
+    await showRecurring(ctx, deps, tap, { name: 'recurring' }, reminderPromptView());
+  });
+
+  // The rule and the anchor's move back to the list commit together, so a second tap finds no
+  // text on the anchor and makes nothing.
+  bot.callbackQuery(REMINDER_SCHEDULE, async (ctx) => {
+    const tap = await recurringTap(ctx, deps);
+    const text = tap?.screen.reminderText;
+    const choice = ctx.match[1] as ScheduleChoice | undefined;
+    if (tap === undefined || choice === undefined) return;
+    if (text === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    deps.db.transaction(() => {
+      createReminder(deps, { user: tap.user, text, choice, now: deps.now() });
+      setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'recurring' } });
+    })();
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, recurringListView(deps, tap.user, messages.reminderAdded));
+  });
+
+  bot.callbackQuery(REMINDER_EXPENSE, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await replyHtml(ctx, messages.reminderExpenseHint);
   });
 
   bot.callbackQuery(ASK_RECORD, (ctx) => answerAskTap(ctx, deps, { kind: 'record' }));

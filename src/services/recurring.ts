@@ -40,6 +40,8 @@ import { effectiveTimezone, storeExpense, type RecordDeps } from './recordExpens
 import { resolveUserTimezone } from './settings.js';
 import { cancelFlow, completeFlow, startFlow, type RecurringAmountFlow } from './flowSessions.js';
 import { parseAmount } from '../domain/money.js';
+import type { CurrencyCode } from '../domain/currencies.js';
+import { parseExpenseText } from '../domain/expenseText.js';
 
 // Recurring expenses (ADR-0031): a rule made from an expense records a copy of it on each date
 // its schedule falls on, at 09:00 in the ledger's timezone. Each occurrence is claimed by its
@@ -199,16 +201,22 @@ export function dueRules(deps: RecurringDeps, now: Date): DueRule[] {
   for (const rule of listRulesDueBy(deps.db, latest)) {
     const timeZone = ruleTimezone(deps, rule);
     if (timeZone === undefined) continue;
+    // A reminder sends only its latest missed date (ADR-0031), so it scans past the cap.
+    const cap = rule.kind === 'reminder' ? MAX_REMINDER_SCAN : MAX_CATCH_UP;
     const dates: LocalDate[] = [];
     let date = rule.nextDueOn;
-    while (dates.length < MAX_CATCH_UP && dueInstant(date, timeZone) <= now) {
+    while (dates.length < cap && dueInstant(date, timeZone) <= now) {
       dates.push(date);
       date = nextOccurrence(rule.schedule, date);
     }
-    if (dates.length > 0) due.push({ rule, dates });
+    if (dates.length > 0)
+      due.push({ rule, dates: rule.kind === 'reminder' ? dates.slice(-1) : dates });
   }
   return due;
 }
+
+// Enough for years of a weekly reminder missed.
+const MAX_REMINDER_SCAN = 1000;
 
 // The zone a rule's dates fire in: its ledger's effective zone (ADR-0015). Undefined when the
 // author or the ledger is gone.
@@ -230,7 +238,9 @@ export type Fired =
   // An `ask` occurrence waiting for the author's answer.
   | { readonly kind: 'asked'; readonly dueOn: LocalDate; readonly ledger: Ledger }
   // A missed `ask` occurrence past the last ASK_CATCH_UP: nothing recorded, nothing asked.
-  | { readonly kind: 'skipped'; readonly dueOn: LocalDate };
+  | { readonly kind: 'skipped'; readonly dueOn: LocalDate }
+  // A reminder's date: its text is sent, nothing is recorded.
+  | { readonly kind: 'reminded'; readonly dueOn: LocalDate; readonly text: string };
 
 // After downtime an `ask` rule asks about this many of its latest missed dates; the earlier
 // ones are skipped and counted.
@@ -251,6 +261,10 @@ export function fireRule(deps: RecurringDeps, due: DueRule, now: Date): FireResu
   const { db, logger } = deps;
   const author = findRuleAuthor(db, due.rule.userId);
   if (author === undefined) return undefined;
+  if (due.rule.kind === 'reminder') {
+    const reminded = fireReminder(deps, due);
+    return { rule: due.rule, author, fired: reminded === undefined ? [] : [reminded] };
+  }
   const asked = due.dates.length - ASK_CATCH_UP;
   const fired: Fired[] = [];
   for (const [index, dueOn] of due.dates.entries()) {
@@ -296,6 +310,98 @@ export function fireRule(deps: RecurringDeps, due: DueRule, now: Date): FireResu
     fired.push(one);
   }
   return { rule: due.rule, author, fired };
+}
+
+// A reminder's latest due date: the rule moves from the next due date it was read with to the
+// one after that date, skipping any earlier missed ones, and the date is claimed as reminded.
+function fireReminder(deps: RecurringDeps, due: DueRule): Fired | undefined {
+  const { db, logger } = deps;
+  const [dueOn] = due.dates;
+  if (dueOn === undefined) return undefined;
+  const fired = db.transaction((): Fired | undefined => {
+    const rule = findRule(db, due.rule.id);
+    if (rule?.reminderText == null) return undefined;
+    const from = due.rule.nextDueOn;
+    if (!advanceRule(db, rule.id, from, nextOccurrence(rule.schedule, dueOn))) return undefined;
+    if (
+      !insertOccurrenceOrIgnore(db, {
+        ruleId: rule.id,
+        dueOn,
+        outcome: 'reminded',
+        expenseId: null,
+      })
+    ) {
+      throw new Error(`occurrence ${rule.id} ${dueOn} claimed twice`);
+    }
+    return { kind: 'reminded', dueOn, text: rule.reminderText };
+  })();
+  if (fired !== undefined) {
+    logger.info({ ruleId: due.rule.id, outcome: fired.kind }, 'recurring occurrence');
+  }
+  return fired;
+}
+
+// The longest reminder text, in characters.
+export const MAX_REMINDER_LENGTH = 200;
+
+export type ReminderTextResult =
+  | { readonly kind: 'valid'; readonly text: string }
+  | { readonly kind: 'invalid'; readonly reason: 'empty' | 'tooLong' | 'expenseShaped' };
+
+// A typed reminder text: 1-200 characters, and not an expense (ADR-0009). Completes the flow
+// when valid.
+export function answerReminderText(
+  deps: RecurringDeps,
+  input: {
+    readonly user: User;
+    readonly text: string;
+    readonly inputKey: string;
+    readonly currency: CurrencyCode;
+  },
+): ReminderTextResult {
+  const text = input.text.trim();
+  if (text === '') return { kind: 'invalid', reason: 'empty' };
+  if (Array.from(text).length > MAX_REMINDER_LENGTH) return { kind: 'invalid', reason: 'tooLong' };
+  const asExpense = parseExpenseText(text, input.currency).kind;
+  if (asExpense === 'expense' || asExpense === 'ambiguous') {
+    return { kind: 'invalid', reason: 'expenseShaped' };
+  }
+  completeFlow(deps, input.user, input.inputKey);
+  return { kind: 'valid', text };
+}
+
+// The date a reminder's schedule is chosen from: the user's today.
+export function reminderToday(deps: RecurringDeps, user: User, now: Date): LocalDate {
+  return localDateOf(now, resolveUserTimezone(deps, user));
+}
+
+// A personal reminder on the chosen schedule from today, first due the next such date.
+export function createReminder(
+  deps: RecurringDeps,
+  input: {
+    readonly user: User;
+    readonly text: string;
+    readonly choice: ScheduleChoice;
+    readonly now: Date;
+  },
+): RecurringRule {
+  const today = reminderToday(deps, input.user, input.now);
+  const schedule = scheduleFor(input.choice, today);
+  const { rule } = insertRuleOrGetExisting(deps.db, {
+    id: deps.newId() as RuleId,
+    ledgerId: null,
+    userId: input.user.id,
+    kind: 'reminder',
+    mode: 'auto',
+    template: null,
+    reminderText: input.text,
+    schedule,
+    nextDueOn: nextOccurrence(schedule, today),
+    sourceKey: null,
+    createdAt: input.now,
+  });
+  deps.logger.info({ ruleId: rule.id, userId: input.user.id }, 'reminder created');
+  return rule;
 }
 
 export type AskRefusal =

@@ -244,6 +244,16 @@ export const RULE_MODE = /^rec:mode:([ak])$/;
 export const RULE_DELETE = 'rec:del';
 export const RULE_DELETE_CONFIRM = 'rec:delok';
 
+// [Добавить напоминание] `rec:rem` asks for the text; `rec:rs:<m|w|y>` picks the schedule from
+// today for the text the anchor holds. [Записать трату] under a reminder is `rec:rx`.
+export const REMINDER_ADD = 'rec:rem';
+export const REMINDER_SCHEDULE = /^rec:rs:([mwy])$/;
+export const REMINDER_EXPENSE = 'rec:rx';
+
+export function reminderScheduleData(choice: 'm' | 'w' | 'y'): string {
+  return assertCallbackData(`rec:rs:${choice}`);
+}
+
 export function ruleOpenData(ruleId: RuleId): string {
   return assertCallbackData(`rec:r:${ruleId}`);
 }

@@ -1,4 +1,4 @@
-import type { Api } from 'grammy';
+import { InlineKeyboard, type Api } from 'grammy';
 import { localDateOf } from '../domain/time.js';
 import type { Provider } from '../scheduler/types.js';
 import { effectiveTimezone } from '../services/recordExpense.js';
@@ -10,6 +10,7 @@ import {
   type FireResult,
 } from '../services/recurring.js';
 import type { HandlerDeps } from './bot.js';
+import { REMINDER_EXPENSE } from './callbackData.js';
 import { askCard, recurringRecordedCard } from './handlers/recurring.js';
 import { messages } from './messages.js';
 import { sendHtml, type Html } from './render/html.js';
@@ -52,6 +53,11 @@ function notice(
       const today = localDateOf(now, effectiveTimezone(deps, user, fired.ledger));
       return askCard({ rule: result.rule, template }, fired.dueOn, today);
     }
+    case 'reminded':
+      return {
+        text: messages.reminderDue(fired.text),
+        markup: new InlineKeyboard().text(messages.reminderExpenseButton, REMINDER_EXPENSE),
+      };
     case 'skipped':
       return undefined;
   }

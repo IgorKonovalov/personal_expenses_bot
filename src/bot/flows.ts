@@ -25,6 +25,7 @@ import { cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { editPromptView } from './handlers/edit.js';
 import {
+  answerReminder,
   askAmountView,
   askScreenFor,
   recurringRecordedCard,
@@ -207,7 +208,10 @@ export async function answerFlow(
     return;
   }
 
-  if (flow.kind === 'reminderText') return;
+  if (flow.kind === 'reminderText') {
+    await answerReminder(ctx, deps, anchor, input);
+    return;
+  }
 
   if (flow.kind === 'setTimezone') {
     // The user's own zone, or the shared ledger's when the prompt came from its scoped hub.

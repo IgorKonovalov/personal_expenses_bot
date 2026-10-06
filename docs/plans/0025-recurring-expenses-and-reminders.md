@@ -309,8 +309,8 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 |---|---|---|---|
 | 1: Walking skeleton: monthly rent recorded on the 1st | dev | done | 7c51ef7 |
 | 2: Weekly and yearly, short months, DST and catch-up | dev | done | e271825 |
-| 3: Ask mode and managing rules | dev | done | committed with this row |
-| 4: Reminders | dev | not started | |
+| 3: Ask mode and managing rules | dev | done | 9c1b7d8 |
+| 4: Reminders | dev | done | committed with this row |
 | 5: Group ledgers | dev | not started | |
 | 6: Sealed ledgers, help and docs | dev | not started | |
 | 7: A real month | human | not started | |
@@ -337,6 +337,11 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   anchor (a `recurringAsk` screen), and [Отмена] puts the prompt back.
 - Phase 3: ask-mode catch-up claims the dates before the last 3 as `skipped`, and the
   "how many more" line is its own message before the prompts.
+- Phase 4: the reminder text waits on the anchor's screen (`reminderText`) while the schedule is
+  picked with `rec:rs:<m|w|y>`. The rule and the anchor's move back to the list commit together,
+  so a second tap makes nothing. A reminder's screen has no mode button.
+- Phase 4: Phase 4 added no tests to `src/db/recurring.test.ts`, `src/services/recurring.test.ts`
+  or `src/bot/recurringProvider.test.ts`. Its done-whens are tested in `src/bot/bot.test.ts`.
 
 ### Close triggers
 

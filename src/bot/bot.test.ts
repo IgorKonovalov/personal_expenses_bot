@@ -5280,6 +5280,53 @@ describe('recurring expenses', () => {
     ]);
   });
 
+  // A monthly reminder made on 2 October from /recurring.
+  async function reminderBot() {
+    const harness = await rentBot();
+    await harness.send('/recurring');
+    const list = harness.lastMessageId();
+    await harness.tapOn('rec:rem', list);
+    await harness.send('заплатить за интернет <до 5-го>');
+    await harness.tapOn('rec:rs:m', list);
+    await harness.tapOn('rec:rs:m', list);
+    return harness;
+  }
+
+  it('a monthly reminder made on 2 October fires on 2 November at 09:00 local, escaped, recording nothing', async () => {
+    const { tick, calls, db } = await reminderBot();
+    expect(
+      db.prepare("SELECT COUNT(*) FROM recurring_rules WHERE kind = 'reminder'").pluck().get(),
+    ).toBe(1);
+    calls.length = 0;
+
+    await tick('2026-11-02T07:59:00Z');
+    expect(sent(calls)).toEqual([]);
+    await tick('2026-11-02T08:00:00Z');
+
+    expect(sent(calls)).toEqual([
+      expect.objectContaining({
+        chat_id: ALLOWED_ID,
+        text: '🔔 заплатить за интернет &lt;до 5-го&gt;',
+        reply_markup: { inline_keyboard: [[{ text: 'Записать трату', callback_data: 'rec:rx' }]] },
+      }),
+    ]);
+    expect(
+      db.prepare("SELECT COUNT(*) FROM expenses WHERE source_key LIKE 'rec:%'").pluck().get(),
+    ).toBe(0);
+  });
+
+  it('after three missed months sends one reminder, and the next date is in the future', async () => {
+    const { tick, calls, db } = await reminderBot();
+    calls.length = 0;
+
+    await tick('2027-01-03T10:00:00Z');
+
+    expect(sent(calls)).toHaveLength(1);
+    expect(
+      db.prepare("SELECT next_due_on FROM recurring_rules WHERE kind = 'reminder'").pluck().get(),
+    ).toBe('2027-02-02');
+  });
+
   it('keeps every recurring callback within 64 bytes', () => {
     const id = '00000000-0000-4000-8000-000000000003' as ExpenseId;
     const rule = id as unknown as RuleId;

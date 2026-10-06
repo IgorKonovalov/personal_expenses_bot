@@ -422,8 +422,10 @@ function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
 
 // A recurring rule in /recurring: what it records, and when.
 interface RuleListView {
+  // An expense rule's description, or a reminder's text.
   readonly description: string;
-  readonly money: Money;
+  // Absent for a reminder.
+  readonly money?: Money | undefined;
   readonly schedule: Schedule;
   readonly nextDueOn: LocalDate;
 }
@@ -466,11 +468,18 @@ function scheduleLabel(schedule: Schedule): string {
   }
 }
 
-// `аренда — 45 000.00 RSD` over `Каждый месяц, 1-го · следующая 1 ноября`.
+// `аренда — 45 000.00 RSD` or `🔔 заплатить за интернет`.
+function ruleTitle(rule: Pick<RuleListView, 'description' | 'money'>): string {
+  return rule.money === undefined
+    ? `🔔 ${shownDescription(rule.description)}`
+    : `${shownDescription(rule.description)} — ${formatMoney(rule.money)}`;
+}
+
+// The title over `Каждый месяц, 1-го · следующая 1 ноября`.
 function recurringRuleLines(rule: RuleListView, today: LocalDate): Html {
   return joinHtml(
     [
-      html`${shownDescription(rule.description)} — ${formatMoney(rule.money)}`,
+      html`${ruleTitle(rule)}`,
       html`${scheduleLabel(rule.schedule)} · следующая ${shownDate(rule.nextDueOn, today)}`,
     ],
     '\n',
@@ -1194,8 +1203,7 @@ export const messages = {
   },
 
   // A rule's button on /recurring: `аренда — 45 000.00 RSD`.
-  ruleButton: (rule: Pick<RuleListView, 'description' | 'money'>): string =>
-    `${shownDescription(rule.description)} — ${formatMoney(rule.money)}`,
+  ruleButton: (rule: Pick<RuleListView, 'description' | 'money'>): string => ruleTitle(rule),
   recurringRuleScreen: ({
     rule,
     mode,
@@ -1208,12 +1216,29 @@ export const messages = {
     joinHtml(
       [
         recurringRuleLines(rule, today),
-        mode === 'auto'
-          ? html`Записываю сам в 09:00.`
-          : html`В 09:00 спрашиваю, записать ли, и с какой суммой.`,
+        rule.money === undefined
+          ? html`Напоминаю в 09:00.`
+          : mode === 'auto'
+            ? html`Записываю сам в 09:00.`
+            : html`В 09:00 спрашиваю, записать ли, и с какой суммой.`,
       ],
       '\n',
     ),
+  // Reminders: a text sent on its day, recording nothing. Personal and private.
+  addReminderButton: 'Добавить напоминание',
+  reminderTextPrompt: html`О чём напомнить? Отправьте текст до 200 символов, например «заплатить за интернет».`,
+  reminderTextRefused: {
+    empty: html`Текст не может быть пустым.`,
+    tooLong: html`Текст длиннее 200 символов.`,
+    // ADR-0009: an expense typed into a prompt is neither recorded nor taken as the answer.
+    expenseShaped: html`Похоже на трату. Сейчас я жду текст напоминания. Чтобы записать трату, нажмите «Отмена» и отправьте её снова.`,
+  },
+  reminderSchedulePicker: (text: string): Html =>
+    html`Когда напоминать «${shownDescription(text)}»? В этот день в 09:00 я пришлю напоминание.`,
+  reminderAdded: html`Напоминание добавлено.`,
+  reminderDue: (text: string): Html => html`🔔 ${text}`,
+  reminderExpenseButton: 'Записать трату',
+  reminderExpenseHint: html`Отправьте трату, например «450 кофе».`,
   ruleAskModeButton: 'Спрашивать перед записью',
   ruleAutoModeButton: 'Записывать само',
   ruleModeToast: 'Готово',
