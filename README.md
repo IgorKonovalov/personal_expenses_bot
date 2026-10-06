@@ -35,6 +35,7 @@ when an amount could be read two ways.
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `/changelog`                         | What's new: the five newest versions, then a link to CHANGELOG.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `/donate`                            | The bot is free and a donation unlocks nothing. Offers [⭐ 50] [⭐ 150] [⭐ 500], each opening Telegram's Stars payment sheet, and [Ko-fi] when `DONATE_URL` is set. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `/paysupport`                        | Says a donation unlocks nothing. `/paysupport <текст>` relays a refund request to the admin, with your internal user id and your newest donations. See [Donations](#donations) |
 
 `/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
 `/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. Only the exact label is a menu tap. A menu tap or any
@@ -181,6 +182,8 @@ The bot is free for everyone, with no paid tier
   internal user id and the time. The donor gets one thank-you, and the admin one notice with the
   amount, the internal user id and the charge id, never a name.
 - The private `/help` ends with a line pointing to `/donate`.
+- The admin's `/refund <charge id>` returns the Stars through Telegram and marks the donation
+  refunded. A second `/refund` of the same charge id doesn't call Telegram.
 
 ### Amount rules
 
