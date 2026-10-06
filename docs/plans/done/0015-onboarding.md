@@ -1,6 +1,6 @@
 # 0015: Onboarding: confirm the setup on first contact, then teach each feature when it becomes relevant
 
-> **Status:** done (2026-10-06): built as planned after one fix pass, two followups open, Phase 5 stranger first contact owed
+> **Status:** done (2026-10-06): built as planned after one fix pass, two followups open, Phase 5 day one passed (2026-10-06), next-day tipForeign owed
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0019](0019-encrypted-personal-ledger.md) (the encryption tip),
 > [Plan 0024](0024-export-and-data-ownership.md) (`/export`), [Plan 0029](0029-opening-by-invite.md)
@@ -324,7 +324,7 @@ first, Phase 1 adds that delete to its deletion service.
 | 2: A first message that isn't `/start` | dev | done | 52228f2 |
 | 3: The tips registry and the recording tips | dev | done | 8520ac7 |
 | 4: The feature tips and the group welcome | dev | done | 4a8eed0 |
-| 5: A stranger's first contact | human | not started | |
+| 5: A stranger's first contact | human | partial: day one passed 2026-10-06 | |
 
 ### Notes
 
@@ -381,7 +381,9 @@ first, Phase 1 adds that delete to its deletion service.
   config/env keys: none; schema migrations: `0022_onboarding.sql`.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 110 files,
   1572 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0 (284 links).
-- **Outstanding `human` phases:** Phase 5 (a stranger's first contact), owed after the deploy.
+- **Outstanding `human` phases:** Phase 5: day one passed on 2026-10-06 (invite link, welcome and
+  check, [Изменить] stored, one tip, no second tip that day). Still owed: the next day's EUR expense
+  brings `tipForeign`, and [Отключить подсказки] stops further tips.
 
 ## Followups
 
