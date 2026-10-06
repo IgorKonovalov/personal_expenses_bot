@@ -1,6 +1,8 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
 import type { DebtOpId, DebtPersonId } from '../../db/debts.js';
+import type { Expense } from '../../db/expenses.js';
+import type { SplitRecorded } from '../../services/recordExpense.js';
 import type { User } from '../../db/users.js';
 import { toCurrencyCode } from '../../domain/currencies.js';
 import type { Money } from '../../domain/money.js';
@@ -14,9 +16,14 @@ import {
   deleteDebtOp,
   personCard,
   pickDebtPerson,
+  answerSplitName,
+  finishSplit,
   repayAll,
+  skipSplit,
   startDebt,
   startRepay,
+  startSplit,
+  toggleSplitPerson,
   type DebtRecorded,
   type RepayDirection,
   type RepayStart,
@@ -27,6 +34,7 @@ import {
   type DebtAmountFlow,
   type DebtPersonFlow,
   type DebtRepayFlow,
+  type DebtSplitFlow,
   type DebtsScreen,
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
@@ -41,6 +49,10 @@ import {
   DEBT_REPAY,
   DEBT_REPAY_ALL,
   DEBT_REPAY_CURRENCY,
+  SPLIT_DONE,
+  SPLIT_SKIP,
+  SPLIT_TOGGLE,
+  splitToggleData,
   debtDeleteData,
   debtNewData,
   debtPageData,
@@ -117,11 +129,76 @@ function personCardView(
   };
 }
 
-// The anchor's /debts screen re-rendered, e.g. after a cancel: the person's card, else the list.
+// The anchor's /debts screen re-rendered, e.g. after a cancel: a split picker's skipped notice,
+// the person's card, else the list.
 export function debtsScreenFor(deps: HandlerDeps, user: User, screen: DebtsScreen): ScreenView {
+  if (screen.splitOf !== undefined) {
+    return { text: messages.splitSkipped, markup: new InlineKeyboard() };
+  }
   const card =
     screen.personId === undefined ? undefined : personCardView(deps, user, screen.personId);
   return card ?? debtsListView(deps, user);
+}
+
+// The split picker: a toggle per known person, two per row, then [Готово (k/n)] [Пропустить].
+function splitPickerView(
+  deps: HandlerDeps,
+  user: User,
+  flow: DebtSplitFlow,
+  refusal?: Html,
+): ScreenView {
+  const toggles = debtPeople(deps, user).map((person) =>
+    InlineKeyboard.text(
+      messages.splitChoice(person.name, flow.chosen.includes(person.id)),
+      splitToggleData(person.id),
+    ),
+  );
+  const rows: InlineKeyboardButton[][] = [];
+  for (let i = 0; i < toggles.length; i += 2) rows.push(toggles.slice(i, i + 2));
+  rows.push([
+    InlineKeyboard.text(messages.splitDoneButton(flow.chosen.length, flow.needed), SPLIT_DONE),
+    InlineKeyboard.text(messages.splitSkipButton, SPLIT_SKIP),
+  ]);
+  const each = { amountMinor: flow.each, currency: flow.currency };
+  return {
+    text: withRefusal(messages.splitPicker(each, flow.needed), refusal),
+    markup: InlineKeyboard.from(rows),
+  };
+}
+
+// After a `/N` expense's card: the split picker, sent as a reply to the card, becomes the anchor
+// of its flow.
+export async function offerSplit(
+  ctx: Context,
+  deps: HandlerDeps,
+  input: {
+    readonly user: User;
+    readonly expense: Pick<Expense, 'id' | 'currency'>;
+    readonly split: SplitRecorded;
+    readonly cardMessageId: number;
+    readonly sourceKey: string;
+  },
+): Promise<void> {
+  const { user, expense, split } = input;
+  const flow = startSplit(deps, {
+    user,
+    expenseId: expense.id,
+    each: split.each,
+    currency: expense.currency,
+    parts: split.parts,
+    sourceKey: input.sourceKey,
+    now: deps.now(),
+  });
+  const view = splitPickerView(deps, user, flow);
+  const sent = await replyHtml(ctx, view.text, {
+    reply_markup: view.markup,
+    reply_parameters: { message_id: input.cardMessageId },
+  });
+  setAnchor(deps, user, {
+    chatId: sent.chat.id,
+    messageId: sent.message_id,
+    screen: { name: 'debts', splitOf: expense.id },
+  });
 }
 
 function repayAmountView(balance: Money, refusal?: Html): ScreenView {
@@ -209,13 +286,24 @@ export async function answerDebtFlow(
   anchor: ScreenAnchor | undefined,
   input: {
     readonly user: User;
-    readonly flow: DebtAmountFlow | DebtPersonFlow | DebtRepayFlow;
+    readonly flow: DebtAmountFlow | DebtPersonFlow | DebtRepayFlow | DebtSplitFlow;
     readonly text: string;
     readonly inputKey: string;
   },
 ): Promise<void> {
   const { user, flow } = input;
   const now = deps.now();
+  if (flow.kind === 'debtSplit') {
+    const result = answerSplitName(deps, { ...input, flow, now });
+    await show(
+      ctx,
+      anchor,
+      result.kind === 'invalid'
+        ? splitPickerView(deps, user, flow, messages.debtPersonRefused[result.reason])
+        : splitPickerView(deps, user, result.flow),
+    );
+    return;
+  }
   if (flow.kind === 'debtRepay') {
     const result = answerRepayAmount(deps, { ...input, flow, now });
     if (result.kind === 'gone') {
@@ -382,6 +470,58 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     }
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, recordedView(result));
+  });
+
+  bot.callbackQuery(SPLIT_TOGGLE, async (ctx) => {
+    const tap = await debtsTap(ctx, deps);
+    if (tap === undefined) return;
+    const personId = Number(ctx.match[1]) as DebtPersonId;
+    const result = toggleSplitPerson(deps, { user: tap.user, personId, now: deps.now() });
+    if (result.kind === 'stale') {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, splitPickerView(deps, tap.user, result.flow));
+  });
+
+  // Inert until exactly parts - 1 people are chosen. The flow's end is the guard: a second tap
+  // finds nothing pending.
+  bot.callbackQuery(SPLIT_DONE, async (ctx) => {
+    const tap = await debtsTap(ctx, deps);
+    if (tap === undefined) return;
+    const result = finishSplit(deps, { user: tap.user, now: deps.now() });
+    if (result.kind !== 'recorded') {
+      await ctx.answerCallbackQuery({
+        text:
+          result.kind === 'notReady'
+            ? messages.splitNeedPeople(result.flow.needed)
+            : messages.staleScreen,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, {
+      text: messages.splitRecorded(
+        result.each,
+        result.people.map((p) => p.name),
+      ),
+      markup: new InlineKeyboard(),
+    });
+  });
+
+  bot.callbackQuery(SPLIT_SKIP, async (ctx) => {
+    const tap = await debtsTap(ctx, deps);
+    if (tap === undefined) return;
+    if (!skipSplit(deps, tap.user, deps.now())) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, {
+      text: messages.splitSkipped,
+      markup: new InlineKeyboard(),
+    });
   });
 
   // Works on any confirmation, however old: the operation's deleted_at is the guard.

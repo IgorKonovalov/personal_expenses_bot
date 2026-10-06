@@ -11,6 +11,8 @@ export type ExpenseTextResult =
       readonly description: string;
       // The date the last word named; absent when the text names none.
       readonly date?: LocalDate;
+      // A `/N` word: the amount is split N ways.
+      readonly split?: number;
     }
   | {
       readonly kind: 'ambiguous';
@@ -18,6 +20,7 @@ export type ExpenseTextResult =
       readonly currency: CurrencyCode;
       readonly description: string;
       readonly date?: LocalDate;
+      readonly split?: number;
     }
   // Starts like an amount but is not a valid one, or has no description.
   | { readonly kind: 'invalid' }
@@ -29,6 +32,11 @@ export type ExpenseTextResult =
 // `<amount> [CUR] <description> [date]`. The amount token runs over every digit, grouping space
 // and `.`/`,` at the start, so `1 20 coffee` fails as an amount instead of recording 1 "20 coffee".
 const AMOUNT_TOKEN = /^\d+(?:[ \u00A0\u2009\u202F]\d+)*(?:[.,]\d+)*/;
+
+// A split word, `/3`: the amount is shared by MIN_SPLIT to MAX_SPLIT people.
+const SPLIT_WORD = /^\/\d{1,3}$/;
+export const MIN_SPLIT = 2;
+export const MAX_SPLIT = 20;
 
 // With `today` (the user's local date), the last word may name the expense's date
 // (parseDateSuffix); it is then not part of the description. Without it, no word is a date.
@@ -54,7 +62,14 @@ export function parseExpenseText(
       ? toCurrencyCode(firstWord)
       : undefined;
   const currency = namedCurrency ?? defaultCurrency;
-  const descriptionWords = namedCurrency === undefined ? words : words.slice(1);
+  // A standalone `/N` word anywhere in the rest splits the amount; it isn't description.
+  const afterCurrency = namedCurrency === undefined ? words : words.slice(1);
+  const splitWords = afterCurrency.filter((word) => SPLIT_WORD.test(word));
+  if (splitWords.length > 1) return { kind: 'invalid' };
+  const split = splitWords[0] === undefined ? undefined : Number(splitWords[0].slice(1));
+  if (split !== undefined && (split < MIN_SPLIT || split > MAX_SPLIT)) return { kind: 'invalid' };
+  const splitPart = split === undefined ? {} : { split };
+  const descriptionWords = afterCurrency.filter((word) => !SPLIT_WORD.test(word));
 
   const lastWord = descriptionWords.at(-1);
   const suffix =
@@ -77,9 +92,17 @@ export function parseExpenseText(
         currency,
         description,
         ...dated,
+        ...splitPart,
       };
     case 'ambiguous':
-      return { kind: 'ambiguous', readings: amount.readings, currency, description, ...dated };
+      return {
+        kind: 'ambiguous',
+        readings: amount.readings,
+        currency,
+        description,
+        ...dated,
+        ...splitPart,
+      };
     case 'invalid':
       return { kind: 'invalid' };
   }

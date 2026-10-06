@@ -1,7 +1,10 @@
 import type { Composer, Context } from 'grammy';
 import type { Message } from 'grammy/types';
+import { parseExpenseText } from '../../domain/expenseText.js';
 import { isAdmitted } from '../../services/admission.js';
-import { recordGroupExpense } from '../../services/groupChats.js';
+import { boundLedger, recordGroupExpense } from '../../services/groupChats.js';
+import { messages } from '../messages.js';
+import { replyHtml } from '../render/html.js';
 import { reacted, replyGroupCard } from './card.js';
 import type { GroupHandlerDeps } from './index.js';
 
@@ -33,8 +36,18 @@ export function registerGroupText(group: Composer<Context>, deps: GroupHandlerDe
       occurredAt: new Date(message.date * 1000),
       now,
     });
+    // A `/N` split records nothing in a bound group: the group splits every expense itself.
+    if (result.kind === 'ignored') {
+      const parsed = parseExpenseText(message.text, deps.defaultCurrency);
+      if ('split' in parsed && boundLedger(deps, ctx.chat.id) !== undefined) {
+        await replyHtml(ctx, messages.splitInGroup, {
+          reply_parameters: { message_id: message.message_id },
+        });
+      }
+      return;
+    }
     // A redelivered message was confirmed the first time.
-    if (result.kind !== 'recorded' || result.duplicate) return;
+    if (result.duplicate) return;
     // A recognised category is confirmed by a reaction alone; «Другое», or a chat that refuses
     // reactions, gets the card.
     if (!result.fallbackCategory && (await reacted(ctx, message.message_id))) return;

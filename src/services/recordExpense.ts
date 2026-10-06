@@ -24,6 +24,7 @@ import { findUserByIdentity, type User } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { splitShares } from '../domain/debts.js';
 import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
@@ -90,6 +91,15 @@ export interface RecordExpenseInput {
   readonly reading?: AmountReading['interpretation'];
 }
 
+export interface SplitRecorded {
+  readonly whole: number;
+  readonly parts: number;
+  // The user's own share, recorded as the expense.
+  readonly share: number;
+  // What each of the other parts - 1 people owes.
+  readonly each: number;
+}
+
 export type RecordExpenseResult =
   | {
       readonly kind: 'recorded';
@@ -98,7 +108,11 @@ export type RecordExpenseResult =
       readonly duplicate: boolean;
       // The expense sits in the ledger's fallback category («Другое»): nothing recognised it.
       readonly fallbackCategory: boolean;
+      // A `/N` text, recorded at the user's share: the whole, the parts, and each other part.
+      readonly split?: SplitRecorded;
     }
+  // A `/N` text aimed at a shared ledger; nothing is recorded.
+  | { readonly kind: 'splitInGroup' }
   | {
       readonly kind: 'ambiguous';
       readonly readings: readonly AmountReading[];
@@ -145,9 +159,22 @@ export function recordExpense(
     parseExpenseText(input.text, ledger.defaultCurrency, sentOn),
     input.reading,
   );
+  // A shared ledger splits every expense on its own (ADR-0030): a `/N` there records nothing.
+  if ('split' in parsed && ledger.kind === 'shared') {
+    return { kind: 'splitInGroup' };
+  }
   if (parsed.kind === 'ambiguous') return { ...parsed, ledger };
   if (parsed.kind === 'futureDate') return { kind: 'futureDate' };
   if (parsed.kind !== 'expense') return parsed;
+  // A split records the user's own share; the others' parts become debts once they are named.
+  const split =
+    parsed.split === undefined
+      ? undefined
+      : {
+          whole: parsed.amountMinor,
+          parts: parsed.split,
+          ...splitShares(parsed.amountMinor, parsed.split),
+        };
 
   const key = descriptionKey(parsed.description);
   const category = suggestCategory({
@@ -159,7 +186,7 @@ export function recordExpense(
     id: newExpenseId(deps),
     ledgerId: ledger.id,
     createdBy: user.id,
-    amountMinor: parsed.amountMinor,
+    amountMinor: split?.share ?? parsed.amountMinor,
     currency: parsed.currency,
     description: parsed.description,
     occurredAt: input.occurredAt,
@@ -181,6 +208,7 @@ export function recordExpense(
     ledger,
     duplicate: !created,
     fallbackCategory: inFallbackCategory(deps, expense),
+    ...(split === undefined ? {} : { split }),
   };
 }
 

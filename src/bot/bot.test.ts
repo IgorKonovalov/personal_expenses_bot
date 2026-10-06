@@ -6021,8 +6021,10 @@ describe('debts (Plan 0013)', () => {
       else await tapOn(`dbt:pick:${person}`, anchor);
       return anchor;
     };
+    const lastMessageId = () => messageId;
     return {
       ...harness,
+      lastMessageId,
       textOf,
       handle,
       say,
@@ -6236,6 +6238,139 @@ describe('debts (Plan 0013)', () => {
       .map((c) => (c.payload as { text?: string }).text);
     expect(toasts.slice(-2)).toEqual(['Удалено', 'Уже удалено']);
     expect(await bot.debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 5 000.00 RSD');
+  });
+
+  describe('splitting a bill with /N', () => {
+    const expenses = (db: Db) =>
+      db
+        .prepare(
+          'SELECT id, amount_minor, description, occurred_on FROM expenses WHERE deleted_at IS NULL',
+        )
+        .all() as { id: string; amount_minor: number; description: string; occurred_on: string }[];
+    const lends = (db: Db) =>
+      db
+        .prepare("SELECT amount_minor, currency, expense_id FROM debt_ops WHERE kind = 'lend'")
+        .all();
+
+    it('1200 кафе /3 records 40000 and, with two names typed, two lends of 40000', async () => {
+      const bot = debtsBot();
+      await bot.say('1200 кафе /3');
+      const picker = bot.lastMessageId();
+      expect(bot.lastSent()?.text).toBe(
+        'Кто должен вам по 400.00 RSD? Выберите 2 — кнопками или отправьте имя.',
+      );
+      await bot.say('Аня');
+      await bot.say('Петя');
+      await bot.tapOn('dbt:spok', picker);
+
+      const [expense] = expenses(bot.db);
+      expect(expense?.amount_minor).toBe(40000);
+      expect(lends(bot.db)).toEqual([
+        { amount_minor: 40000, currency: 'RSD', expense_id: expense?.id },
+        { amount_minor: 40000, currency: 'RSD', expense_id: expense?.id },
+      ]);
+      expect(bot.lastEdit()?.text).toBe(
+        'Записано: по 400.00 RSD должны вам Аня, Петя. Все долги: /debts.',
+      );
+    });
+
+    it('1000 кафе /3 records 33334 and two lends of 33333, which sum to 100000', async () => {
+      const bot = debtsBot();
+      await bot.say('1000 кафе /3');
+      const picker = bot.lastMessageId();
+      const card = bot.calls.filter((c) => c.method === 'sendMessage').at(-2)?.payload as {
+        text: string;
+      };
+      expect(card.text).toContain('Это ваша доля из 1 000.00 RSD на 3.');
+      await bot.say('Аня');
+      await bot.say('Петя');
+      await bot.tapOn('dbt:spok', picker);
+
+      const share = expenses(bot.db)[0]?.amount_minor ?? 0;
+      const parts = (lends(bot.db) as { amount_minor: number }[]).map((l) => l.amount_minor);
+      expect(share).toBe(33334);
+      expect(parts).toEqual([33333, 33333]);
+      expect(share + (parts[0] ?? 0) + (parts[1] ?? 0)).toBe(100000);
+    });
+
+    it('1000 кафе /3 вчера dates the expense yesterday, described «кафе»', async () => {
+      const bot = debtsBot();
+      await bot.say('1000 кафе /3 вчера');
+
+      expect(expenses(bot.db)).toEqual([
+        expect.objectContaining({
+          amount_minor: 33334,
+          description: 'кафе',
+          occurred_on: '2026-10-01',
+        }),
+      ]);
+    });
+
+    it('/1, /21 and /3 /2 are refused and record nothing', async () => {
+      const bot = debtsBot();
+      for (const text of ['1000 кафе /1', '1000 кафе /21', '1000 кафе /3 /2']) {
+        await bot.say(text);
+        expect(bot.lastSent()?.text, text).toBe(messages.invalidAmount);
+      }
+      expect(expenses(bot.db)).toEqual([]);
+    });
+
+    it('[Готово] is inert with 1 person chosen and works with 2', async () => {
+      const bot = debtsBot();
+      await bot.lend('1', 'Аня');
+      await bot.lend('1', 'Петя');
+      await bot.say('1000 кафе /3');
+      const picker = bot.lastMessageId();
+      await bot.tapOn('dbt:sp:1', picker);
+      await bot.tapOn('dbt:spok', picker);
+      expect(lends(bot.db)).toHaveLength(2);
+      expect(bot.lastEdit()).toMatchObject({
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✓ Аня', callback_data: 'dbt:sp:1' },
+              { text: 'Петя', callback_data: 'dbt:sp:2' },
+            ],
+            [
+              { text: 'Готово (1/2)', callback_data: 'dbt:spok' },
+              { text: 'Пропустить', callback_data: 'dbt:spx' },
+            ],
+          ],
+        },
+      });
+
+      await bot.tapOn('dbt:sp:2', picker);
+      await bot.tapOn('dbt:spok', picker);
+      expect(lends(bot.db)).toEqual([
+        expect.objectContaining({ amount_minor: 100 }),
+        expect.objectContaining({ amount_minor: 100 }),
+        expect.objectContaining({ amount_minor: 33333 }),
+        expect.objectContaining({ amount_minor: 33333 }),
+      ]);
+    });
+
+    it('[Пропустить] leaves the 33334 expense and no debts', async () => {
+      const bot = debtsBot();
+      await bot.say('1000 кафе /3');
+      await bot.tapOn('dbt:spx', bot.lastMessageId());
+
+      expect(expenses(bot.db)).toEqual([expect.objectContaining({ amount_minor: 33334 })]);
+      expect(bot.ops()).toEqual([]);
+      expect(bot.lastEdit()?.text).toBe(messages.splitSkipped);
+    });
+
+    it('a redelivered 1000 кафе /3 records one expense and starts one picker', async () => {
+      const bot = debtsBot();
+      const update = bot.textOf('1000 кафе /3');
+      await bot.handle(update);
+      await bot.handle(update);
+
+      expect(expenses(bot.db)).toHaveLength(1);
+      const pickers = bot.calls.filter((c) =>
+        (c.payload as { text?: string }).text?.startsWith('Кто должен вам'),
+      );
+      expect(pickers).toHaveLength(1);
+    });
   });
 
   it('[Удалить] carries 44 bytes of callback data', () => {

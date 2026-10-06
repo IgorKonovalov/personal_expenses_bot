@@ -27,6 +27,7 @@ import {
   type DebtDirection,
   type DebtKind,
 } from '../domain/debts.js';
+import { parseExpenseText } from '../domain/expenseText.js';
 import type { Money } from '../domain/money.js';
 import { localDateOf } from '../domain/time.js';
 import {
@@ -37,7 +38,9 @@ import {
   type DebtAmountFlow,
   type DebtPersonFlow,
   type DebtRepayFlow,
+  type DebtSplitFlow,
 } from './flowSessions.js';
+import type { ExpenseId } from '../db/expenses.js';
 import type { KeyDeps } from './ledgerKeys.js';
 import type { RecordDeps } from './recordExpense.js';
 import { resolveUserTimezone } from './settings.js';
@@ -134,7 +137,9 @@ export interface DebtRecorded {
 export type DebtPersonAnswer =
   | DebtRecorded
   // The flow stays pending and the person is asked again.
-  | { readonly kind: 'invalid'; readonly reason: 'empty' | 'tooLong' };
+  | { readonly kind: 'invalid'; readonly reason: NameRefusal };
+
+export type NameRefusal = 'empty' | 'tooLong' | 'expenseShaped';
 
 const KIND_OF: Record<DebtDirection, DebtKind> = { lend: 'lend', borrow: 'borrow' };
 
@@ -151,7 +156,7 @@ export function answerDebtPersonName(
   },
 ): DebtPersonAnswer {
   const { user, flow } = input;
-  const parsed = parsePersonName(input.text);
+  const parsed = personNameOf(deps, user, input.text);
   if (parsed.kind === 'invalid') return parsed;
   return deps.db.transaction((): DebtRecorded => {
     completeFlow(deps, user, input.inputKey);
@@ -363,6 +368,134 @@ function recordRepayment(
   });
 }
 
+// The split picker's flow after a `/N` expense: `parts - 1` people, each owing `each`.
+export function startSplit(
+  deps: DebtDeps,
+  input: {
+    readonly user: User;
+    readonly expenseId: ExpenseId;
+    readonly each: number;
+    readonly currency: CurrencyCode;
+    readonly parts: number;
+    // The expense message's key: it counts as answered, so its redelivery is ignored instead of
+    // read as a name (ADR-0009).
+    readonly sourceKey: string;
+    readonly now: Date;
+  },
+): DebtSplitFlow {
+  const flow: DebtSplitFlow = {
+    kind: 'debtSplit',
+    expenseId: input.expenseId,
+    each: input.each,
+    currency: input.currency,
+    needed: input.parts - 1,
+    chosen: [],
+  };
+  deps.db.transaction(() => {
+    startFlow(deps, input.user, flow, input.now);
+    completeFlow(deps, input.user, input.sourceKey);
+    startFlow(deps, input.user, flow, input.now);
+  })();
+  return flow;
+}
+
+// A typed name that reads as an expense is refused: it is most likely one, sent mid-flow.
+function personNameOf(deps: DebtDeps, user: User, text: string) {
+  const asExpense = parseExpenseText(text, debtCurrency(deps, user)).kind;
+  if (asExpense === 'expense' || asExpense === 'ambiguous') {
+    return { kind: 'invalid', reason: 'expenseShaped' } as const;
+  }
+  return parsePersonName(text);
+}
+
+export type SplitStep = { readonly kind: 'picking'; readonly flow: DebtSplitFlow };
+
+// A person's button in the split picker: chosen, or unchosen when already chosen.
+export function toggleSplitPerson(
+  deps: DebtDeps,
+  input: { readonly user: User; readonly personId: DebtPersonId; readonly now: Date },
+): SplitStep | { readonly kind: 'stale' } {
+  const { user } = input;
+  const flow = currentFlow(deps, user, input.now);
+  const person = findDebtPerson(deps.db, user.id, input.personId);
+  if (flow?.kind !== 'debtSplit' || person === undefined) return { kind: 'stale' };
+  const chosen = flow.chosen.includes(person.id)
+    ? flow.chosen.filter((id) => id !== person.id)
+    : [...flow.chosen, person.id];
+  const next: DebtSplitFlow = { ...flow, chosen };
+  startFlow(deps, user, next, input.now);
+  return { kind: 'picking', flow: next };
+}
+
+// A name typed into the split picker: the person with that name, or a new one, is chosen.
+export function answerSplitName(
+  deps: DebtDeps,
+  input: {
+    readonly user: User;
+    readonly flow: DebtSplitFlow;
+    readonly text: string;
+    readonly inputKey: string;
+    readonly now: Date;
+  },
+): SplitStep | { readonly kind: 'invalid'; readonly reason: NameRefusal } {
+  const { user, flow } = input;
+  const parsed = personNameOf(deps, user, input.text);
+  if (parsed.kind === 'invalid') return parsed;
+  return deps.db.transaction((): SplitStep => {
+    const person =
+      findDebtPersonByKey(deps.db, user.id, parsed.key) ??
+      createPerson(deps, user, parsed.name, parsed.key, input.now);
+    const next: DebtSplitFlow = flow.chosen.includes(person.id)
+      ? flow
+      : { ...flow, chosen: [...flow.chosen, person.id] };
+    completeFlow(deps, user, input.inputKey);
+    startFlow(deps, user, next, input.now);
+    return { kind: 'picking', flow: next };
+  })();
+}
+
+export type SplitFinish =
+  | { readonly kind: 'recorded'; readonly people: readonly DebtPerson[]; readonly each: Money }
+  // Fewer or more than the parts need are chosen: nothing is recorded.
+  | { readonly kind: 'notReady'; readonly flow: DebtSplitFlow }
+  | { readonly kind: 'stale' };
+
+// [Готово]: one lend of `each` per chosen person, in the expense's currency, keyed by the
+// expense and the person, so nothing is recorded twice.
+export function finishSplit(
+  deps: DebtDeps,
+  input: { readonly user: User; readonly now: Date },
+): SplitFinish {
+  const { user } = input;
+  return deps.db.transaction((): SplitFinish => {
+    const flow = currentFlow(deps, user, input.now);
+    if (flow?.kind !== 'debtSplit') return { kind: 'stale' };
+    if (flow.chosen.length !== flow.needed) return { kind: 'notReady', flow };
+    cancelFlow(deps, user);
+    const each = { amountMinor: flow.each, currency: flow.currency };
+    const people = flow.chosen.flatMap((personId) => {
+      const person = findDebtPerson(deps.db, user.id, personId);
+      if (person === undefined) return [];
+      recordOp(deps, {
+        user,
+        person,
+        kind: 'lend',
+        money: each,
+        sourceKey: `split:${flow.expenseId}:${person.id}`,
+        expenseId: flow.expenseId,
+        now: input.now,
+      });
+      return [person];
+    });
+    return { kind: 'recorded', people, each };
+  })();
+}
+
+// [Пропустить]: the expense stays at the user's share and no debt is recorded.
+export function skipSplit(deps: DebtDeps, user: User, now: Date): boolean {
+  return currentFlow(deps, user, now)?.kind === 'debtSplit' && cancelFlow(deps, user);
+}
+
 export type DeleteDebtResult =
   | (Omit<DebtRecorded, 'kind'> & { readonly kind: 'deleted' })
   | { readonly kind: 'alreadyDeleted' | 'notFound' };
@@ -406,6 +539,8 @@ function recordOp(
     readonly money: Money;
     readonly sourceKey: string;
     readonly now: Date;
+    // The split expense a lend comes from.
+    readonly expenseId?: ExpenseId;
   },
 ): DebtRecorded {
   const { user, person, money } = input;
@@ -417,7 +552,7 @@ function recordOp(
     amountMinor: money.amountMinor,
     currency: money.currency,
     occurredOn: localDateOf(input.now, resolveUserTimezone(deps, user)),
-    expenseId: null,
+    expenseId: input.expenseId ?? null,
     sourceKey: input.sourceKey,
     createdAt: input.now,
   });

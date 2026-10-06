@@ -330,6 +330,16 @@ export function debtRepayCurrencyData(personId: number, currency: CurrencyCode):
   return assertCallbackData(`dbt:rc:${personId}:${currency}`);
 }
 
+// The split picker after a `/N` expense, in its anchor: `dbt:sp:<id>` toggles a person (at most
+// 23 bytes), [Готово] `dbt:spok` records the debts, [Пропустить] `dbt:spx` records none.
+export const SPLIT_TOGGLE = /^dbt:sp:(\d{1,16})$/;
+export const SPLIT_DONE = 'dbt:spok';
+export const SPLIT_SKIP = 'dbt:spx';
+
+export function splitToggleData(personId: number): string {
+  return assertCallbackData(`dbt:sp:${personId}`);
+}
+
 // [Удалить] on a debt operation's confirmation: `dbt:del:<uuid>` (44 bytes). It works on any
 // confirmation, however old: the operation's stored state is the guard.
 export const DEBT_DELETE = /^dbt:del:([0-9a-f-]{36})$/;

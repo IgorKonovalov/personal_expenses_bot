@@ -1524,6 +1524,7 @@ export const messages = {
   debtPersonRefused: {
     empty: html`Отправьте имя.`,
     tooLong: html`Имя длиннее 40 символов.`,
+    expenseShaped: html`Это похоже на трату, а не на имя. Отправьте имя.`,
   },
   // A person's card: their balances, then their latest operations, newest first.
   debtCard: ({
@@ -1586,6 +1587,19 @@ export const messages = {
   debtDeletedToast: 'Удалено',
   debtAlreadyDeleted: 'Уже удалено',
   debtNotFound: 'Запись не найдена',
+  // A `/N` expense: under its card, the whole it is a share of.
+  splitShare: (whole: Money, parts: number): Html =>
+    html`Это ваша доля из ${formatMoney(whole)} на ${parts}.`,
+  splitPicker: (each: Money, needed: number): Html =>
+    html`Кто должен вам по ${formatMoney(each)}? Выберите ${needed} — кнопками или отправьте имя.`,
+  splitChoice: (name: string, chosen: boolean): string => (chosen ? `✓ ${name}` : name),
+  splitDoneButton: (chosen: number, needed: number): string => `Готово (${chosen}/${needed})`,
+  splitSkipButton: 'Пропустить',
+  splitNeedPeople: (needed: number): string => `Выберите ровно ${needed}`,
+  splitRecorded: (each: Money, names: readonly string[]): Html =>
+    html`Записано: по ${formatMoney(each)} должны вам ${names.join(', ')}. Все долги: /debts.`,
+  splitSkipped: html`Долги не записаны. Трата осталась вашей долей.`,
+  splitInGroup: html`В группе траты делятся поровну автоматически: /settle`,
   // The operation, then the person's balance in its currency after it.
   debtRecorded: ({ kind, money, balance }: DebtRecordedView): Html =>
     joinHtml(

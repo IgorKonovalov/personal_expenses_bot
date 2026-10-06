@@ -218,7 +218,12 @@ export async function answerFlow(
     return;
   }
 
-  if (flow.kind === 'debtAmount' || flow.kind === 'debtPerson' || flow.kind === 'debtRepay') {
+  if (
+    flow.kind === 'debtAmount' ||
+    flow.kind === 'debtPerson' ||
+    flow.kind === 'debtRepay' ||
+    flow.kind === 'debtSplit'
+  ) {
     await answerDebtFlow(ctx, deps, anchor, { ...input, flow });
     return;
   }

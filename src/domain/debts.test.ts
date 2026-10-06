@@ -3,6 +3,7 @@ import {
   checkRepayment,
   debtBalances,
   repaymentKind,
+  splitShares,
   parseDebtAmount,
   parsePersonName,
   signedAmount,
@@ -41,6 +42,15 @@ describe('debtBalances', () => {
         { personId: 1, kind: 'repaid_to_me', amountMinor: 300000, currency: 'RSD' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('splitShares', () => {
+  it('gives the payer the remainder, and the parts sum to the whole', () => {
+    expect(splitShares(120000, 3)).toEqual({ share: 40000, each: 40000 });
+    expect(splitShares(100000, 3)).toEqual({ share: 33334, each: 33333 });
+    const { share, each } = splitShares(100000, 3);
+    expect(share + 2 * each).toBe(100000);
   });
 });
 

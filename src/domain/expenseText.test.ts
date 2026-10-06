@@ -97,3 +97,31 @@ describe('parseExpenseText with a date suffix (today 2026-09-29, default RSD)', 
     });
   });
 });
+
+describe('parseExpenseText: a /N split word', () => {
+  const today = '2026-10-02' as LocalDate;
+
+  it('reads /3 as a split and drops it from the description, before a date word too', () => {
+    expect(parseExpenseText('1000 кафе /3', 'RSD', today)).toEqual({
+      kind: 'expense',
+      amountMinor: 100000,
+      currency: 'RSD',
+      description: 'кафе',
+      split: 3,
+    });
+    expect(parseExpenseText('1000 кафе /3 вчера', 'RSD', today)).toEqual({
+      kind: 'expense',
+      amountMinor: 100000,
+      currency: 'RSD',
+      description: 'кафе',
+      date: '2026-10-01',
+      split: 3,
+    });
+  });
+
+  it('refuses /1, /21 and two split words', () => {
+    for (const text of ['1000 кафе /1', '1000 кафе /21', '1000 кафе /3 /2']) {
+      expect(parseExpenseText(text, 'RSD', today), text).toEqual({ kind: 'invalid' });
+    }
+  });
+});

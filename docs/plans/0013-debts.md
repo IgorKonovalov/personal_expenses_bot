@@ -320,8 +320,8 @@ against the decrypted list. That always works, because debts are only recorded w
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: lend to Петя, see it in `/debts` | dev | done | 3ddc64e |
-| 2: Borrowing, the person card, and repayments | dev | done | committed with this row |
-| 3: Splitting a bill with `/N` | dev | not started | |
+| 2: Borrowing, the person card, and repayments | dev | done | be1fc27 |
+| 3: Splitting a bill with `/N` | dev | done | committed with this row |
 | 4: Group settle-up | dev | not started | |
 | 5: Sealed debts, help and docs | dev | not started | |
 | 6: Real debts and a real group | human | not started | |
@@ -346,6 +346,20 @@ against the decrypted list. That always works, because debts are only recorded w
   a non-zero balance get a button on `/debts`.
 - Phase 2: [Удалить] edits the confirmation into `messages.debtDeleted` (the operation and the
   person's balance after it) with the toast «Удалено».
+- Phase 3: edited `src/services/flowSessions.ts` again, outside the phase's `Files touched`, for
+  the split picker's flow (`debtSplit`) and the screen's `splitOf`.
+- Phase 3: the split picker is a new message replying to the expense card, not the card itself.
+  It lists every known person with no paging. [Готово] is `dbt:spok`, [Пропустить] `dbt:spx`.
+- Phase 3: starting the picker marks the expense message's key as answered, so a redelivered
+  `1000 кафе /3` gets no reply at all rather than a second card.
+- Phase 3: in both person steps, a typed name that parses as an expense is refused
+  (`debtPersonRefused.expenseShaped`).
+- Phase 3: a split amount that reads two ways and is answered by button (`ambiguous.ts`, outside
+  the phase) records the share, with no picker.
+- Phase 3: in a group, `recordGroupExpense` still provisions the sender and joins them as a
+  member before the split is refused. No test covers the group's `splitInGroup` reply. The
+  split tests are in `bot.test.ts`; `recordExpense.test.ts` and `services/debts.test.ts` gained
+  none.
 
 ### Close triggers
 

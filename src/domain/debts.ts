@@ -45,6 +45,16 @@ export function debtBalances<P>(ops: readonly DebtOpAmount<P>[]): DebtBalance<P>
   return balances;
 }
 
+// A bill of `amountMinor` split `parts` ways: each other person owes `each`, and the payer's own
+// share absorbs the remainder, so share + (parts - 1) * each is the whole.
+export function splitShares(
+  amountMinor: number,
+  parts: number,
+): { readonly share: number; readonly each: number } {
+  const each = Math.floor(amountMinor / parts);
+  return { share: amountMinor - (parts - 1) * each, each };
+}
+
 // A repayment of a balance: they repay me what they owe (positive), I repay what I owe
 // (negative).
 export function repaymentKind(balanceMinor: number): 'repaid_to_me' | 'i_repaid' {

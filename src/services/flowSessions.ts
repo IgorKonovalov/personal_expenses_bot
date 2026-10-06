@@ -78,6 +78,8 @@ export interface RecurringAskScreen {
 export interface DebtsScreen {
   readonly name: 'debts';
   readonly personId?: DebtPersonId;
+  // The split picker after a `/N` expense: who owes a part of it.
+  readonly splitOf?: ExpenseId;
 }
 
 export type Screen =
@@ -201,6 +203,17 @@ export interface DebtRepayFlow {
   readonly currency: CurrencyCode;
 }
 
+// The split picker after a `/N` expense: `needed` people, each owing `each` in `currency`, are
+// toggled by button or typed as names; `chosen` holds them so far.
+export interface DebtSplitFlow {
+  readonly kind: 'debtSplit';
+  readonly expenseId: ExpenseId;
+  readonly each: number;
+  readonly currency: CurrencyCode;
+  readonly needed: number;
+  readonly chosen: readonly DebtPersonId[];
+}
+
 export type Flow =
   | CategoryFlow
   | EditFlow
@@ -211,7 +224,8 @@ export type Flow =
   | ReminderTextFlow
   | DebtAmountFlow
   | DebtPersonFlow
-  | DebtRepayFlow;
+  | DebtRepayFlow
+  | DebtSplitFlow;
 
 type Deps = { readonly db: Db };
 
@@ -338,9 +352,11 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
     return { name, ruleId: parsed.ruleId as RuleId, dueOn: parsed.dueOn as LocalDate };
   }
   if (name === 'debts' && parsed !== undefined) {
-    return typeof parsed.personId === 'number'
-      ? { name, personId: parsed.personId as DebtPersonId }
-      : { name };
+    return {
+      name,
+      ...(typeof parsed.personId === 'number' ? { personId: parsed.personId as DebtPersonId } : {}),
+      ...(typeof parsed.splitOf === 'string' ? { splitOf: parsed.splitOf as ExpenseId } : {}),
+    };
   }
   if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
@@ -377,6 +393,28 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
       typeof parsed.currency === 'string' ? toCurrencyCode(parsed.currency) : undefined;
     if (currency === undefined) return undefined;
     return { kind, personId: parsed.personId as DebtPersonId, currency };
+  }
+  if (kind === 'debtSplit' && typeof parsed?.expenseId === 'string') {
+    const currency =
+      typeof parsed.currency === 'string' ? toCurrencyCode(parsed.currency) : undefined;
+    const { each, needed, chosen } = parsed;
+    if (
+      currency === undefined ||
+      !Number.isSafeInteger(each) ||
+      !Number.isSafeInteger(needed) ||
+      !Array.isArray(chosen) ||
+      !chosen.every((id) => Number.isSafeInteger(id))
+    ) {
+      return undefined;
+    }
+    return {
+      kind,
+      expenseId: parsed.expenseId as ExpenseId,
+      each: each as number,
+      currency,
+      needed: needed as number,
+      chosen: chosen as DebtPersonId[],
+    };
   }
   const direction = parseDirection(parsed?.direction);
   if (kind === 'debtAmount' && direction !== undefined) return { kind, direction };

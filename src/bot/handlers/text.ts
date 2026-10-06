@@ -9,9 +9,10 @@ import { recordExpense } from '../../services/recordExpense.js';
 import type { AdminDeps, HandlerDeps } from '../bot.js';
 import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { joinHtml, replyHtml } from '../render/html.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
 import { cardFor, cardView } from './card.js';
+import { offerSplit } from './debts.js';
 import { sendHelp } from './help.js';
 import { answerReceipt } from './receipt.js';
 import { ensureUser } from './start.js';
@@ -74,9 +75,33 @@ export function registerText(bot: Composer<Context>, deps: AdminDeps): void {
       case 'recorded': {
         // A redelivery of a message whose expense was deleted since gets the deleted card.
         const card = cardFor(cardView(deps, user, result));
-        await replyHtml(ctx, card.text, { reply_markup: card.markup });
+        const { split } = result;
+        if (split === undefined) {
+          await replyHtml(ctx, card.text, { reply_markup: card.markup });
+          return;
+        }
+        // A `/N` split: the card says what the share is of, then the picker asks who owes the
+        // rest. A redelivery starts no second picker.
+        const whole = { amountMinor: split.whole, currency: result.expense.currency };
+        const sent = await replyHtml(
+          ctx,
+          joinHtml([card.text, messages.splitShare(whole, split.parts)], '\n'),
+          { reply_markup: card.markup },
+        );
+        if (!result.duplicate) {
+          await offerSplit(ctx, deps, {
+            user,
+            expense: result.expense,
+            split,
+            cardMessageId: sent.message_id,
+            sourceKey,
+          });
+        }
         return;
       }
+      case 'splitInGroup':
+        await replyHtml(ctx, messages.splitInGroup);
+        return;
       case 'sealedDuplicate':
         await replyHtml(ctx, messages.sealedDuplicate);
         return;
