@@ -7,6 +7,7 @@ import { AMBIGUOUS_READING, ambiguousReadingData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml } from '../render/html.js';
 import { cardFor, cardView } from './card.js';
+import { tidyAfterRecording } from './receipt.js';
 import { ensureUser } from './start.js';
 
 // An ambiguous amount is asked as a reply to the user's message, with one button per reading.
@@ -60,5 +61,10 @@ export function registerAmbiguous(bot: Composer<Context>, deps: HandlerDeps): vo
     await ctx.answerCallbackQuery();
     const card = cardFor(cardView(deps, user, result));
     await editHtml(ctx, card.text, { reply_markup: card.markup });
+    // Only now that a reading recorded it does the tidy chat switch delete the original.
+    await tidyAfterRecording(ctx, deps, user, {
+      chatId: original.chat.id,
+      messageId: original.message_id,
+    });
   });
 }

@@ -16,13 +16,14 @@ import { cardFor, cardView } from './card.js';
 import { offerSplit } from './debts.js';
 import { sendStrayReply } from './help.js';
 import type { MoreDeps } from './more.js';
-import { answerReceipt } from './receipt.js';
+import { answerReceipt, tidyAfterRecording } from './receipt.js';
 import { ensureUser } from './start.js';
 import { answerExpiredSecret } from './unlock.js';
 
 // Text that isn't a command or a menu tap, routed by ADR-0009: a redelivered flow answer is
 // ignored, a pending flow takes the text as its answer, and anything else is an expense attempt.
-// Register after command handlers. The taps on the ambiguous amount question it asks are
+// Under the tidy chat switch (ADR-0038), a text that recorded an expense is deleted after its
+// card; a flow answer or a text that recorded nothing stays. Register after command handlers. The taps on the ambiguous amount question it asks are
 // registered with it.
 export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
   registerAmbiguous(bot, deps);
@@ -53,7 +54,10 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
     // A message that is a receipt verification link, and nothing else, records the receipt.
     const receipt = decodeReceiptUrl(ctx.message.text);
     if (receipt.kind !== 'notReceipt') {
-      await answerReceipt(ctx, deps, { user, decoded: receipt, occurredAt, now });
+      const outcome = await answerReceipt(ctx, deps, { user, decoded: receipt, occurredAt, now });
+      if (outcome === 'recorded' || outcome === 'duplicate') {
+        await tidyAfterRecording(ctx, deps, user);
+      }
       return;
     }
 
@@ -80,6 +84,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
         const { split } = result;
         if (split === undefined) {
           await replyHtml(ctx, card.text, { reply_markup: card.markup });
+          await tidyAfterRecording(ctx, deps, user);
           await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
           return;
         }
@@ -91,6 +96,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
           joinHtml([card.text, messages.splitShare(whole, split.parts)], '\n'),
           { reply_markup: card.markup },
         );
+        await tidyAfterRecording(ctx, deps, user);
         if (!result.duplicate) {
           await offerSplit(ctx, deps, {
             user,
@@ -189,5 +195,6 @@ async function answerBankSms(
   await replyHtml(ctx, result.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
     reply_markup: card.markup,
   });
+  await tidyAfterRecording(ctx, deps, user);
   await offerTip(ctx, deps, user, 'expenseRecorded', { expense: result.expense });
 }

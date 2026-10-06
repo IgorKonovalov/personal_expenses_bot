@@ -205,6 +205,28 @@ export function setTipsOff(db: Db, userId: UserId, off: boolean): boolean {
   );
 }
 
+// The tidy chat switch (ADR-0038): true deletes the user's private message once it has recorded
+// an expense.
+export function findTidyChat(db: Db, userId: UserId): boolean {
+  const on = db
+    .prepare<[string], number>('SELECT tidy_chat FROM users WHERE id = ?')
+    .pluck()
+    .get(userId);
+  if (on === undefined) throw new Error(`user ${userId} does not exist`);
+  return on === 1;
+}
+
+// Returns false when the switch was already in that state.
+export function setTidyChat(db: Db, userId: UserId, on: boolean): boolean {
+  return (
+    db
+      .prepare<[number, string, number]>(
+        'UPDATE users SET tidy_chat = ? WHERE id = ? AND tidy_chat <> ?',
+      )
+      .run(on ? 1 : 0, userId, on ? 1 : 0).changes > 0
+  );
+}
+
 function toUser(row: UserRow): User {
   return {
     id: row.id as UserId,

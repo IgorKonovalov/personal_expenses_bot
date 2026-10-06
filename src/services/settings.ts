@@ -9,7 +9,7 @@ import {
   type Ledger,
   type LedgerId,
 } from '../db/ledgers.js';
-import { updateUserTimezone, type User } from '../db/users.js';
+import { findTidyChat, setTidyChat, updateUserTimezone, type User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { canonicalTimezone, resolveTimezone } from '../domain/timezones.js';
@@ -80,6 +80,16 @@ function ownedSharedLedger(db: Db, user: User, ledgerId: LedgerId): Ledger | und
   const ledger = findLedgerForMember(db, ledgerId, user.id);
   if (ledger?.kind !== 'shared') return undefined;
   return findMemberRole(db, ledgerId, user.id) === 'owner' ? ledger : undefined;
+}
+
+// The settings hub's tidy chat row (ADR-0038).
+export function tidyChatOn({ db }: Pick<ServiceDeps, 'db'>, user: User): boolean {
+  return findTidyChat(db, user.id);
+}
+
+// Returns false when the switch was already in that state.
+export function switchTidyChat({ db }: Pick<ServiceDeps, 'db'>, user: User, on: boolean): boolean {
+  return setTidyChat(db, user.id, on);
 }
 
 export type LedgerTimezoneResult = { readonly kind: 'updated' | 'unchanged' | 'forbidden' };

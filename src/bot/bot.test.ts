@@ -108,6 +108,7 @@ import {
   textUpdate,
   withMessageIds,
   type ApiCall,
+  type TestBotOptions,
 } from './testHarness.js';
 
 function silentLogger() {
@@ -3751,6 +3752,163 @@ describe('[Позиции]: receipt items of a period by category (ADR-0038)', (
   });
 });
 
+describe('tidy chat (ADR-0038)', () => {
+  const SENT = new Date('2026-09-29T21:50:00Z');
+
+  function tidyBot(options: TestBotOptions = {}) {
+    const harness = createTestBot(options);
+    const { bot, db } = harness;
+    const say = (updateId: number, text: string, messageId = 10 + updateId) =>
+      bot.handleUpdate(textUpdate({ updateId, messageId, text, date: SENT }));
+    const tidy = (on: boolean) => db.prepare('UPDATE users SET tidy_chat = ?').run(on ? 1 : 0);
+    const deletes = () => harness.calls.filter((c) => c.method === 'deleteMessage');
+    return { ...harness, say, tidy, deletes };
+  }
+
+  // A tap on the ambiguous question (message 30), which replies to the user's message 20.
+  function readingTap(updateId: number, data: string, text: string): Update {
+    const chat = { id: ALLOWED_ID, type: 'private' as const, first_name: 'Test' };
+    return {
+      update_id: updateId,
+      callback_query: {
+        id: `cb-${updateId}`,
+        from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+        chat_instance: 'test',
+        data,
+        message: {
+          message_id: 30,
+          date: 1_790_000_000,
+          chat,
+          text: 'question',
+          reply_to_message: {
+            message_id: 20,
+            date: Math.floor(SENT.getTime() / 1000),
+            chat,
+            from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+            text,
+          } as unknown as NonNullable<Message['reply_to_message']>,
+        },
+      },
+    };
+  }
+
+  it('turns on from the /settings row, which then reads вкл', async () => {
+    const { bot, db, calls } = tidyBot();
+    withMessageIds(bot, 100);
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '/settings' }));
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'set:tidy', messageId: 101 }));
+
+    expect(db.prepare('SELECT tidy_chat FROM users').pluck().get()).toBe(1);
+    const edit = calls.find((c) => c.method === 'editMessageText')?.payload as {
+      reply_markup: { inline_keyboard: unknown[][] };
+    };
+    expect(edit.reply_markup.inline_keyboard.at(-1)).toEqual([
+      { text: 'Убирать мои сообщения: вкл', callback_data: 'set:tidy' },
+    ]);
+  });
+
+  it('records 450 кофе as 45000 and deletes the message after the card; off, it stays', async () => {
+    const { say, tidy, calls, db, deletes } = tidyBot();
+    await say(1, '/start');
+    tidy(true);
+    calls.length = 0;
+
+    await say(2, '450 кофе', 12);
+
+    expect(db.prepare('SELECT amount_minor FROM expenses').pluck().all()).toEqual([45000]);
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage']);
+    expect(calls[1]?.payload).toEqual({ chat_id: ALLOWED_ID, message_id: 12 });
+
+    tidy(false);
+    calls.length = 0;
+    await say(3, '300 такси', 13);
+
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
+    expect(deletes()).toEqual([]);
+  });
+
+  it('deletes no message that recorded nothing: привет, an invalid amount', async () => {
+    const { say, tidy, calls, db, deletes } = tidyBot();
+    await say(1, '/start');
+    tidy(true);
+    calls.length = 0;
+
+    await say(2, 'привет');
+    await say(3, '1000 кафе /1');
+
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+    expect(sentTexts(calls)).toContain(messages.invalidAmount);
+    expect(deletes()).toEqual([]);
+  });
+
+  it('deletes nothing for the same text in a group', async () => {
+    const { bot, say, tidy, calls, db, deletes } = tidyBot();
+    await say(1, '/start');
+    tidy(true);
+    await bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: 2,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+      }),
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      groupTextUpdate({ updateId: 3, text: '450 кофе', messageId: 14, date: SENT }),
+    );
+
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+    expect(deletes()).toEqual([]);
+  });
+
+  it('deletes an ambiguous amount only once a reading is tapped, then the original', async () => {
+    const { bot, say, tidy, calls, db, deletes } = tidyBot();
+    await say(1, '/start');
+    tidy(true);
+    calls.length = 0;
+
+    await say(2, '1.200 обед', 20);
+
+    expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+    expect(deletes()).toEqual([]);
+
+    await bot.handleUpdate(readingTap(3, 'amb:t', '1.200 обед'));
+
+    expect(db.prepare('SELECT amount_minor FROM expenses').pluck().all()).toEqual([120000]);
+    expect(deletes()).toEqual([
+      { method: 'deleteMessage', payload: { chat_id: ALLOWED_ID, message_id: 20 } },
+    ]);
+  });
+
+  it('keeps the expense and the card when the delete fails, and warns with no content', async () => {
+    const { say, tidy, calls, db, logLines } = tidyBot({
+      logLevel: 'info',
+      failMethods: ['deleteMessage'],
+    });
+    await say(1, '/start');
+    tidy(true);
+    calls.length = 0;
+    logLines.length = 0;
+
+    await say(2, '450 кофе', 12);
+
+    expect(db.prepare('SELECT amount_minor FROM expenses').pluck().all()).toEqual([45000]);
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage']);
+    const warns = logLines.filter((line) => line.includes('recorded message delete failed'));
+    expect(warns).toHaveLength(1);
+    expect(JSON.parse(String(warns[0]))).toMatchObject({ level: 40, updateId: 2 });
+    for (const line of warns) {
+      const content = logContent(line);
+      expect(content).not.toContain('450');
+      expect(content).not.toContain('кофе');
+    }
+  });
+});
+
 describe('/categories screen and text flows', () => {
   const T = new Date('2026-09-30T10:00:00Z');
   const MIN = 60 * 1000;
@@ -4276,6 +4434,7 @@ describe('/settings hub and the timezone picker', () => {
       [{ text: 'Шифрование', callback_data: 'set:enc' }],
       // Tips are off for a test user that isn't about them.
       [{ text: 'Подсказки: выкл', callback_data: 'set:tips' }],
+      [{ text: 'Убирать мои сообщения: выкл', callback_data: 'set:tidy' }],
     ],
   };
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
@@ -8772,7 +8931,7 @@ describe('onboarding (Plan 0015)', () => {
 
       expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([]);
       const hub = calls.at(-1)?.payload as { reply_markup: { inline_keyboard: unknown[][] } };
-      expect(hub.reply_markup.inline_keyboard.at(-1)).toEqual([
+      expect(hub.reply_markup.inline_keyboard.at(-2)).toEqual([
         { text: 'Подсказки: выкл', callback_data: 'set:tips' },
       ]);
       calls.length = 0;
@@ -8783,7 +8942,7 @@ describe('onboarding (Plan 0015)', () => {
       const edit = calls.find((c) => c.method === 'editMessageText')?.payload as {
         reply_markup: { inline_keyboard: unknown[][] };
       };
-      expect(edit.reply_markup.inline_keyboard.at(-1)).toEqual([
+      expect(edit.reply_markup.inline_keyboard.at(-2)).toEqual([
         { text: 'Подсказки: вкл', callback_data: 'set:tips' },
       ]);
     });

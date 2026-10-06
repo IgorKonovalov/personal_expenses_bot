@@ -7,8 +7,10 @@ import { openDatabase, type Db } from './connection.js';
 import { runMigrations } from './migrate.js';
 import {
   findOnboarding,
+  findTidyChat,
   insertUser,
   markOnboarded,
+  setTidyChat,
   setTipsOff,
   updateUserTimezone,
   type UserId,
@@ -94,5 +96,44 @@ describe('migration 0022: onboarding', () => {
     expect(findOnboarding(old, USER).onboardedAt).toBeInstanceOf(Date);
     expect(findOnboarding(old, USER).tipsOff).toBe(false);
     expect(findOnboarding(old, OTHER)).toEqual({ onboardedAt: null, tipsOff: false });
+  });
+});
+
+describe('tidy chat switch', () => {
+  it('starts off, and sets the switch for that user only, reporting whether it changed', () => {
+    expect(findTidyChat(db, USER)).toBe(false);
+
+    expect(setTidyChat(db, USER, true)).toBe(true);
+    expect(setTidyChat(db, USER, true)).toBe(false);
+    expect(findTidyChat(db, USER)).toBe(true);
+    expect(findTidyChat(db, OTHER)).toBe(false);
+
+    expect(setTidyChat(db, USER, false)).toBe(true);
+    expect(findTidyChat(db, USER)).toBe(false);
+  });
+});
+
+describe('migration 0023: tidy chat', () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('leaves a user present before it at tidy_chat = 0', () => {
+    const migrations = fileURLToPath(new URL('./migrations/', import.meta.url));
+    dir = mkdtempSync(join(tmpdir(), 'migrations-'));
+    for (const file of readdirSync(migrations).filter((f) => f < '0023')) {
+      copyFileSync(join(migrations, file), join(dir, file));
+    }
+    const old = openDatabase(':memory:');
+    runMigrations(old, NOW, dir);
+    insertUser(old, { id: USER, timezone: 'Europe/Belgrade', createdAt: NOW });
+
+    expect(runMigrations(old, NOW)).toContain('0023');
+
+    expect(old.prepare('SELECT tidy_chat FROM users WHERE id = ?').pluck().get(USER)).toBe(0);
+    expect(findTidyChat(old, USER)).toBe(false);
   });
 });

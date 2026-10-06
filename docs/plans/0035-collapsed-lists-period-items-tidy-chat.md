@@ -304,8 +304,8 @@ page), and one key for the tidy switch in the `set:` family.
 | 1: card items collapsed | dev | done | 371a6f9 |
 | 2: summary categories folded | dev | done | b381ba3 |
 | 3: period items on /week, /month | dev | done | 9b8f76b |
-| 4: period items on /today | dev | done | committed with this row |
-| 5: tidy chat | dev | not started | |
+| 4: period items on /today | dev | done | d4dfeee |
+| 5: tidy chat | dev | done | committed with this row |
 | 6: live check | human | not started | |
 
 ### Notes
@@ -339,6 +339,15 @@ page), and one key for the tidy switch in the `set:` family.
   empty items view instead of nothing.
 - Phase 4: the back key is `itm:today` (`TODAY_SHOW`). `todayReply` in `handlers/today.ts`
   builds /today's text and keyboard for both the command and the back tap.
+- Phase 5: `ux-telegram` was not asked (headless conductor session); the row uses the plan's
+  fallback copy `Убирать мои сообщения: вкл/выкл`, keyed `set:tidy`, on its own row under the
+  tips switch.
+- Phase 5: `deleteReceiptPhoto` became `deleteRecordedMessage` in `handlers/receipt.ts`, with
+  `tidyAfterRecording` beside it. The receipt photo keeps its `receipt photo delete failed` warn;
+  a tidy delete warns `recorded message delete failed`. A split (`/N`) text that recorded is
+  deleted after its card, like any recorded text.
+- Phase 5: the receipt-link and bank-SMS tidy deletes have no test; the done-whens' typed-expense,
+  non-expense, group, ambiguous, failed-delete and migration cases do.
 
 ### Close triggers
 

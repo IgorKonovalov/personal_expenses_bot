@@ -1004,6 +1004,9 @@ export const messages = {
   tipsOff: 'Подсказки отключены. Включить: /settings',
   tipsToggleOn: 'Подсказки: вкл',
   tipsToggleOff: 'Подсказки: выкл',
+  // The tidy chat switch (ADR-0038): deletes the user's message once it has recorded an expense.
+  tidyChatToggleOn: 'Убирать мои сообщения: вкл',
+  tidyChatToggleOff: 'Убирать мои сообщения: выкл',
   setupOkButton: 'Да, всё верно',
   setupEditButton: 'Изменить',
   setupConfirmed: ({ timezone, currency }: { timezone: string; currency: CurrencyCode }): Html =>

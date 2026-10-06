@@ -170,6 +170,9 @@ export const SETTINGS_PASSPHRASE = 'set:encpw';
 export const RECOVERY_SAVED = 'enc:saved';
 // The personal hub's [Подсказки: вкл/выкл] (ADR-0028): flips the tips switch and re-renders.
 export const SETTINGS_TIPS = 'set:tips';
+// The personal hub's [Убирать мои сообщения: вкл/выкл] (ADR-0038): flips the tidy chat switch
+// and re-renders.
+export const SETTINGS_TIDY = 'set:tidy';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
 export const CURRENCY_PICKER = 'set:cur';
 export const SET_CURRENCY = /^set:cur:([A-Z]{3})$/;

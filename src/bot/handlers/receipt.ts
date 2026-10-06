@@ -5,6 +5,7 @@ import type { DecodeReceiptResult } from '../../domain/receipts/types.js';
 import { decodeQr } from '../../fiscal/qr.js';
 import { receiptItems, rememberReceiptCard, retryReceipt } from '../../services/fetchDueReceipt.js';
 import { RECEIPTS_PER_DAY, recordReceipt } from '../../services/recordReceipt.js';
+import { tidyChatOn } from '../../services/settings.js';
 import type { AdminDeps, HandlerDeps } from '../bot.js';
 import {
   RECEIPT_ITEMS,
@@ -86,17 +87,45 @@ export async function answerReceipt(
   return result.duplicate ? 'duplicate' : 'recorded';
 }
 
-// The photo of a receipt the card now stands for. A bot may delete an incoming private message
-// for 48 hours; a delete that fails costs only the delete.
-async function deleteReceiptPhoto(ctx: Context, deps: HandlerDeps): Promise<void> {
+// What a deleted user message was: a receipt photo, always deleted once recorded, or a text the
+// tidy chat switch deletes once it recorded an expense (ADR-0038).
+export type RecordedSource = 'receiptPhoto' | 'recordedText';
+
+const DELETE_FAILED: Readonly<Record<RecordedSource, string>> = {
+  receiptPhoto: 'receipt photo delete failed',
+  recordedText: 'recorded message delete failed',
+};
+
+// Deletes the user's private message a card now stands for: the update's own message, or
+// `target`. A bot may delete an incoming private message for 48 hours; a delete that fails, a
+// redelivered one included, costs only the delete and logs the update id and the error name.
+export async function deleteRecordedMessage(
+  ctx: Context,
+  deps: HandlerDeps,
+  source: RecordedSource,
+  target?: { readonly chatId: number; readonly messageId: number },
+): Promise<void> {
   try {
-    await ctx.deleteMessage();
+    await (target === undefined
+      ? ctx.deleteMessage()
+      : ctx.api.deleteMessage(target.chatId, target.messageId));
   } catch (error) {
     deps.logger.warn(
       { updateId: ctx.update.update_id, err: error instanceof Error ? error.name : typeof error },
-      'receipt photo delete failed',
+      DELETE_FAILED[source],
     );
   }
+}
+
+// Under the tidy chat switch (ADR-0038): deletes the user's message once it recorded an expense.
+export async function tidyAfterRecording(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  target?: { readonly chatId: number; readonly messageId: number },
+): Promise<void> {
+  if (ctx.chat?.type !== 'private' || !tidyChatOn(deps, user)) return;
+  await deleteRecordedMessage(ctx, deps, 'recordedText', target);
 }
 
 // A receipt card's [Позиции], paging through the items in the card, and [Повторить], which
@@ -266,6 +295,8 @@ export function registerReceiptMedia(
       now,
     });
     // Recorded or already recorded: the card carries everything the photo said.
-    if (outcome === 'recorded' || outcome === 'duplicate') await deleteReceiptPhoto(ctx, deps);
+    if (outcome === 'recorded' || outcome === 'duplicate') {
+      await deleteRecordedMessage(ctx, deps, 'receiptPhoto');
+    }
   });
 }

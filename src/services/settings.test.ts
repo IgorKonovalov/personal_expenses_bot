@@ -15,6 +15,8 @@ import {
   setLedgerCurrency,
   setLedgerTimezone,
   startTimezoneFlow,
+  switchTidyChat,
+  tidyChatOn,
   updateTimezone,
   userSettings,
 } from './settings.js';
@@ -70,6 +72,19 @@ describe('userSettings', () => {
     const view = userSettings(deps, user);
     expect(view.timezone).toBe('Europe/Belgrade');
     expect(view.ledger).toMatchObject({ kind: 'personal', defaultCurrency: 'RSD' });
+  });
+});
+
+describe('tidy chat', () => {
+  it('is off for a new user and switches on and off, reporting a change', () => {
+    expect(tidyChatOn(deps, user)).toBe(false);
+
+    expect(switchTidyChat(deps, user, true)).toBe(true);
+    expect(switchTidyChat(deps, user, true)).toBe(false);
+    expect(tidyChatOn(deps, user)).toBe(true);
+
+    expect(switchTidyChat(deps, user, false)).toBe(true);
+    expect(tidyChatOn(deps, user)).toBe(false);
   });
 });
 
