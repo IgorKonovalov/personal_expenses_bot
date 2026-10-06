@@ -20,6 +20,7 @@ src/
 ├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module
 ├── fiscal/          # the receipts adapter: QR decoding (zxing-wasm, jpeg-js) and the tax-site fetchers
 ├── fx/              # the rates adapter: the NBS middle-rate fetcher and its hourly worker
+├── scheduler/       # the local-time scheduler (ADR-0031): the 60 s tick and its providers
 ├── config.ts        # env -> typed config, validated at boot
 ├── logger.ts        # pino factory
 ├── heartbeat.ts     # liveness file + the Docker health-check entry
