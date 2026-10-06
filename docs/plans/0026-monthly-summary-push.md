@@ -103,7 +103,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
 - **Files touched:** `src/db/migrations/00NN_summary_push.sql`, `src/db/users.ts` (+ test),
   `src/db/summaryPushes.ts` (+ test), `src/domain/deltas.ts` (+ test),
   `src/services/periodReport.ts` (+ test), `src/bot/summaryProvider.ts` (+ test),
-  `src/bot/callbackData.ts`, `src/bot/callbacks.ts`, `src/bot/messages.ts`, `src/index.ts`,
+  `src/bot/callbackData.ts`, `src/bot/callbacks.ts`, `src/bot/bot.ts` (registers the `sum:` handlers), `src/bot/messages.ts`, `src/index.ts`,
   `src/bot/bot.test.ts`.
 - **Done when:**
   - For a `Europe/Belgrade` user, a tick at `2026-10-01T06:59:00Z` (08:59 CEST) sends nothing. A
@@ -172,7 +172,7 @@ between phases. The architect reviews once at the end, in a fresh session. All n
     answers with the locked message. An unlocked sealed ledger gets the full report.
   - `/help` gains a line about the pushes and the switches, and the README describes them.
 - **Files touched:** `src/bot/summaryProvider.ts` (+ test), `src/services/periodReport.ts`,
-  `src/bot/callbackData.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`, `README.md`.
+  `src/bot/callbackData.ts`, `src/bot/bot.ts`, `src/bot/messages.ts`, `src/bot/bot.test.ts`, `README.md`.
 - **Done when:**
   - A locked sealed ledger's push contains no amount or description.
   - [Показать] after `/unlock` shows the same report an unsealed ledger would get for the same
