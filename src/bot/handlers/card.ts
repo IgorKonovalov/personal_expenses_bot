@@ -3,9 +3,14 @@ import type { Expense, ExpenseId } from '../../db/expenses.js';
 import type { Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import type { CurrencyCode } from '../../domain/currencies.js';
+import type { FetchedItem } from '../../domain/receipts/types.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { memberBudgetStatus } from '../../services/budget.js';
-import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
+import {
+  receiptItems,
+  receiptSummary,
+  type ReceiptSummary,
+} from '../../services/fetchDueReceipt.js';
 import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
@@ -42,8 +47,9 @@ export interface CardView {
   // The expense's category against its cap: absent for a deleted expense or an uncapped
   // category.
   readonly cap?: CardCap;
-  // The receipt behind the expense: absent for a deleted expense or one typed in.
-  readonly receipt?: ReceiptSummary;
+  // The receipt behind the expense: absent for a deleted expense or one typed in. A fetched
+  // receipt carries its items when the viewer may read them (the author, the ledger open).
+  readonly receipt?: ReceiptSummary & { readonly items?: readonly FetchedItem[] };
   // The viewer is the author: the card offers [Повторять].
   readonly repeatable?: boolean;
 }
@@ -82,7 +88,8 @@ export function cardView(
   };
   if (expense.deletedAt !== null) return view;
   const receipt = receiptSummary(deps, expense.id) ?? foldedReceiptSummary(deps, expense.id);
-  const withReceipt = receipt === undefined ? view : { ...view, receipt };
+  const withReceipt =
+    receipt === undefined ? view : { ...view, receipt: withItems(deps, user, expense, receipt) };
   const status = memberBudgetStatus(deps, { user, ledger, now: deps.now() });
   // A sealed ledger's card right after recording, while locked, shows no budget line.
   if (status === undefined || isLocked(status)) return withReceipt;
@@ -112,9 +119,23 @@ function foldedReceiptSummary(deps: HandlerDeps, expenseId: ExpenseId): ReceiptS
   return { state: 'fetched', sellerName: folded.sellerName, itemCount: folded.items.length };
 }
 
+// A fetched receipt's items, read the way [Позиции] reads them: only the author gets them, and
+// a locked sealed ledger gives none.
+function withItems(
+  deps: HandlerDeps,
+  user: User,
+  expense: Expense,
+  receipt: ReceiptSummary,
+): NonNullable<CardView['receipt']> {
+  if (receipt.state !== 'fetched' || expense.createdBy !== user.id) return receipt;
+  const read = receiptItems(deps, { user, expenseId: expense.id });
+  return read.kind === 'items' ? { ...receipt, items: read.items } : receipt;
+}
+
 // [Категория] [Изменить] above [Удалить]: the destructive button gets its own row (ADR-0011).
 // The author's card adds [Повторять] on a row between them, and a receipt expense adds
-// [Позиции] once fetched, or [Повторить] once the fetch gave up, on the next.
+// [Позиции] once fetched, unless its items fold into the card (ADR-0038), or [Повторить] once
+// the fetch gave up, on the next.
 export function recordedCard(view: CardView): Card {
   const id = view.expense.id;
   const markup = new InlineKeyboard()
@@ -123,7 +144,9 @@ export function recordedCard(view: CardView): Card {
     .row();
   if (view.repeatable === true) markup.text(messages.repeatButton, repeatExpenseData(id)).row();
   if (view.receipt?.state === 'fetched') {
-    markup.text(messages.receiptItemsButton, receiptItemsData(id, 1)).row();
+    if (!messages.foldsReceiptItems(view)) {
+      markup.text(messages.receiptItemsButton, receiptItemsData(id, 1)).row();
+    }
   } else if (view.receipt?.state === 'failed') {
     markup.text(messages.receiptRetryButton, receiptRetryData(id)).row();
   }

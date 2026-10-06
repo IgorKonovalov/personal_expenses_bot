@@ -1,6 +1,6 @@
 # 0035: Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat
 
-> **Status:** approved (2026-10-06)
+> **Status:** in-progress (2026-10-06)
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0038](../adrs/0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md)
 > (collapse and tidy chat), [ADR-0011](../adrs/0011-navigation-model.md) (cards and the screen
@@ -301,7 +301,7 @@ page), and one key for the tidy switch in the `set:` family.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: card items collapsed | dev | not started | |
+| 1: card items collapsed | dev | done | committed with this row |
 | 2: summary categories folded | dev | not started | |
 | 3: period items on /week, /month | dev | not started | |
 | 4: period items on /today | dev | not started | |
@@ -309,6 +309,13 @@ page), and one key for the tidy switch in the `set:` family.
 | 6: live check | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/receiptWorker.ts` needed no change: the worker already renders the card
+  through `cardView` for the author, which now carries the items. Its done-when is a harness test
+  in `src/bot/bot.test.ts` that runs `startReceiptWorker` against the harness API. No
+  `messages.test.ts` case was added; the card's HTML is asserted in `bot.test.ts`.
+- Phase 1: the fold check reserves room for the `Уже записано.` line, so a duplicate's card that
+  fits without it but not with it keeps [Позиции].
 
 ### Close triggers
 

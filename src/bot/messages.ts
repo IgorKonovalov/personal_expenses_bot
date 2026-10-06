@@ -54,6 +54,8 @@ interface ReceiptLineView {
   readonly state: 'pending' | 'fetched' | 'failed';
   readonly sellerName: string | null;
   readonly itemCount: number;
+  // A fetched receipt's items, present only for a viewer who may read them.
+  readonly items?: ReceiptItemsView['items'] | undefined;
 }
 
 interface ReceiptItemsView {
@@ -470,6 +472,61 @@ function receiptItemLine(
 ): Html {
   const quantity = /^1(?:\.0*)?$/.test(item.quantity) ? '' : ` × ${item.quantity}`;
   return html`${position}. ${shownDescription(item.name)}${quantity} — ${formatMoney({ amountMinor: item.totalMinor, currency })}`;
+}
+
+// Lines inside Telegram's expandable quote (ADR-0038): the client shows the first few and expands
+// or collapses the rest on a tap, with nothing sent to the bot.
+function expandableQuote(lines: readonly Html[]): Html {
+  return joinHtml([html`<blockquote expandable>`, joinHtml(lines, '\n'), html`</blockquote>`], '');
+}
+
+const alreadyRecordedLine = html`Уже записано.`;
+
+// A recorded card: its line, the receipt line with the items folded under it when `foldItems`,
+// then the budget and cap lines.
+function recordedCardText(view: RecordedView, foldItems: boolean): Html {
+  const { occurredOn } = view.expense;
+  const line = expenseLine(
+    'Записано в',
+    view,
+    occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
+  );
+  const { category, tags = [] } = view.expense;
+  const card = joinHtml(
+    [
+      line,
+      ...(category === null ? [] : [html`${category.name}`]),
+      ...(tags.length === 0 ? [] : [html`${tagWords(tags)}`]),
+    ],
+    ' · ',
+  );
+  const { budget, cap, receipt } = view;
+  const items = foldItems ? (receipt?.items ?? []) : [];
+  return joinHtml(
+    [
+      card,
+      ...(receipt === undefined ? [] : receiptLine(receipt)),
+      ...(items.length === 0
+        ? []
+        : [
+            expandableQuote(
+              items.map((item, index) => receiptItemLine(index + 1, item, view.expense.currency)),
+            ),
+          ]),
+      ...(budget === undefined ? [] : [budgetLine(budget)]),
+      ...(cap === undefined ? [] : [capLine(cap, cap.currency)]),
+    ],
+    '\n',
+  );
+}
+
+// A fetched receipt's items fold into its card when the card still fits one message with
+// «Уже записано.» above it; a longer list stays behind [Позиции].
+function foldsReceiptItems(view: RecordedView): boolean {
+  const items = view.receipt?.state === 'fetched' ? (view.receipt.items ?? []) : [];
+  if (items.length === 0) return false;
+  const reserve = visibleLength(alreadyRecordedLine) + 1;
+  return visibleLength(recordedCardText(view, true)) + reserve <= MAX_VISIBLE_CHARS;
 }
 
 function budgetLine({ currency, todayLeftMinor, periodLeftMinor, to }: BudgetLineView): Html {
@@ -1116,39 +1173,15 @@ export const messages = {
   futureDate: html`Эта дата ещё не наступила. Ничего не записано. Укажите прошедшую дату, например «450 такси вчера» или «450 такси 25.09».`,
 
   // `… — кофе · Кафе и рестораны · #отпуск`. An expense from before categories existed has none
-  // to show.
-  expenseRecorded: (view: RecordedView): Html => {
-    const { occurredOn } = view.expense;
-    const line = expenseLine(
-      'Записано в',
-      view,
-      occurredOn === view.sentOn ? undefined : shownDate(occurredOn, view.sentOn),
-    );
-    const { category, tags = [] } = view.expense;
-    const card = joinHtml(
-      [
-        line,
-        ...(category === null ? [] : [html`${category.name}`]),
-        ...(tags.length === 0 ? [] : [html`${tagWords(tags)}`]),
-      ],
-      ' · ',
-    );
-    const { budget, cap, receipt } = view;
-    return joinHtml(
-      [
-        card,
-        ...(receipt === undefined ? [] : receiptLine(receipt)),
-        ...(budget === undefined ? [] : [budgetLine(budget)]),
-        ...(cap === undefined ? [] : [capLine(cap, cap.currency)]),
-      ],
-      '\n',
-    );
-  },
+  // to show. A fetched receipt's items fold under its line when they fit (ADR-0038).
+  expenseRecorded: (view: RecordedView): Html => recordedCardText(view, foldsReceiptItems(view)),
+  // True when expenseRecorded shows the receipt's items, so the card needs no [Позиции].
+  foldsReceiptItems,
   // «Отменить» is never a label: it would read like the flows' «Отмена» (ADR-0011).
   undoButton: 'Удалить',
 
   // The same receipt or bank SMS sent again into the same ledger: above its existing card.
-  alreadyRecorded: (card: Html): Html => joinHtml([html`Уже записано.`, card], '\n'),
+  alreadyRecorded: (card: Html): Html => joinHtml([alreadyRecordedLine, card], '\n'),
 
   // Fiscal receipts (ADR-0018). The description a receipt expense carries until the shop's name
   // arrives.

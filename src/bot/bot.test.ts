@@ -48,6 +48,7 @@ import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/se
 import { createBot, privateComposer, registerCommands } from './bot.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MORE_BUTTONS } from './handlers/more.js';
+import { startReceiptWorker } from './receiptWorker.js';
 import { recurringProvider } from './recurringProvider.js';
 import {
   BUDGET_CAP,
@@ -4874,14 +4875,49 @@ describe('fiscal receipts', () => {
       names.forEach((name, index) => insert.run(receiptId, index + 1, name));
     }
 
+    // A fetched receipt with these items, each `[name, quantity, total_minor]`.
+    function settleItems(
+      db: Db,
+      sellerName: string,
+      items: readonly (readonly [string, string, number])[],
+    ) {
+      const receiptId = db.prepare('SELECT id FROM receipts').pluck().get();
+      db.prepare(
+        "UPDATE receipts SET fetch_state = 'fetched', seller_name = ?, attempts = 1, next_fetch_at = NULL",
+      ).run(sellerName);
+      const insert = db.prepare(
+        'INSERT INTO receipt_items (receipt_id, position, name, quantity, total_minor) VALUES (?, ?, ?, ?, ?)',
+      );
+      items.forEach(([name, quantity, totalMinor], index) =>
+        insert.run(receiptId, index + 1, name, quantity, totalMinor),
+      );
+    }
+
     async function tapAs(bot: Bot, data: string, fromId = ALLOWED_ID, updateId = 900) {
       await bot.handleUpdate(callbackUpdate({ updateId, data, fromId }));
     }
 
-    it('shows the shop and item count with [Позиции] on a fetched receipt card', async () => {
+    function cardKeyboard(expenseId: string, withItems: boolean) {
+      return {
+        inline_keyboard: [
+          [
+            { text: 'Категория', callback_data: `exp:cat:${expenseId}` },
+            { text: 'Изменить', callback_data: `exp:edit:${expenseId}` },
+          ],
+          [{ text: 'Повторять', callback_data: `rec:new:${expenseId}` }],
+          ...(withItems ? [[{ text: 'Позиции', callback_data: `exp:items:${expenseId}:1` }]] : []),
+          [{ text: 'Удалить', callback_data: `exp:undo:${expenseId}` }],
+        ],
+      };
+    }
+
+    it('folds a fetched receipt card’s items into an expandable quote, with no [Позиции]', async () => {
       const { send, bot, calls, db } = receiptBot();
       await send(RS_LINK);
-      settle(db, 'fetched', ['Hleb', 'Mleko']);
+      settleItems(db, 'Test Market', [
+        ['Хлеб', '0.535', 7999],
+        ['Молоко', '1', 14900],
+      ]);
       const [expenseId] = expenseIds(db);
       calls.length = 0;
 
@@ -4889,19 +4925,95 @@ describe('fiscal receipts', () => {
 
       const edit = calls.find((c) => c.method === 'editMessageText');
       expect(edit?.payload).toMatchObject({
-        text: `${RS_CARD}\nTest Market · 2 позиции`,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: 'Категория', callback_data: `exp:cat:${String(expenseId)}` },
-              { text: 'Изменить', callback_data: `exp:edit:${String(expenseId)}` },
-            ],
-            [{ text: 'Повторять', callback_data: `rec:new:${String(expenseId)}` }],
-            [{ text: 'Позиции', callback_data: `exp:items:${String(expenseId)}:1` }],
-            [{ text: 'Удалить', callback_data: `exp:undo:${String(expenseId)}` }],
-          ],
-        },
+        text: `${RS_CARD}\nTest Market · 2 позиции\n<blockquote expandable>1. Хлеб × 0.535 — 79.99 RSD\n2. Молоко — 149.00 RSD</blockquote>`,
+        reply_markup: cardKeyboard(String(expenseId), false),
       });
+    });
+
+    it('keeps [Позиции] and no quote when the items would push the card past 4096 characters', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      const items = Array.from(
+        { length: 80 },
+        (_, i) => [`${String(i + 1).padStart(3, '0')} ${'я'.repeat(56)}`, '1', 12345] as const,
+      );
+      settleItems(db, 'Test Market', items);
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, showExpenseData(String(expenseId) as ExpenseId));
+
+      const edit = calls.find((c) => c.method === 'editMessageText');
+      expect(edit?.payload).toMatchObject({
+        text: `${RS_CARD}\nTest Market · 80 позиций`,
+        reply_markup: cardKeyboard(String(expenseId), true),
+      });
+    });
+
+    it('escapes a shop and item name holding markup inside the folded card', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      settleItems(db, '<b>Shop</b>', [['<b>Хлеб</b>', '1', 7999]]);
+      const [expenseId] = expenseIds(db);
+      calls.length = 0;
+
+      await tapAs(bot, showExpenseData(String(expenseId) as ExpenseId));
+
+      const { text } = calls.find((c) => c.method === 'editMessageText')?.payload as {
+        text: string;
+      };
+      expect(text).toContain('&lt;b&gt;Shop&lt;/b&gt; · 1 позиция');
+      expect(text).toContain(
+        '<blockquote expandable>1. &lt;b&gt;Хлеб&lt;/b&gt; — 79.99 RSD</blockquote>',
+      );
+    });
+
+    it('edits the remembered card into the folded-items card once the worker fetches it', async () => {
+      const { send, bot, calls, db, keys } = receiptBot();
+      withMessageIds(bot, 300);
+      await send(RS_LINK);
+      calls.length = 0;
+      const fetcher = () =>
+        Promise.resolve({
+          kind: 'fetched',
+          receipt: {
+            sellerName: 'Test Market',
+            totalMinor: 22899,
+            items: [
+              { name: 'Хлеб', quantity: '0.535', totalMinor: 7999 },
+              { name: 'Молоко', quantity: '1', totalMinor: 14900 },
+            ],
+          },
+        } as const);
+
+      const worker = startReceiptWorker(
+        {
+          db,
+          logger: silentLogger(),
+          newId: () => 'unused',
+          now: () => RECEIPT_SENT,
+          defaultTimezone: 'Europe/Belgrade',
+          defaultCurrency: 'RSD',
+          keys,
+          fetchers: { RS: fetcher, ME: fetcher },
+        },
+        bot.api,
+      );
+      await worker.stop();
+
+      const [expenseId] = expenseIds(db);
+      expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([
+        {
+          method: 'editMessageText',
+          payload: {
+            chat_id: ALLOWED_ID,
+            message_id: 301,
+            text: 'Записано в «Личные расходы»: <b>829.12 RSD</b> — Test Market · Другое\nTest Market · 2 позиции\n<blockquote expandable>1. Хлеб × 0.535 — 79.99 RSD\n2. Молоко — 149.00 RSD</blockquote>',
+            reply_markup: cardKeyboard(String(expenseId), false),
+            ...htmlParseMode,
+          },
+        },
+      ]);
     });
 
     it('pages 120 items of 60 characters within 4096 characters a page, all in order', () => {
