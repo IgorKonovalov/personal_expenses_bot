@@ -350,6 +350,17 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 - Phase 5: membership is checked when the rule fires. A rule whose author left is paused then,
   not at the moment they leave.
 
+### Resume notes (delete when Phase 6 lands)
+
+- Phase 6 is not started. Phase 5's commit is 5a3194b (its row still reads "committed with this
+  row"). The tip's gate is green: typecheck, lint, 1112 tests.
+- Today `canHoldRule` (`src/services/recurring.ts`) refuses a sealed ledger, so a rule exists
+  only for a plaintext ledger. A ledger sealed after its rule was made still records
+  occurrences: `recordOccurrence` calls `storeExpense`, which seals each row under its own
+  expense id from the plaintext template. Phase 6 seals the template on enable instead.
+- `resealExpense` (`src/db/expenses.ts`) is the one write behind both an edit and a category
+  change of a sealed row, so clearing `sealed_rule_id` there covers both.
+
 ### Close triggers
 
 ## Followups
