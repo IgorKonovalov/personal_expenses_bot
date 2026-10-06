@@ -9,8 +9,11 @@ import {
   findRuleAuthor,
   insertOccurrenceOrIgnore,
   insertRuleOrGetExisting,
+  listLedgerPlaintextRules,
   listRulesDueBy,
   listUserRules,
+  sealRuleTemplateInPlace,
+  softDeleteRule,
   type NewRule,
   type RuleId,
 } from './recurring.js';
@@ -46,6 +49,7 @@ function rule(id: string, overrides: Partial<NewRule> = {}): NewRule {
     kind: 'expense',
     mode: 'auto',
     template: { amountMinor: 4500000, currency: 'RSD', description: 'аренда', categoryId: null },
+    sealedTemplate: null,
     reminderText: null,
     schedule: { kind: 'monthly', day: 1 },
     nextDueOn: '2026-11-01' as LocalDate,
@@ -66,12 +70,48 @@ describe('recurring rules', () => {
       kind: 'expense',
       mode: 'auto',
       template: { amountMinor: 4500000, currency: 'RSD', description: 'аренда', categoryId: null },
+      sealedTemplate: null,
       reminderText: null,
       schedule: { kind: 'monthly', day: 1 },
       nextDueOn: '2026-11-01',
       pausedAt: null,
       deletedAt: null,
     });
+  });
+
+  it('stores a sealed template with only the currency in plaintext', () => {
+    const sealed = Buffer.from('sealed-template');
+    insertRuleOrGetExisting(
+      db,
+      rule('r-1', { template: null, sealedTemplate: { currency: 'RSD', sealed } }),
+    );
+
+    expect(findRule(db, 'r-1' as RuleId)).toMatchObject({
+      template: null,
+      sealedTemplate: { currency: 'RSD', sealed },
+    });
+    expect(
+      db.prepare('SELECT amount_minor, description, category_id FROM recurring_rules').get(),
+    ).toEqual({ amount_minor: null, description: null, category_id: null });
+  });
+
+  it("seals a ledger's plaintext templates in place, deleted rules included, once", () => {
+    insertRuleOrGetExisting(db, rule('r-1'));
+    insertRuleOrGetExisting(db, rule('r-2'));
+    softDeleteRule(db, 'r-2' as RuleId, NOW);
+    const sealed = Buffer.from('sealed-template');
+
+    expect(listLedgerPlaintextRules(db, LEDGER).map((r) => r.id)).toEqual(['r-1', 'r-2']);
+    expect(sealRuleTemplateInPlace(db, 'r-1' as RuleId, sealed)).toBe(true);
+    expect(sealRuleTemplateInPlace(db, 'r-1' as RuleId, sealed)).toBe(false);
+    expect(listLedgerPlaintextRules(db, LEDGER).map((r) => r.id)).toEqual(['r-2']);
+    expect(
+      db
+        .prepare(
+          "SELECT amount_minor, currency, description, category_id FROM recurring_rules WHERE id = 'r-1'",
+        )
+        .get(),
+    ).toEqual({ amount_minor: null, currency: 'RSD', description: null, category_id: null });
   });
 
   it('returns the live rule with the same source key instead of a second one', () => {

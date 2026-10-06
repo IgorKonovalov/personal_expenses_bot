@@ -12,7 +12,8 @@ import {
 import type { HandlerDeps } from './bot.js';
 import { listMemberNames } from '../db/ledgers.js';
 import { REMINDER_EXPENSE, groupDeleteData } from './callbackData.js';
-import { askCard, recurringRecordedCard } from './handlers/recurring.js';
+import { plaintext } from '../services/ledgerKeys.js';
+import { askCard, recurringRecordedCard, sealedAskCard } from './handlers/recurring.js';
 import { messages } from './messages.js';
 import { sendHtml, type Html } from './render/html.js';
 import type { ScreenView } from './screens.js';
@@ -48,9 +49,12 @@ function notice(
   const inGroup = result.groupChatId !== undefined;
   switch (fired.kind) {
     case 'recorded': {
+      // A sealed occurrence's notice names neither amount nor description (ADR-0035).
       if (!inGroup) return recurringRecordedCard(deps, user, fired, now);
-      // The group card (ADR-0014): [Удалить] acts for the author only.
-      const { expense, ledger } = fired;
+      // The group card (ADR-0014): [Удалить] acts for the author only. A shared ledger is
+      // never sealed.
+      const { ledger } = fired;
+      const expense = plaintext(fired.expense);
       const author = listMemberNames(deps.db, ledger.id).get(user.id) ?? '';
       const sentOn = localDateOf(now, effectiveTimezone(deps, user, ledger));
       return {
@@ -59,11 +63,12 @@ function notice(
       };
     }
     case 'asked': {
-      const { template } = result.rule;
-      if (template === null) return undefined;
+      const { rule } = result;
       const today = localDateOf(now, effectiveTimezone(deps, user, fired.ledger));
+      if (rule.sealedTemplate !== null) return sealedAskCard(rule.id, fired.dueOn, today);
+      if (rule.template === null) return undefined;
       // [Другая сумма] needs a typed answer, which a group's flows don't take.
-      return askCard({ rule: result.rule, template }, fired.dueOn, today, !inGroup);
+      return askCard({ rule, template: rule.template }, fired.dueOn, today, !inGroup);
     }
     case 'reminded':
       return {

@@ -20,18 +20,22 @@ import {
   type KeyWrapper,
 } from '../db/ledgerKeys.js';
 import { findPersonalLedger, type Ledger, type LedgerId } from '../db/ledgers.js';
+import type { RuleId, RuleTemplate, SealedRuleTemplate } from '../db/recurring.js';
 import type { User } from '../db/users.js';
 import {
   decodePayload,
   deriveRecoveryKey,
   derivePassphraseKey,
   encodePayload,
+  expenseBinding,
   formatRecoveryCode,
   generateLedgerKeypair,
   newArgon2idParams,
   newRecoveryCode,
   open,
   parseRecoveryCode,
+  rowBinding,
+  ruleBinding,
   seal,
   unwrapPrivateKey,
   wrapPrivateKey,
@@ -41,7 +45,12 @@ import {
 } from '../domain/sealing.js';
 import type { Logger } from '../logger.js';
 import { completeFlow, startFlow } from './flowSessions.js';
-import { hasPendingReceipts, scrubFreedPages, sealLedgerRows } from './sealLedger.js';
+import {
+  hasPendingReceipts,
+  scrubFreedPages,
+  sealLedgerRows,
+  sealLedgerRules,
+} from './sealLedger.js';
 
 // Sealed ledgers (ADR-0020): a personal ledger's owner switches encryption on with a passphrase.
 // Rows are sealed to the ledger's public key, so recording needs no unlock; reading needs the
@@ -103,8 +112,10 @@ function wrapAad(ledgerId: LedgerId, who: KeyWrapper): string {
   return who.wrapper === 'member' ? `${ledgerId}:member:${who.userId}` : `${ledgerId}:recovery`;
 }
 
-export function rowAad(ledgerId: LedgerId, expenseId: string): string {
-  return `${ledgerId}:${expenseId}`;
+// Every open site takes a row's binding from here: its rule's when it is a copy of a sealed rule
+// template, its own id otherwise (ADR-0035).
+function rowAad(row: SealedExpense): string {
+  return rowBinding({ ledgerId: row.ledgerId, id: row.id, sealedRuleId: row.sealedRuleId });
 }
 
 // The ledger's public key when it is sealed: what recording seals new rows to.
@@ -121,7 +132,40 @@ export function sealPayload(
   ids: { readonly ledgerId: LedgerId; readonly expenseId: string },
   payload: SealedPayloadV1,
 ): Buffer {
-  return seal(publicKey, encodePayload(payload), rowAad(ids.ledgerId, ids.expenseId));
+  return seal(publicKey, encodePayload(payload), expenseBinding(ids.ledgerId, ids.expenseId));
+}
+
+// A rule's template, sealed under the rule's binding (ADR-0035): each occurrence copies these
+// bytes, so recording one needs no unlock.
+export function sealRuleTemplate(
+  publicKey: Buffer,
+  ids: { readonly ledgerId: LedgerId; readonly ruleId: RuleId },
+  template: Pick<SealedPayloadV1, 'amountMinor' | 'description' | 'categoryId'>,
+): Buffer {
+  return seal(
+    publicKey,
+    encodePayload({ v: 1, ...template }),
+    ruleBinding(ids.ledgerId, ids.ruleId),
+  );
+}
+
+// A sealed rule template opened with its ledger's unlocked key; `locked` while it is locked.
+export function openRuleTemplate(
+  deps: Pick<KeyDeps, 'keys'>,
+  rule: { readonly id: RuleId; readonly ledgerId: LedgerId },
+  template: SealedRuleTemplate,
+): RuleTemplate | Locked {
+  const privateKey = deps.keys.privateKey(rule.ledgerId);
+  if (privateKey === undefined) return LOCKED;
+  const payload = decodePayload(
+    open(template.sealed, privateKey, ruleBinding(rule.ledgerId, rule.id)),
+  );
+  return {
+    amountMinor: payload.amountMinor,
+    currency: template.currency,
+    description: payload.description,
+    categoryId: payload.categoryId as CategoryId | null,
+  };
 }
 
 export type EncryptionState =
@@ -203,7 +247,10 @@ export async function enableEncryption(
     const sealed = sealLedgerRows(db, ledger.id, (expenseId, payload) =>
       sealPayload(publicKey, { ledgerId: ledger.id, expenseId }, payload),
     );
-    logger.info({ ledgerId: ledger.id, userId: user.id, rows: sealed }, 'ledger sealed');
+    const rules = sealLedgerRules(db, ledger.id, (ruleId, template) =>
+      sealRuleTemplate(publicKey, { ledgerId: ledger.id, ruleId }, template),
+    );
+    logger.info({ ledgerId: ledger.id, userId: user.id, rows: sealed, rules }, 'ledger sealed');
     return { kind: 'enabled', ledger, recoveryCode: formatRecoveryCode(code) };
   })();
   if (result.kind === 'enabled') scrubAfterSealing(deps, ledger.id);
@@ -514,11 +561,12 @@ export function foldedReceipt(
   if (stored === undefined || !isSealed(stored)) return undefined;
   const privateKey = deps.keys.privateKey(stored.ledgerId);
   if (privateKey === undefined) return undefined;
-  return decodePayload(open(stored.sealed, privateKey, rowAad(stored.ledgerId, stored.id))).receipt;
+  return decodePayload(open(stored.sealed, privateKey, rowAad(stored))).receipt;
 }
 
 // The row's payload with `change` applied, sealed again to the ledger's public key. The
-// receipt part, if any, is carried over. The ledger must be unlocked.
+// receipt part, if any, is carried over. The ledger must be unlocked. The result is sealed under
+// the row's own id, so its write must clear the row's rule (resealExpense does).
 export function resealed(
   deps: Pick<KeyDeps, 'db' | 'keys'>,
   row: SealedExpense,
@@ -529,7 +577,7 @@ export function resealed(
   if (privateKey === undefined || publicKey === undefined) {
     throw new Error(`ledger ${row.ledgerId} is locked or plaintext`);
   }
-  const current = decodePayload(open(row.sealed, privateKey, rowAad(row.ledgerId, row.id)));
+  const current = decodePayload(open(row.sealed, privateKey, rowAad(row)));
   return sealPayload(
     publicKey,
     { ledgerId: row.ledgerId, expenseId: row.id },
@@ -557,7 +605,7 @@ function openRow(
   privateKey: KeyObject,
   categoryOf: (id: number | null) => ExpenseCategory | null,
 ): Expense {
-  const payload = decodePayload(open(row.sealed, privateKey, rowAad(row.ledgerId, row.id)));
+  const payload = decodePayload(open(row.sealed, privateKey, rowAad(row)));
   return {
     id: row.id,
     ledgerId: row.ledgerId,

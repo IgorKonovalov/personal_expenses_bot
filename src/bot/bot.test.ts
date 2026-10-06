@@ -5460,6 +5460,112 @@ describe('recurring expenses', () => {
       text: '<b>Сегодня, 1 ноября — «Личные расходы»</b>\n45 000.00 RSD',
     });
   });
+
+  // The rent bot with encryption switched on, the monthly rule made while unlocked, then locked.
+  async function sealedRentBot() {
+    const harness = await rentBot();
+    const user = findUserByIdentity(harness.db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('setup: no user');
+    const keyDeps = { db: harness.db, logger: silentLogger(), keys: harness.keys };
+    const ledger = await sealPersonalLedger(keyDeps, user, harness.clock);
+    await unlockPersonalLedger(keyDeps, user, harness.clock);
+    await harness.tap(`rec:s:${EXPENSE_ID}:m`);
+    harness.keys.lock(ledger.id);
+    const unlock = () => unlockPersonalLedger(keyDeps, user, harness.clock);
+    return { ...harness, unlock };
+  }
+
+  it('a sealed occurrence is recorded while locked, and its notice names neither amount nor description', async () => {
+    const { tick, calls, db, ruleId, tap, unlock } = await sealedRentBot();
+    calls.length = 0;
+
+    await tick('2026-11-01T08:00:00Z');
+
+    const expenseId = db
+      .prepare("SELECT id FROM expenses WHERE source_key LIKE 'rec:%'")
+      .pluck()
+      .get() as ExpenseId;
+    expect(sent(calls)).toEqual([
+      expect.objectContaining({
+        chat_id: ALLOWED_ID,
+        text: 'Записана регулярная трата. Учёт зашифрован: сумма и описание видны после /unlock.',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: messages.undoButton, callback_data: undoExpenseData(expenseId) }],
+          ],
+        },
+      }),
+    ]);
+    expect(sent(calls)[0]?.text).not.toMatch(/45 000|аренда/);
+    expect(
+      db
+        .prepare(
+          "SELECT amount_minor, description, sealed_rule_id FROM expenses WHERE source_key LIKE 'rec:%'",
+        )
+        .get(),
+    ).toEqual({ amount_minor: null, description: null, sealed_rule_id: ruleId() });
+
+    await unlock();
+    await tap(undoExpenseData(expenseId));
+    expect(
+      db.prepare('SELECT deleted_at IS NOT NULL FROM expenses WHERE id = ?').pluck().get(expenseId),
+    ).toBe(1);
+  });
+
+  it('a sealed ask prompt offers [Записать] and [Пропустить], with no amount', async () => {
+    const { tick, calls, askMode, ruleId, tap, db } = await sealedRentBot();
+    askMode();
+    calls.length = 0;
+
+    await tick('2026-11-01T08:00:00Z');
+
+    const id = ruleId();
+    expect(sent(calls)).toEqual([
+      expect.objectContaining({
+        text: 'По расписанию на 1 ноября: регулярная трата из зашифрованного учёта. Записать?',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Записать', callback_data: `rec:ok:${id}:2026-11-01` },
+              { text: 'Пропустить', callback_data: `rec:skip:${id}:2026-11-01` },
+            ],
+          ],
+        },
+      }),
+    ]);
+    calls.length = 0;
+    // The clock still reads 2 October, so the notice names the due date.
+    await tap(`rec:ok:${id}:2026-11-01`);
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text: 'Записана регулярная трата за 1 ноября. Учёт зашифрован: сумма и описание видны после /unlock.',
+    });
+    expect(
+      db.prepare("SELECT sealed_rule_id FROM expenses WHERE source_key LIKE 'rec:%'").pluck().get(),
+    ).toBe(id);
+  });
+
+  it('/recurring shows a locked sealed rule by its schedule only', async () => {
+    const { send, calls } = await sealedRentBot();
+    calls.length = 0;
+
+    await send('/recurring');
+
+    expect(calls[0]?.payload).toMatchObject({
+      text: '<b>Регулярные траты</b>\n\n🔒 Зашифрованная трата\nКаждый месяц, 1-го · следующая 1 ноября',
+    });
+  });
+
+  it('the reminder prompt says its text stays plaintext in a sealed ledger', async () => {
+    const { send, tapOn, lastMessageId, calls } = await sealedRentBot();
+    await send('/recurring');
+    calls.length = 0;
+
+    await tapOn('rec:rem', lastMessageId());
+
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      text: messages.reminderTextPromptSealed,
+    });
+  });
 });
 
 interface SentDocument {

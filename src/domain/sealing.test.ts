@@ -4,12 +4,15 @@ import {
   deriveRecoveryKey,
   derivePassphraseKey,
   encodePayload,
+  expenseBinding,
   formatRecoveryCode,
   generateLedgerKeypair,
   newArgon2idParams,
   newRecoveryCode,
   open,
   parseRecoveryCode,
+  rowBinding,
+  ruleBinding,
   seal,
   unwrapPrivateKey,
   wrapPrivateKey,
@@ -49,6 +52,35 @@ describe('seal / open', () => {
   it("throws with another ledger's private key", () => {
     const blob = seal(publicKey, plaintext, AAD);
     expect(() => open(blob, generateLedgerKeypair().privateKey, AAD)).toThrow();
+  });
+});
+
+describe('rowBinding', () => {
+  const { publicKey, privateKey } = generateLedgerKeypair();
+  const template = seal(publicKey, Buffer.from('45000 аренда'), ruleBinding('ledger-1', 'rule-1'));
+
+  it("is the row's own id without a rule, the rule's binding with one", () => {
+    expect(rowBinding({ ledgerId: 'ledger-1', id: 'expense-1', sealedRuleId: null })).toBe(
+      'ledger-1:expense-1',
+    );
+    expect(rowBinding({ ledgerId: 'ledger-1', id: 'expense-1', sealedRuleId: 'rule-1' })).toBe(
+      'ledger-1:rule:rule-1',
+    );
+    expect(expenseBinding('ledger-1', 'expense-1')).toBe('ledger-1:expense-1');
+  });
+
+  it("opens a rule's template copied onto any row naming the rule", () => {
+    for (const id of ['expense-1', 'expense-2']) {
+      const aad = rowBinding({ ledgerId: 'ledger-1', id, sealedRuleId: 'rule-1' });
+      expect(open(template, privateKey, aad).toString('utf8')).toBe('45000 аренда');
+    }
+  });
+
+  it('refuses the template on a row that names no rule, or another rule', () => {
+    const own = rowBinding({ ledgerId: 'ledger-1', id: 'expense-1', sealedRuleId: null });
+    const other = rowBinding({ ledgerId: 'ledger-1', id: 'expense-1', sealedRuleId: 'rule-2' });
+    expect(() => open(template, privateKey, own)).toThrow();
+    expect(() => open(template, privateKey, other)).toThrow();
   });
 });
 

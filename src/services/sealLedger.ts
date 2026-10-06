@@ -7,6 +7,7 @@ import {
 } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { listReceiptItems } from '../db/receiptItems.js';
+import { listLedgerPlaintextRules, sealRuleTemplateInPlace, type RuleId } from '../db/recurring.js';
 import { deleteLedgerReceipts, listLedgerReceipts } from '../db/receipts.js';
 import type { SealedPayloadV1, SealedReceipt } from '../domain/sealing.js';
 
@@ -14,6 +15,7 @@ import type { SealedPayloadV1, SealedReceipt } from '../domain/sealing.js';
 // sealed in place, and a receipt's seller, link and items fold into its row's payload before
 // the receipt rows are deleted. Source keys derived from content (a bank SMS fingerprint, a
 // receipt's fiscal id) become `sealed:<expenseId>`, since a guess could be checked against them.
+// The ledger's recurring rule templates are sealed with the rows.
 // Afterwards the freed pages are scrubbed from the file and WAL.
 
 // True while any receipt of the ledger is still being fetched: its items would arrive after
@@ -59,6 +61,29 @@ export function sealLedgerRows(
   deleteLedgerReceipts(db, ledgerId);
   rekeyContentSourceKeys(db, ledgerId);
   return rows.length;
+}
+
+// Seals every plaintext expense rule template of the ledger, deleted rules included, with
+// `seal`, and clears its amount, description and category (ADR-0035). Run it in the same
+// transaction as sealLedgerRows. Returns the number of rules sealed.
+export function sealLedgerRules(
+  db: Db,
+  ledgerId: LedgerId,
+  seal: (
+    ruleId: RuleId,
+    template: Pick<SealedPayloadV1, 'amountMinor' | 'description' | 'categoryId'>,
+  ) => Buffer,
+): number {
+  const rules = listLedgerPlaintextRules(db, ledgerId);
+  for (const rule of rules) {
+    if (rule.template === null) throw new Error(`rule ${rule.id} has no template`);
+    const { amountMinor, description, categoryId } = rule.template;
+    const sealed = seal(rule.id, { amountMinor, description, categoryId });
+    if (!sealRuleTemplateInPlace(db, rule.id, sealed)) {
+      throw new Error(`rule ${rule.id} was sealed concurrently`);
+    }
+  }
+  return rules.length;
 }
 
 // Outside any transaction: the WAL's old frames go into the file and the WAL is emptied, then

@@ -24,6 +24,13 @@ export interface RuleTemplate {
   readonly categoryId: CategoryId | null;
 }
 
+// A sealed ledger's template (ADR-0035): amount, description and category sealed under the
+// rule's binding; the currency stays plaintext, as on an expense row.
+export interface SealedRuleTemplate {
+  readonly currency: CurrencyCode;
+  readonly sealed: Buffer;
+}
+
 export interface RecurringRule {
   readonly id: RuleId;
   // NULL for a reminder.
@@ -31,8 +38,10 @@ export interface RecurringRule {
   readonly userId: UserId;
   readonly kind: RuleKind;
   readonly mode: RuleMode;
-  // A plaintext expense rule's template; NULL for a reminder.
+  // A plaintext expense rule's template; NULL for a reminder or a sealed template.
   readonly template: RuleTemplate | null;
+  // An expense rule's sealed template; NULL otherwise.
+  readonly sealedTemplate: SealedRuleTemplate | null;
   readonly reminderText: string | null;
   readonly schedule: Schedule;
   readonly nextDueOn: LocalDate;
@@ -55,6 +64,7 @@ interface RuleRow {
   currency: string | null;
   description: string | null;
   category_id: number | null;
+  sealed: Buffer | null;
   reminder_text: string | null;
   schedule: string;
   day: number | null;
@@ -66,7 +76,8 @@ interface RuleRow {
 }
 
 const COLUMNS = `id, ledger_id, user_id, kind, mode, amount_minor, currency, description,
-  category_id, reminder_text, schedule, day, weekday, month, next_due_on, paused_at, deleted_at`;
+  category_id, sealed, reminder_text, schedule, day, weekday, month, next_due_on, paused_at,
+  deleted_at`;
 
 // Inserts unless a live rule has the same source key; either way returns the stored rule.
 export function insertRuleOrGetExisting(
@@ -89,6 +100,7 @@ export function insertRuleOrGetExisting(
       string | null,
       string | null,
       number | null,
+      Buffer | null,
       string | null,
       string,
       number | null,
@@ -100,9 +112,9 @@ export function insertRuleOrGetExisting(
     ]
   >(
     `INSERT INTO recurring_rules (id, ledger_id, user_id, kind, mode, amount_minor, currency,
-                                  description, category_id, reminder_text, schedule, day,
+                                  description, category_id, sealed, reminder_text, schedule, day,
                                   weekday, month, next_due_on, source_key, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     rule.id,
     rule.ledgerId,
@@ -110,9 +122,10 @@ export function insertRuleOrGetExisting(
     rule.kind,
     rule.mode,
     rule.template?.amountMinor ?? null,
-    rule.template?.currency ?? null,
+    rule.template?.currency ?? rule.sealedTemplate?.currency ?? null,
     rule.template?.description ?? null,
     rule.template?.categoryId ?? null,
+    rule.sealedTemplate?.sealed ?? null,
     rule.reminderText,
     rule.schedule.kind,
     day,
@@ -266,6 +279,33 @@ export function softDeleteRule(db: Db, id: RuleId, deletedAt: Date): boolean {
   return changes === 1;
 }
 
+// The ledger's expense rules whose template is still plaintext, deleted ones included: what
+// sealing the ledger seals.
+export function listLedgerPlaintextRules(db: Db, ledgerId: LedgerId): RecurringRule[] {
+  return db
+    .prepare<[string], RuleRow>(
+      `SELECT ${COLUMNS} FROM recurring_rules
+        WHERE ledger_id = ? AND kind = 'expense' AND sealed IS NULL
+        ORDER BY rowid`,
+    )
+    .all(ledgerId)
+    .map(toRule);
+}
+
+// Turns a plaintext template into a sealed one: `sealed` holds what the amount, description and
+// category held, and they are cleared; the currency stays. Returns false when it is sealed
+// already.
+export function sealRuleTemplateInPlace(db: Db, id: RuleId, sealed: Buffer): boolean {
+  const { changes } = db
+    .prepare<[Buffer, string]>(
+      `UPDATE recurring_rules
+          SET sealed = ?, amount_minor = NULL, description = NULL, category_id = NULL
+        WHERE id = ? AND kind = 'expense' AND sealed IS NULL`,
+    )
+    .run(sealed, id);
+  return changes === 1;
+}
+
 // A rule's author, and the Telegram id their private chat has. Undefined for a user with no
 // Telegram identity.
 export function findRuleAuthor(
@@ -327,6 +367,7 @@ function toRule(row: RuleRow): RecurringRule {
     kind: row.kind,
     mode: row.mode,
     template: toTemplate(row),
+    sealedTemplate: toSealedTemplate(row),
     reminderText: row.reminder_text,
     schedule: toSchedule(row),
     nextDueOn: row.next_due_on as LocalDate,
@@ -335,10 +376,20 @@ function toRule(row: RuleRow): RecurringRule {
   };
 }
 
+function ruleCurrency(id: string, code: string): CurrencyCode {
+  const currency = toCurrencyCode(code);
+  if (currency === undefined) throw new Error(`rule ${id} has an unknown currency`);
+  return currency;
+}
+
+function toSealedTemplate(row: RuleRow): SealedRuleTemplate | null {
+  if (row.sealed === null || row.currency === null) return null;
+  return { currency: ruleCurrency(row.id, row.currency), sealed: row.sealed };
+}
+
 function toTemplate(row: RuleRow): RuleTemplate | null {
   if (row.amount_minor === null || row.description === null || row.currency === null) return null;
-  const currency = toCurrencyCode(row.currency);
-  if (currency === undefined) throw new Error(`rule ${row.id} has an unknown currency`);
+  const currency = ruleCurrency(row.id, row.currency);
   return {
     amountMinor: row.amount_minor,
     currency,

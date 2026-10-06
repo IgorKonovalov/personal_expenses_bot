@@ -3,6 +3,7 @@ import type { LocalDate } from '../domain/time.js';
 import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
 import type { LedgerId } from './ledgers.js';
+import type { RuleId } from './recurring.js';
 import type { UserId } from './users.js';
 
 export type ExpenseId = string & { readonly __brand: 'ExpenseId' };
@@ -34,6 +35,9 @@ export interface SealedExpense {
   readonly sourceKey: string;
   readonly deletedAt: Date | null;
   readonly sealed: Buffer;
+  // A recurring occurrence whose `sealed` is a copy of this rule's sealed template: it opens
+  // under the rule's binding (ADR-0035). NULL for a row sealed under its own id.
+  readonly sealedRuleId: RuleId | null;
 }
 
 export type StoredExpense = Expense | SealedExpense;
@@ -54,7 +58,10 @@ export type NewExpense = Omit<Expense, 'deletedAt' | 'category'> & {
   readonly descriptionKey?: string;
 };
 
-export type NewSealedExpense = Omit<SealedExpense, 'deletedAt'> & { readonly createdAt: Date };
+export type NewSealedExpense = Omit<SealedExpense, 'deletedAt' | 'sealedRuleId'> & {
+  readonly createdAt: Date;
+  readonly sealedRuleId?: RuleId;
+};
 
 interface ExpenseRow {
   id: string;
@@ -71,11 +78,12 @@ interface ExpenseRow {
   category_id: number | null;
   category_name: string | null;
   sealed: Buffer | null;
+  sealed_rule_id: string | null;
 }
 
 const COLUMNS = `e.id, e.ledger_id, e.created_by, e.amount_minor, e.currency, e.description,
   e.occurred_at, e.occurred_on, e.source_key, e.deleted_at,
-  e.category_id, c.name AS category_name, e.sealed`;
+  e.category_id, c.name AS category_name, e.sealed, e.sealed_rule_id`;
 const FROM = 'expenses e LEFT JOIN categories c ON c.id = e.category_id';
 
 // Inserts unless an expense with the same source_key exists; either way returns the stored row.
@@ -128,16 +136,19 @@ export function insertExpenseOrGetExisting(
   return { expense: stored, created: changes === 1 };
 }
 
-// The sealed twin of insertExpenseOrGetExisting: the plaintext columns stay NULL.
+// The sealed twin of insertExpenseOrGetExisting: the plaintext columns stay NULL. With
+// `sealedRuleId`, `sealed` is that rule's template, copied (ADR-0035).
 export function insertSealedExpenseOrGetExisting(
   db: Db,
   expense: NewSealedExpense,
 ): { expense: StoredExpense; created: boolean } {
   const { changes } = db
-    .prepare<[string, string, string, string, string, string, string, string, Buffer]>(
+    .prepare<
+      [string, string, string, string, string, string, string, string, Buffer, string | null]
+    >(
       `INSERT INTO expenses (id, ledger_id, created_by, currency, occurred_at, occurred_on,
-                             source_key, created_at, sealed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             source_key, created_at, sealed, sealed_rule_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (source_key) DO NOTHING`,
     )
     .run(
@@ -150,6 +161,7 @@ export function insertSealedExpenseOrGetExisting(
       expense.sourceKey,
       expense.createdAt.toISOString(),
       expense.sealed,
+      expense.sealedRuleId ?? null,
     );
   const stored = findExpenseBySourceKey(db, expense.sourceKey);
   if (stored === undefined) throw new Error('expense vanished after insert');
@@ -279,7 +291,8 @@ export function setExpenseDescription(
 
 // A sealed row's edit or category change (ADR-0020): the whole payload is sealed again by the
 // caller, so the blob is replaced, with the currency (plaintext) and the stamp the change
-// carries. Returns false when the expense is deleted.
+// carries. The new blob is sealed under the row's own id, so a recurring occurrence stops naming
+// its rule (ADR-0035). Returns false when the expense is deleted.
 export function resealExpense(
   db: Db,
   id: ExpenseId,
@@ -293,7 +306,7 @@ export function resealExpense(
   const { changes } = db
     .prepare<[Buffer, string, string | null, string | null, string]>(
       `UPDATE expenses
-          SET sealed = ?, currency = ?, updated_at = COALESCE(?, updated_at),
+          SET sealed = ?, sealed_rule_id = NULL, currency = ?, updated_at = COALESCE(?, updated_at),
               category_set_at = COALESCE(?, category_set_at)
         WHERE id = ? AND deleted_at IS NULL AND sealed IS NOT NULL`,
     )
@@ -429,6 +442,7 @@ function toStoredExpense(row: ExpenseRow): StoredExpense {
     sourceKey: row.source_key,
     deletedAt: row.deleted_at === null ? null : new Date(row.deleted_at),
     sealed: row.sealed,
+    sealedRuleId: row.sealed_rule_id as RuleId | null,
   };
 }
 

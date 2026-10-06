@@ -1,7 +1,7 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
-import type { Expense } from '../../db/expenses.js';
+import { isSealed, type StoredExpense } from '../../db/expenses.js';
 import type { Ledger } from '../../db/ledgers.js';
-import type { RecurringRule, RuleId, RuleMode } from '../../db/recurring.js';
+import type { RecurringRule, RuleId, RuleKind, RuleMode } from '../../db/recurring.js';
 import type { User } from '../../db/users.js';
 import type { CurrencyCode } from '../../domain/currencies.js';
 import type { Money } from '../../domain/money.js';
@@ -15,6 +15,7 @@ import {
   type RecurringScreen,
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
+import { encryptionState, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone } from '../../services/recordExpense.js';
 import {
   answerAsk,
@@ -29,6 +30,7 @@ import {
   listRules,
   ownRule,
   repeatOptions,
+  ruleTemplate,
   startAskAmount,
   type AnswerAskResult,
   type AskRefusal,
@@ -82,32 +84,41 @@ const refusalToast: Record<RepeatRefusal['kind'], string> = {
   notFound: messages.expenseNotFound,
   forbidden: messages.repeatForbidden,
   deleted: messages.expenseDeletedToast,
-  unavailable: messages.repeatUnavailable,
   locked: messages.ledgerLockedToast,
 };
 
 const askRefusalToast: Record<Exclude<AskRefusal['kind'], 'answered'>, string> = {
   notFound: messages.ruleGoneToast,
   forbidden: messages.askForbidden,
+  sealed: messages.askAmountSealedToast,
 };
 
-function listItem(rule: RecurringRule): RuleListItem | undefined {
+// A sealed rule shows its template while its ledger is unlocked, and only its schedule while
+// locked.
+function listItem(deps: HandlerDeps, rule: RecurringRule): RuleListItem | undefined {
   const base = { id: rule.id, mode: rule.mode, schedule: rule.schedule, nextDueOn: rule.nextDueOn };
-  if (rule.reminderText !== null) return { ...base, description: rule.reminderText };
-  if (rule.template === null) return undefined;
+  if (rule.reminderText !== null)
+    return { ...base, kind: 'reminder', description: rule.reminderText };
+  const template = ruleTemplate(deps, rule);
+  if (template === undefined) return undefined;
+  if (isLocked(template)) return { ...base, kind: 'expense', description: '', locked: true };
   return {
     ...base,
-    description: rule.template.description,
-    money: { amountMinor: rule.template.amountMinor, currency: rule.template.currency },
+    kind: 'expense',
+    description: template.description,
+    money: { amountMinor: template.amountMinor, currency: template.currency },
   };
 }
 
 interface RuleListItem {
   readonly id: RuleId;
+  readonly kind: RuleKind;
   readonly mode: RuleMode;
+  // Empty while locked.
   readonly description: string;
-  // Absent for a reminder.
+  // Absent for a reminder, and while locked.
   readonly money?: Money;
+  readonly locked?: boolean;
   readonly schedule: Schedule;
   readonly nextDueOn: LocalDate;
 }
@@ -118,7 +129,7 @@ function userToday(deps: HandlerDeps, user: User): LocalDate {
 
 // The list, a button per rule, with a header line above when something just changed.
 export function recurringListView(deps: HandlerDeps, user: User, header?: Html): ScreenView {
-  const items = listRules(deps, user).flatMap(({ rule }) => listItem(rule) ?? []);
+  const items = listRules(deps, user).flatMap(({ rule }) => listItem(deps, rule) ?? []);
   const list = messages.recurringList({ rules: items, today: userToday(deps, user) });
   return {
     text: header === undefined ? list : joinHtml([header, list], '\n\n'),
@@ -149,9 +160,13 @@ function reminderPickerView(deps: HandlerDeps, user: User, text: string): Screen
   };
 }
 
-// The reminder text prompt, with a refusal line above it when an answer failed.
-function reminderPromptView(refusal?: Html): ScreenView {
-  const prompt = messages.reminderTextPrompt;
+// The reminder text prompt, with a refusal line above it when an answer failed. It says the
+// text is stored plaintext while the personal ledger is sealed.
+function reminderPromptView(deps: HandlerDeps, user: User, refusal?: Html): ScreenView {
+  const prompt =
+    encryptionState(deps, user).kind === 'off'
+      ? messages.reminderTextPrompt
+      : messages.reminderTextPromptSealed;
   return {
     text: refusal === undefined ? prompt : joinHtml([refusal, prompt], '\n'),
     markup: InlineKeyboard.from([cancelRow()]),
@@ -174,7 +189,7 @@ export async function answerReminder(
     await renderAnchor(
       ctx,
       anchor,
-      reminderPromptView(messages.reminderTextRefused[result.reason]),
+      reminderPromptView(deps, user, messages.reminderTextRefused[result.reason]),
     );
     return;
   }
@@ -186,12 +201,12 @@ export async function answerReminder(
 // One rule's screen, or undefined once it is gone.
 export function ruleView(deps: HandlerDeps, user: User, ruleId: RuleId): ScreenView | undefined {
   const rule = ownRule(deps, user, ruleId);
-  const item = rule === undefined ? undefined : listItem(rule);
+  const item = rule === undefined ? undefined : listItem(deps, rule);
   if (item === undefined) return undefined;
   const nextMode = item.mode === 'auto' ? 'ask' : 'auto';
   // A reminder records nothing, so it has no mode.
   const modeRow =
-    item.money === undefined
+    item.kind === 'reminder'
       ? []
       : [
           [
@@ -250,17 +265,32 @@ export function askCard(
   };
 }
 
+// A sealed rule's prompt (ADR-0035): [Записать] and [Пропустить], with nothing of the template.
+export function sealedAskCard(ruleId: RuleId, dueOn: LocalDate, today: LocalDate): ScreenView {
+  return {
+    text: messages.recurringAskSealed({ dueOn, today }),
+    markup: InlineKeyboard.from([
+      [
+        InlineKeyboard.text(messages.askRecordSealedButton, askData('ok', ruleId, dueOn)),
+        InlineKeyboard.text(messages.askSkipButton, askData('skip', ruleId, dueOn)),
+      ],
+    ]),
+  };
+}
+
 // An occurrence recorded, as the scheduler posts it: the confirmation marked recurring, with
-// [Удалить].
+// [Удалить]. A sealed occurrence's notice names neither its amount nor its description.
 export function recurringRecordedCard(
   deps: HandlerDeps,
   author: User,
-  { expense, ledger }: { readonly expense: Expense; readonly ledger: Ledger },
+  { expense, ledger }: { readonly expense: StoredExpense; readonly ledger: Ledger },
   now: Date = deps.now(),
 ): ScreenView {
   const sentOn = localDateOf(now, effectiveTimezone(deps, author, ledger));
   return {
-    text: messages.recurringRecorded({ expense, ledger, sentOn }),
+    text: isSealed(expense)
+      ? messages.recurringRecordedSealed({ occurredOn: expense.occurredOn, sentOn })
+      : messages.recurringRecorded({ expense, ledger, sentOn }),
     markup: new InlineKeyboard().text(messages.undoButton, undoExpenseData(expense.id)),
   };
 }
@@ -276,6 +306,9 @@ export function askScreenFor(
   screen: RecurringAskScreen,
 ): ScreenView | undefined {
   const target = askTarget(deps, { user, ruleId: screen.ruleId, dueOn: screen.dueOn });
+  if (target.kind === 'askedSealed') {
+    return sealedAskCard(target.rule.id, screen.dueOn, ledgerToday(deps, user, target.ledger));
+  }
   if (target.kind !== 'asked') return undefined;
   return askCard(target, screen.dueOn, ledgerToday(deps, user, target.ledger));
 }
@@ -345,7 +378,7 @@ export async function showAskResult(
     }
     case 'skipped':
       await ctx.answerCallbackQuery();
-      await editHtml(ctx, messages.recurringSkipped(result.rule.template?.description ?? ''));
+      await editHtml(ctx, messages.recurringSkipped(result.rule.template?.description));
       return;
     case 'answered':
       await ctx.answerCallbackQuery({ text: messages.askAnswered });
@@ -404,13 +437,16 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
     const { ruleId } = tap?.screen ?? {};
     if (tap === undefined || ruleId === undefined) return;
     const rule = ownRule(deps, tap.user, ruleId);
-    if (rule === undefined) {
+    const item = rule === undefined ? undefined : listItem(deps, rule);
+    if (item === undefined) {
       await ctx.answerCallbackQuery({ text: messages.ruleGoneToast });
       return;
     }
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, {
-      text: messages.ruleDeleteConfirm(rule.reminderText ?? rule.template?.description ?? ''),
+      text: messages.ruleDeleteConfirm(
+        item.locked === true ? messages.ruleButton(item) : item.description,
+      ),
       markup: InlineKeyboard.from([
         [InlineKeyboard.text(messages.ruleDeleteConfirmButton, RULE_DELETE_CONFIRM)],
         backRow(ruleOpenData(ruleId)),
@@ -442,7 +478,7 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
     if (tap === undefined) return;
     startFlow(deps, tap.user, { kind: 'reminderText' }, deps.now());
     await ctx.answerCallbackQuery();
-    await showRecurring(ctx, deps, tap, { name: 'recurring' }, reminderPromptView());
+    await showRecurring(ctx, deps, tap, { name: 'recurring' }, reminderPromptView(deps, tap.user));
   });
 
   // The rule and the anchor's move back to the list commit together, so a second tap finds no

@@ -190,7 +190,12 @@ export function registerGroupCard(group: Composer<Context>, deps: GroupHandlerDe
         const card = groupCard(
           deps,
           ctx,
-          { expense: result.expense, author: ctx.from?.first_name ?? '', authorAdmitted: false },
+          {
+            // A shared ledger is never sealed (ADR-0020).
+            expense: plaintext(result.expense),
+            author: ctx.from?.first_name ?? '',
+            authorAdmitted: false,
+          },
           result.ledger,
         );
         await editHtml(ctx, card.text, { reply_markup: card.markup });

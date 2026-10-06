@@ -3,11 +3,14 @@ import type { LocalDate } from '../domain/time.js';
 import { insertCategoriesOrIgnore, type CategoryId } from './categories.js';
 import { openDatabase, type Db } from './connection.js';
 import {
+  findExpenseById,
   findHistoryCategory,
   insertExpenseOrGetExisting,
+  insertSealedExpenseOrGetExisting,
   listLedgerExpenses,
   listLedgerExpensesBetween,
   listLedgerExpensesOn,
+  resealExpense,
   restoreDeletedExpense,
   setExpenseAmount,
   setExpenseCategory,
@@ -18,6 +21,7 @@ import {
 } from './expenses.js';
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
 import { runMigrations } from './migrate.js';
+import { insertRuleOrGetExisting, type RuleId } from './recurring.js';
 import { insertUser, type UserId } from './users.js';
 
 const NOW = new Date('2026-09-29T10:00:00Z');
@@ -317,6 +321,61 @@ describe('expenses repository', () => {
            VALUES ('x', 'ledger-a', 'user-a', 0, 'RSD', 'd', 't', '2026-09-29', 'k', 't')`,
         )
         .run(),
+    ).toThrow(/CHECK constraint failed/);
+  });
+
+  function addSealedRule() {
+    insertRuleOrGetExisting(db, {
+      id: 'rule-1' as RuleId,
+      ledgerId: LEDGER_A,
+      userId: USER_A,
+      kind: 'expense',
+      mode: 'auto',
+      template: null,
+      sealedTemplate: { currency: 'RSD', sealed: Buffer.from('template') },
+      reminderText: null,
+      schedule: { kind: 'monthly', day: 1 },
+      nextDueOn: '2026-10-01' as LocalDate,
+      sourceKey: null,
+      createdAt: NOW,
+    });
+  }
+
+  it("stores a sealed occurrence's rule, and a reseal clears it", () => {
+    addSealedRule();
+    const { expense } = insertSealedExpenseOrGetExisting(db, {
+      id: 'exp-r' as ExpenseId,
+      ledgerId: LEDGER_A,
+      createdBy: USER_A,
+      currency: 'RSD',
+      occurredAt: NOW,
+      occurredOn: DAY,
+      sourceKey: 'rec:rule-1:2026-09-29',
+      createdAt: NOW,
+      sealed: Buffer.from('template'),
+      sealedRuleId: 'rule-1' as RuleId,
+    });
+    expect(expense).toMatchObject({ sealedRuleId: 'rule-1', sealed: Buffer.from('template') });
+
+    const resealed = resealExpense(db, 'exp-r' as ExpenseId, {
+      sealed: Buffer.from('own'),
+      currency: 'RSD',
+      updatedAt: NOW,
+    });
+
+    expect(resealed).toBe(true);
+    expect(findExpenseById(db, 'exp-r' as ExpenseId)).toMatchObject({
+      sealedRuleId: null,
+      sealed: Buffer.from('own'),
+    });
+  });
+
+  it('refuses a rule on a plaintext row at the schema level', () => {
+    addSealedRule();
+    addExpense('exp-p', LEDGER_A, USER_A, 'tg:1:1');
+
+    expect(() =>
+      db.prepare("UPDATE expenses SET sealed_rule_id = 'rule-1' WHERE id = 'exp-p'").run(),
     ).toThrow(/CHECK constraint failed/);
   });
 });

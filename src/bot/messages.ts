@@ -450,8 +450,10 @@ function groupExpenseLine({ author, expense, sentOn }: GroupCardView): Html {
 interface RuleListView {
   // An expense rule's description, or a reminder's text.
   readonly description: string;
-  // Absent for a reminder.
+  // Absent for a reminder, and for a sealed rule while its ledger is locked.
   readonly money?: Money | undefined;
+  // A sealed rule's template while its ledger is locked: nothing of it is shown.
+  readonly locked?: boolean;
   readonly schedule: Schedule;
   readonly nextDueOn: LocalDate;
 }
@@ -494,8 +496,9 @@ function scheduleLabel(schedule: Schedule): string {
   }
 }
 
-// `аренда — 45 000.00 RSD` or `🔔 заплатить за интернет`.
-function ruleTitle(rule: Pick<RuleListView, 'description' | 'money'>): string {
+// `аренда — 45 000.00 RSD`, `🔔 заплатить за интернет`, or `🔒 Зашифрованная трата`.
+function ruleTitle(rule: Pick<RuleListView, 'description' | 'money' | 'locked'>): string {
+  if (rule.locked === true) return '🔒 Зашифрованная трата';
   return rule.money === undefined
     ? `🔔 ${shownDescription(rule.description)}`
     : `${shownDescription(rule.description)} — ${formatMoney(rule.money)}`;
@@ -712,12 +715,14 @@ export const messages = {
       html`Чек из Сербии или Черногории: отправьте фото QR-кода с чека или ссылку из него. Я запишу сумму, а через несколько секунд добавлю магазин и кнопку [Позиции].`,
       html`СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».`,
       html`Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.`,
+      html`Аренда, подписки и другие регулярные траты: на карточке траты нажмите [Повторять] и выберите расписание. В этот день в 09:00 я сам запишу такую же трату или спрошу, записать ли.`,
       html``,
       html`${menu.today} — траты за сегодня`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории и шифрование`,
       html`${menu.help} — эта подсказка`,
+      html`/recurring — регулярные траты и напоминания`,
       html`/export — все траты файлом CSV или Excel, бесплатно и в любой момент`,
       html`/changelog — что нового в боте`,
       html`/cancel — отменить ввод`,
@@ -1347,7 +1352,6 @@ export const messages = {
   }): Html =>
     html`Повторяется: ${scheduleLabel(schedule).toLowerCase()}. Следующая запись — ${shownDate(nextDueOn, today)}. Все правила: /recurring`,
   repeatForbidden: 'Повторять трату может только тот, кто её записал',
-  repeatUnavailable: 'Эту трату пока нельзя повторять',
   // An occurrence the scheduler recorded: the usual confirmation, marked as recurring.
   recurringRecorded: (view: RecordedView): Html => {
     const { occurredOn, category } = view.expense;
@@ -1364,6 +1368,18 @@ export const messages = {
     );
     return category === null ? line : joinHtml([line, html`${category.name}`], ' · ');
   },
+  // An occurrence of a sealed ledger's rule (ADR-0035): no amount and no description, which the
+  // bot can't read while the ledger is locked. `sentOn` is the ledger's local date.
+  recurringRecordedSealed: ({
+    occurredOn,
+    sentOn,
+  }: {
+    occurredOn: LocalDate;
+    sentOn: LocalDate;
+  }): Html => {
+    const when = occurredOn === sentOn ? '' : ` за ${shownDate(occurredOn, sentOn)}`;
+    return html`Записана регулярная трата${when}. Учёт зашифрован: сумма и описание видны после /unlock.`;
+  },
   // /recurring. `today` is the user's local date, for the year of a next date.
   recurringList: ({ rules, today }: { rules: readonly RuleListView[]; today: LocalDate }): Html => {
     const title = html`<b>Регулярные траты</b>`;
@@ -1377,7 +1393,8 @@ export const messages = {
   },
 
   // A rule's button on /recurring: `аренда — 45 000.00 RSD`.
-  ruleButton: (rule: Pick<RuleListView, 'description' | 'money'>): string => ruleTitle(rule),
+  ruleButton: (rule: Pick<RuleListView, 'description' | 'money' | 'locked'>): string =>
+    ruleTitle(rule),
   recurringRuleScreen: ({
     rule,
     mode,
@@ -1390,7 +1407,7 @@ export const messages = {
     joinHtml(
       [
         recurringRuleLines(rule, today),
-        rule.money === undefined
+        rule.money === undefined && rule.locked !== true
           ? html`Напоминаю в 09:00.`
           : mode === 'auto'
             ? html`Записываю сам в 09:00.`
@@ -1401,6 +1418,8 @@ export const messages = {
   // Reminders: a text sent on its day, recording nothing. Personal and private.
   addReminderButton: 'Добавить напоминание',
   reminderTextPrompt: html`О чём напомнить? Отправьте текст до 200 символов, например «заплатить за интернет».`,
+  // The prompt while the personal ledger is sealed: a reminder's text isn't ledger data.
+  reminderTextPromptSealed: html`О чём напомнить? Отправьте текст до 200 символов, например «заплатить за интернет». Учёт зашифрован, а текст напоминания — нет: он хранится открытым.`,
   reminderTextRefused: {
     empty: html`Текст не может быть пустым.`,
     tooLong: html`Текст длиннее 200 символов.`,
@@ -1435,11 +1454,18 @@ export const messages = {
     today: LocalDate;
   }): Html =>
     html`По расписанию на ${shownDate(dueOn, today)}: ${shownDescription(description)}, ${formatMoney(money)}. Записать?`,
+  // A sealed ledger's `ask` prompt (ADR-0035): no amount, no description, no other amount.
+  recurringAskSealed: ({ dueOn, today }: { dueOn: LocalDate; today: LocalDate }): Html =>
+    html`По расписанию на ${shownDate(dueOn, today)}: регулярная трата из зашифрованного учёта. Записать?`,
   askRecordButton: (money: Money): string => `Записать ${formatMoney(money)}`,
+  askRecordSealedButton: 'Записать',
   askAmountButton: 'Другая сумма',
   askSkipButton: 'Пропустить',
-  recurringSkipped: (description: string): Html =>
-    html`Пропущено: ${shownDescription(description)}.`,
+  // Without a description for a sealed rule's prompt.
+  recurringSkipped: (description?: string): Html =>
+    description === undefined
+      ? html`Пропущено.`
+      : html`Пропущено: ${shownDescription(description)}.`,
   // Before the prompts after downtime: the missed dates not asked about.
   recurringAskMissed: (count: number): Html =>
     html`Пока я не работал, по расписанию прошло ещё ${count}, их я пропустил.`,
@@ -1449,6 +1475,7 @@ export const messages = {
   askAnswered: 'На это уже ответили',
   askRecordedToast: 'Записано',
   askForbidden: 'Ответить может только автор правила',
+  askAmountSealedToast: 'В зашифрованном учёте записывается сумма из правила',
 
   periodPrev: (period: PeriodRef): string => `◀ ${periodLabel(period)}`,
   periodNext: (period: PeriodRef): string => `${periodLabel(period)} ▶`,

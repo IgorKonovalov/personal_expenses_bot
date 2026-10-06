@@ -1,9 +1,11 @@
 import { findCategory, listActiveCategories } from '../db/categories.js';
 import {
   findExpenseById,
+  insertSealedExpenseOrGetExisting,
   type Expense,
   type ExpenseCategory,
   type ExpenseId,
+  type StoredExpense,
 } from '../db/expenses.js';
 import { findActiveChatOfLedger } from '../db/ledgerChats.js';
 import { findLedgerById, findLedgerForMember, type Ledger, type LedgerId } from '../db/ledgers.js';
@@ -37,7 +39,15 @@ import {
   type Schedule,
 } from '../domain/schedule.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
-import { isLocked, isSealedLedger, openExpense, type KeyDeps, type Locked } from './ledgerKeys.js';
+import {
+  isLocked,
+  openExpense,
+  openRuleTemplate,
+  sealingKey,
+  sealRuleTemplate,
+  type KeyDeps,
+  type Locked,
+} from './ledgerKeys.js';
 import { effectiveTimezone, storeExpense, type RecordDeps } from './recordExpense.js';
 import { resolveUserTimezone } from './settings.js';
 import { cancelFlow, completeFlow, startFlow, type RecurringAmountFlow } from './flowSessions.js';
@@ -69,11 +79,7 @@ export function scheduleFor(choice: ScheduleChoice, date: LocalDate): Schedule {
 // next tick.
 export const MAX_CATCH_UP = 31;
 
-export type RepeatRefusal =
-  | { readonly kind: 'notFound' | 'forbidden' | 'deleted' }
-  // The expense's ledger can't hold a rule: a shared or sealed one.
-  | { readonly kind: 'unavailable' }
-  | Locked;
+export type RepeatRefusal = { readonly kind: 'notFound' | 'forbidden' | 'deleted' } | Locked;
 
 export interface Repeatable {
   readonly kind: 'repeatable';
@@ -85,7 +91,8 @@ export interface Repeatable {
 
 const CHOICES: readonly ScheduleChoice[] = ['m', 'w', 'y'];
 
-// [Повторять] on a card: only the expense's author, on a live expense.
+// [Повторять] on a card: only the expense's author, on a live expense. In a sealed ledger the
+// expense must open, so the ledger must be unlocked: its template is sealed from it.
 export function repeatOptions(
   deps: RecurringDeps,
   input: { readonly user: User; readonly expenseId: ExpenseId },
@@ -97,7 +104,6 @@ export function repeatOptions(
   const ledger = findLedgerForMember(db, stored.ledgerId, input.user.id);
   if (ledger === undefined) return { kind: 'forbidden' };
   if (stored.deletedAt !== null) return { kind: 'deleted' };
-  if (!canHoldRule(deps, ledger)) return { kind: 'unavailable' };
   const expense = openExpense(deps, stored);
   if (isLocked(expense)) return expense;
   return {
@@ -109,11 +115,6 @@ export function repeatOptions(
       schedule: scheduleFor(choice, expense.occurredOn),
     })),
   };
-}
-
-// Whether an expense of this ledger may be made recurring.
-export function canHoldRule(deps: Pick<RecurringDeps, 'db'>, ledger: Ledger): boolean {
-  return !isSealedLedger(deps, ledger.id);
 }
 
 export type CreateRuleResult =
@@ -129,7 +130,9 @@ export type CreateRuleResult =
 
 // An `auto` rule from the expense's amount, currency, description and category, on the chosen
 // schedule from the expense's date. Its first occurrence is the first such date after today in
-// the ledger's timezone. A second tap of the same choice returns the live rule it made.
+// the ledger's timezone. A second tap of the same choice returns the live rule it made. In a
+// sealed ledger the template is sealed under the rule's binding (ADR-0035), and only the
+// currency stays plaintext.
 export function createRuleFromExpense(
   deps: RecurringDeps,
   input: {
@@ -146,18 +149,29 @@ export function createRuleFromExpense(
     const { expense, ledger } = found;
     const schedule = scheduleFor(input.choice, expense.occurredOn);
     const today = localDateOf(input.now, effectiveTimezone(deps, input.user, ledger));
+    const id = deps.newId() as RuleId;
+    const template: RuleTemplate = {
+      amountMinor: expense.amountMinor,
+      currency: expense.currency,
+      description: expense.description,
+      categoryId: expense.category?.id ?? null,
+    };
+    const publicKey = sealingKey(deps, ledger.id);
     const { rule, created } = insertRuleOrGetExisting(db, {
-      id: deps.newId() as RuleId,
+      id,
       ledgerId: ledger.id,
       userId: input.user.id,
       kind: 'expense',
       mode: 'auto',
-      template: {
-        amountMinor: expense.amountMinor,
-        currency: expense.currency,
-        description: expense.description,
-        categoryId: expense.category?.id ?? null,
-      },
+      ...(publicKey === undefined
+        ? { template, sealedTemplate: null }
+        : {
+            template: null,
+            sealedTemplate: {
+              currency: template.currency,
+              sealed: sealRuleTemplate(publicKey, { ledgerId: ledger.id, ruleId: id }, template),
+            },
+          }),
       reminderText: null,
       schedule,
       nextDueOn: nextOccurrence(schedule, today),
@@ -178,6 +192,17 @@ export interface RuleView {
   readonly rule: RecurringRule;
   // The rule's ledger; absent for a reminder.
   readonly ledger?: Ledger;
+}
+
+// What an expense rule records, for showing it: the plaintext template, or a sealed one opened
+// while its ledger is unlocked, else `locked`. Undefined for a reminder.
+export function ruleTemplate(
+  deps: Pick<RecurringDeps, 'keys'>,
+  rule: RecurringRule,
+): RuleTemplate | Locked | undefined {
+  if (rule.template !== null) return rule.template;
+  if (rule.sealedTemplate === null || rule.ledgerId === null) return undefined;
+  return openRuleTemplate(deps, { id: rule.id, ledgerId: rule.ledgerId }, rule.sealedTemplate);
 }
 
 // /recurring: the user's rules, soonest first.
@@ -234,7 +259,8 @@ export type Fired =
   | {
       readonly kind: 'recorded';
       readonly dueOn: LocalDate;
-      readonly expense: Expense;
+      // Sealed when its rule's template is (ADR-0035): nothing of it can be shown.
+      readonly expense: StoredExpense;
       readonly ledger: Ledger;
     }
   // An `ask` occurrence waiting for the author's answer.
@@ -299,10 +325,8 @@ export function fireRule(deps: RecurringDeps, due: DueRule, now: Date): FireResu
         claim(outcome, null);
         return outcome === 'asked' ? { kind: 'asked', dueOn, ledger } : { kind: 'skipped', dueOn };
       }
-      if (rule.template === null) throw new Error(`rule ${rule.id} has no template`);
       const expense = recordOccurrence(deps, {
         rule,
-        template: rule.template,
         ledger,
         author: author.user,
         dueOn,
@@ -407,6 +431,7 @@ export function createReminder(
     kind: 'reminder',
     mode: 'auto',
     template: null,
+    sealedTemplate: null,
     reminderText: input.text,
     schedule,
     nextDueOn: nextOccurrence(schedule, today),
@@ -420,7 +445,9 @@ export function createReminder(
 export type AskRefusal =
   | { readonly kind: 'notFound' | 'forbidden' }
   // Recorded or skipped already: a double tap, or an answer from another prompt.
-  | { readonly kind: 'answered'; readonly outcome: OccurrenceOutcome };
+  | { readonly kind: 'answered'; readonly outcome: OccurrenceOutcome }
+  // Another amount for a sealed template, which is recorded only as sealed (ADR-0035).
+  | { readonly kind: 'sealed' };
 
 export interface AskTarget {
   readonly kind: 'asked';
@@ -429,11 +456,19 @@ export interface AskTarget {
   readonly ledger: Ledger;
 }
 
+// An `ask` occurrence of a rule whose template is sealed: it can be recorded or skipped, with
+// nothing of it shown.
+export interface SealedAskTarget {
+  readonly kind: 'askedSealed';
+  readonly rule: RecurringRule;
+  readonly ledger: Ledger;
+}
+
 // An `ask` occurrence still waiting, for the rule's author only.
 export function askTarget(
   { db }: Pick<RecurringDeps, 'db'>,
   input: { readonly user: User; readonly ruleId: RuleId; readonly dueOn: LocalDate },
-): AskTarget | AskRefusal {
+): AskTarget | SealedAskTarget | AskRefusal {
   const rule = findRule(db, input.ruleId);
   const outcome = findOccurrenceOutcome(db, input.ruleId, input.dueOn);
   if (rule === undefined || outcome === undefined || rule.ledgerId === null) {
@@ -443,18 +478,20 @@ export function askTarget(
   if (outcome !== 'asked') return { kind: 'answered', outcome };
   const ledger = findLedgerForMember(db, rule.ledgerId, input.user.id);
   if (ledger === undefined) return { kind: 'forbidden' };
-  if (rule.template === null) return { kind: 'notFound' };
-  return { kind: 'asked', rule, template: rule.template, ledger };
+  if (rule.template !== null) return { kind: 'asked', rule, template: rule.template, ledger };
+  if (rule.sealedTemplate !== null) return { kind: 'askedSealed', rule, ledger };
+  return { kind: 'notFound' };
 }
 
 export type AnswerAskResult =
-  | { readonly kind: 'recorded'; readonly expense: Expense; readonly ledger: Ledger }
+  | { readonly kind: 'recorded'; readonly expense: StoredExpense; readonly ledger: Ledger }
   | { readonly kind: 'skipped'; readonly rule: RecurringRule }
   | AskRefusal;
 
 // [Записать] or a typed amount: records the template, or `amountMinor` in the rule's currency,
 // on the due date under `rec:<rule>:<due date>`; the occurrence moves from asked to recorded in
 // the same transaction, so a second tap records nothing. [Пропустить] (`skip`) records nothing.
+// A sealed template is recorded as it is: another amount is refused.
 export function answerAsk(
   deps: RecurringDeps,
   input: {
@@ -472,7 +509,7 @@ export function answerAsk(
   return db.transaction((): AnswerAskResult => {
     const target = askTarget(deps, input);
     if (input.inputKey !== undefined) completeFlow(deps, input.user, input.inputKey);
-    if (target.kind !== 'asked') return target;
+    if (target.kind !== 'asked' && target.kind !== 'askedSealed') return target;
     const { rule, ledger } = target;
     if (input.answer.kind === 'skip') {
       answerAskedOccurrence(db, {
@@ -484,17 +521,15 @@ export function answerAsk(
       logger.info({ ruleId: rule.id, outcome: 'skipped' }, 'recurring answer');
       return { kind: 'skipped', rule };
     }
-    const template = {
-      ...target.template,
-      amountMinor: input.answer.amountMinor ?? target.template.amountMinor,
-    };
+    const { amountMinor } = input.answer;
+    if (target.kind === 'askedSealed' && amountMinor !== undefined) return { kind: 'sealed' };
     const expense = recordOccurrence(deps, {
       rule,
-      template,
       ledger,
       author: input.user,
       dueOn: input.dueOn,
       now: input.now,
+      ...(amountMinor === undefined ? {} : { amountMinor }),
     });
     answerAskedOccurrence(db, {
       ruleId: rule.id,
@@ -510,7 +545,8 @@ export function answerAsk(
   })();
 }
 
-// [Другая сумма]: the amount prompt's flow (ADR-0009), while the occurrence is still asked.
+// [Другая сумма]: the amount prompt's flow (ADR-0009), while the occurrence is still asked. A
+// sealed template takes no other amount.
 export function startAskAmount(
   deps: RecurringDeps,
   input: {
@@ -521,6 +557,7 @@ export function startAskAmount(
   },
 ): AskTarget | AskRefusal {
   const target = askTarget(deps, input);
+  if (target.kind === 'askedSealed') return { kind: 'sealed' };
   if (target.kind === 'asked') {
     startFlow(
       deps,
@@ -552,7 +589,7 @@ export function answerAskAmount(
   const target = askTarget(deps, { user: input.user, ruleId: flow.ruleId, dueOn: flow.dueOn });
   if (target.kind !== 'asked') {
     cancelFlow(deps, input.user);
-    return target;
+    return target.kind === 'askedSealed' ? { kind: 'sealed' } : target;
   }
   const amount = parseAmount(input.text.trim(), target.template.currency);
   if (amount.kind !== 'ok') return { kind: 'invalid', target };
@@ -604,31 +641,50 @@ export function deleteRule(
   return { kind: 'changed', rule };
 }
 
-// The template recorded as the author's expense on its due date, under the source key
-// `rec:<rule>:<due date>`, at 09:00 local.
+// The rule's template recorded as the author's expense on its due date, under the source key
+// `rec:<rule>:<due date>`, at 09:00 local; `amountMinor` replaces a plaintext template's amount.
+// A sealed template's bytes are copied onto the row, which names the rule (ADR-0035), so
+// recording needs no unlock.
 function recordOccurrence(
   deps: RecurringDeps,
   input: {
     readonly rule: RecurringRule;
-    readonly template: RuleTemplate;
     readonly ledger: Ledger;
     readonly author: User;
     readonly dueOn: LocalDate;
     readonly now: Date;
+    readonly amountMinor?: number;
   },
-): Expense {
-  const { rule, template, ledger, dueOn } = input;
-  const stored = storeExpense(deps, {
+): StoredExpense {
+  const { rule, ledger, dueOn } = input;
+  const fields = {
     id: deps.newId() as ExpenseId,
     ledgerId: ledger.id,
     createdBy: rule.userId,
-    amountMinor: template.amountMinor,
-    currency: template.currency,
-    description: template.description,
     occurredAt: dueInstant(dueOn, effectiveTimezone(deps, input.author, ledger)),
     occurredOn: dueOn,
     sourceKey: `rec:${rule.id}:${dueOn}`,
     createdAt: input.now,
+  };
+  if (rule.sealedTemplate !== null) {
+    if (input.amountMinor !== undefined) throw new Error(`rule ${rule.id} is sealed`);
+    return insertSealedExpenseOrGetExisting(deps.db, {
+      ...fields,
+      currency: rule.sealedTemplate.currency,
+      sealed: rule.sealedTemplate.sealed,
+      sealedRuleId: rule.id,
+    }).expense;
+  }
+  if (rule.template === null) throw new Error(`rule ${rule.id} has no template`);
+  const template = {
+    ...rule.template,
+    amountMinor: input.amountMinor ?? rule.template.amountMinor,
+  };
+  const stored = storeExpense(deps, {
+    ...fields,
+    amountMinor: template.amountMinor,
+    currency: template.currency,
+    description: template.description,
     category: categoryFor(deps, ledger.id, template),
     descriptionKey: descriptionKey(template.description),
   });

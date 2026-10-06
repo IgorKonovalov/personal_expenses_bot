@@ -8,7 +8,6 @@ import { memberBudgetStatus } from '../../services/budget.js';
 import { receiptSummary, type ReceiptSummary } from '../../services/fetchDueReceipt.js';
 import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
-import { canHoldRule } from '../../services/recurring.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   RESTORE_EXPENSE,
@@ -45,8 +44,7 @@ export interface CardView {
   readonly cap?: CardCap;
   // The receipt behind the expense: absent for a deleted expense or one typed in.
   readonly receipt?: ReceiptSummary;
-  // The viewer is the author and the ledger can hold a recurring rule: the card offers
-  // [Повторять].
+  // The viewer is the author: the card offers [Повторять].
   readonly repeatable?: boolean;
 }
 
@@ -80,7 +78,7 @@ export function cardView(
     expense,
     ledger,
     sentOn: localDateOf(expense.occurredAt, effectiveTimezone(deps, user, ledger)),
-    repeatable: expense.createdBy === user.id && canHoldRule(deps, ledger),
+    repeatable: expense.createdBy === user.id,
   };
   if (expense.deletedAt !== null) return view;
   const receipt = receiptSummary(deps, expense.id) ?? foldedReceiptSummary(deps, expense.id);

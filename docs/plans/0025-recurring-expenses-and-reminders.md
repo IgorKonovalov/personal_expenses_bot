@@ -311,8 +311,8 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
 | 2: Weekly and yearly, short months, DST and catch-up | dev | done | e271825 |
 | 3: Ask mode and managing rules | dev | done | 9c1b7d8 |
 | 4: Reminders | dev | done | 33b0e97 |
-| 5: Group ledgers | dev | done | committed with this row |
-| 6: Sealed ledgers, help and docs | dev | not started | |
+| 5: Group ledgers | dev | done | 5a3194b |
+| 6: Sealed ledgers, help and docs | dev | done | committed with this row |
 | 7: A real month | human | not started | |
 
 ### Notes
@@ -349,17 +349,31 @@ Callback data: `rec:new:<uuid>` (44), `rec:s:<uuid>:<m|w|y>` (44), `rec:r:<uuid>
   answers. It offers [Записать] and [Пропустить] only.
 - Phase 5: membership is checked when the rule fires. A rule whose author left is paused then,
   not at the moment they leave.
-
-### Resume notes (delete when Phase 6 lands)
-
-- Phase 6 is not started. Phase 5's commit is 5a3194b (its row still reads "committed with this
-  row"). The tip's gate is green: typecheck, lint, 1112 tests.
-- Today `canHoldRule` (`src/services/recurring.ts`) refuses a sealed ledger, so a rule exists
-  only for a plaintext ledger. A ledger sealed after its rule was made still records
-  occurrences: `recordOccurrence` calls `storeExpense`, which seals each row under its own
-  expense id from the plaintext template. Phase 6 seals the template on enable instead.
-- `resealExpense` (`src/db/expenses.ts`) is the one write behind both an edit and a category
-  change of a sealed row, so clearing `sealed_rule_id` there covers both.
+- Phase 6: the migration is `0016_expense_sealed_rule.sql`. `recurring_rules.sealed` already
+  existed in 0015. The column carries `CHECK (sealed_rule_id IS NULL OR sealed IS NOT NULL)`.
+- Phase 6: the bindings are `rowBinding`, `expenseBinding` and `ruleBinding` in
+  `src/domain/sealing.ts`. `rowAad` in `src/services/ledgerKeys.ts` is no longer exported and
+  takes the row.
+- Phase 6: outside Files touched: `src/bot/handlers/recurring.ts` (`sealedAskCard`, the sealed
+  notice in `recurringRecordedCard`, a locked sealed rule in the list, on its screen and in the
+  delete confirmation, and the reminder prompt's sealed form), `src/bot/handlers/card.ts`
+  (`canHoldRule` is removed with the `unavailable` refusal and `messages.repeatUnavailable`, so
+  the author's card offers [Повторять] in any ledger), `src/bot/group/card.ts` (`plaintext()`
+  on the recorded expense, now typed `StoredExpense`).
+- Phase 6: a sealed rule is made only while the ledger is unlocked (`repeatOptions` opens the
+  expense). `/recurring` shows a sealed rule's template while unlocked, and
+  «🔒 Зашифрованная трата» while locked.
+- Phase 6: another amount for a sealed template is refused with `{ kind: 'sealed' }` and the
+  toast `askAmountSealedToast`. This applies to a [Другая сумма] posted before the ledger was
+  sealed.
+- Phase 6: `src/services/ledgerKeys.test.ts` and `src/services/sealLedger.test.ts` gained no
+  tests. The done-whens are tested in `src/services/recurring.test.ts` ("a sealed ledger
+  (ADR-0035)"), `src/db/expenses.test.ts`, `src/domain/sealing.test.ts` and
+  `src/bot/bot.test.ts`.
+- Followup, not acted on: `/delete_account` (`src/services/deleteAccount.ts`) deletes no rules or
+  occurrences (Risks: "whichever plan lands second adds that"), and no phase lists it.
+  `recurring_occurrences.expense_id` and `recurring_rules.ledger_id` reference rows it deletes,
+  with foreign keys on. Not run.
 
 ### Close triggers
 

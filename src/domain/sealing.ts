@@ -197,7 +197,32 @@ export function parseRecoveryCode(text: string): Buffer | undefined {
   return bytes;
 }
 
-// What a sealed expense row holds. Amounts stay integer minor units inside the blob too.
+// The associated data a sealed row opens under (ADR-0020, ADR-0035). A recurring occurrence
+// whose `sealed` is a byte copy of its rule's sealed template names the rule, and opens under
+// the rule's binding; every other row opens under its own id. The rule binding has a `rule:`
+// segment, so no expense id produces it.
+export interface SealedRowIds {
+  readonly ledgerId: string;
+  readonly id: string;
+  readonly sealedRuleId: string | null;
+}
+
+export function rowBinding(row: SealedRowIds): string {
+  return row.sealedRuleId === null
+    ? expenseBinding(row.ledgerId, row.id)
+    : ruleBinding(row.ledgerId, row.sealedRuleId);
+}
+
+export function expenseBinding(ledgerId: string, expenseId: string): string {
+  return `${ledgerId}:${expenseId}`;
+}
+
+export function ruleBinding(ledgerId: string, ruleId: string): string {
+  return `${ledgerId}:rule:${ruleId}`;
+}
+
+// What a sealed expense row, or a sealed rule template, holds. A template has no receipt.
+// Amounts stay integer minor units inside the blob too.
 export interface SealedPayloadV1 {
   readonly v: 1;
   readonly amountMinor: number;
