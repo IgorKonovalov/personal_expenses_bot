@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0035`
+- **Next free number:** `0036`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -33,11 +33,12 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0024](0024-admission-lives-in-the-database-via-invite-codes.md) | Admission lives in the database, granted by admin-made invite codes | proposed (2026-10-01) |
 | [0025](0025-static-mini-app-fragment-in-senddata-out.md) | A static Mini App with no backend: data arrives in the URL fragment and leaves by sendData | proposed (2026-10-01) |
 | [0026](0026-export-csv-and-hand-rolled-xlsx.md) | Export writes CSV and a hand-rolled XLSX, with no spreadsheet dependency | accepted (2026-10-03) |
-| [0027](0027-donations-only-funding.md) | The bot is funded by donations only: no paid tier, and a donation unlocks nothing | proposed (2026-10-01) |
+| [0027](0027-donations-only-funding.md) | The bot is funded by donations only: no paid tier, and a donation unlocks nothing | accepted (2026-10-06) |
 | [0028](0028-contextual-tips-registry.md) | Contextual tips are a registry of conditions, shown as one capped message, seen when sent | proposed (2026-10-01) |
 | [0029](0029-tags-on-the-expense-row.md) | Tags are `#words` stripped from the expense text and stored on the expense row | proposed (2026-10-01) |
 | [0030](0030-debts-as-operations-settle-up-per-currency.md) | Debts are signed operations balanced per person and currency; group settle-up splits equally per currency | proposed (2026-10-01) |
 | [0031](0031-local-time-scheduler.md) | One minute-tick scheduler fires per-ledger jobs at a local time, keyed by occurrence date | proposed (2026-10-02) |
 | [0032](0032-statement-rows-match-recorded-expenses.md) | A statement row counts as already recorded when a live expense matches its amount and currency within one day | proposed (2026-10-02) |
 | [0033](0033-pdf-statements-via-pdfjs-dist.md) | PDF statements are read with `pdfjs-dist`, imported lazily and only by the statements adapter | proposed (2026-10-02) |
-| [0034](0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) | Retry an unread receipt QR on preprocessed pixels, decoded with jpeg-js | proposed (2026-10-03) |
+| [0034](0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) | Retry an unread receipt QR on preprocessed pixels, decoded with jpeg-js | accepted (2026-10-05) |
+| [0035](0035-recurring-occurrences-sealed-under-their-rule.md) | A sealed recurring occurrence opens under its rule's binding, not its own expense id | proposed (2026-10-05) |

@@ -6,7 +6,8 @@
 > **Related ADRs:** [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler),
 > [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md) (ledger time),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (groups),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
+> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0035](../adrs/0035-recurring-occurrences-sealed-under-their-rule.md) (sealed occurrences)
 
 ## TL;DR
 
@@ -199,22 +200,36 @@ sleeps.
 - **Owner skill:** dev
 - **What:**
   - In a sealed personal ledger (Plan 0019), a rule's template is stored as a sealed payload
-    created when the rule is made, while the ledger is unlocked to read the source expense. Each
-    `auto` occurrence writes a new expense row carrying a copy of that payload, so the scheduler
-    never needs the passphrase.
+    created when the rule is made, while the ledger is unlocked to read the source expense. It is
+    sealed with the associated data `<ledgerId>:rule:<ruleId>` (ADR-0035). Each `auto` occurrence
+    writes a new expense row carrying a byte copy of that payload, with the next free migration's
+    nullable `expenses.sealed_rule_id` naming the rule, so the scheduler never needs the
+    passphrase.
+  - `rowAad` becomes a function of the row: the rule binding when `sealed_rule_id` is set, the
+    expense id otherwise, at every open site (`openRow`, `foldedReceipt`, `resealed`). Editing an
+    occurrence reseals it under its own expense id and clears `sealed_rule_id`.
+  - Enabling encryption on a ledger with expense rules seals their templates and clears their
+    plaintext columns in the same transaction as its rows.
   - The posted notice is `recurringRecordedSealed`, which has no amount or description and keeps
     [Удалить]. Ask mode in a sealed ledger posts `recurringAskSealed`, which has no amount, offers
     [Записать] and [Пропустить], and drops [Другая сумма].
   - Reminder texts aren't ledger data, and they stay plaintext. The text prompt says so when the
     personal ledger is sealed.
   - `/help` gains a recurring paragraph, and the README lists `/recurring`.
-- **Files touched:** `src/domain/sealing.ts` (+ test), `src/db/recurring.ts` (+ test),
+- **Files touched:** `src/domain/sealing.ts` (+ test), `src/db/migrations/` (the next free
+  migration: `expenses.sealed_rule_id`), `src/db/expenses.ts` (+ test), `src/db/recurring.ts`
+  (+ test), `src/services/ledgerKeys.ts` (+ test), `src/services/sealLedger.ts` (+ test),
   `src/services/recurring.ts` (+ test), `src/bot/recurringProvider.ts`, `src/bot/messages.ts`,
   `src/bot/bot.test.ts`, `README.md`.
 - **Done when:**
   - A sealed-ledger rule's row holds no plaintext amount or description.
   - Its occurrence records an expense that decrypts after `/unlock` to the template's amount and
-    description, on the due date.
+    description, on the due date, with the ledger locked when the occurrence fires.
+  - Editing that occurrence's amount after `/unlock` leaves a row that still decrypts, with
+    `sealed_rule_id` NULL.
+  - The rule's template copied onto a row without `sealed_rule_id` fails to open.
+  - Enabling encryption on a ledger that already has an expense rule leaves that rule's row
+    with no plaintext amount or description, and its next occurrence decrypts.
   - The sealed notice contains neither the amount nor the description.
 
 ### Phase 7: A real month

@@ -190,7 +190,7 @@ export function registerReceiptMedia(
     };
     if ((file.file_size ?? 0) > MAX_DOWNLOAD_BYTES) {
       deps.logger.info({ ...read, outcome: 'tooLarge' }, 'receipt image read');
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(ctx, messages.receiptPhotoNoQr);
       return;
     }
 
@@ -199,7 +199,7 @@ export function registerReceiptMedia(
     const { file_path: filePath } = await ctx.api.getFile(file.file_id);
     if (filePath === undefined) {
       deps.logger.info({ ...read, outcome: 'noFilePath' }, 'receipt image read');
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(ctx, messages.receiptPhotoNoQr);
       return;
     }
     const started = performance.now();
@@ -214,12 +214,20 @@ export function registerReceiptMedia(
         ms: Math.round(performance.now() - started),
         outcome: decoded !== undefined ? 'receipt' : qr.kind === 'none' ? 'noQr' : 'notReceipt',
         ...(qr.kind === 'none' && qr.detected !== undefined ? { detected: qr.detected } : {}),
-        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length } : {}),
+        ...(qr.kind === 'none' && qr.pixelDecode !== undefined
+          ? { pixelDecode: qr.pixelDecode }
+          : {}),
+        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length, pass: qr.pass } : {}),
       },
       'receipt image read',
     );
     if (decoded === undefined) {
-      await replyHtml(ctx, messages.receiptPhotoHint);
+      await replyHtml(
+        ctx,
+        qr.kind === 'none' && qr.detected !== undefined
+          ? messages.receiptPhotoUnreadable
+          : messages.receiptPhotoNoQr,
+      );
       return;
     }
     await answerReceipt(ctx, deps, {

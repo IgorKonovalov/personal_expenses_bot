@@ -17,5 +17,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src", "eslint.config.js", "vitest.config.ts"]
+  "include": ["src", "scripts/**/*.ts", "eslint.config.js", "vitest.config.ts"]
 }

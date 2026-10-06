@@ -1,6 +1,6 @@
 {
   "name": "personal-expenses-bot",
-  "version": "0.13.0",
+  "version": "0.15.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "qr:corpus": "tsx scripts/qr-corpus.ts",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -26,6 +27,7 @@
     "better-sqlite3": "13.0.3",
     "date-fns": "4.4.0",
     "grammy": "1.46.0",
+    "jpeg-js": "0.4.4",
     "pino": "10.3.1",
     "zxing-wasm": "3.1.4"
   },

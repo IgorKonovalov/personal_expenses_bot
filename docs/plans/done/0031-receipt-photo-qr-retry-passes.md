@@ -1,9 +1,9 @@
 # 0031: Receipt photos that fail the plain QR pass get retried on preprocessed pixels
 
-> **Status:** approved (2026-10-03)
+> **Status:** done (2026-10-05): built as planned after two fix passes, one minor and one nit open, Phase 5 live check owed, v0.13.0
 > **Created:** 2026-10-03
-> **Related ADRs:** [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
-> [ADR-0019](../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
+> **Related ADRs:** [ADR-0034](../../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (retry on preprocessed pixels, jpeg-js),
+> [ADR-0019](../../adrs/0019-qr-decoding-zxing-wasm.md) (zxing-wasm)
 
 ## TL;DR
 
@@ -201,22 +201,124 @@ interface Variant { name: string; apply(src: Luma, located?: Quad): Luma }
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Collect the corpus | human | not started | |
-| 2: Walking skeleton | dev | not started | |
-| 3: Tune variants and budget | dev | not started | |
-| 4: Two hints | dev | not started | |
+| 1: Collect the corpus | human | done (user; 8 images in `data/qr-corpus/`) | |
+| 2: Walking skeleton | dev | done | `04c352e` |
+| 3: Tune variants and budget | dev | done | `7385355` |
+| 4: Two hints | dev | done | `41b9357` |
 | 5: Live check | human | not started | |
 
 ### Notes
 
+- Phase 2: the threshold reads "mean - 3%" as relative to the mean, strict: a pixel is white when
+  `L > 0.97 * mean`. ImageMagick's `-lat 31x31-3%` subtracts 3% of the full range instead. With
+  the absolute offset, the 64x64 half-black test's uniformly black area turns white.
+- Phase 2: rerunning `generate.ts` rewrote `example.png` bytes; it was restored from `HEAD`, and
+  only `rs-receipt-dotgain.jpg` is new. The fixture: EC level L, 7 px per module, `Erode Disk:2`,
+  `-blur 0x2`.
+- Phase 2 `pnpm qr:corpus` (8 images):
+
+  | file | pass | detected | ms |
+  |---|---|---|---|
+  | photo_2026-10-03_21-30-22.jpg | none | | 452 |
+  | photo_2026-10-03_21-31-00.jpg | none | | 311 |
+  | photo_2026-10-03_21-31-05.jpg | none | v23 L ChecksumError 6.9px | 300 |
+  | photo_2026-10-03_21-31-10.jpg | blur3-lmt31-3 | | 283 |
+  | photo_2026-10-03_21-31-15.jpg | none | | 265 |
+  | photo_2026-10-03_21-31-21.jpg | none | | 253 |
+  | photo_2026-10-03_21-31-27.jpg | none | v20 L ChecksumError 8px | 306 |
+  | photo_2026-10-03_21-31-33.jpg | none | v20 L ChecksumError 7.1px | 289 |
+
+  Total: 1 of 8 decoded, slowest 452 ms.
+- Phase 3 candidates, each over the 8 corpus photos (files by time suffix):
+  - Local-mean threshold after a 3x3 blur (or two), windows 13 to 31, offsets 1 to 5%: the best
+    rescue 21-31-10 and 21-31-15. Shipped: `blur3-lmt21-3`, the only variant, rescuing both.
+  - `blur3-lmt31-3` (Phase 2's variant): rescues 21-31-10 only, also rescued by
+    `blur3-lmt21-3`: 0 unique, dropped.
+  - 1 px erosion of the dark modules, before or after the threshold: 0, dropped.
+  - Crop to the located symbol with a 4-module margin, upscaled 2x (also 1x, 3x), alone, with the
+    local threshold, with erosion, or with an Otsu global threshold: 0, dropped. None of the
+    three detected photos (21-31-05, 21-31-27, 21-31-33) decodes under any candidate.
+- Phase 3 `pnpm qr:corpus` (8 images):
+
+  | file | pass | detected | ms |
+  |---|---|---|---|
+  | photo_2026-10-03_21-30-22.jpg | none | | 401 |
+  | photo_2026-10-03_21-31-00.jpg | none | | 287 |
+  | photo_2026-10-03_21-31-05.jpg | none | v23 L ChecksumError 6.9px | 287 |
+  | photo_2026-10-03_21-31-10.jpg | blur3-lmt21-3 | | 277 |
+  | photo_2026-10-03_21-31-15.jpg | blur3-lmt21-3 | | 249 |
+  | photo_2026-10-03_21-31-21.jpg | none | | 255 |
+  | photo_2026-10-03_21-31-27.jpg | none | v20 L ChecksumError 8px | 238 |
+  | photo_2026-10-03_21-31-33.jpg | none | v20 L ChecksumError 7.1px | 271 |
+
+  Total: 2 of 8 decoded, slowest 401 ms (whole `decodeQr`). The slowest whole retry list (one
+  variant plus its ZXing read) took 66 ms; `QR_RETRY_BUDGET_MS` is 1000.
+- Phase 3: the pixel decode's limits are 8 MP and 64 MB; a larger JPEG gets the plain pass only.
+- Phase 3 deviation: `src/bot/bot.test.ts`, outside `Files touched`, pins the first variant's
+  name; the pin changed to `blur3-lmt21-3`.
+- Phase 3: `decodeQr` takes an optional `{ variants, now }` so the budget test drives a fake
+  clock.
+- Phase 4: the plan's copy shipped unchanged; it was not run past `ux-telegram`. The «без сжатия»
+  test reads the `messages.ts` source.
+- Review fix pass, finding 1 (major, the 64 MB limit), partly fixed in `481516a`: `decodeQr`
+  returns `pixelDecode` (`overLimit` or `undecodable`) when the pixel decode refuses a JPEG, and
+  the `receipt image read` log line and `pnpm qr:corpus` show it; the limits comment carries the
+  numbers below. The limit stays 64 MB, open for `/architect` at the user's call. jpeg-js's
+  counted memory: 2560x1920 4:2:0 68 MB, 2560x2560 4:2:0 91 MB, 2560x1920 4:4:4 104 MB,
+  2560x2560 4:4:4 138 MB. Whole `decodeQr` under a 256 MiB cgroup (`systemd-run`, tsx, base
+  106-119 MiB): at a 160 MB limit, both 2560x2560 samplings were OOM-killed and 2560x1920 4:2:0
+  peaked at 253 MiB; at 64 MB, 2560x2560 4:4:4 peaked at 248 MiB and 4:2:0 at 207 MiB. No test
+  that a 2560x2560 JPEG decodes was added: at 64 MB it doesn't.
+- Fix pass `pnpm qr:corpus` at 64 MB: the same 8 rows as Phase 3, no `pixels` cell on any row,
+  2 of 8 decoded, slowest 445 ms.
+- Fix pass 2, finding 1 (the 64 MB limit), in `e2d6a7f`: `MAX_MEMORY_MB` is 110 and
+  `docker-compose.yml`'s `mem_limit` is 384m. Three fixtures, `blank-2560x1920-420.jpg`,
+  `blank-2560x2560-420.jpg` and `blank-2560x2560-444.jpg` (plain white, three components), are
+  in `qr.test.ts`: both 4:2:0 run a spy variant on a 2560-wide luma with no `pixelDecode`, and
+  4:4:4 returns `overLimit` from `maxMemoryUsageInMB limit exceeded` with the spy not called.
+  2560x1920 4:4:4 (104 MB) is also under 110 MB and is retried.
+- Fix pass 2 peaks: the whole `decodeQr` from `pnpm build`'s `dist/`, run by node under
+  `systemd-run --user --scope -p MemoryMax=384M -p MemorySwapMax=0`, after importing the dist
+  bot, receipt worker, db, fetcher, rate worker and logger modules; `memory.peak` of the scope,
+  three runs each, on ImageMagick Gaussian-noise JPEGs at q75 (no QR, so every variant runs):
+
+  | input | pixelDecode | peak MiB | ms |
+  |---|---|---|---|
+  | base (imports + `no-qr.jpg`) | | 73-75 | |
+  | 2560x1920 4:2:0 | | 226-228 | 806-837 |
+  | 2560x2560 4:2:0 | | 282-290 | 1084-1216 |
+  | 2560x1920 4:4:4 | | 304-315 | 1033-1040 |
+  | 2560x2560 4:4:4 | overLimit | 288-293 | 985-1239 |
+
+  Under `MemoryMax=256M`, 2560x2560 4:2:0 exited 137 and 2560x1920 4:2:0 peaked at 228 MiB.
+  The 2560x2560 4:2:0 and 4:4:4 runs exceed `QR_RETRY_BUDGET_MS` (1000) as whole-`decodeQr`
+  times; the budget covers the retries only. The bot's real boot (config, open database,
+  grammY polling) was not run inside the cgroup.
+- Fix pass 2 `pnpm qr:corpus` at 110 MB: the same 8 rows, 2 of 8 decoded, slowest 429 ms.
+- Review finding 2 (README file advice): `d03c1bd`.
+- Review finding 3 (`scripts/qr-corpus.ts` outside the gate): `079e94e`. `tsconfig.json` includes
+  `scripts/**/*.ts`, and `eslint.config.js` ignores `scripts/**/*.mjs` in place of `scripts/`.
+- Review finding 4: per the user, all 8 corpus files are the photos from 2026-10-03; the
+  done-when's five is these 8. 2 of the 8 decode (21-31-10, 21-31-15).
+
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `decodeQr` retries a JPEG the plain pass reads no QR from on luminance decoded
+  by `jpeg-js` (exact pin, limits 8 MP and 110 MB; `mem_limit` 384m), through `VARIANTS` in `src/fiscal/qrPixels.ts`:
+  one variant, `blur3-lmt21-3`, under `QR_RETRY_BUDGET_MS` = 1000. The decoded result and the
+  `receipt image read` log line carry `pass`. `pnpm qr:corpus` measures `data/qr-corpus/`: 2 of 8
+  decoded. `receiptPhotoHint` is split into `receiptPhotoNoQr` and `receiptPhotoUnreadable`.
+- **User-visible surface changed:** a receipt photo the plain pass can't read may now record its
+  expense. A photo with a located but unread QR gets the new unreadable hint; every other
+  unread image gets the new no-QR hint. Neither mentions an uncompressed file.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 71 files,
+  1001 tests; `pnpm build` exit 0.
+- **Outstanding `human` phases:** Phase 5 (live check after deploy; blocks merge: no).
 
 ## Followups
 
 - Plan 0030: move Phase 4 («📷 Скан») ahead of the charts phases, once the other session's
   uncommitted edits to 0030 are committed.
+- Close review (minor): peak memory with the real boot (config, open database, grammY polling)
+  inside the 384m cgroup is unmeasured. At the Phase 5 live check, send one 2560 px photo and
+  log the container's `docker stats` peak next to the `pass` values.

@@ -2,7 +2,7 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
-## 0.13.0 (2026-10-03)
+## 0.15.0 (2026-10-06)
 
 From Plan 0024 (export and data ownership).
 
@@ -14,6 +14,26 @@ From Plan 0024 (export and data ownership).
   ledger, and the shop and link for a receipt. Export is free.
 - A sealed ledger exports only while unlocked, and the picker says the file is an unencrypted
   copy.
+
+## 0.14.0 (2026-10-06)
+
+From Plan 0028 (donations).
+
+- The bot stays free and says so. /donate in a private chat offers 50, 150 or 500 Telegram Stars,
+  each opening the payment sheet directly, plus an external page when `DONATE_URL` is set. A
+  donation unlocks nothing. The donor gets one thank-you and the admin one notice.
+- The private /help ends with a line pointing to /donate.
+- /paysupport <text> relays a refund request to the admin, and the admin's /refund <charge id>
+  returns the Stars.
+
+## 0.13.0 (2026-10-05)
+
+From Plan 0031 (receipt photo QR retry passes).
+
+- A receipt photo whose QR code doesn't read on the first try is retried on preprocessed pixels
+  (blurred and thresholded), so a pale or smudged thermal-print QR can still record the expense.
+- When nothing reads, the hint says whether the QR code was found at all: get closer when it
+  wasn't, shoot flat, in focus and without glare when it was. Neither suggests sending a file.
 
 ## 0.12.0 (2026-10-02)
 

@@ -7,6 +7,30 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-02 to 2026-10-03: Plans 0024 to 0030 in lane a
+
+Queue `a: 0024, 0029, 0028, 0025, 0013, 0027, 0030, 0015, 0026` (0012 added after 0024).
+Nothing merged: 4 parks, 33 h wall, $26.30. Lane a then stopped at the worktree cap with
+0024, 0028 and 0029 holding the three worktrees.
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H1 | 0024 | `human_phase` at Phase 5 | A post-deploy live check that blocked the merge. `6eca81a` marked the queued plans' live checks `Blocks merge: no`, then `resume`. |
+| H2 | 0024 | `main_dirty` at the fast-forward | The main checkout had uncommitted work. Clean now; the next live run resumes it. Its lane closed as v0.13.0, which Plan 0031 has since taken on main, so the fast-forward meets a version conflict. |
+| H3 | 0028 | `plan_wrong` at Phase 2 (in-lane readiness) | Files touched omitted `src/index.ts`, `src/bot/bot.ts` and `src/bot/testHarness.ts`, the route from config to a handler and the harness option. Amended (this commit). |
+| H4 | 0029 | `human_phase` at Phase 6 | Deploy and open, deliberately blocking. Owner's to do; holds a worktree meanwhile. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F24 | architect | **A new config key that reaches a handler also touches `src/index.ts`, `src/bot/bot.ts` (`BotOptions`) and `src/bot/testHarness.ts`.** Same gap class as F14/F19 (0028 H3). Add the line to the plan template's Files touched guidance. | open |
+| F25 | architect | **A blocking `human` phase parks a lane slot for days** (0029 H4), and with 0028 parked the cap stopped lane a. Queue a plan with a blocking human phase last, or raise `max_open_worktrees`. | open |
+| F26 | architect | **Two lanes closed the same version** (0024 and 0031 both v0.13.0), because 0031 was closed by hand while 0024 sat parked. Before a hand close, check the parked lanes' claimed versions. | open |
+| F27 | - | Edits after `ready` (`6eca81a`) cleared six plans' readiness records, so each needs `ready` again before `check` passes. | open |
+
 ## 2026-10-01: Plan 0017 (interactive, not a run)
 
 Plan 0017 changed the conductor's own sources, so `/dev` built it by hand. It closes F12, F13,

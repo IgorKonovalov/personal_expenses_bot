@@ -4,7 +4,9 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
+import { adminNotifier } from './adminNotifier.js';
 import { createBot } from './bot.js';
+import { createDonationLinks, type DonationLinks } from './handlers/donate.js';
 
 export const ALLOWED_ID = 1001;
 export const SECOND_ALLOWED_ID = 1003;
@@ -36,7 +38,12 @@ export interface TestBotOptions {
   readonly logLevel?: 'info' | 'silent';
   // Bot API methods the fake rejects with a 400, e.g. a chat with reactions disabled.
   readonly failMethods?: readonly string[];
+  // DONATE_URL.
+  readonly donateUrl?: string;
 }
+
+// The admin, as in production: the first allowed id (ADR-0013).
+export const ADMIN_ID = 1001;
 
 export function createTestBot(options: TestBotOptions = {}) {
   const now = options.now ?? new Date('2026-09-29T22:10:00Z');
@@ -45,12 +52,14 @@ export function createTestBot(options: TestBotOptions = {}) {
   const logLines: string[] = [];
   let n = 0;
   const keys = createLedgerKeyring(() => now);
+  const logger = createLogger(options.logLevel ?? 'silent', {
+    write: (line: string) => void logLines.push(line),
+  });
+  const donationLinks: DonationLinks = new Map();
   const bot = createBot({
     token: '123456:test-token',
     allowedTelegramIds: new Set([ALLOWED_ID, SECOND_ALLOWED_ID]),
-    logger: createLogger(options.logLevel ?? 'silent', {
-      write: (line: string) => void logLines.push(line),
-    }),
+    logger,
     db,
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     now: () => now,
@@ -58,6 +67,10 @@ export function createTestBot(options: TestBotOptions = {}) {
     defaultCurrency: 'RSD',
     keys,
     botInfo,
+    donationLinks,
+    donateUrl: options.donateUrl,
+    adminTelegramId: ADMIN_ID,
+    notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
   });
 
   const calls: ApiCall[] = [];
@@ -67,11 +80,68 @@ export function createTestBot(options: TestBotOptions = {}) {
     if (failing.has(method)) {
       return Promise.resolve({ ok: false, error_code: 400, description: 'Bad Request: test' });
     }
-    // The fake answers every method alike; no code under test reads the result.
+    // An invoice link names its payload, so a test can tell the buttons apart.
+    if (method === 'createInvoiceLink') {
+      const { payload: invoicePayload } = payload as { payload: string };
+      return Promise.resolve({ ok: true, result: invoiceLink(invoicePayload) as never });
+    }
+    // Every other method is answered alike; no code under test reads the result.
     return Promise.resolve({ ok: true, result: true as never });
   });
 
-  return { bot, db, calls, logLines, keys };
+  // What index.ts does at boot, after createBot. Records the createInvoiceLink calls.
+  const prepareDonations = () => createDonationLinks(bot.api, logger, donationLinks);
+
+  return { bot, db, calls, logLines, keys, prepareDonations };
+}
+
+// The fake's invoice link for a payload, e.g. `donate:150`.
+export function invoiceLink(payload: string): string {
+  return `https://t.me/$test-${payload.replace(':', '-')}`;
+}
+
+export function preCheckoutUpdate(opts: {
+  updateId: number;
+  currency: string;
+  totalAmount: number;
+  payload: string;
+  fromId?: number;
+}): Update {
+  return {
+    update_id: opts.updateId,
+    pre_checkout_query: {
+      id: `pcq-${opts.updateId}`,
+      from: { id: opts.fromId ?? ALLOWED_ID, is_bot: false, first_name: 'Test' },
+      currency: opts.currency,
+      total_amount: opts.totalAmount,
+      invoice_payload: opts.payload,
+    },
+  };
+}
+
+export function successfulPaymentUpdate(opts: {
+  updateId: number;
+  stars: number;
+  chargeId: string;
+  fromId?: number;
+}): Update {
+  const fromId = opts.fromId ?? ALLOWED_ID;
+  return {
+    update_id: opts.updateId,
+    message: {
+      message_id: 100 + opts.updateId,
+      date: 1_790_000_000,
+      chat: { id: fromId, type: 'private', first_name: 'Test' },
+      from: { id: fromId, is_bot: false, first_name: 'Test' },
+      successful_payment: {
+        currency: 'XTR',
+        total_amount: opts.stars,
+        invoice_payload: `donate:${opts.stars}`,
+        telegram_payment_charge_id: opts.chargeId,
+        provider_payment_charge_id: '',
+      },
+    },
+  };
 }
 
 // Log fields that can contain arbitrary digits unrelated to expense content.

@@ -33,7 +33,7 @@ export default tseslint.config(
       'dist/',
       'data/',
       '.claude/',
-      'scripts/',
+      'scripts/**/*.mjs',
       'tools/',
       'docs/',
     ],
