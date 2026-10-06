@@ -16,7 +16,7 @@ status and date. What a plan did lives in the plan.
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0034](0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | draft (2026-10-06) |
+| [0034](0034-pre-invite-polish.md) | Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once | approved (2026-10-06) |
 
 ## Recently closed
 

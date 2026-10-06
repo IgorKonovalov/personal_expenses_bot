@@ -1,6 +1,6 @@
 # 0034: Pre-invite polish: every command on a button, a full command menu, a clean receipt chat, and notices shown once
 
-> **Status:** draft
+> **Status:** approved (2026-10-06)
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0037](../adrs/0037-first-time-notices-and-transient-replies.md) (notices
 > shown once, transient replies), [ADR-0011](../adrs/0011-navigation-model.md) (the menu bar),
