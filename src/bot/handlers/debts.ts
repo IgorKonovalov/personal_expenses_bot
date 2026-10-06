@@ -13,6 +13,7 @@ import {
   debtCurrency,
   debtLines,
   debtPeople,
+  debtsLocked,
   deleteDebtOp,
   personCard,
   pickDebtPerson,
@@ -38,6 +39,7 @@ import {
   type DebtsScreen,
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
+import { isLocked } from '../../services/ledgerKeys.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   DEBTS_LIST,
@@ -77,11 +79,19 @@ import { ensureUser } from './start.js';
 
 // /debts (Plan 0013, ADR-0030): who owes the user and whom the user owes, per person and
 // currency. [Я дал в долг] and [Я взял в долг] ask for the amount, then the person, in the
-// screen's anchor. Debts are private: the screen exists only in the DM.
+// screen's anchor. Debts are private: the screen exists only in the DM. In a sealed personal
+// ledger that is locked (ADR-0020) every debts screen shows names, so each answers the locked
+// message instead.
+
+// What a debts screen re-rendered while the ledger is locked shows.
+function lockedView(): ScreenView {
+  return { text: messages.ledgerLocked, markup: new InlineKeyboard() };
+}
 
 // The debts list: a button per person on it, two per row, then the two new-loan buttons.
 export function debtsListView(deps: HandlerDeps, user: User): ScreenView {
   const lines = debtLines(deps, user);
+  if (isLocked(lines)) return lockedView();
   const people = [...new Map(lines.map((line) => [line.personId, line.name])).entries()];
   const buttons = people.map(([id, name]) => InlineKeyboard.text(name, debtPersonData(id)));
   const rows: InlineKeyboardButton[][] = [];
@@ -107,6 +117,7 @@ function personCardView(
 ): ScreenView | undefined {
   const card = personCard(deps, user, personId);
   if (card === undefined) return undefined;
+  if (isLocked(card)) return lockedView();
   const repay = [
     ...(card.balances.some((b) => b.amountMinor > 0)
       ? [InlineKeyboard.text(messages.repaidToMeButton, debtRepayData(personId, 'toMe'))]
@@ -147,7 +158,9 @@ function splitPickerView(
   flow: DebtSplitFlow,
   refusal?: Html,
 ): ScreenView {
-  const toggles = debtPeople(deps, user).map((person) =>
+  const people = debtPeople(deps, user);
+  if (isLocked(people)) return lockedView();
+  const toggles = people.map((person) =>
     InlineKeyboard.text(
       messages.splitChoice(person.name, flow.chosen.includes(person.id)),
       splitToggleData(person.id),
@@ -167,7 +180,8 @@ function splitPickerView(
 }
 
 // After a `/N` expense's card: the split picker, sent as a reply to the card, becomes the anchor
-// of its flow.
+// of its flow. While a sealed ledger is locked the picker can't show names: the share stays
+// recorded, and the reply says to add the debts after /unlock.
 export async function offerSplit(
   ctx: Context,
   deps: HandlerDeps,
@@ -189,6 +203,12 @@ export async function offerSplit(
     sourceKey: input.sourceKey,
     now: deps.now(),
   });
+  if (isLocked(flow)) {
+    await replyHtml(ctx, messages.splitLocked, {
+      reply_parameters: { message_id: input.cardMessageId },
+    });
+    return;
+  }
   const view = splitPickerView(deps, user, flow);
   const sent = await replyHtml(ctx, view.text, {
     reply_markup: view.markup,
@@ -241,7 +261,9 @@ function personPickerView(
   page = 1,
   refusal?: Html,
 ): ScreenView {
-  const shown = pageOf(debtPeople(deps, user), page);
+  const people = debtPeople(deps, user);
+  if (isLocked(people)) return lockedView();
+  const shown = pageOf(people, page);
   const choices = shown.items.map((person) =>
     InlineKeyboard.text(person.name, debtPickData(person.id)),
   );
@@ -295,6 +317,10 @@ export async function answerDebtFlow(
   const now = deps.now();
   if (flow.kind === 'debtSplit') {
     const result = answerSplitName(deps, { ...input, flow, now });
+    if (isLocked(result)) {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
     await show(
       ctx,
       anchor,
@@ -306,6 +332,10 @@ export async function answerDebtFlow(
   }
   if (flow.kind === 'debtRepay') {
     const result = answerRepayAmount(deps, { ...input, flow, now });
+    if (isLocked(result)) {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
     if (result.kind === 'gone') {
       if (anchor?.screen.name === 'debts') {
         await renderAnchor(ctx, anchor, debtsScreenFor(deps, user, anchor.screen));
@@ -323,6 +353,10 @@ export async function answerDebtFlow(
   }
   if (flow.kind === 'debtAmount') {
     const result = answerDebtAmount(deps, { ...input, flow, now });
+    if (isLocked(result)) {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
     await show(
       ctx,
       anchor,
@@ -333,6 +367,10 @@ export async function answerDebtFlow(
     return;
   }
   const result = answerDebtPersonName(deps, { ...input, flow, now });
+  if (isLocked(result)) {
+    await replyHtml(ctx, messages.ledgerLocked);
+    return;
+  }
   await show(
     ctx,
     anchor,
@@ -349,6 +387,10 @@ async function debtsTap(ctx: Context, deps: HandlerDeps): Promise<ScreenTap | un
     await ctx.answerCallbackQuery({ text: messages.staleScreen });
     return undefined;
   }
+  if (debtsLocked(deps, tap.user)) {
+    await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+    return undefined;
+  }
   return tap;
 }
 
@@ -362,6 +404,12 @@ async function personFlowOf(
   if (flow?.kind === 'debtPerson') return flow;
   await ctx.answerCallbackQuery({ text: messages.staleScreen });
   return undefined;
+}
+
+// The toast for a tap the service refused: the ledger locked since the screen was shown, or the
+// screen is stale.
+function refusalToast(locked: boolean): string {
+  return locked ? messages.ledgerLockedToast : messages.staleScreen;
 }
 
 async function showDebts(
@@ -383,8 +431,8 @@ async function showRepayStart(
   direction: RepayDirection,
   start: RepayStart,
 ): Promise<void> {
-  if (start.kind === 'nothing') {
-    await ctx.answerCallbackQuery({ text: messages.staleScreen });
+  if (start.kind === 'nothing' || start.kind === 'locked') {
+    await ctx.answerCallbackQuery({ text: refusalToast(start.kind === 'locked') });
     return;
   }
   await ctx.answerCallbackQuery();
@@ -442,9 +490,10 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     const currency = toCurrencyCode(ctx.match[2] ?? '');
     if (tap === undefined || currency === undefined) return;
     const personId = Number(ctx.match[1]) as DebtPersonId;
-    const owedToMe = personCard(deps, tap.user, personId)?.balances.find(
-      (b) => b.currency === currency,
-    );
+    const card = personCard(deps, tap.user, personId);
+    const owedToMe = isLocked(card)
+      ? undefined
+      : card?.balances.find((b) => b.currency === currency);
     const direction = (owedToMe?.amountMinor ?? 0) > 0 ? 'toMe' : 'byMe';
     const start = startRepay(deps, {
       user: tap.user,
@@ -464,8 +513,8 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       sourceKey: `cb:${ctx.callbackQuery.id}`,
       now: deps.now(),
     });
-    if (result.kind === 'stale') {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    if (result.kind === 'stale' || result.kind === 'locked') {
+      await ctx.answerCallbackQuery({ text: refusalToast(result.kind === 'locked') });
       return;
     }
     await ctx.answerCallbackQuery();
@@ -477,8 +526,8 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     if (tap === undefined) return;
     const personId = Number(ctx.match[1]) as DebtPersonId;
     const result = toggleSplitPerson(deps, { user: tap.user, personId, now: deps.now() });
-    if (result.kind === 'stale') {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    if (result.kind === 'stale' || result.kind === 'locked') {
+      await ctx.answerCallbackQuery({ text: refusalToast(result.kind === 'locked') });
       return;
     }
     await ctx.answerCallbackQuery();
@@ -496,7 +545,7 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
         text:
           result.kind === 'notReady'
             ? messages.splitNeedPeople(result.flow.needed)
-            : messages.staleScreen,
+            : refusalToast(result.kind === 'locked'),
       });
       return;
     }
@@ -531,10 +580,7 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     const user = ensureUser(deps, ctx.from.id, deps.now());
     const result = deleteDebtOp(deps, { user, opId, now: deps.now() });
     if (result.kind !== 'deleted') {
-      await ctx.answerCallbackQuery({
-        text:
-          result.kind === 'alreadyDeleted' ? messages.debtAlreadyDeleted : messages.debtNotFound,
-      });
+      await ctx.answerCallbackQuery({ text: deleteRefusal[result.kind] });
       return;
     }
     await ctx.answerCallbackQuery({ text: messages.debtDeletedToast });
@@ -552,6 +598,10 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('debts', async (ctx) => {
     if (ctx.from === undefined) return;
     const user = ensureUser(deps, ctx.from.id, deps.now());
+    if (debtsLocked(deps, user)) {
+      await replyHtml(ctx, messages.ledgerLocked);
+      return;
+    }
     await showScreen(ctx, deps, user, { name: 'debts' }, debtsListView(deps, user));
   });
 
@@ -560,6 +610,10 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     if (tap === undefined) return;
     const direction = ctx.match[1] === 'b' ? 'borrow' : 'lend';
     const flow = startDebt(deps, tap.user, direction, deps.now());
+    if (isLocked(flow)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
     setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'debts' } });
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, amountPromptView(deps, tap.user, flow));
@@ -589,11 +643,17 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       sourceKey: `cb:${ctx.callbackQuery.id}`,
       now: deps.now(),
     });
-    if (result.kind === 'stale') {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    if (result.kind === 'stale' || result.kind === 'locked') {
+      await ctx.answerCallbackQuery({ text: refusalToast(result.kind === 'locked') });
       return;
     }
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, recordedView(result));
   });
 }
+
+const deleteRefusal = {
+  alreadyDeleted: messages.debtAlreadyDeleted,
+  notFound: messages.debtNotFound,
+  locked: messages.ledgerLockedToast,
+} as const;

@@ -6384,6 +6384,69 @@ describe('debts (Plan 0013)', () => {
     });
   });
 
+  describe('in a sealed personal ledger (ADR-0020)', () => {
+    // The debts bot with encryption on, unlocked; `lock` and `unlock` switch it.
+    async function sealedDebtsBot() {
+      const bot = debtsBot();
+      await bot.say('/start');
+      const user = findUserByIdentity(bot.db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const keyDeps = { db: bot.db, logger: silentLogger(), keys: bot.keys };
+      const ledger = await sealPersonalLedger(keyDeps, user, SENT_AT);
+      const unlock = () => unlockPersonalLedger(keyDeps, user, SENT_AT);
+      await unlock();
+      return { ...bot, unlock, lock: () => bot.keys.lock(ledger.id) };
+    }
+
+    it('a lend to «Петя» stores no name bytes and no amount; locked /debts answers the locked message, unlocked shows the balance', async () => {
+      const bot = await sealedDebtsBot();
+      await bot.lend('5000', 'Петя');
+
+      const people = bot.db.prepare('SELECT * FROM debt_people').all() as Record<string, unknown>[];
+      expect(people).toHaveLength(1);
+      for (const value of Object.values(people[0] ?? {})) {
+        const bytes = Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'utf8');
+        expect(bytes.includes(Buffer.from('Петя', 'utf8'))).toBe(false);
+      }
+      expect(bot.db.prepare('SELECT kind, amount_minor, currency FROM debt_ops').all()).toEqual([
+        { kind: null, amount_minor: null, currency: null },
+      ]);
+
+      bot.lock();
+      expect(await bot.debtsText()).toBe(messages.ledgerLocked);
+      await bot.unlock();
+      expect(await bot.debtsText()).toBe('<b>Долги</b>\nПетя — должен вам 5 000.00 RSD');
+    });
+
+    it('while locked, a tap on an open debts screen answers the locked toast and records nothing', async () => {
+      const bot = await sealedDebtsBot();
+      const anchor = await bot.openDebts();
+      bot.lock();
+
+      await bot.tapOn('dbt:new:l', anchor);
+
+      const toast = bot.calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.payload;
+      expect(toast).toMatchObject({ text: messages.ledgerLockedToast });
+      expect(bot.db.prepare('SELECT kind FROM flow_sessions').pluck().all()).not.toContain(
+        'debtAmount',
+      );
+    });
+
+    it('a locked 1000 кафе /3 records the share and answers splitLocked, with no picker', async () => {
+      const bot = await sealedDebtsBot();
+      bot.lock();
+
+      await bot.say('1000 кафе /3');
+
+      expect(bot.lastSent()?.text).toBe(messages.splitLocked);
+      expect(bot.db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+      expect(bot.ops()).toEqual([]);
+      await bot.unlock();
+      await bot.say('/today');
+      expect(bot.lastSent()?.text).toContain('333.34 RSD');
+    });
+  });
+
   it('[Удалить] carries 44 bytes of callback data', () => {
     expect(Buffer.byteLength(debtDeleteData('00000000-0000-4000-8000-000000000001'))).toBe(44);
   });

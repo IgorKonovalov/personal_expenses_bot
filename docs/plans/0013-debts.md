@@ -323,7 +323,7 @@ against the decrypted list. That always works, because debts are only recorded w
 | 2: Borrowing, the person card, and repayments | dev | done | be1fc27 |
 | 3: Splitting a bill with `/N` | dev | done | 828bb5e |
 | 4: Group settle-up | dev | done | f64bc9b |
-| 5: Sealed debts, help and docs | dev | not started | |
+| 5: Sealed debts, help and docs | dev | done | committed with this row |
 | 6: Real debts and a real group | human | not started | |
 
 ### Notes
@@ -373,14 +373,22 @@ against the decrypted list. That always works, because debts are only recorded w
   them. A stale [Перевёл] gets the `staleScreen` toast and the `/settle` message is re-rendered.
   [Удалить] under a transfer edits it to `messages.transferDeleted` and does not re-render
   `/settle`.
-- Phase 5 not started: the conductor session ran out of budget after Phase 4 and parked. Things
-  for the resuming `dev`, none of them acted on:
-  - `/delete_account` (`src/services/deleteAccount.ts`) doesn't delete `debt_people` or
-    `debt_ops`, so a deleted user's debts survive. No phase lists that file.
-  - Switching encryption on (`src/services/sealLedger.ts`) doesn't seal debts recorded before.
-    No phase lists that file either.
-  - The person step's flow payload (`debtPerson`) holds the amount and currency in plaintext in
-    `flow_sessions` for up to `FLOW_TTL_MS`.
+- Phase 5: a sealed person is inserted with an empty `sealed` blob, then updated, so its name is
+  bound to its row id (`<ledger>:debt_person:<id>`). An operation binds `<ledger>:debt_op:<id>`.
+- Phase 5: switching encryption on doesn't seal debts recorded before it
+  (`src/services/ledgerKeys.ts`, `src/services/sealLedger.ts`, outside the phase's
+  `Files touched`). Those rows stay plaintext and are read as they are, next to sealed ones; a
+  typed name in a sealed ledger is matched in memory against all opened names.
+- Phase 5: while locked, a tap on a debts screen gets `ledgerLockedToast`; a typed answer to a
+  pending debts flow replies `ledgerLocked` and the flow stays; [Удалить] on a debt confirmation
+  deletes nothing and toasts `ledgerLockedToast`.
+- Phase 5: the «After `/unlock`» done-when unlocks with `unlockPersonalLedger`
+  (`src/services/testing/sealLedger.ts`, the unlock service), not a `/unlock` message and
+  passphrase through the bot.
+- Not acted on: `/delete_account` (`src/services/deleteAccount.ts`) doesn't delete `debt_people`
+  or `debt_ops`, so a deleted user's debts survive. No phase lists that file.
+- Not acted on: the `debtPerson` and `debtSplit` flow payloads hold amounts and currency in
+  plaintext in `flow_sessions` for up to `FLOW_TTL_MS`, sealed ledger or not.
 
 ### Close triggers
 

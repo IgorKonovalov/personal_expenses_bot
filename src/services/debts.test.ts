@@ -10,15 +10,17 @@ import {
   answerRepayAmount,
   debtLines,
   deleteDebtOp,
+  personCard,
   pickDebtPerson,
   repayAll,
   startDebt,
   startRepay,
   type DebtDeps,
 } from './debts.js';
-import { currentFlow, type DebtPersonFlow } from './flowSessions.js';
+import { currentFlow, type DebtAmountFlow, type DebtPersonFlow } from './flowSessions.js';
 import { createLedgerKeyring } from './ledgerKeys.js';
 import { provisionUser } from './provisionUser.js';
+import { sealPersonalLedger, unlockPersonalLedger } from './testing/sealLedger.js';
 
 const NOW = new Date('2026-10-02T10:00:00Z');
 
@@ -50,9 +52,15 @@ beforeEach(() => {
   }).user;
 });
 
+function startLend(): DebtAmountFlow {
+  const flow = startDebt(deps, alice, 'lend', NOW);
+  if (flow.kind === 'locked') throw new Error('setup: locked');
+  return flow;
+}
+
 // The flow up to the person step, for an amount typed as `text`.
 function askPerson(text: string, key: string): DebtPersonFlow {
-  const flow = startDebt(deps, alice, 'lend', NOW);
+  const flow = startLend();
   const answer = answerDebtAmount(deps, { user: alice, flow, text, inputKey: key, now: NOW });
   if (answer.kind !== 'askPerson') throw new Error('amount refused');
   return answer.flow;
@@ -97,7 +105,7 @@ describe('lending', () => {
   });
 
   it('refuses an unreadable amount and an empty name, keeping the step', () => {
-    const flow = startDebt(deps, alice, 'lend', NOW);
+    const flow = startLend();
     expect(
       answerDebtAmount(deps, { user: alice, flow, text: 'много', inputKey: 'k1', now: NOW }),
     ).toEqual({ kind: 'invalid', currency: 'RSD' });
@@ -141,6 +149,72 @@ describe('lending', () => {
       expect(content).not.toContain('Синтетик');
       expect(content).not.toContain('4321');
     }
+  });
+});
+
+describe('in a sealed personal ledger (ADR-0020)', () => {
+  async function sealed() {
+    const ledger = await sealPersonalLedger(deps, alice, NOW);
+    await unlockPersonalLedger(deps, alice, NOW);
+    return ledger;
+  }
+
+  it('seals the name and the operation, opens them while unlocked, and «петя» reuses Петя', async () => {
+    await sealed();
+    lendTo('Петя', '5000', 1);
+    lendTo('петя', '20 EUR', 3);
+
+    const people = db.prepare('SELECT name, name_key, sealed FROM debt_people').all() as {
+      name: string | null;
+      name_key: string | null;
+      sealed: Buffer;
+    }[];
+    expect(people).toHaveLength(1);
+    expect(people[0]).toMatchObject({ name: null, name_key: null });
+    expect(people[0]?.sealed.includes(Buffer.from('Петя', 'utf8'))).toBe(false);
+    expect(
+      db
+        .prepare('SELECT kind, amount_minor, currency, sealed IS NOT NULL AS sealed FROM debt_ops')
+        .all(),
+    ).toEqual([
+      { kind: null, amount_minor: null, currency: null, sealed: 1 },
+      { kind: null, amount_minor: null, currency: null, sealed: 1 },
+    ]);
+    expect(debtLines(deps, alice)).toEqual([
+      expect.objectContaining({ name: 'Петя', amountMinor: 2000, currency: 'EUR' }),
+      expect.objectContaining({ name: 'Петя', amountMinor: 500000, currency: 'RSD' }),
+    ]);
+  });
+
+  it('keeps a debt recorded before sealing readable next to a sealed one', async () => {
+    lendTo('Петя', '5000', 1);
+    await sealed();
+    lendTo('Петя', '1000', 3);
+
+    expect(db.prepare('SELECT COUNT(*) FROM debt_people').pluck().get()).toBe(1);
+    expect(debtLines(deps, alice)).toEqual([
+      expect.objectContaining({ name: 'Петя', amountMinor: 600000, currency: 'RSD' }),
+    ]);
+  });
+
+  it('while locked reads and records nothing, and deletes nothing', async () => {
+    const ledger = await sealed();
+    const recorded = lendTo('Петя', '5000', 1);
+    if (recorded.kind !== 'recorded') throw new Error('setup');
+    deps.keys.lock(ledger.id);
+
+    expect(debtLines(deps, alice)).toEqual({ kind: 'locked' });
+    expect(startDebt(deps, alice, 'lend', NOW)).toEqual({ kind: 'locked' });
+    expect(personCard(deps, alice, recorded.person.id)).toEqual({ kind: 'locked' });
+    expect(deleteDebtOp(deps, { user: alice, opId: recorded.op.id, now: NOW })).toEqual({
+      kind: 'locked',
+    });
+    expect(db.prepare('SELECT deleted_at FROM debt_ops').pluck().get()).toBeNull();
+
+    await unlockPersonalLedger(deps, alice, NOW);
+    expect(debtLines(deps, alice)).toEqual([
+      expect.objectContaining({ name: 'Петя', amountMinor: 500000, currency: 'RSD' }),
+    ]);
   });
 });
 

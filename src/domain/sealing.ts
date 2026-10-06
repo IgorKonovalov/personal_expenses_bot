@@ -10,6 +10,8 @@ import {
   randomBytes,
   type KeyObject,
 } from 'node:crypto';
+import { toCurrencyCode, type CurrencyCode } from './currencies.js';
+import type { DebtKind } from './debts.js';
 
 // The sealed-ledger crypto of ADR-0020, on node:crypto only. A row is sealed to the ledger's
 // X25519 public key with an ephemeral exchange, HKDF-SHA256 and AES-256-GCM, so writing needs no
@@ -286,6 +288,65 @@ function decodeReceipt(value: unknown): SealedReceipt {
     return { name: i.name, quantity: i.quantity, totalMinor: i.totalMinor };
   });
   return { sellerName: r.sellerName, verifyUrl: r.verifyUrl, items };
+}
+
+// Personal debts (ADR-0030) in a sealed personal ledger: a person's name, and an operation's kind,
+// amount and currency, each bound to its own row. The `debt_person:` and `debt_op:` segments keep
+// these bindings apart from every expense and rule binding.
+export function debtPersonBinding(ledgerId: string, personId: number): string {
+  return `${ledgerId}:debt_person:${String(personId)}`;
+}
+
+export function debtOpBinding(ledgerId: string, opId: string): string {
+  return `${ledgerId}:debt_op:${opId}`;
+}
+
+export interface SealedDebtPersonV1 {
+  readonly v: 1;
+  readonly name: string;
+}
+
+export interface SealedDebtOpV1 {
+  readonly v: 1;
+  readonly kind: DebtKind;
+  readonly amountMinor: number;
+  readonly currency: CurrencyCode;
+}
+
+const DEBT_KINDS: readonly string[] = ['lend', 'borrow', 'repaid_to_me', 'i_repaid'];
+
+export function encodeDebtPerson(payload: SealedDebtPersonV1): Buffer {
+  return Buffer.from(JSON.stringify(payload), 'utf8');
+}
+
+export function decodeDebtPerson(bytes: Uint8Array): SealedDebtPersonV1 {
+  const p = payloadObject(bytes);
+  if (typeof p.name !== 'string') throw new Error('sealed name is no string');
+  return { v: 1, name: p.name };
+}
+
+export function encodeDebtOp(payload: SealedDebtOpV1): Buffer {
+  return Buffer.from(JSON.stringify(payload), 'utf8');
+}
+
+// Throws on an unknown kind or currency, and on a non-integer or non-positive amount.
+export function decodeDebtOp(bytes: Uint8Array): SealedDebtOpV1 {
+  const p = payloadObject(bytes);
+  if (typeof p.kind !== 'string' || !DEBT_KINDS.includes(p.kind)) {
+    throw new Error('sealed debt kind is unknown');
+  }
+  if (!isPositiveInteger(p.amountMinor)) throw new Error('sealed amount is no positive integer');
+  const currency = typeof p.currency === 'string' ? toCurrencyCode(p.currency) : undefined;
+  if (currency === undefined) throw new Error('sealed currency is unknown');
+  return { v: 1, kind: p.kind as DebtKind, amountMinor: p.amountMinor, currency };
+}
+
+function payloadObject(bytes: Uint8Array): Record<string, unknown> {
+  const value: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+  if (typeof value !== 'object' || value === null) throw new Error('sealed payload is no object');
+  const p = value as Record<string, unknown>;
+  if (p.v !== 1) throw new Error('unknown sealed payload version');
+  return p;
 }
 
 function isInteger(value: unknown): value is number {

@@ -6,6 +6,7 @@ import {
   findDebtPersonByKey,
   insertDebtOpOrGetExisting,
   insertDebtPerson,
+  insertSealedDebtPerson,
   listDebtOps,
   listDebtPeople,
   listPersonOps,
@@ -75,6 +76,41 @@ describe('debt operations', () => {
     expect(listDebtOps(db, USER)).toEqual([
       expect.objectContaining({ id: 'a', kind: 'lend', amountMinor: 500000, currency: 'RSD' }),
     ]);
+  });
+
+  it('stores a sealed person and operation with NULL plaintext columns, and reads them back sealed', () => {
+    const sealedPerson = insertSealedDebtPerson(db, {
+      userId: USER,
+      createdAt: NOW,
+      seal: (id) => Buffer.from(`blob-${String(id)}`),
+    });
+    insertDebtOpOrGetExisting(db, {
+      id: 'a' as DebtOpId,
+      userId: USER,
+      personId: sealedPerson.id,
+      sealed: Buffer.from('op-blob'),
+      occurredOn: '2026-10-02' as LocalDate,
+      expenseId: null,
+      sourceKey: 'tg:1:a',
+      createdAt: NOW,
+    });
+
+    expect(findDebtPerson(db, USER, sealedPerson.id)).toEqual({
+      id: sealedPerson.id,
+      userId: USER,
+      sealed: Buffer.from(`blob-${String(sealedPerson.id)}`),
+    });
+    expect(listDebtOps(db, USER)).toEqual([
+      expect.objectContaining({ id: 'a', sealed: Buffer.from('op-blob') }),
+    ]);
+    expect(
+      db.prepare('SELECT name, name_key FROM debt_people WHERE id = ?').get(sealedPerson.id),
+    ).toEqual({ name: null, name_key: null });
+    expect(db.prepare('SELECT kind, amount_minor, currency FROM debt_ops').get()).toEqual({
+      kind: null,
+      amount_minor: null,
+      currency: null,
+    });
   });
 
   it('lists a person’s live operations newest first, and soft-deletes one once', () => {

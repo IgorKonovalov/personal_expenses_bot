@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  debtOpBinding,
+  debtPersonBinding,
+  decodeDebtOp,
+  decodeDebtPerson,
   decodePayload,
+  encodeDebtOp,
+  encodeDebtPerson,
   deriveRecoveryKey,
   derivePassphraseKey,
   encodePayload,
@@ -172,5 +178,46 @@ describe('payload', () => {
       JSON.stringify({ v: 2, amountMinor: 450, description: 'кофе', categoryId: null }),
     );
     expect(() => decodePayload(bytes)).toThrow(/version/);
+  });
+});
+
+describe('debt payloads', () => {
+  const { publicKey, privateKey } = generateLedgerKeypair();
+
+  it('round-trip a name and an operation, sealed under their own row bindings', () => {
+    const name = seal(
+      publicKey,
+      encodeDebtPerson({ v: 1, name: 'Петя' }),
+      debtPersonBinding('ledger-1', 7),
+    );
+    const op = seal(
+      publicKey,
+      encodeDebtOp({ v: 1, kind: 'lend', amountMinor: 500000, currency: 'RSD' }),
+      debtOpBinding('ledger-1', 'op-1'),
+    );
+
+    expect(decodeDebtPerson(open(name, privateKey, 'ledger-1:debt_person:7'))).toEqual({
+      v: 1,
+      name: 'Петя',
+    });
+    expect(decodeDebtOp(open(op, privateKey, 'ledger-1:debt_op:op-1'))).toEqual({
+      v: 1,
+      kind: 'lend',
+      amountMinor: 500000,
+      currency: 'RSD',
+    });
+    expect(() => open(name, privateKey, debtPersonBinding('ledger-1', 8))).toThrow();
+    expect(() => open(op, privateKey, expenseBinding('ledger-1', 'op-1'))).toThrow();
+  });
+
+  it('rejects an unknown kind or currency and a non-integer amount', () => {
+    const op = (fields: object) =>
+      Buffer.from(
+        JSON.stringify({ v: 1, kind: 'lend', amountMinor: 100, currency: 'RSD', ...fields }),
+      );
+    expect(() => decodeDebtOp(op({ kind: 'gift' }))).toThrow(/kind/);
+    expect(() => decodeDebtOp(op({ currency: 'XXX1' }))).toThrow(/currency/);
+    expect(() => decodeDebtOp(op({ amountMinor: 100.5 }))).toThrow(/amount/);
+    expect(() => decodeDebtPerson(Buffer.from(JSON.stringify({ v: 1, name: 5 })))).toThrow(/name/);
   });
 });

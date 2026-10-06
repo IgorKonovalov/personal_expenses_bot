@@ -1,3 +1,4 @@
+import type { KeyObject } from 'node:crypto';
 import {
   findDebtOp,
   findDebtOpBySourceKey,
@@ -5,6 +6,7 @@ import {
   findDebtPersonByKey,
   insertDebtOpOrGetExisting,
   insertDebtPerson,
+  insertSealedDebtPerson,
   listDebtOps,
   listDebtPeople,
   listPersonOps,
@@ -13,8 +15,11 @@ import {
   type DebtOpId,
   type DebtPerson,
   type DebtPersonId,
+  type NewDebtOp,
+  type StoredDebtOp,
+  type StoredDebtPerson,
 } from '../db/debts.js';
-import { findPersonalLedger } from '../db/ledgers.js';
+import { findPersonalLedger, type LedgerId } from '../db/ledgers.js';
 import type { User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import {
@@ -22,6 +27,7 @@ import {
   debtBalances,
   parseDebtAmount,
   parsePersonName,
+  personNameKey,
   repaymentKind,
   sortDebtLines,
   type DebtDirection,
@@ -29,6 +35,16 @@ import {
 } from '../domain/debts.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import type { Money } from '../domain/money.js';
+import {
+  debtOpBinding,
+  debtPersonBinding,
+  decodeDebtOp,
+  decodeDebtPerson,
+  encodeDebtOp,
+  encodeDebtPerson,
+  open,
+  seal,
+} from '../domain/sealing.js';
 import { localDateOf } from '../domain/time.js';
 import {
   cancelFlow,
@@ -41,7 +57,7 @@ import {
   type DebtSplitFlow,
 } from './flowSessions.js';
 import type { ExpenseId } from '../db/expenses.js';
-import type { KeyDeps } from './ledgerKeys.js';
+import { LOCKED, sealingKey, type KeyDeps, type Locked } from './ledgerKeys.js';
 import type { RecordDeps } from './recordExpense.js';
 import { resolveUserTimezone } from './settings.js';
 
@@ -49,6 +65,10 @@ import { resolveUserTimezone } from './settings.js';
 // and currency on read. Debts are never expenses: nothing here touches a ledger's totals. Every
 // operation carries the update's source key, so a redelivery records nothing twice. Logs carry
 // ids only, never a name or an amount.
+//
+// In a sealed personal ledger (ADR-0020) a new person's name, and a new operation's kind, amount
+// and currency, are sealed to the ledger's key. Every debts screen shows names, so while that
+// ledger is locked nothing of the debts is read or written: each entry point answers `locked`.
 
 export type DebtDeps = RecordDeps &
   Pick<KeyDeps, 'keys'> & {
@@ -56,15 +76,94 @@ export type DebtDeps = RecordDeps &
     readonly defaultCurrency: CurrencyCode;
   };
 
+type ReadDeps = Pick<DebtDeps, 'db' | 'keys'>;
+
+// How the user's debts are written and read: plaintext, or sealed to the personal ledger's key
+// and opened with its unlocked private key.
+type DebtSeal =
+  | { readonly kind: 'plain' }
+  | {
+      readonly kind: 'sealed';
+      readonly ledgerId: LedgerId;
+      readonly publicKey: Buffer;
+      readonly privateKey: KeyObject;
+    };
+
+const PLAIN: DebtSeal = { kind: 'plain' };
+
+function debtSeal(deps: ReadDeps, user: User): DebtSeal | Locked {
+  const ledger = findPersonalLedger(deps.db, user.id);
+  const publicKey = ledger === undefined ? undefined : sealingKey(deps, ledger.id);
+  if (ledger === undefined || publicKey === undefined) return PLAIN;
+  const privateKey = deps.keys.privateKey(ledger.id);
+  if (privateKey === undefined) return LOCKED;
+  return { kind: 'sealed', ledgerId: ledger.id, publicKey, privateKey };
+}
+
+// The user's personal ledger is sealed and locked: no debts screen opens.
+export function debtsLocked(deps: ReadDeps, user: User): boolean {
+  return debtSeal(deps, user).kind === 'locked';
+}
+
+// A row recorded before the ledger was sealed stays plaintext, and passes through.
+function openPerson(s: DebtSeal, stored: StoredDebtPerson): DebtPerson {
+  if (!('sealed' in stored)) return stored;
+  if (s.kind !== 'sealed') throw new Error(`sealed debt person ${String(stored.id)} unopened`);
+  const { name } = decodeDebtPerson(
+    open(stored.sealed, s.privateKey, debtPersonBinding(s.ledgerId, stored.id)),
+  );
+  return { id: stored.id, userId: stored.userId, name };
+}
+
+function openOp(s: DebtSeal, stored: StoredDebtOp): DebtOp {
+  if (!('sealed' in stored)) return stored;
+  if (s.kind !== 'sealed') throw new Error(`sealed debt operation ${stored.id} unopened`);
+  const { sealed, ...rest } = stored;
+  const payload = decodeDebtOp(open(sealed, s.privateKey, debtOpBinding(s.ledgerId, stored.id)));
+  return {
+    ...rest,
+    kind: payload.kind,
+    amountMinor: payload.amountMinor,
+    currency: payload.currency,
+  };
+}
+
+function peopleOf(deps: ReadDeps, s: DebtSeal, user: User): DebtPerson[] {
+  return listDebtPeople(deps.db, user.id).map((p) => openPerson(s, p));
+}
+
+function personOf(
+  deps: ReadDeps,
+  s: DebtSeal,
+  user: User,
+  personId: DebtPersonId,
+): DebtPerson | undefined {
+  const stored = findDebtPerson(deps.db, user.id, personId);
+  return stored === undefined ? undefined : openPerson(s, stored);
+}
+
+function opsOf(deps: ReadDeps, s: DebtSeal, user: User): DebtOp[] {
+  return listDebtOps(deps.db, user.id).map((op) => openOp(s, op));
+}
+
+// The person with this name, ignoring case. A sealed name has no key column, so a sealed ledger
+// matches against the opened names.
+function personByKey(deps: ReadDeps, s: DebtSeal, user: User, key: string): DebtPerson | undefined {
+  if (s.kind === 'plain') return findDebtPersonByKey(deps.db, user.id, key);
+  return peopleOf(deps, s, user).find((p) => personNameKey(p.name) === key);
+}
+
 export interface DebtLine extends Money {
   readonly personId: DebtPersonId;
   readonly name: string;
 }
 
 // /debts: one line per person and non-zero currency, people who owe the user first.
-export function debtLines(deps: Pick<DebtDeps, 'db'>, user: User): DebtLine[] {
-  const people = new Map(listDebtPeople(deps.db, user.id).map((p) => [p.id, p]));
-  const lines = debtBalances(listDebtOps(deps.db, user.id)).flatMap((balance) => {
+export function debtLines(deps: ReadDeps, user: User): DebtLine[] | Locked {
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  const people = new Map(peopleOf(deps, s, user).map((p) => [p.id, p]));
+  const lines = debtBalances(opsOf(deps, s, user)).flatMap((balance) => {
     const person = people.get(balance.personId);
     return person === undefined ? [] : [{ ...balance, name: person.name }];
   });
@@ -72,8 +171,10 @@ export function debtLines(deps: Pick<DebtDeps, 'db'>, user: User): DebtLine[] {
 }
 
 // The user's people by name: the person picker's choices.
-export function debtPeople(deps: Pick<DebtDeps, 'db'>, user: User): DebtPerson[] {
-  return listDebtPeople(deps.db, user.id).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+export function debtPeople(deps: ReadDeps, user: User): DebtPerson[] | Locked {
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  return peopleOf(deps, s, user).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
 // The currency an amount without a code is in: the personal ledger's.
@@ -87,7 +188,9 @@ export function startDebt(
   user: User,
   direction: DebtDirection,
   now: Date,
-): DebtAmountFlow {
+): DebtAmountFlow | Locked {
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   const flow: DebtAmountFlow = { kind: 'debtAmount', direction };
   startFlow(deps, user, flow, now);
   return flow;
@@ -96,7 +199,8 @@ export function startDebt(
 export type DebtAmountAnswer =
   // The flow stays pending and the prompt is asked again.
   | { readonly kind: 'invalid'; readonly currency: CurrencyCode }
-  | { readonly kind: 'askPerson'; readonly flow: DebtPersonFlow };
+  | { readonly kind: 'askPerson'; readonly flow: DebtPersonFlow }
+  | Locked;
 
 // A typed amount: valid, the flow moves on to the person, in one transaction with the answer.
 export function answerDebtAmount(
@@ -110,6 +214,8 @@ export function answerDebtAmount(
   },
 ): DebtAmountAnswer {
   const { user } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   const currency = debtCurrency(deps, user);
   const amount = parseDebtAmount(input.text, currency);
   if (amount.kind !== 'ok') return { kind: 'invalid', currency };
@@ -137,7 +243,8 @@ export interface DebtRecorded {
 export type DebtPersonAnswer =
   | DebtRecorded
   // The flow stays pending and the person is asked again.
-  | { readonly kind: 'invalid'; readonly reason: NameRefusal };
+  | { readonly kind: 'invalid'; readonly reason: NameRefusal }
+  | Locked;
 
 export type NameRefusal = 'empty' | 'tooLong' | 'expenseShaped';
 
@@ -156,14 +263,16 @@ export function answerDebtPersonName(
   },
 ): DebtPersonAnswer {
   const { user, flow } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   const parsed = personNameOf(deps, user, input.text);
   if (parsed.kind === 'invalid') return parsed;
   return deps.db.transaction((): DebtRecorded => {
     completeFlow(deps, user, input.inputKey);
     const person =
-      findDebtPersonByKey(deps.db, user.id, parsed.key) ??
-      createPerson(deps, user, parsed.name, parsed.key, input.now);
-    return recordOp(deps, {
+      personByKey(deps, s, user, parsed.key) ??
+      createPerson(deps, s, user, parsed.name, parsed.key, input.now);
+    return recordOp(deps, s, {
       user,
       person,
       kind: KIND_OF[flow.direction],
@@ -185,16 +294,18 @@ export function pickDebtPerson(
     readonly sourceKey: string;
     readonly now: Date;
   },
-): DebtRecorded | { readonly kind: 'stale' } {
+): DebtRecorded | { readonly kind: 'stale' } | Locked {
   const { user } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   return deps.db.transaction((): DebtRecorded | { readonly kind: 'stale' } => {
     const seen = findDebtOpBySourceKey(deps.db, input.sourceKey);
-    if (seen !== undefined) return recordedOf(deps, user, seen);
+    if (seen !== undefined) return recordedOf(deps, s, user, openOp(s, seen));
     const flow = currentFlow(deps, user, input.now);
-    const person = findDebtPerson(deps.db, user.id, input.personId);
+    const person = personOf(deps, s, user, input.personId);
     if (flow?.kind !== 'debtPerson' || person === undefined) return { kind: 'stale' };
     completeFlow(deps, user, input.sourceKey);
-    return recordOp(deps, {
+    return recordOp(deps, s, {
       user,
       person,
       kind: KIND_OF[flow.direction],
@@ -218,21 +329,23 @@ export interface PersonCard {
 
 // One of the user's people with their balances and history; undefined for anyone else's.
 export function personCard(
-  deps: Pick<DebtDeps, 'db'>,
+  deps: ReadDeps,
   user: User,
   personId: DebtPersonId,
-): PersonCard | undefined {
-  const person = findDebtPerson(deps.db, user.id, personId);
+): PersonCard | undefined | Locked {
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  const person = personOf(deps, s, user, personId);
   if (person === undefined) return undefined;
   return {
     person,
-    balances: personBalances(deps, user, personId),
-    history: listPersonOps(deps.db, user.id, personId, HISTORY_SIZE),
+    balances: personBalances(deps, s, user, personId),
+    history: listPersonOps(deps.db, user.id, personId, HISTORY_SIZE).map((op) => openOp(s, op)),
   };
 }
 
-function personBalances(deps: Pick<DebtDeps, 'db'>, user: User, personId: DebtPersonId): Money[] {
-  return debtBalances(listDebtOps(deps.db, user.id))
+function personBalances(deps: ReadDeps, s: DebtSeal, user: User, personId: DebtPersonId): Money[] {
+  return debtBalances(opsOf(deps, s, user))
     .filter((b) => b.personId === personId)
     .map(({ amountMinor, currency }) => ({ amountMinor, currency }))
     .sort((a, b) => a.currency.localeCompare(b.currency));
@@ -246,7 +359,8 @@ export type RepayStart =
   | { readonly kind: 'pickCurrency'; readonly balances: readonly Money[] }
   | { readonly kind: 'askAmount'; readonly flow: DebtRepayFlow; readonly balance: Money }
   // Nothing to repay that way, or in that currency.
-  | { readonly kind: 'nothing' };
+  | { readonly kind: 'nothing' }
+  | Locked;
 
 // Starts the repayment amount prompt, for the one balance that way or the `currency` picked.
 export function startRepay(
@@ -260,7 +374,9 @@ export function startRepay(
   },
 ): RepayStart {
   const { user, currency } = input;
-  const balances = personBalances(deps, user, input.personId).filter((b) =>
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  const balances = personBalances(deps, s, user, input.personId).filter((b) =>
     input.direction === 'toMe' ? b.amountMinor > 0 : b.amountMinor < 0,
   );
   const chosen =
@@ -292,7 +408,8 @@ export type RepayAnswer =
       readonly balance: Money;
     }
   // The balance was settled meanwhile: the flow is cleared.
-  | { readonly kind: 'gone' };
+  | { readonly kind: 'gone' }
+  | Locked;
 
 // A typed repayment: an amount in the debt's currency, at most its balance.
 export function answerRepayAmount(
@@ -306,7 +423,9 @@ export function answerRepayAmount(
   },
 ): RepayAnswer {
   const { user, flow } = input;
-  const balance = repayBalance(deps, user, flow);
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  const balance = repayBalance(deps, s, user, flow);
   if (balance === undefined) {
     cancelFlow(deps, user);
     return { kind: 'gone' };
@@ -319,7 +438,10 @@ export function answerRepayAmount(
   }
   return deps.db.transaction((): DebtRecorded => {
     completeFlow(deps, user, input.inputKey);
-    return recordRepayment(deps, user, flow, balance, amount.amountMinor, input);
+    return recordRepayment(deps, s, user, flow, balance, amount.amountMinor, {
+      sourceKey: input.inputKey,
+      now: input.now,
+    });
   })();
 }
 
@@ -328,47 +450,55 @@ export function answerRepayAmount(
 export function repayAll(
   deps: DebtDeps,
   input: { readonly user: User; readonly sourceKey: string; readonly now: Date },
-): DebtRecorded | { readonly kind: 'stale' } {
+): DebtRecorded | { readonly kind: 'stale' } | Locked {
   const { user } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   return deps.db.transaction((): DebtRecorded | { readonly kind: 'stale' } => {
     const seen = findDebtOpBySourceKey(deps.db, input.sourceKey);
-    if (seen !== undefined) return recordedOf(deps, user, seen);
+    if (seen !== undefined) return recordedOf(deps, s, user, openOp(s, seen));
     const flow = currentFlow(deps, user, input.now);
     if (flow?.kind !== 'debtRepay') return { kind: 'stale' };
-    const balance = repayBalance(deps, user, flow);
+    const balance = repayBalance(deps, s, user, flow);
     if (balance === undefined) return { kind: 'stale' };
     completeFlow(deps, user, input.sourceKey);
-    return recordRepayment(deps, user, flow, balance, Math.abs(balance.amountMinor), input);
+    return recordRepayment(deps, s, user, flow, balance, Math.abs(balance.amountMinor), input);
   })();
 }
 
 // The person's non-zero balance in the flow's currency.
-function repayBalance(deps: DebtDeps, user: User, flow: DebtRepayFlow): Money | undefined {
-  return personBalances(deps, user, flow.personId).find((b) => b.currency === flow.currency);
+function repayBalance(
+  deps: DebtDeps,
+  s: DebtSeal,
+  user: User,
+  flow: DebtRepayFlow,
+): Money | undefined {
+  return personBalances(deps, s, user, flow.personId).find((b) => b.currency === flow.currency);
 }
 
 function recordRepayment(
   deps: DebtDeps,
+  s: DebtSeal,
   user: User,
   flow: DebtRepayFlow,
   balance: Money,
   amountMinor: number,
-  input: { readonly now: Date; readonly sourceKey?: string; readonly inputKey?: string },
+  input: { readonly now: Date; readonly sourceKey: string },
 ): DebtRecorded {
-  const person = findDebtPerson(deps.db, user.id, flow.personId);
-  const sourceKey = input.inputKey ?? input.sourceKey;
-  if (person === undefined || sourceKey === undefined) throw new Error('repayment without a key');
-  return recordOp(deps, {
+  const person = personOf(deps, s, user, flow.personId);
+  if (person === undefined) throw new Error(`repayment to a missing person ${flow.personId}`);
+  return recordOp(deps, s, {
     user,
     person,
     kind: repaymentKind(balance.amountMinor),
     money: { amountMinor, currency: balance.currency },
-    sourceKey,
+    sourceKey: input.sourceKey,
     now: input.now,
   });
 }
 
-// The split picker's flow after a `/N` expense: `parts - 1` people, each owing `each`.
+// The split picker's flow after a `/N` expense: `parts - 1` people, each owing `each`. `locked`
+// while a sealed ledger is locked: the picker would show names, so no flow starts.
 export function startSplit(
   deps: DebtDeps,
   input: {
@@ -382,7 +512,9 @@ export function startSplit(
     readonly sourceKey: string;
     readonly now: Date;
   },
-): DebtSplitFlow {
+): DebtSplitFlow | Locked {
+  const s = debtSeal(deps, input.user);
+  if (s.kind === 'locked') return s;
   const flow: DebtSplitFlow = {
     kind: 'debtSplit',
     expenseId: input.expenseId,
@@ -414,8 +546,10 @@ export type SplitStep = { readonly kind: 'picking'; readonly flow: DebtSplitFlow
 export function toggleSplitPerson(
   deps: DebtDeps,
   input: { readonly user: User; readonly personId: DebtPersonId; readonly now: Date },
-): SplitStep | { readonly kind: 'stale' } {
+): SplitStep | { readonly kind: 'stale' } | Locked {
   const { user } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   const flow = currentFlow(deps, user, input.now);
   const person = findDebtPerson(deps.db, user.id, input.personId);
   if (flow?.kind !== 'debtSplit' || person === undefined) return { kind: 'stale' };
@@ -437,14 +571,16 @@ export function answerSplitName(
     readonly inputKey: string;
     readonly now: Date;
   },
-): SplitStep | { readonly kind: 'invalid'; readonly reason: NameRefusal } {
+): SplitStep | { readonly kind: 'invalid'; readonly reason: NameRefusal } | Locked {
   const { user, flow } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   const parsed = personNameOf(deps, user, input.text);
   if (parsed.kind === 'invalid') return parsed;
   return deps.db.transaction((): SplitStep => {
     const person =
-      findDebtPersonByKey(deps.db, user.id, parsed.key) ??
-      createPerson(deps, user, parsed.name, parsed.key, input.now);
+      personByKey(deps, s, user, parsed.key) ??
+      createPerson(deps, s, user, parsed.name, parsed.key, input.now);
     const next: DebtSplitFlow = flow.chosen.includes(person.id)
       ? flow
       : { ...flow, chosen: [...flow.chosen, person.id] };
@@ -458,7 +594,8 @@ export type SplitFinish =
   | { readonly kind: 'recorded'; readonly people: readonly DebtPerson[]; readonly each: Money }
   // Fewer or more than the parts need are chosen: nothing is recorded.
   | { readonly kind: 'notReady'; readonly flow: DebtSplitFlow }
-  | { readonly kind: 'stale' };
+  | { readonly kind: 'stale' }
+  | Locked;
 
 // [Готово]: one lend of `each` per chosen person, in the expense's currency, keyed by the
 // expense and the person, so nothing is recorded twice.
@@ -467,6 +604,8 @@ export function finishSplit(
   input: { readonly user: User; readonly now: Date },
 ): SplitFinish {
   const { user } = input;
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
   return deps.db.transaction((): SplitFinish => {
     const flow = currentFlow(deps, user, input.now);
     if (flow?.kind !== 'debtSplit') return { kind: 'stale' };
@@ -474,9 +613,9 @@ export function finishSplit(
     cancelFlow(deps, user);
     const each = { amountMinor: flow.each, currency: flow.currency };
     const people = flow.chosen.flatMap((personId) => {
-      const person = findDebtPerson(deps.db, user.id, personId);
+      const person = personOf(deps, s, user, personId);
       if (person === undefined) return [];
-      recordOp(deps, {
+      recordOp(deps, s, {
         user,
         person,
         kind: 'lend',
@@ -498,7 +637,9 @@ export function skipSplit(deps: DebtDeps, user: User, now: Date): boolean {
 
 export type DeleteDebtResult =
   | (Omit<DebtRecorded, 'kind'> & { readonly kind: 'deleted' })
-  | { readonly kind: 'alreadyDeleted' | 'notFound' };
+  | { readonly kind: 'alreadyDeleted' | 'notFound' }
+  // Nothing is deleted while a sealed ledger is locked.
+  | Locked;
 
 // [Удалить] on a confirmation: soft-deletes the user's own operation; a second tap finds it gone.
 export function deleteDebtOp(
@@ -506,32 +647,44 @@ export function deleteDebtOp(
   input: { readonly user: User; readonly opId: DebtOpId; readonly now: Date },
 ): DeleteDebtResult {
   const { user } = input;
-  const op = findDebtOp(deps.db, input.opId);
-  const person = op === undefined ? undefined : findDebtPerson(deps.db, user.id, op.personId);
-  if (op === undefined || op.userId !== user.id || person === undefined) {
-    return { kind: 'notFound' };
-  }
+  const stored = findDebtOp(deps.db, input.opId);
+  if (stored === undefined || stored.userId !== user.id) return { kind: 'notFound' };
+  const s = debtSeal(deps, user);
+  if (s.kind === 'locked') return s;
+  const op = openOp(s, stored);
+  const person = personOf(deps, s, user, op.personId);
+  if (person === undefined) return { kind: 'notFound' };
   if (!softDeleteDebtOp(deps.db, op.id, input.now)) return { kind: 'alreadyDeleted' };
   deps.logger.info({ debtOpId: op.id, userId: user.id }, 'debt deleted');
-  return { kind: 'deleted', op, person, balance: personBalance(deps, user, op) };
+  return { kind: 'deleted', op, person, balance: personBalance(deps, s, user, op) };
 }
 
 function createPerson(
   deps: DebtDeps,
+  s: DebtSeal,
   user: User,
   name: string,
   nameKey: string,
   now: Date,
 ): DebtPerson {
-  const person = insertDebtPerson(deps.db, { userId: user.id, name, nameKey, createdAt: now });
+  const person =
+    s.kind === 'plain'
+      ? insertDebtPerson(deps.db, { userId: user.id, name, nameKey, createdAt: now })
+      : insertSealedDebtPerson(deps.db, {
+          userId: user.id,
+          createdAt: now,
+          seal: (id) =>
+            seal(s.publicKey, encodeDebtPerson({ v: 1, name }), debtPersonBinding(s.ledgerId, id)),
+        });
   deps.logger.info({ personId: person.id, userId: user.id }, 'debt person added');
-  return person;
+  return { id: person.id, userId: person.userId, name };
 }
 
 // One operation dated the user's today, under `sourceKey`: a key seen before returns the stored
 // operation.
 function recordOp(
   deps: DebtDeps,
+  s: DebtSeal,
   input: {
     readonly user: User;
     readonly person: DebtPerson;
@@ -544,34 +697,50 @@ function recordOp(
   },
 ): DebtRecorded {
   const { user, person, money } = input;
-  const { op, created } = insertDebtOpOrGetExisting(deps.db, {
-    id: deps.newId() as DebtOpId,
+  const id = deps.newId() as DebtOpId;
+  const common = {
+    id,
     userId: user.id,
     personId: person.id,
-    kind: input.kind,
-    amountMinor: money.amountMinor,
-    currency: money.currency,
     occurredOn: localDateOf(input.now, resolveUserTimezone(deps, user)),
     expenseId: input.expenseId ?? null,
     sourceKey: input.sourceKey,
     createdAt: input.now,
-  });
+  };
+  const row: NewDebtOp =
+    s.kind === 'plain'
+      ? { ...common, kind: input.kind, amountMinor: money.amountMinor, currency: money.currency }
+      : {
+          ...common,
+          sealed: seal(
+            s.publicKey,
+            encodeDebtOp({
+              v: 1,
+              kind: input.kind,
+              amountMinor: money.amountMinor,
+              currency: money.currency,
+            }),
+            debtOpBinding(s.ledgerId, id),
+          ),
+        };
+  const { op: stored, created } = insertDebtOpOrGetExisting(deps.db, row);
+  const op = openOp(s, stored);
   deps.logger.info(
     { debtOpId: op.id, personId: op.personId, userId: user.id, duplicate: !created },
     'debt recorded',
   );
-  return { kind: 'recorded', op, person, balance: personBalance(deps, user, op) };
+  return { kind: 'recorded', op, person, balance: personBalance(deps, s, user, op) };
 }
 
 // A stored operation as a recorded result, for a redelivery.
-function recordedOf(deps: DebtDeps, user: User, op: DebtOp): DebtRecorded {
-  const person = findDebtPerson(deps.db, user.id, op.personId);
+function recordedOf(deps: DebtDeps, s: DebtSeal, user: User, op: DebtOp): DebtRecorded {
+  const person = personOf(deps, s, user, op.personId);
   if (person === undefined) throw new Error(`debt operation ${op.id} has no person`);
-  return { kind: 'recorded', op, person, balance: personBalance(deps, user, op) };
+  return { kind: 'recorded', op, person, balance: personBalance(deps, s, user, op) };
 }
 
-function personBalance(deps: Pick<DebtDeps, 'db'>, user: User, op: DebtOp): Money {
-  const balance = debtBalances(listDebtOps(deps.db, user.id)).find(
+function personBalance(deps: ReadDeps, s: DebtSeal, user: User, op: DebtOp): Money {
+  const balance = debtBalances(opsOf(deps, s, user)).find(
     (b) => b.personId === op.personId && b.currency === op.currency,
   );
   return { amountMinor: balance?.amountMinor ?? 0, currency: op.currency };
