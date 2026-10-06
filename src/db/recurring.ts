@@ -279,6 +279,25 @@ export function softDeleteRule(db: Db, id: RuleId, deletedAt: Date): boolean {
   return changes === 1;
 }
 
+// Account deletion (ADR-0024) removes every rule the user authored, of any kind, in any ledger,
+// deleted ones included, and every rule on their personal ledger. Their occurrences go first,
+// before the expenses they point at; the rules go after the personal ledger's expenses, whose
+// `sealed_rule_id` may point at one. A shared ledger is never sealed, so no expense that
+// survives the deletion points at these rules.
+const ACCOUNT_RULES = 'SELECT id FROM recurring_rules WHERE user_id = ? OR ledger_id = ?';
+
+export function deleteUserOccurrences(db: Db, userId: UserId, ledgerId: LedgerId | null): void {
+  db.prepare<[string, string | null]>(
+    `DELETE FROM recurring_occurrences WHERE rule_id IN (${ACCOUNT_RULES})`,
+  ).run(userId, ledgerId);
+}
+
+export function deleteUserRules(db: Db, userId: UserId, ledgerId: LedgerId | null): void {
+  db.prepare<[string, string | null]>(
+    `DELETE FROM recurring_rules WHERE id IN (${ACCOUNT_RULES})`,
+  ).run(userId, ledgerId);
+}
+
 // The ledger's expense rules whose template is still plaintext, deleted ones included: what
 // sealing the ledger seals.
 export function listLedgerPlaintextRules(db: Db, ledgerId: LedgerId): RecurringRule[] {
