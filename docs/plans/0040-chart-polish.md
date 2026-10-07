@@ -202,7 +202,7 @@ a tap handler are a few dozen lines of SVG.
 | 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | 647be3b |
 | 2: Tap a slice or a legend row to inspect it | dev | done | 1681f75 |
 | 3: Theme-aware palettes and a trend layout that can't clip | dev | done | 604ec76 |
-| 4: Live check, light and dark | human | not started | |
+| 4: Live check, light and dark | human | owed | |
 
 ### Notes
 
