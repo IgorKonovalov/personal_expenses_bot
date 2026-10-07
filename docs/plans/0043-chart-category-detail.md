@@ -1,6 +1,6 @@
 # 0043: Category detail in the chart: tap a category, see its last six periods
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0040](done/0040-chart-polish.md) (tap selection) and [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2), both merged on `main` first. Run after [Plan 0042](done/0042-chart-pace-and-budget-burn-down.md) if it is queued, since both extend the shedding order.
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections)
@@ -137,10 +137,27 @@ interface CatTrendSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a tapped category shows its six periods | dev | not started | |
+| 1: Walking skeleton: a tapped category shows its six periods | dev | done | committed with this row |
 | 2: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/handlers/summary.ts` and `webapp/src/bars.ts` are unchanged. The trend points
+  passed to `messages.chart` now carry their lines, and the panel calls `drawTrend` as it is.
+- Phase 1: the panel is an `li` that `drawPie` places by rebuilding the legend `ul` through
+  `replaceChildren`. `ChartNode` gained no `after`/`remove`, because
+  `scripts/probe-webapp-url.test.ts` also implements `ChartNode` and is outside `Files touched`.
+- Phase 1: when `messages.chart` builds `catTrend`, no fold line exists yet. The line it skips is
+  any pie line named «Прочее» (`CHART_FOLD`), which includes a user category with that name. A
+  real fold line only appears after `catTrend` has been shed whole.
+- Phase 1: the caption is `Последние ${trend.length} месяцев|недель`. The trend always has 6
+  periods.
+- Phase 1, done-when "counts `ledgerPeriodSummary` calls per `/month` render: still 6": asserted in
+  `src/services/periodTrend.test.ts` on `periodChart`. A past October still reads 6 with the lines
+  present. A running period still reads 7, the extra read being the same-days window from Plan 0041.
+  The count isn't taken through a bot `/month` render.
+- Phase 1: `prettier --check README.md` already failed before this phase (its wide table), and the
+  README stays unformatted. The edits are hand-wrapped.
 
 ### Close triggers
 

@@ -8,6 +8,7 @@ import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   decodeChartPayload,
+  type CatTrendSection,
   type PaceSection,
   type PieSection,
   type Section,
@@ -3629,6 +3630,8 @@ describe('/week and /month', () => {
     // `count` pace points of `amountMinor`.
     const days = (count: number, amountMinor: number): number[] =>
       Array<number>(count).fill(amountMinor);
+    // A catTrend point of a period with nothing spent on the category.
+    const ZERO = [0, '0.00 RSD'];
 
     it("puts the month's converted block in a web_app URL on WEBAPP_URL, the text unchanged", async () => {
       const { say, calls } = await summaryBot({ webappUrl });
@@ -3680,6 +3683,17 @@ describe('/week and /month', () => {
               ['Июль', 0, '0.00 RSD'],
               ['Август', 10000, '100.00 RSD'],
               ['Сентябрь', 222000, '2 220.00 RSD'],
+            ],
+          },
+          {
+            k: 'catTrend',
+            caption: 'Последние 6 месяцев',
+            periods: ['Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь'],
+            series: [
+              [0, [ZERO, ZERO, ZERO, ZERO, [10000, '100.00 RSD'], [120000, '1 200.00 RSD']]],
+              [1, [ZERO, ZERO, ZERO, ZERO, ZERO, [75000, '750.00 RSD']]],
+              [2, [ZERO, ZERO, ZERO, ZERO, ZERO, [20000, '200.00 RSD']]],
+              [3, [ZERO, ZERO, ZERO, ZERO, ZERO, [7000, '70.00 RSD']]],
             ],
           },
         ],
@@ -3741,6 +3755,24 @@ describe('/week and /month', () => {
               ['28 сен – 4 окт', 1710849, '≈ 17 108.49 RSD'],
             ],
           },
+          {
+            k: 'catTrend',
+            caption: 'Последние 6 недель',
+            periods: [
+              '24–30 авг',
+              '31 авг – 6 сен',
+              '7–13 сен',
+              '14–20 сен',
+              '21–27 сен',
+              '28 сен – 4 окт',
+            ],
+            // Converted amounts, unmarked like the pie's lines.
+            series: [
+              [0, [ZERO, ZERO, ZERO, ZERO, ZERO, [1261942, '12 619.42 RSD']]],
+              [1, [ZERO, ZERO, ZERO, ZERO, ZERO, [403907, '4 039.07 RSD']]],
+              [2, [ZERO, ZERO, ZERO, ZERO, ZERO, [45000, '450.00 RSD']]],
+            ],
+          },
         ],
       });
     });
@@ -3796,6 +3828,12 @@ describe('/week and /month', () => {
               ['Июль', 0, '0.00 RSD'],
               ['Август', 10000, '100.00 RSD'],
             ],
+          },
+          {
+            k: 'catTrend',
+            caption: 'Последние 6 месяцев',
+            periods: ['Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август'],
+            series: [[0, [ZERO, ZERO, ZERO, ZERO, ZERO, [10000, '100.00 RSD']]]],
           },
         ],
       });
@@ -3907,6 +3945,119 @@ describe('/week and /month', () => {
       });
     });
 
+    describe('the category history (catTrend)', () => {
+      const OCT15 = new Date('2026-10-15T10:00:00Z');
+      const NOV3 = new Date('2026-11-03T10:00:00Z');
+      const isCatTrend = (section: Section): section is CatTrendSection => section.k === 'catTrend';
+      // Each pie line's name, change and amounts in the catTrend series, oldest first.
+      const historyOf = async (call: ApiCall | undefined) => {
+        const { payload } = await chartOf(markupOf(call));
+        if (payload?.v !== 2) throw new Error('a v2 payload expected');
+        const pie = payload.sections.find((section): section is PieSection => section.k === 'pie');
+        const catTrend = payload.sections.find(isCatTrend);
+        if (pie === undefined || catTrend === undefined) throw new Error('a catTrend expected');
+        const byName = new Map(
+          pie.lines.map(([name, , , , change], index) => {
+            const points = catTrend.series.find(([line]) => line === index)?.[1];
+            return [name, { change, amounts: points?.map(([amountMinor]) => amountMinor) }];
+          }),
+        );
+        return { pie, catTrend, byName };
+      };
+
+      it('gives Кафе, spent on only in July and October, [0, 0, 4000, 0, 0, 5000] from May', async () => {
+        const { say, add, calls } = await summaryBot({ fixture: false, webappUrl, now: OCT15 });
+        add('J1', '2026-07-12', 4000, 'RSD', 'cafe');
+        add('O1', '2026-10-03', 5000, 'RSD', 'cafe');
+
+        await say('/month', 2);
+
+        const { catTrend, byName } = await historyOf(calls[0]);
+        expect(catTrend.caption).toBe('Последние 6 месяцев');
+        expect(catTrend.periods).toEqual(['Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь']);
+        expect(byName.get('Кафе и рестораны')?.amounts).toEqual([0, 0, 4000, 0, 0, 5000]);
+        expect(catTrend.series[0]?.[1][2]).toEqual([4000, '40.00 RSD']);
+      });
+
+      // Продукты: 12.50 EUR on 2 October (1 468.74 RSD); 600.00 RSD on 10 September and 3.33 EUR
+      // (391.27 RSD) on 28 September, 991.27 RSD in all.
+      async function convertedBot(now: Date) {
+        const bot = await summaryBot({ fixture: false, webappUrl, now });
+        storeSept28Rates(bot.db);
+        setFxDay(bot.db, '2026-10-02' as LocalDate, '2026-09-28' as LocalDate, now);
+        bot.add('O1', '2026-10-02', 1250, 'EUR', 'groceries');
+        bot.add('S1', '2026-09-10', 60000, 'RSD', 'groceries');
+        bot.add('S2', '2026-09-28', 333, 'EUR', 'groceries');
+        return bot;
+      }
+
+      it("ends a running October's series at the pie amount, after the whole of September, which its change is not against", async () => {
+        const { say, tap, calls } = await convertedBot(OCT15);
+        await say('/month', 2);
+        const { byName } = await historyOf(calls[0]);
+        calls.length = 0;
+
+        await tap('sum:m:2026-09', 101);
+
+        const groceries = byName.get('Продукты');
+        expect(groceries?.amounts?.slice(-2)).toEqual([60000 + 39127, 146874]);
+        // The text screen paged back to September shows 991.27 for Продукты.
+        expect((calls[1]?.payload as { text: string }).text).toContain('Продукты: 991.27');
+        // The change is against 1–15 September only: 146874 on 60000 is ↑145%, not ↑48%.
+        expect(groceries?.change).toBe('↑145%');
+      });
+
+      it("ends a past October's series at the pie amount, after the September its change is against", async () => {
+        const { say, tap, calls } = await convertedBot(NOV3);
+        await say('/month', 2);
+        calls.length = 0;
+
+        await tap('sum:m:2026-10', 101);
+        const { pie, byName } = await historyOf(calls[1]);
+
+        expect(pie.lines[0]?.slice(0, 2)).toEqual(['Продукты', 146874]);
+        expect(byName.get('Продукты')?.amounts?.slice(-2)).toEqual([99127, 146874]);
+        // 146874 on 99127: ↑48%.
+        expect(byName.get('Продукты')?.change).toBe('↑48%');
+        expect(pie.totalChange).toBe('↑48% к сентябрю');
+      });
+
+      it("carries a renamed category's September under its October name", async () => {
+        const { db, say, add, calls, ledgerId } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: OCT15,
+        });
+        add('S1', '2026-09-05', 3000, 'RSD', 'cafe');
+        db.prepare(
+          "UPDATE categories SET name = 'Кофейни' WHERE ledger_id = ? AND preset_key = 'cafe'",
+        ).run(ledgerId);
+        add('O1', '2026-10-05', 5000, 'RSD', 'cafe');
+
+        await say('/month', 2);
+
+        const { byName } = await historyOf(calls[0]);
+        expect([...byName.keys()]).toEqual(['Кофейни']);
+        expect(byName.get('Кофейни')?.amounts).toEqual([0, 0, 0, 0, 3000, 5000]);
+      });
+
+      it("sums each period's uncategorized expenses into the uncategorized line's series", async () => {
+        const { say, add, calls } = await summaryBot({ fixture: false, webappUrl, now: OCT15 });
+        add('A1', '2026-08-03', 1000, 'RSD', null);
+        add('S1', '2026-09-03', 2000, 'RSD', null);
+        add('S2', '2026-09-23', 500, 'RSD', null);
+        add('S3', '2026-09-23', 9900, 'RSD', 'groceries');
+        add('O1', '2026-10-01', 700, 'RSD', null);
+        add('O2', '2026-10-01', 9000, 'RSD', 'groceries');
+
+        await say('/month', 2);
+
+        const { byName } = await historyOf(calls[0]);
+        expect(byName.get('Без категории')?.amounts).toEqual([0, 0, 0, 1000, 2500, 700]);
+        expect(byName.get('Продукты')?.amounts).toEqual([0, 0, 0, 0, 9900, 9000]);
+      });
+    });
+
     describe('the pace section', () => {
       const OCT15 = new Date('2026-10-15T10:00:00Z');
       const isPace = (section: Section): section is PaceSection => section.k === 'pace';
@@ -4015,6 +4166,7 @@ describe('/week and /month', () => {
             captions: ['К 30 сентября: 370.00 RSD', 'К 23 сентября: 0.00 RSD'],
           },
           { k: 'trend' },
+          { k: 'catTrend', caption: 'Последние 6 недель' },
         ],
       });
     });

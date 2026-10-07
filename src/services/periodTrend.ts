@@ -19,6 +19,10 @@ export interface TrendPoint {
   readonly totalMinor: number;
   // True when the total holds converted foreign spending.
   readonly approximate: boolean;
+  // The period's converted lines by category, largest first, summing to `totalMinor`; empty with
+  // nothing in that currency. A category is its `categoryId` across periods, null for the
+  // uncategorized line.
+  readonly lines: readonly CategoryLine[];
 }
 
 // The shown period against the one before it, both in the ledger's currency.
@@ -107,10 +111,12 @@ function trendSummaries(deps: Deps, input: Input): PeriodSummary[] | undefined {
 }
 
 function trendPoint(summary: PeriodSummary): TrendPoint {
+  const converted = convertedLines(summary);
   return {
     period: summary.period,
-    totalMinor: convertedLines(summary)?.totalMinor ?? 0,
+    totalMinor: converted?.totalMinor ?? 0,
     approximate: summary.convertedFrom.length > 0,
+    lines: converted?.lines ?? [],
   };
 }
 

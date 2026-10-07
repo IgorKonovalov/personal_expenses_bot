@@ -843,6 +843,146 @@ describe('inspecting a line', () => {
     expect(nodes.filter((node) => node.tag === 'img')).toEqual([]);
   });
 
+  describe('the history panel', () => {
+    const PERIODS = ['Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь'];
+    const PIE = {
+      ...OCTOBER_PIE,
+      totalMinor: 157000,
+      totalLabel: '1 570.00 RSD',
+      lines: [...OCTOBER_PIE.lines, ['Прочее', 2000, '20.00 RSD', '1%']],
+    };
+    const amounts = (values: number[]) => values.map((value) => [value, `${value / 100}.00 RSD`]);
+    // Еда and Кафе keep their series; Транспорт's was shed, and «Прочее» has none.
+    const CAT_TREND = {
+      k: 'catTrend',
+      caption: 'Последние 6 месяцев',
+      periods: PERIODS,
+      series: [
+        [0, amounts([0, 0, 90000, 100000, 110000, 120000])],
+        [2, amounts([0, 0, 4000, 0, 0, 5000])],
+      ],
+    };
+    const historyPage = async (sections: object[]) => {
+      const { nodes } = await page(`#z=${await deflated({ ...OCTOBER, sections })}`);
+      const legend = nodes.find((node) => node.tag === 'ul');
+      const rows = legend?.children.slice() ?? [];
+      const slices = nodes.filter((node) => node.tag === 'path');
+      // The legend's children past the rows: the open panel, with where it sits.
+      const panel = () => {
+        const children = legend?.children ?? [];
+        const index = children.findIndex((child) => !rows.includes(child));
+        return index < 0 ? undefined : { after: children[index - 1], node: children[index] };
+      };
+      return { rows, slices, legend, panel };
+    };
+
+    it('opens under the Кафе row from the row or the slice: «Кафе», the caption, and 6 bars', async () => {
+      const { rows, slices, panel } = await historyPage([PIE, OCTOBER_TREND, CAT_TREND]);
+
+      rows[2]?.click();
+      const opened = panel();
+      expect(opened?.after).toBe(rows[2]);
+      expect(opened?.node?.children.map((node) => node.tag)).toEqual(['h2', 'p', 'svg']);
+      expect(opened?.node?.children.slice(0, 2).map((node) => node.textContent)).toEqual([
+        'Кафе',
+        'Последние 6 месяцев',
+      ]);
+      const svg = opened?.node?.children[2];
+      expect(svg?.children.filter((node) => node.tag === 'rect')).toHaveLength(6);
+      expect(
+        svg?.children.filter((node) => node.tag === 'text').map((node) => node.textContent),
+      ).toEqual([
+        'Май · 0.00 RSD',
+        'Июнь · 0.00 RSD',
+        'Июль · 40.00 RSD',
+        'Август · 0.00 RSD',
+        'Сентябрь · 0.00 RSD',
+        'Октябрь · 50.00 RSD',
+      ]);
+
+      rows[2]?.click();
+      expect(panel()).toBeUndefined();
+
+      slices[2]?.click();
+      expect(panel()?.after).toBe(rows[2]);
+      expect(panel()?.node?.children[0]?.textContent).toBe('Кафе');
+    });
+
+    it('closes on a second tap and moves under another row', async () => {
+      const { rows, legend, panel } = await historyPage([PIE, CAT_TREND]);
+
+      rows[2]?.click();
+      rows[0]?.click();
+
+      expect(panel()?.after).toBe(rows[0]);
+      expect(panel()?.node?.children[0]?.textContent).toBe('Еда');
+      expect(legend?.children).toHaveLength(rows.length + 1);
+
+      rows[0]?.click();
+      expect(legend?.children).toEqual(rows);
+    });
+
+    it('shows chartNoHistory and no bars for «Прочее» and for a line whose series was shed', async () => {
+      const { rows, panel } = await historyPage([PIE, CAT_TREND]);
+
+      for (const [index, name] of [
+        [3, 'Прочее'],
+        [1, 'Транспорт'],
+      ] as const) {
+        rows[index]?.click();
+        expect(panel()?.after).toBe(rows[index]);
+        expect(panel()?.node?.children.map((node) => [node.tag, node.textContent])).toEqual([
+          ['h2', name],
+          ['p', messages.chartNoHistory],
+        ]);
+      }
+    });
+
+    it('selects a line and opens no panel without a catTrend section', async () => {
+      const { rows, legend, panel } = await historyPage([PIE, OCTOBER_TREND]);
+
+      rows[2]?.click();
+
+      expect(rows[2]?.style.fontWeight).toBe('bold');
+      expect(panel()).toBeUndefined();
+      expect(legend?.children).toEqual(rows);
+    });
+
+    it('puts markup-like labels in the panel as text only', async () => {
+      const name = '<img src=x onerror=alert(1)>';
+      const pie = { ...PIE, lines: [[name, 157000, '1 570.00 RSD', '100%']] };
+      const catTrend = {
+        ...CAT_TREND,
+        caption: '<b>caption</b>',
+        periods: PERIODS.map(() => '<i>period</i>'),
+        series: [[0, PERIODS.map(() => [1, '<script>x</script>'])]],
+      };
+      const { rows, panel } = await historyPage([pie, catTrend]);
+
+      rows[0]?.click();
+
+      const nodes = panel()?.node?.all() ?? [];
+      expect(nodes.filter((node) => ['img', 'b', 'i', 'script'].includes(node.tag))).toEqual([]);
+      expect(nodes.map((node) => node.textContent)).toEqual(
+        expect.arrayContaining([name, '<b>caption</b>', '<i>period</i> · <script>x</script>']),
+      );
+    });
+
+    it('rejects a catTrend of the wrong shape', async () => {
+      const broken = [
+        { ...CAT_TREND, caption: 6 },
+        { ...CAT_TREND, periods: [1] },
+        { ...CAT_TREND, series: [[-1, amounts([0, 0, 0, 0, 0, 0])]] },
+        { ...CAT_TREND, series: [[0, amounts([0, 0, 0, 0, 0])]] },
+        { ...CAT_TREND, series: [[0, [[1.5, 'x'], ...amounts([0, 0, 0, 0, 0])]]] },
+      ];
+      for (const catTrend of broken) {
+        const hash = `#z=${await deflated({ ...OCTOBER, sections: [PIE, catTrend] })}`;
+        expect(await decodeChartPayload(hash)).toBe(undefined);
+      }
+    });
+  });
+
   it('reports each selection change, and stores or sends nothing', async () => {
     const fetch = vi.fn();
     const setItem = vi.fn();

@@ -23,4 +23,7 @@ export const messages = {
   chartTotalCaption: 'Всего',
   // One line under the donut: the chart answers taps.
   chartTapHint: 'Нажмите на категорию, чтобы увидеть подробности',
+  // The panel under a selected category that has no history in the chart: «Прочее», or a category
+  // whose history didn't fit the link.
+  chartNoHistory: 'Истории этой категории здесь нет. Её можно посмотреть в /month, листая назад.',
 } as const;

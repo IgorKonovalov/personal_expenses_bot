@@ -256,4 +256,26 @@ describe('periodChart', () => {
     changesOf(NOW);
     expect(ledgerPeriodSummary).toHaveBeenCalledTimes(7);
   });
+
+  it("carries each period's converted lines by category id, still from 6 reads", () => {
+    add('S5', '2026-09-30', 2500, 'RSD', null);
+    vi.mocked(ledgerPeriodSummary).mockClear();
+    const { chart } = changesOf(new Date('2026-11-03T10:00:00Z'));
+
+    expect(ledgerPeriodSummary).toHaveBeenCalledTimes(6);
+    expect(chart?.trend.map((point) => point.lines.length)).toEqual([0, 0, 0, 0, 3, 3]);
+    // September: groceries, transport, then the uncategorized line, id null.
+    expect(
+      chart?.trend[4]?.lines.map((line) => [line.categoryId === null, line.amountMinor]),
+    ).toEqual([
+      [false, 100000],
+      [false, 40000],
+      [true, 2500],
+    ]);
+    expect(chart?.trend.at(-1)?.lines.map((line) => line.amountMinor)).toEqual([
+      120000, 30000, 5000,
+    ]);
+    const groceriesId = chart?.trend.at(-1)?.lines[0]?.categoryId;
+    expect(chart?.trend[4]?.lines[0]?.categoryId).toBe(groceriesId);
+  });
 });

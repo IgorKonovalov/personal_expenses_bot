@@ -1,5 +1,12 @@
 import type { LedgerKind } from '../db/ledgers.js';
-import type { ChartFold, ChartInput, ChartLine, PaceSection } from '../domain/chartPayload.js';
+import type {
+  CatTrendPoint,
+  CatTrendSection,
+  ChartFold,
+  ChartInput,
+  ChartLine,
+  PaceSection,
+} from '../domain/chartPayload.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { addDays } from '../domain/dateText.js';
 import type { ExportRange } from '../domain/export/rows.js';
@@ -213,16 +220,21 @@ interface SummaryView {
 // A period's pie chart (ADR-0025): the converted block, and the blocks with no rate.
 interface ChartView {
   readonly period: PeriodRef;
-  readonly converted: SummaryView['currencies'][number];
+  readonly converted: {
+    readonly currency: CurrencyCode;
+    readonly totalMinor: number;
+    readonly lines: readonly ChartCategoryView[];
+  };
   // True when the converted block holds foreign spending.
   readonly approximate: boolean;
   readonly unconverted: SummaryView['currencies'];
-  // The shown period and the ones before it, oldest first, each total in `converted.currency`.
-  // `approximate` as above, per period.
+  // The shown period and the ones before it, oldest first, each total and line in
+  // `converted.currency`. `approximate` as above, per period.
   readonly trend: readonly {
     readonly period: PeriodRef;
     readonly totalMinor: number;
     readonly approximate: boolean;
+    readonly lines: readonly ChartCategoryView[];
   }[];
   // The shown period against the one before it: `lines` hold each converted line's change, in
   // the order of `converted.lines`. `window` is what was compared against, `whole` true when it
@@ -235,6 +247,14 @@ interface ChartView {
         readonly total: Change;
       }
     | undefined;
+}
+
+// A chart's category line: `categoryId` names the category across periods, null and `name` null
+// for the expenses without one.
+interface ChartCategoryView {
+  readonly categoryId: number | null;
+  readonly name: string | null;
+  readonly amountMinor: number;
 }
 
 // A period's cumulative spend by day and the period before it's, in `currency` (minor units).
@@ -266,6 +286,37 @@ function zipShares<T extends { readonly amountMinor: number }>(
 // A chart line's share label: «78%», or «<1%» for a positive amount that rounds to 0.
 function chartShare(percent: number, amountMinor: number): string {
   return percent === 0 && amountMinor > 0 ? messages.chartShareTiny : `${percent}%`;
+}
+
+// The pie line a chart's smallest categories fold into (messages.chartFold).
+const CHART_FOLD = 'Прочее';
+
+// A chart's catTrend section: each pie line but one named like the fold line, by its index, with
+// its category's total in each trend period, matched by category id, 0 where it had none. The
+// periods are named like the trend bars; the amounts are the converted ones, unmarked like the
+// pie's lines.
+function chartCatTrend(
+  period: PeriodRef,
+  converted: ChartView['converted'],
+  trend: ChartView['trend'],
+): CatTrendSection {
+  const amount = (amountMinor: number) =>
+    formatMoney({ amountMinor, currency: converted.currency });
+  return {
+    k: 'catTrend',
+    // «месяцев» and «недель» fit counts from 5 to 20.
+    caption: `Последние ${trend.length} ${period.kind === 'month' ? 'месяцев' : 'недель'}`,
+    periods: trend.map((point) => periodLabel(point.period)),
+    series: converted.lines.flatMap((line, index) => {
+      if ((line.name ?? UNCATEGORIZED) === CHART_FOLD) return [];
+      const points = trend.map((point): CatTrendPoint => {
+        const amountMinor =
+          point.lines.find((then) => then.categoryId === line.categoryId)?.amountMinor ?? 0;
+        return [amountMinor, amount(amountMinor)];
+      });
+      return [[index, points] as const];
+    }),
+  };
 }
 
 // A chart's change label: «↑20%», «↓25%», «±0%» or «новое».
@@ -1866,7 +1917,7 @@ export const messages = {
   // Each line carries its share of the pie in whole percents (sharesOf), then its change against
   // the previous period. The total's change names its basis once, in the donut's centre; with
   // nothing to compare against (`new`), the centre keeps its caption. The trend bars are named
-  // like the pager names periods.
+  // like the pager names periods, and with them goes each category's history (chartCatTrend).
   chart: ({
     period,
     converted,
@@ -1901,6 +1952,7 @@ export const messages = {
       point.totalMinor,
       `${point.approximate ? '≈ ' : ''}${formatMoney({ amountMinor: point.totalMinor, currency: converted.currency })}`,
     ]),
+    ...(trend.length === 0 ? {} : { catTrend: chartCatTrend(period, converted, trend) }),
   }),
   // A chart's pace section: the cumulative spend by day of the shown period over the previous
   // one's, each with its caption, plain. A running period names how much by today, and the
@@ -1930,7 +1982,7 @@ export const messages = {
   },
   // The pie line the smallest categories fold into when a chart is too large for its button.
   chartFold: (currency: CurrencyCode): ChartFold => ({
-    name: 'Прочее',
+    name: CHART_FOLD,
     label: (amountMinor) => formatMoney({ amountMinor, currency }),
     share: chartShare,
   }),

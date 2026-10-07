@@ -67,12 +67,28 @@ export interface PaceSection {
   readonly captions: readonly [current: string, second?: string];
 }
 
+// One point of a category's history: its total in a period, in minor units, and that total
+// formatted.
+export type CatTrendPoint = readonly [amountMinor: number, label: string];
+
+// Each pie line's totals over the shown period and the ones before it: the panel under a selected
+// legend row. A line with no series has no history here.
+export interface CatTrendSection {
+  readonly k: 'catTrend';
+  // The panel's caption, «Последние 6 месяцев».
+  readonly caption: string;
+  // The periods' names, oldest first.
+  readonly periods: readonly string[];
+  // `line` indexes the pie section's lines; one point per period, oldest first.
+  readonly series: readonly (readonly [line: number, points: readonly CatTrendPoint[]])[];
+}
+
 // A section of a kind this page doesn't draw: kept by the decoder, skipped by the page.
 export interface UnknownSection {
   readonly k: string;
 }
 
-export type Section = PieSection | PaceSection | TrendSection | UnknownSection;
+export type Section = PieSection | PaceSection | TrendSection | CatTrendSection | UnknownSection;
 
 export interface ChartPayloadV2 {
   readonly v: 2;
@@ -145,7 +161,7 @@ function isPayloadV2(value: unknown): value is ChartPayloadV2 {
   );
 }
 
-// A section with a string kind; a pie, a pace or a trend must also have its own shape.
+// A section with a string kind; a pie, a pace, a trend or a catTrend must also have its own shape.
 function isSection(value: unknown): value is Section {
   if (!isRecord(value) || typeof value['k'] !== 'string') return false;
   switch (value['k']) {
@@ -161,9 +177,40 @@ function isSection(value: unknown): value is Section {
       return isBars(value['bars']);
     case 'pace':
       return isPace(value);
+    case 'catTrend':
+      return isCatTrend(value);
     default:
       return true;
   }
+}
+
+// A string caption, string period names, and series of a non-negative whole line index with one
+// point per period, each a safe integer and a string.
+function isCatTrend(value: Record<string, unknown>): boolean {
+  const periods = value['periods'];
+  const series = value['series'];
+  return (
+    typeof value['caption'] === 'string' &&
+    isStrings(periods) &&
+    Array.isArray(series) &&
+    series.every(
+      (entry) =>
+        Array.isArray(entry) &&
+        entry.length === 2 &&
+        Number.isSafeInteger(entry[0]) &&
+        typeof entry[0] === 'number' &&
+        entry[0] >= 0 &&
+        Array.isArray(entry[1]) &&
+        entry[1].length === periods.length &&
+        entry[1].every(
+          (point) =>
+            Array.isArray(point) &&
+            point.length === 2 &&
+            Number.isSafeInteger(point[0]) &&
+            typeof point[1] === 'string',
+        ),
+    )
+  );
 }
 
 // A positive whole number of days, a current series of at most that many safe integers, an

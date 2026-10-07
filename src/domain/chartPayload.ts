@@ -66,7 +66,23 @@ export interface PaceSection {
   readonly captions: readonly [current: string, second?: string];
 }
 
-export type ChartSection = PieSection | PaceSection | TrendSection;
+// One point of a category's history: its converted total in a period, in minor units, and that
+// total formatted.
+export type CatTrendPoint = readonly [amountMinor: number, label: string];
+
+// Each pie line's totals over the shown period and the ones before it, the panel the page opens
+// under a selected legend row. A line with no series has no history to show.
+export interface CatTrendSection {
+  readonly k: 'catTrend';
+  // The panel's caption, «Последние 6 месяцев».
+  readonly caption: string;
+  // The periods' names, oldest first.
+  readonly periods: readonly string[];
+  // `line` is an index into the pie section's lines; the points are one per period, oldest first.
+  readonly series: readonly (readonly [line: number, points: readonly CatTrendPoint[]])[];
+}
+
+export type ChartSection = PieSection | PaceSection | TrendSection | CatTrendSection;
 
 export interface ChartPayloadV2 {
   readonly v: typeof CHART_PAYLOAD_VERSION;
@@ -75,8 +91,8 @@ export interface ChartPayloadV2 {
   readonly sections: readonly ChartSection[];
 }
 
-// What the messages module formats: the pie's fields, the pace, and the trend bars. A trend with
-// no bars is left out of the payload.
+// What the messages module formats: the pie's fields, the pace, the trend bars and the categories'
+// histories. A trend with no bars, and a catTrend with no series, are left out of the payload.
 export interface ChartInput {
   readonly title: string;
   readonly currency: string;
@@ -86,6 +102,7 @@ export interface ChartInput {
   readonly unconverted: readonly string[];
   readonly pace?: PaceSection;
   readonly trend?: readonly TrendBar[];
+  readonly catTrend?: CatTrendSection;
 }
 
 // The line the smallest categories fold into when the payload is over budget: its name, and the
@@ -97,7 +114,8 @@ export interface ChartFold {
 }
 
 // The payload for `input`: a pie section whose `totalMinor` is the exact integer sum of the
-// lines, then the pace section when there is one, then a trend section when there are bars.
+// lines, then the pace section when there is one, then a trend section when there are bars, then
+// the catTrend section when it has a series.
 export function chartPayload(input: ChartInput): ChartPayloadV2 {
   const pie: PieSection = {
     k: 'pie',
@@ -109,6 +127,7 @@ export function chartPayload(input: ChartInput): ChartPayloadV2 {
     unconverted: input.unconverted,
   };
   const trend = input.trend ?? [];
+  const { catTrend } = input;
   return {
     v: CHART_PAYLOAD_VERSION,
     title: input.title,
@@ -116,16 +135,19 @@ export function chartPayload(input: ChartInput): ChartPayloadV2 {
       pie,
       ...(input.pace === undefined ? [] : [input.pace]),
       ...(trend.length === 0 ? [] : [{ k: 'trend', bars: trend } as const]),
+      ...(catTrend === undefined || catTrend.series.length === 0 ? [] : [catTrend]),
     ],
   };
 }
 
 // The `z` value of the button URL's fragment: zlib deflate of the payload's UTF-8 JSON, as
 // base64url (unpadded), so it holds no `&`, `=` or `#` that would split Telegram's launch
-// parameters. Over `budget`, detail is shed in order (ADR-0045): every change label at once, the
-// total's included, then the pace section's previous series with its caption, then the pace
-// section, then the oldest trend bars one by one, which with the last one drops the trend
-// section, then the smallest lines fold into one `fold` line, more of them each try. Each step is
+// parameters. Over `budget`, detail is shed in order (ADR-0045): the catTrend series one by one,
+// the smallest pie line's first, which with the last one drops the section, then every change
+// label at once, the total's included, then the pace section's previous series with its caption,
+// then the pace section, then the oldest trend bars one by one, which with the last one drops the
+// trend section, then the smallest lines fold into one `fold` line, more of them each try. No pie
+// line folds while a catTrend series is left, so the series' line indices hold. Each step is
 // compressed again, since how well a payload compresses depends on its content. Undefined when
 // nothing fits.
 export function encodeChartPayload(
@@ -158,6 +180,16 @@ function encode(payload: ChartPayloadV2): string {
 // `input` itself, then each step of shedding, every one smaller than the one before.
 function* shedding(input: ChartInput, fold: ChartFold): Generator<ChartInput> {
   yield input;
+  const { catTrend } = input;
+  if (catTrend !== undefined) {
+    // Largest pie line first; a tie keeps the pie's order.
+    const amountOf = (line: number) => input.lines[line]?.[1] ?? 0;
+    const bySize = [...catTrend.series].sort(([a], [b]) => amountOf(b) - amountOf(a) || a - b);
+    for (let kept = bySize.length - 1; kept >= 0; kept--) {
+      const series = catTrend.series.filter((entry) => bySize.indexOf(entry) < kept);
+      yield { ...input, catTrend: { ...catTrend, series } };
+    }
+  }
   const bare: ChartInput = {
     title: input.title,
     currency: input.currency,

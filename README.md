@@ -318,11 +318,18 @@ bars scale to the screen width. Paging to another period rebuilds the button for
 - The donut centre shows the total over its change and basis: «↑11% к сентябрю». A period still
   running is compared with the same first days of the previous one, «↑158% к 1–15 сентября», so
   the 15th doesn't read as a drop against a whole month. With nothing to compare against, the
-  centre reads «Всего». Over the size budget, the change labels are the first thing dropped.
+  centre reads «Всего». Over the size budget, the change labels go right after the categories'
+  histories.
 - The donut holds the converted block (ADR-0022). A currency with no NBS rate is one text line
   under the chart, never part of the donut.
 - Tapping a slice or a legend row shows that line's name and amount in the centre and dims the
   other slices. A second tap on it, or a tap in the centre, goes back to the total.
+- The tap also opens a panel right under that legend row: the category's name, «Последние 6
+  месяцев» (or «недель»), and its converted totals over the shown period and the five before it,
+  as bars. A category matches across periods by id, so a renamed one keeps its history under its
+  current name. «Прочее», and a category whose history didn't fit the payload, say so instead and
+  point to paging back in `/month`. The histories are the first thing dropped over the size
+  budget, the smallest categories' first, and always before any category folds into «Прочее».
 - The slice colours follow the Telegram theme, a light or a dark palette, and the chart redraws
   when the theme changes. Lines past the eighth are drawn in the theme's hint colour.
 - Under the donut, the pace: the shown period's cumulative spending by day as a line in the

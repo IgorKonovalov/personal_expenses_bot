@@ -6,6 +6,7 @@ import {
   canInflate,
   decodeChartPayload,
   payloadParam,
+  type CatTrendSection,
   type ChartPayload,
   type PaceSection,
   type PieSection,
@@ -171,8 +172,9 @@ function drawState<N extends ChartNode<N>>(
   const title = doc.createElement('h1');
   title.textContent = state.title;
   root.append(title);
+  const catTrend = state.sections.find(isCatTrend);
   for (const section of state.sections) {
-    if (isPie(section)) drawPie(doc, root, state.title, section, theme, onSelect);
+    if (isPie(section)) drawPie(doc, root, state.title, section, catTrend, theme, onSelect);
     else if (isPace(section)) root.append(...drawPace(doc, section, theme));
     else if (isTrend(section) && section.bars.length > 0) {
       root.append(drawTrend(doc, section.bars, theme));
@@ -192,17 +194,23 @@ function isTrend(section: Section): section is TrendSection {
   return section.k === 'trend';
 }
 
+function isCatTrend(section: Section): section is CatTrendSection {
+  return section.k === 'catTrend';
+}
+
 // The total, the donut of the converted block with its tap hint and legend, then one line per
 // currency with no rate, which is never drawn. A legend row reads «name: amount · share · change»,
 // its parts the payload's own strings, each present only when sent. With no line selected, the
 // centre shows the total over its change and basis, or over «Всего» without one. Tapping a slice
-// or a legend row inspects that line; tapping it again, or the hole, goes back to the total. The
-// selection lives in this closure only: it is never stored or sent.
+// or a legend row inspects that line; tapping it again, or the hole, goes back to the total. With a
+// catTrend section, the selected line's history panel opens as the legend item right after its
+// row (historyPanel). The selection lives in this closure only: it is never stored or sent.
 function drawPie<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   root: N,
   title: string,
   payload: PieSection,
+  catTrend: CatTrendSection | undefined,
   theme: ChartTheme,
   onSelect: () => void,
 ): void {
@@ -214,12 +222,20 @@ function drawPie<N extends ChartNode<N>>(
       (amountMinor > 0 ? palette[index] : undefined) ?? theme.hint ?? NEUTRAL,
   );
   const donut = drawDonut(doc, title, payload, colours, theme);
+  const legend = doc.createElement('ul');
   const items: N[] = [];
   let selected: number | undefined;
   const select = (index: number | undefined) => {
     selected = index;
     if (donut !== undefined) inspect(donut, payload, index);
     items.forEach((item, i) => (item.style.fontWeight = i === index ? 'bold' : ''));
+    const line = index === undefined ? undefined : payload.lines[index];
+    if (catTrend === undefined || index === undefined || line === undefined) {
+      legend.replaceChildren(...items);
+    } else {
+      const panel = historyPanel(doc, line[0], index, catTrend, theme);
+      legend.replaceChildren(...items.slice(0, index + 1), panel, ...items.slice(index + 1));
+    }
     onSelect();
   };
   const toggle = (index: number) => {
@@ -236,7 +252,6 @@ function drawPie<N extends ChartNode<N>>(
     });
     root.append(donut.svg, paragraph(doc, messages.chartTapHint));
   }
-  const legend = doc.createElement('ul');
   payload.lines.forEach(([name, , label, share, change], index) => {
     const item = doc.createElement('li');
     item.style.minHeight = ROW_MIN_HEIGHT;
@@ -256,6 +271,32 @@ function drawPie<N extends ChartNode<N>>(
   });
   root.append(legend);
   for (const line of payload.unconverted) root.append(paragraph(doc, line));
+}
+
+// The history panel of pie line `index`, named `name`: a heading of the name, then the section's
+// caption over one bar per period (drawTrend), or, for a line with no series (the fold line, or one
+// shed for size), the no-history line and no bars.
+function historyPanel<N extends ChartNode<N>>(
+  doc: ChartDocument<N>,
+  name: string,
+  index: number,
+  catTrend: CatTrendSection,
+  theme: ChartTheme,
+): N {
+  const panel = doc.createElement('li');
+  const heading = doc.createElement('h2');
+  heading.textContent = name;
+  panel.append(heading);
+  const points = catTrend.series.find(([line]) => line === index)?.[1];
+  if (points === undefined) {
+    panel.append(paragraph(doc, messages.chartNoHistory));
+    return panel;
+  }
+  const bars = points.map(
+    ([amountMinor, label], i) => [catTrend.periods[i] ?? '', amountMinor, label] as const,
+  );
+  panel.append(paragraph(doc, catTrend.caption), drawTrend(doc, bars, theme));
+  return panel;
 }
 
 // The drawn donut and the parts a selection changes: each slice by its line's index, the hole's

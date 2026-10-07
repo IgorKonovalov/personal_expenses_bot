@@ -9,6 +9,8 @@ import {
   chartPayload,
   encodeChartPayload,
   encodePacePayload,
+  type CatTrendPoint,
+  type CatTrendSection,
   type ChartFold,
   type ChartInput,
   type ChartLine,
@@ -330,6 +332,100 @@ describe('the payload budget', () => {
       expect(paceOf(noPace)).toBeUndefined();
       expect(barsOf(noPace)).toEqual(input.trend);
       expect(pieOf(noPace).lines).toEqual(input.lines.map((line) => line.slice(0, 4)));
+    });
+  });
+
+  describe('the catTrend section', () => {
+    const PERIODS = ['Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь'];
+    const series = (lines: readonly ChartLine[], next: () => number): CatTrendSection => ({
+      k: 'catTrend',
+      caption: 'Последние 6 месяцев',
+      periods: PERIODS,
+      series: lines.map(
+        ([, amountMinor], index) =>
+          [
+            index,
+            PERIODS.map((_, i): CatTrendPoint => {
+              const amount = i === PERIODS.length - 1 ? amountMinor : Math.floor(next() * 1e7);
+              return [amount, `${amount} ${Math.floor(next() * 1e9).toString(36)}`];
+            }),
+          ] as const,
+      ),
+    });
+    const catTrendOf = (payload: ChartPayloadV2) =>
+      payload.sections.find((section): section is CatTrendSection => section.k === 'catTrend');
+    const sizeOf = (input: ChartInput) => encodeChartPayload(input, FOLD, Infinity)?.length ?? 0;
+
+    it('goes last and round-trips whole', async () => {
+      const catTrend = series(OCTOBER.lines, random(20));
+
+      const decoded = await decode(
+        encodeChartPayload({ ...OCTOBER, trend: SIX_BARS, catTrend }, FOLD, Infinity),
+      );
+
+      expect(decoded.sections.map((section) => section.k)).toEqual(['pie', 'trend', 'catTrend']);
+      expect(catTrendOf(decoded)).toEqual(catTrend);
+    });
+
+    it("sheds the smallest line's series first, before any change label", async () => {
+      const lines: ChartLine[] = [
+        ['Еда', 120000, '1 200.00 RSD', '78%', '↑20%'],
+        ['Кафе', 5000, '50.00 RSD', '3%', 'новое'],
+        ['Транспорт', 30000, '300.00 RSD', '19%', '↓25%'],
+      ];
+      const input: ChartInput = {
+        ...OCTOBER,
+        lines,
+        totalChange: '↑11% к сентябрю',
+        trend: SIX_BARS,
+        catTrend: series(lines, random(21)),
+      };
+
+      const decoded = await decode(encodeChartPayload(input, FOLD, sizeOf(input) - 1));
+
+      expect(catTrendOf(decoded)?.series.map(([line]) => line)).toEqual([0, 2]);
+      expect(pieOf(decoded).lines).toEqual(lines);
+      expect(pieOf(decoded).totalChange).toBe('↑11% к сентябрю');
+    });
+
+    it('keeps series only for a prefix of the lines by amount, and none once a line folds, over 200 seeded cases', async () => {
+      const next = random(40);
+      let partial = 0;
+      let foldedCases = 0;
+      for (let run = 0; run < 200; run++) {
+        const count = 1 + Math.floor(next() * 25);
+        const lines: ChartLine[] = Array.from({ length: count }, (_, i) => [
+          `Категория ${i} ${Math.floor(next() * 1e9).toString(36)}`,
+          Math.floor(next() * 10_000_000),
+          `${Math.floor(next() * 1e9)} RSD`,
+          '1%',
+        ]);
+        const catTrend = series(lines, next);
+        const budget = 200 + Math.floor(next() * 2500);
+
+        const encoded = encodeChartPayload({ ...OCTOBER, lines, catTrend }, FOLD, budget);
+
+        if (encoded === undefined) continue;
+        const decoded = await decode(encoded);
+        const kept = catTrendOf(decoded)?.series ?? [];
+        const keptLines = new Set(kept.map(([line]) => line));
+        const amount = (index: number) => lines[index]?.[1] ?? 0;
+        const smallestKept = Math.min(...[...keptLines].map(amount));
+        const largestShed = Math.max(
+          ...lines.flatMap((_, index) => (keptLines.has(index) ? [] : [amount(index)])),
+        );
+        expect(smallestKept).toBeGreaterThanOrEqual(largestShed);
+        // A kept series is the one sent for its line.
+        for (const entry of kept) expect(catTrend.series[entry[0]]).toEqual(entry);
+        if (kept.length > 0 && kept.length < lines.length) partial++;
+        if (JSON.stringify(pieOf(decoded).lines) !== JSON.stringify(lines)) {
+          foldedCases++;
+          expect(catTrendOf(decoded)).toBeUndefined();
+        }
+      }
+      // The cases reach both a partly shed section and folding.
+      expect(partial).toBeGreaterThan(20);
+      expect(foldedCases).toBeGreaterThan(20);
     });
   });
 
