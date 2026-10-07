@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0039`
+- **Next free number:** `0040`
 
 ## Active
 
@@ -14,6 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
 | [0038](0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | draft (2026-10-07) |
+| [0039](0039-scale-hardening.md) | Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk | draft (2026-10-07) |
 
 ## Recently closed
 
