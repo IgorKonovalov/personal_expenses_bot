@@ -1,8 +1,8 @@
 # 0040: Chart polish: a donut that fits the screen, tap to inspect, colours that hold in dark theme
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, one minor fixed at close, two nits open, Phase 4 live check owed, v0.30.0
 > **Created:** 2026-10-07
-> **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in)
+> **Related ADRs:** [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in)
 
 ## TL;DR
 
@@ -239,4 +239,125 @@ a tap handler are a few dozen lines of SVG.
   calls it for chart mode. `ChartNode` gains `style`, `removeAttribute`, `replaceChildren`,
   `addEventListener`; `ChartDocument` gains `title`.
 
+## Close review
+
+# Plan 0040 review, round 1 (tip 1974f782c377b9ccf9948850f55d6501385abd52)
+
+**Verdict:** Clean. Phases 1 to 3 deliver every done-when, and a test that reads the right
+values backs each one. The gate is green. What remains is one README gap (minor) and two
+nits, and none of them blocks the close.
+
+## Gate (run in this session on the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 137 files, 1912 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 335 relative links resolve.
+- `git diff --stat main...HEAD -- webapp/index.html webapp/src/scan.ts webapp/src/scan.test.ts src`
+  prints nothing. The CSP, scan mode and the bot are untouched.
+- `git status --short` is clean after the run.
+
+## Alignment (assertions read)
+
+- **Phase 1.** `payload.test.ts:246-251` asserts both slice paths exactly, including
+  `-0.9511 -0.309` and `-0.5706 -0.1854`. `:278-282` asserts the single-line ring (two closed
+  circles, `evenodd`). `:294-303` asserts that the 18- and 13-character totals carry
+  `textLength="1.1"` + `spacingAndGlyphs` and that «Всего» doesn't. `:312-323` asserts
+  `width="100%"`, both viewBoxes and `maxWidth` `360px`. The fake DOM throws on
+  `setAttribute('style')` (`:39`). `:326-329` asserts the title «Диаграмма». The fallback and XSS
+  tests are kept. `expand()` is asserted at `:400`.
+- **Phase 2.** `:430-442` covers the legend row: dims to `0.35` and `1`, shows the centre
+  «Транспорт» / label, and a second tap restores. `:444-459` covers a slice tap, and the hole
+  clearing it. `:461-474` checks that «Развлечения и подписки» becomes «Развлечения и…» while the
+  legend stays whole. `:476-485` covers the zero-amount line. `:487-496` checks that the hint
+  shows once, directly after the donut svg, and that every `li` has `minHeight` `44px`. `:498-512`
+  checks that the markup-like name reaches the centre as text and that no `img` node appears.
+  `:514-533` covers no fetch and no storage. `sendData` is unreachable from `showChart`.
+- **Phase 3.** `palette.test.ts:12-20` computes WCAG ratios against `#ffffff` and `#212d3b`
+  (a ratio of 3 or more), `:22-26` checks that no colour repeats, and `:28-34` covers palette
+  choice. `payload.test.ts:364-368` checks DARK/LIGHT by `bg_color`. `:370-383` checks that lines
+  9 and 10 take `#999999`, or the theme `hint_color`, in both the slices and the swatches.
+  `:193-209` checks that every trend text and bar sits at `x="0"`. `:211-228` checks the button
+  colour and `opacity="0.5"` on the earlier bars. `:385-411` checks that `themeChanged` redraws
+  from DARK with an identical node shape and one `h1`.
+- **Phase 4** (`human`, does not block merge) is owed after the merge, and the log says so.
+- Every phase has exactly one owner tag. The log is shorter than the phases section, and it
+  discloses its deviations: the `<p>` total stays, the trend has a `480px` max, the chart wiring
+  moved to `startChart`, and haptics also fire on clear. ADR-0025 is honoured: copy comes from
+  `messages.ts`, there's no money arithmetic, there's no `style` attribute, and there's no network
+  request.
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+1. **The README doesn't describe the new chart behaviour.**
+   - **What:** README.md «Mini App: charts» covers the donut, its centre total and the scaling.
+     It doesn't cover tapping a slice or legend row to inspect it, the light and dark palettes
+     with the redraw on a theme change, or the hint-grey colour for lines past the eighth.
+   - **Where:** `README.md:301-313`.
+   - **Why it matters:** these are behaviours the user can see, and lens 4 asks for them to be
+     documented. The dev log flags the gap itself.
+   - **Fix:** add one bullet on tap-to-inspect: a slice or legend row shows that line's name and
+     amount in the centre, and a second tap or a tap in the centre goes back to the total. Add
+     one bullet on colours: they follow the Telegram theme (light or dark palette) and redraw
+     when the theme changes, and lines past the eighth are drawn in the theme's hint colour.
+     This can land in the close commit or in a small docs fix. It's a docs-only change.
+
+### nit
+
+1. **The period total is shown twice.**
+   - **What:** the `<p>` with `totalLabel` above the donut stays, so the total appears both
+     above the donut and in its centre.
+   - **Where:** `webapp/src/pie.ts:138`.
+   - **Why it matters:** the duplicate is redundant on a small screen. The plan didn't ask for
+     the paragraph to be removed, and the log discloses it.
+   - **Fix:** record a followup to drop the paragraph, or keep it on purpose. This is a UX call
+     for a later plan.
+2. **The haptic wiring has no test.**
+   - **What:** no test checks that `startChart` passes `HapticFeedback.selectionChanged` as
+     `onSelect`. The `onSelect` callback is tested only through `showChart`
+     (`payload.test.ts:514-533`).
+   - **Where:** `webapp/src/pie.ts:93-95`.
+   - **Why it matters:** if the wiring breaks, haptics stop silently. No done-when names this,
+     so it's only a nit.
+   - **Fix:** in the `themeChanged` test's fake `webApp`, add
+     `HapticFeedback: { selectionChanged: vi.fn() }`, click a legend row, and assert one call.
+
+## Bookkeeping owed at close
+
+- Fold in minor 1 (the README bullets) before or with the close commit.
+- Move the plan to `docs/plans/done/` with status `done`. Repair the links and run
+  `node scripts/check-doc-links.mjs`.
+- There's no paired ADR to accept. ADR-0025 stays as it is.
+- Refresh `docs/plans/README.md` (the closed row and the next free number).
+- Version: a minor bump, because this is a user-visible feature plan. Update `package.json` and
+  `CHANGELOG.md`, and add the `versionAnnouncements` entry in the bot messages module
+  (ADR-0013).
+- Phase 4 (the live check in light and dark themes, `human`) stays owed after the merge and the
+  Pages run. Record it in the plan's Followups or close note.
+- Followups to record: nit 1 (the duplicate total) and nit 2 (the haptic wiring test).
+
+### Close notes
+
+- Minor 1 fixed at close in 83bfa18 (README «Mini App: charts» gains the tap-to-inspect and
+  theme-palette bullets).
+- No earlier round; no fix-round findings to list.
+- Phase 4 (live check, light and dark) is owed after the merge and the Pages run.
+- Released as v0.30.0.
+
 ## Followups
+
+- Phase 4 live check, light and dark (`human`): owed.
+- Review nit 1: the period total shows both above the donut and in its centre
+  (`webapp/src/pie.ts`). Drop the paragraph or keep it on purpose; a UX call for a later plan.
+- Review nit 2: no test asserts `startChart` wires `HapticFeedback.selectionChanged` as
+  `onSelect`.

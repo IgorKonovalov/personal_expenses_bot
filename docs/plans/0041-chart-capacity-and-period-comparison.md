@@ -2,7 +2,7 @@
 
 > **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0040](0040-chart-polish.md) merged on `main` first (both edit `webapp/src/pie.ts` and its tests)
+> **Depends on:** [Plan 0040](done/0040-chart-polish.md) merged on `main` first (both edit `webapp/src/pie.ts` and its tests)
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
 > [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App)
 

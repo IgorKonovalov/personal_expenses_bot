@@ -2,6 +2,19 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.30.0 (2026-10-07)
+
+From Plan 0040 (chart polish).
+
+- The Mini App chart is a donut that fills the screen width, with the period total in its centre.
+  The page title reads «Диаграмма».
+- Tapping a slice or a legend row shows that category's name and amount in the centre; a second
+  tap, or a tap in the centre, goes back to the total.
+- Slice colours follow the Telegram theme (a light or a dark palette) and redraw when it changes.
+  Lines past the eighth are drawn in the theme's hint colour.
+- Each trend row puts «period · amount» on one line above its bar, so a long amount is never cut
+  off.
+
 ## 0.29.0 (2026-10-07)
 
 From Plan 0037 (category drill-down).
