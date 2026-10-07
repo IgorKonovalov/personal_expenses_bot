@@ -153,7 +153,7 @@ flowchart LR
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: «📷 Скан» records a receipt | dev | done | 5f85749 |
-| 2: Publish and scan a real receipt | human | not started | |
+| 2: Publish and scan a real receipt | human | owed | |
 
 ### Notes
 
