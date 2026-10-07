@@ -7,6 +7,31 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-06 20:39 to 2026-10-07 07:43: Plans 0035, 0026, 0036 and 0032
+
+Queue `a`: 0026, 0035, 0036, 0032, with 0030 queued after 0032 merged. Merged 0035 (v0.23.0),
+0026 (v0.24.0), 0036 (v0.26.0) and 0032 (v0.25.0), all with 0 fix rounds. 2 parks, 11 h 5 min wall
+including a 25 min usage-limit wait and an 8 h machine suspend, $50.06. A second run took 0030.
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H6 | 0032 | `plan_wrong` at `ready` (before the run) | F24 recurred: `WEBAPP_URL` reaches `createBot` only via `src/index.ts`, and vitest included only `src/`. Files touched amended (`7b0468a`). |
+| H7 | 0026 | `plan_wrong` at the lane's readiness | `ready` had passed 0026 against `777c23f`; the lane's check against `7b0468a` found `src/bot/bot.ts` missing from Files touched, a gap the plan had all along. Amended (`bcaca5b`), then `resume`. |
+| H8 | 0036 | `api` at review | The machine suspended during the review; the session sat on a dead stream for 8 h. Killed by hand on wake, then `resume`. |
+| H9 | 0030 | none | Added to `queue.json` mid-run after 0032 merged (`18697f1`); the run ended `until-idle` without picking it. Started by hand: `ready 0030`, a second `run`. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F32 | conductor (dev) | **No step has an idle timeout** (H8). A session whose stream writes nothing for, say, 15 min (or a wall-clock jump after a suspend) should be killed and re-run once, as the `api` park's resume does. | open |
+| F33 | conductor (dev) | **Readiness is not stable across `main` tips** (H7): the same plan text passed and then parked on a gap that predates both checks. Either a pass should hold unless the plan or its Files touched changed on `main`, or `ready` should be told to check Files touched against the registration sites explicitly. | open |
+| F34 | conductor (dev) | **A plan added to `queue.json` mid-run was not picked by `--until-idle`** (H9), though the README says a live run re-reads the queue. Reproduce with the fake CLI. | open |
+| F35 | conductor (dev) | **`git ls-tree` is denied** to review sessions (0036, twice). Allowlist read-only `git ls-tree`. | open |
+| F36 | architect | **A plan that must pin GitHub Actions to SHAs needs the SHAs in the plan**, since a headless session has no network. 0032's were checked by hand against their tags and are real but older (`upload-pages-artifact` v3.0.1, `deploy-pages` v4.0.5). | open |
+
 ## 2026-10-05 22:07 to 2026-10-06 15:16: Plans 0028, 0029, 0025, 0027, 0013 and 0012
 
 Queue `a` from the last run, plus 0034 queued mid-run. Merged 0028 (v0.14.0), 0029 (v0.16.0),
@@ -31,7 +56,7 @@ Stopped by `pause` after 0012 so 0034 runs in a live session.
 | F28 | conductor (dev) | **No command records a hand merge.** After H2 the plan's record stays `queued` forever; `pickNext` skips it only because its file is under `done/`. Add `adopt-merge NNNN`, or let `prune` mark such a plan merged. | open |
 | F29 | architect | **An env rename in a blocking human phase strands the push after the merge** (H4). Either the code accepts the old key with a warning for one release, or the phase that removes it is the push itself. Prefer the former in future plans. | open |
 | F30 | conductor (dev) | **A budget park a phase short is mechanical** (H5): the session committed cleanly and left resume notes. Let it resume itself once, as `deps_install` does. | open |
-| F31 | - | **Plan 0034 is queued but runs in a live session.** `prune` it, or remove it from lane `a`, before the next `run`. | open |
+| F31 | - | **Plan 0034 is queued but runs in a live session.** `prune` it, or remove it from lane `a`, before the next `run`. | done (`777c23f`) |
 
 ## 2026-10-02 to 2026-10-03: Plans 0024 to 0030 in lane a
 
@@ -53,7 +78,7 @@ Nothing merged: 4 parks, 33 h wall, $26.30. Lane a then stopped at the worktree 
 | # | Owner | Followup | Status |
 |---|---|---|---|
 | F24 | architect | **A new config key that reaches a handler also touches `src/index.ts`, `src/bot/bot.ts` (`BotOptions`) and `src/bot/testHarness.ts`.** Same gap class as F14/F19 (0028 H3). Add the line to the plan template's Files touched guidance. | open |
-| F25 | architect | **A blocking `human` phase parks a lane slot for days** (0029 H4), and with 0028 parked the cap stopped lane a. Queue a plan with a blocking human phase last, or raise `max_open_worktrees`. | open |
+| F25 | architect | **A blocking `human` phase parks a lane slot for days** (0029 H4), and with 0028 parked the cap stopped lane a. Queue a plan with a blocking human phase last, or raise `max_open_worktrees`. | done (0030 queued last, `777c23f`) |
 | F26 | architect | **Two lanes closed the same version** (0024 and 0031 both v0.13.0), because 0031 was closed by hand while 0024 sat parked. Before a hand close, check the parked lanes' claimed versions. | open |
 | F27 | - | Edits after `ready` (`6eca81a`) cleared six plans' readiness records, so each needs `ready` again before `check` passes. | done (re-run 2026-10-05 before this run) |
 

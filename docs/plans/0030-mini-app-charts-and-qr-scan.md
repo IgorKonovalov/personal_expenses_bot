@@ -86,8 +86,11 @@ flowchart LR
 
 ### Phase 2: Publish and measure the URL limit
 - **Owner skill:** human
-- **What:** Redeploy (Pages and `WEBAPP_URL` are already set up by Plan 0032), and open a chart
-  on the clients you use (Android, iOS and/or Desktop).
+- **Blocks merge:** no
+- **What:** After the merge, deploy (Pages and `WEBAPP_URL` are already set up by Plan 0032), and
+  open a chart on the clients you use (Android, iOS and/or Desktop). Phase 3 does not wait for
+  this measurement: a deploy needs the merge, and the merge needs Phase 3. If the smallest
+  working size is below 2048 bytes, a fix lowers `CHART_PAYLOAD_BUDGET` to it.
 - **Done when:**
   - The Pages run for this plan's commits is green.
   - Tapping «📈 Диаграмма» on `/month` opens the pie on every client tried, in the Telegram theme
@@ -99,8 +102,8 @@ flowchart LR
 
 ### Phase 3: Payload budget and the trend chart
 - **Owner skill:** dev
-- **What:** Cap the encoded payload at a `CHART_PAYLOAD_BUDGET` byte constant set from Phase 2's
-  measurement (2048 if Phase 2 found nothing smaller). Add a trend section: the converted totals
+- **What:** Cap the encoded payload at a `CHART_PAYLOAD_BUDGET` byte constant of 2048, the
+  smallest size Phase 2 tests. Phase 2's measurement runs after the merge (amended 2026-10-07). Add a trend section: the converted totals
   of the current period and the 5 before it, drawn as bars under the pie.
 - **Files touched:** `src/domain/chartPayload.ts`, `src/domain/chartPayload.test.ts`,
   `src/services/periodSummary.ts` (or a new `src/services/periodTrend.ts` with its test),
@@ -145,7 +148,8 @@ interface ChartPayloadV1 {
 
 - **Fragment handling (unverified).** Telegram adds `tgWebAppData` and other launch parameters to
   the fragment. If a client replaces our fragment instead of appending to it, the pie never gets
-  data. Phase 2 detects this. The fallback is an ADR change, not a workaround in code.
+  data. Phase 2 detects this, after the merge: until then the button may ship to a client that
+  can't open it. The fallback is an ADR change, not a workaround in code.
 - **Money.** The bot formats every amount, and the page uses floats only for geometry
   (ADR-0025). The folding in Phase 3 keeps the sum exact, and its test asserts the sum, not just
   that the result isn't empty.
