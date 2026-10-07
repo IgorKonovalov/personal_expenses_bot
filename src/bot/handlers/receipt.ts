@@ -205,16 +205,31 @@ const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 // anything derived from it reaches an error message or a log.
 export type FileDownloader = (filePath: string) => Promise<Uint8Array>;
 
-export function telegramFileDownloader(token: string): FileDownloader {
+// Updates run one at a time, so a download that never answers would hold every user's update
+// behind it: the whole download, headers and body, is bounded by this.
+export const DOWNLOAD_TIMEOUT_MS = 30_000;
+
+export function telegramFileDownloader(
+  token: string,
+  options: { readonly baseUrl?: string; readonly timeoutMs?: number } = {},
+): FileDownloader {
+  const baseUrl = options.baseUrl ?? 'https://api.telegram.org';
+  const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS;
   return async (filePath) => {
+    // One signal for the request and the body read: it aborts both.
+    const signal = AbortSignal.timeout(timeoutMs);
     let response: Response;
     try {
-      response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+      response = await fetch(`${baseUrl}/file/bot${token}/${filePath}`, { signal });
     } catch {
       throw new Error('telegram file download failed');
     }
     if (!response.ok) throw new Error(`telegram file download failed: ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+    try {
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      throw new Error('telegram file download failed');
+    }
   };
 }
 

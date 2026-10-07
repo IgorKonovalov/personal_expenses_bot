@@ -48,6 +48,7 @@ import { messages } from './messages.js';
 import { access } from './middleware/access.js';
 import { onboarding } from './middleware/onboarding.js';
 import { rateLimit } from './middleware/rateLimit.js';
+import { slowUpdate } from './middleware/slowUpdate.js';
 import { replyHtml, type Html } from './render/html.js';
 import { registerSummaryPush } from './summaryProvider.js';
 
@@ -95,6 +96,8 @@ export function createBot(options: BotOptions): Bot {
   // Registered first so it wraps every later middleware, including handlers added after
   // createBot returns. bot.catch only sees errors under bot.start(), not handleUpdate().
   bot.use(errorBoundary(logger));
+  // Inside the boundary, so a failing update is timed up to its apology.
+  bot.use(slowUpdate({ logger }));
   // Before the access check and the group branch: a flood is dropped before any DB read.
   bot.use(rateLimit(options));
 

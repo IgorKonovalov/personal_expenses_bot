@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { adminNotifier } from './bot/adminNotifier.js';
 import { createBot, registerCommands } from './bot/bot.js';
 import { createDonationLinks, type DonationLinks } from './bot/handlers/donate.js';
@@ -144,6 +145,22 @@ void announceVersion(
   appVersion,
 );
 
+// Event-loop delay, summarised hourly: a slow update shows as its own warn, this shows how
+// often the loop was held at all.
+const loopDelay = monitorEventLoopDelay();
+loopDelay.enable();
+const loopDelayTimer = setInterval(() => {
+  logger.info(
+    {
+      p50Ms: Math.round(loopDelay.percentile(50) / 1e6),
+      p99Ms: Math.round(loopDelay.percentile(99) / 1e6),
+      maxMs: Math.round(loopDelay.max / 1e6),
+    },
+    'event loop delay',
+  );
+  loopDelay.reset();
+}, 3_600_000);
+
 const heartbeat = createHeartbeat(heartbeatPath(config.databasePath), (error) => {
   logger.warn(
     { err: error instanceof Error ? error.name : typeof error },
@@ -158,6 +175,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     logger.info({ signal }, 'stopping');
     heartbeat.stop();
+    clearInterval(loopDelayTimer);
+    loopDelay.disable();
     const backupSettled = backups?.stop();
     void Promise.all([receiptWorker.stop(), rateWorker.stop(), scheduler.stop()])
       .then(() => Promise.all([bot.stop(), backupSettled]))

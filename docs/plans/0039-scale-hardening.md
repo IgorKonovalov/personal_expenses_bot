@@ -1,6 +1,6 @@
 # 0039: Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0042](../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md), [ADR-0043](../adrs/0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md), [ADR-0044](../adrs/0044-compressed-backups-seven-daily-four-weekly.md), [ADR-0036](../adrs/0036-stay-on-node-memory-work-targets-heavy-jobs.md), [ADR-0031](../adrs/0031-local-time-scheduler.md)
 
@@ -364,7 +364,7 @@ New message: `heavyJobBusy`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: download timeouts and slow-update log | dev | not started | |
+| 1: download timeouts and slow-update log | dev | done | committed with this row |
 | 2: unreachable users | dev | not started | |
 | 3: paced, retried, capped scheduled sends | dev | not started | |
 | 4: due pushes from one bulk read | dev | not started | |
@@ -373,6 +373,10 @@ New message: `heavyJobBusy`.
 | 7: live checks | human | not started | |
 
 ### Notes
+
+- Phase 1: `telegramFileDownloader` takes an options object `{ baseUrl, timeoutMs }` so the test
+  can point it at a local server; production passes neither. The downloader test is the new
+  `src/bot/handlers/receipt.test.ts`, which also covers a body that never finishes.
 
 ### Close triggers
 
