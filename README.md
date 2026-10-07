@@ -308,6 +308,10 @@ screen width. Paging to another period rebuilds the button for that period.
   never an individual expense, and the static host never sees the fragment.
 - The donut holds the converted block (ADR-0022). A currency with no NBS rate is one text line
   under the chart, never part of the donut.
+- Tapping a slice or a legend row shows that line's name and amount in the centre and dims the
+  other slices. A second tap on it, or a tap in the centre, goes back to the total.
+- The slice colours follow the Telegram theme, a light or a dark palette, and the chart redraws
+  when the theme changes. Lines past the eighth are drawn in the theme's hint colour.
 - Under the donut, 6 bars show the converted totals of the shown period and the five before it,
   oldest first. A period with nothing spent keeps its row with a zero-length bar.
 - A period with no expenses, or with nothing in or converted into the ledger's currency, has no
