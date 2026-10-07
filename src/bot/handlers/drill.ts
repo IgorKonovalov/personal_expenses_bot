@@ -1,9 +1,11 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
 import type { CategoryId } from '../../db/categories.js';
+import type { ExpenseId } from '../../db/expenses.js';
 import type { LedgerId } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { parsePeriod, periodKey, type Period } from '../../domain/periods.js';
+import { showExpense } from '../../services/changeCategory.js';
 import { setAnchor, type Drill, type ScreenAnchor } from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import {
@@ -14,6 +16,7 @@ import {
 import { ledgerPeriodSummary, type PeriodSummary } from '../../services/periodSummary.js';
 import type { HandlerDeps } from '../bot.js';
 import {
+  DRILL_BACK,
   DRILL_EXPENSE,
   DRILL_LIST,
   DRILL_PICKER,
@@ -25,6 +28,7 @@ import {
 import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { backRow, renderAnchor, requireScreen, type ScreenTap } from '../screens.js';
+import { cardAt, cardFor, cardView } from './card.js';
 
 // The summary's drill-down (Plan 0037), three more states of the /week and /month screen in its
 // anchor (ADR-0011): [По категориям] shows the period's category picker, a category its numbered
@@ -185,7 +189,56 @@ export function registerDrill(bot: Composer<Context>, deps: HandlerDeps): void {
     if (listing !== undefined) await showList(ctx, deps, tap, listing, Number(ctx.match[4]));
   });
 
+  // [n]: the expense's real card in the anchor, accepted only while the anchor shows a list and
+  // only for an expense of the screen's ledger. cardAt adds its [« Назад] once the anchor holds it.
   bot.callbackQuery(DRILL_EXPENSE, async (ctx) => {
+    const tap = await requireSummary(ctx, deps);
+    if (tap === undefined) return;
+    const { drill } = tap.screen;
+    if (drill?.level !== 'list') {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const expenseId = ctx.match[1] as ExpenseId;
+    const shown = showExpense(deps, { user: tap.user, expenseId });
+    if (shown.kind !== 'card' || shown.expense.ledgerId !== tap.screen.ledgerId) {
+      await ctx.answerCallbackQuery({
+        text: shown.kind === 'locked' ? messages.ledgerLockedToast : messages.expenseNotFound,
+      });
+      return;
+    }
     await ctx.answerCallbackQuery();
+    recordDrill(deps, tap, tap.screen.ledgerId, { ...drill, expenseId });
+    const view = cardView(deps, tap.user, shown);
+    await renderAnchor(ctx, tap.anchor, cardAt(deps, tap.user, tap.anchor, view, cardFor(view)));
+  });
+
+  // The card's [« Назад]: the list it was opened from, re-read, on the same page or the last one
+  // that still exists.
+  bot.callbackQuery(DRILL_BACK, async (ctx) => {
+    const tap = await requireSummary(ctx, deps);
+    if (tap === undefined) return;
+    const { drill } = tap.screen;
+    if (drill?.level !== 'list') {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const period = parsePeriod(drill.period.kind, drill.period.key);
+    const listing =
+      period === undefined
+        ? undefined
+        : categoryExpenses(deps, {
+            user: tap.user,
+            ledgerId: tap.screen.ledgerId,
+            period,
+            categoryId: drill.categoryId,
+            now: deps.now(),
+          });
+    if (isLocked(listing)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    if (listing !== undefined) await showList(ctx, deps, tap, listing, drill.page);
   });
 }

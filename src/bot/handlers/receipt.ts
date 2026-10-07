@@ -18,7 +18,7 @@ import { pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { kickReceiptWorker } from '../receiptWorker.js';
 import { editHtml, replyHtml } from '../render/html.js';
 import { offerTip } from '../tips.js';
-import { cardFor, cardView, expenseIdOf } from './card.js';
+import { cardAt, cardFor, cardView, expenseIdOf, tappedMessage } from './card.js';
 import { ensureUser } from './start.js';
 
 export type ReceiptOutcome =
@@ -181,7 +181,8 @@ export function registerReceiptCard(bot: Composer<Context>, deps: HandlerDeps): 
       case 'retrying': {
         kickReceiptWorker();
         await ctx.answerCallbackQuery({ text: messages.receiptRetryToast });
-        const card = cardFor(cardView(deps, user, result));
+        const view = cardView(deps, user, result);
+        const card = cardAt(deps, user, tappedMessage(ctx), view, cardFor(view));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }

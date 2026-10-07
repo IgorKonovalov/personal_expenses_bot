@@ -21,7 +21,7 @@ import { answerAskAmount } from '../services/recurring.js';
 import { answerTimezoneFlow, screenSettings } from '../services/settings.js';
 import type { HandlerDeps } from './bot.js';
 import { budgetPromptView, budgetRefusal, budgetView } from './handlers/budget.js';
-import { cardFor, cardView, recordedCard } from './handlers/card.js';
+import { cardAt, cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
 import { answerDebtFlow, debtsScreenFor } from './handlers/debts.js';
 import { editPromptView } from './handlers/edit.js';
@@ -103,8 +103,10 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   if (screen.name === 'expense') {
     // The card for the expense's stored state, as it was before the prompt.
     const shown = showExpense(deps, { user, expenseId: screen.expenseId });
-    if (shown.kind === 'card')
-      await renderAnchor(ctx, anchor, cardFor(cardView(deps, user, shown)));
+    if (shown.kind === 'card') {
+      const view = cardView(deps, user, shown);
+      await renderAnchor(ctx, anchor, cardAt(deps, user, anchor, view, cardFor(view)));
+    }
     return;
   }
   if (screen.name === 'recurring') {
@@ -153,13 +155,16 @@ async function answerEdit(
       await replyHtml(ctx, messages.editGone);
       const { expense, ledger } = result;
       if (anchor !== undefined && expense !== undefined && ledger !== undefined) {
-        await renderAnchor(ctx, anchor, cardFor(cardView(deps, user, { expense, ledger })));
+        const view = cardView(deps, user, { expense, ledger });
+        await renderAnchor(ctx, anchor, cardAt(deps, user, anchor, view, cardFor(view)));
       }
       return;
     }
-    case 'editable':
-      await show(ctx, anchor, recordedCard(cardView(deps, user, result)));
+    case 'editable': {
+      const view = cardView(deps, user, result);
+      await show(ctx, anchor, cardAt(deps, user, anchor, view, recordedCard(view)));
       return;
+    }
   }
 }
 

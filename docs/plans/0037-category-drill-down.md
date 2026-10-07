@@ -235,8 +235,8 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The picker and the list, read-only | dev | done | committed with this row |
-| 2: The card in the drill-down | dev | not started | |
+| 1: The picker and the list, read-only | dev | done | eff64db |
+| 2: The card in the drill-down | dev | done | committed with this row |
 | 3: Edit prompts from the drill-down card | dev | not started | |
 | 4: Live check | human | not started | |
 
@@ -256,6 +256,17 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
   notes.
 - Phase 1: the list's `[« Назад]` page comes from `CategoryExpenses.pickerIndex`, computed in the
   service from the same rows; no `src/db/expenses.ts` change.
+- Phase 2: the helper is `cardAt(deps, user, at, view, card)` in `src/bot/handlers/card.ts`. The
+  receipt items' `[« Назад]` and repeat's `[« Назад]` are both `exp:show`, handled in
+  `category.ts`; `receipt.ts` routes only `[Повторить]`, `recurring.ts` only the card after a
+  schedule pick. `flows.ts`'s three card renders go through `cardAt` already; they draw no back row
+  until Phase 3 gives the edit prompt's anchor a `returnTo`.
+- Phase 2: the date quick button test taps `exp:dt` directly on the drill-down card's anchor. The
+  button lives on the date prompt, whose anchor is an `ExpenseScreen` until Phase 3.
+- Phase 2: `[n]` on a locked sealed ledger toasts `ledgerLockedToast` (not named in the done-when).
+  `src/services/flowSessions.ts` and `src/bot/callbackData.ts` needed no Phase 2 change (`drill`,
+  `drl:e` and `drl:back` landed in Phase 1). `src/bot/receiptWorker.ts`'s `cardFor` is not routed:
+  it edits the remembered confirmation, never the anchor.
 
 ### Close triggers
 

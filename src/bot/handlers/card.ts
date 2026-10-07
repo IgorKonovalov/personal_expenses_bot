@@ -11,10 +11,12 @@ import {
   receiptSummary,
   type ReceiptSummary,
 } from '../../services/fetchDueReceipt.js';
+import { currentAnchor, type Screen } from '../../services/flowSessions.js';
 import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
 import {
+  DRILL_BACK,
   RESTORE_EXPENSE,
   UNDO_EXPENSE,
   categoryPickerData,
@@ -27,6 +29,7 @@ import {
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { editHtml, type Html } from '../render/html.js';
+import { backRow } from '../screens.js';
 import { registerEdit } from './edit.js';
 import { registerReceiptCard } from './receipt.js';
 import { ensureUser } from './start.js';
@@ -168,6 +171,58 @@ export function cardFor(view: CardView): Card {
   return view.expense.deletedAt === null ? recordedCard(view) : deletedCard(view);
 }
 
+export interface MessageRef {
+  readonly chatId: number;
+  readonly messageId: number;
+}
+
+// The message a callback was tapped on.
+export function tappedMessage(ctx: Context): MessageRef | undefined {
+  const message = ctx.callbackQuery?.message;
+  return message === undefined
+    ? undefined
+    : { chatId: message.chat.id, messageId: message.message_id };
+}
+
+// The anchor's screen holds this expense's card inside a summary drill-down (Plan 0037).
+function showsInDrill(screen: Screen, expenseId: ExpenseId): boolean {
+  return (
+    screen.name === 'summary' &&
+    screen.drill?.level === 'list' &&
+    screen.drill.expenseId === expenseId
+  );
+}
+
+// ADR-0040: every card a callback or a flow answer re-renders goes through here. Drawn into `at`
+// while `at` is the user's anchor and the anchor holds this expense in a summary drill-down, the
+// card gets [« Назад] (`drl:back`) on its own bottom row, and a viewer who isn't the author, for
+// whom every card action is refused, gets [« Назад] alone. Anywhere else the card is unchanged.
+export function cardAt(
+  deps: HandlerDeps,
+  user: User,
+  at: MessageRef | undefined,
+  view: CardView,
+  card: Card,
+): Card {
+  if (at === undefined) return card;
+  const anchor = currentAnchor(deps, user);
+  if (
+    anchor === undefined ||
+    anchor.chatId !== at.chatId ||
+    anchor.messageId !== at.messageId ||
+    !showsInDrill(anchor.screen, view.expense.id)
+  ) {
+    return card;
+  }
+  const back = backRow(DRILL_BACK);
+  return {
+    text: card.text,
+    markup: InlineKeyboard.from(
+      view.expense.createdBy === user.id ? [...card.markup.inline_keyboard, back] : [back],
+    ),
+  };
+}
+
 export function expenseIdOf(match: string | RegExpMatchArray): ExpenseId | undefined {
   return typeof match === 'string' ? undefined : (match[1] as ExpenseId | undefined);
 }
@@ -187,7 +242,8 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
     switch (result.kind) {
       case 'undone': {
         await ctx.answerCallbackQuery({ text: messages.undoneToast });
-        const card = deletedCard(cardView(deps, user, result));
+        const view = cardView(deps, user, result);
+        const card = cardAt(deps, user, tappedMessage(ctx), view, deletedCard(view));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
@@ -215,7 +271,8 @@ export function registerCard(bot: Composer<Context>, deps: HandlerDeps): void {
     switch (result.kind) {
       case 'restored': {
         await ctx.answerCallbackQuery({ text: messages.restoredToast });
-        const card = recordedCard(cardView(deps, user, result));
+        const view = cardView(deps, user, result);
+        const card = cardAt(deps, user, tappedMessage(ctx), view, recordedCard(view));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }

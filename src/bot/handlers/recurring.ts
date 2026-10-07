@@ -74,7 +74,7 @@ import {
   type ScreenTap,
   type ScreenView,
 } from '../screens.js';
-import { cardView, expenseIdOf, recordedCard } from './card.js';
+import { cardAt, cardView, expenseIdOf, recordedCard, tappedMessage } from './card.js';
 import { ensureUser } from './start.js';
 
 // Recurring expenses (Plan 0025): [Повторять] on an expense card turns the card into a schedule
@@ -589,7 +589,8 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       return;
     }
     await ctx.answerCallbackQuery();
-    const card = recordedCard(cardView(deps, user, result));
+    const view = cardView(deps, user, result);
+    const card = cardAt(deps, user, tappedMessage(ctx), view, recordedCard(view));
     const today = localDateOf(now, effectiveTimezone(deps, user, result.ledger));
     await editHtml(
       ctx,

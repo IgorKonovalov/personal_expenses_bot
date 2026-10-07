@@ -23,7 +23,7 @@ import {
 import { messages } from '../messages.js';
 import { editHtml, joinHtml, type Html } from '../render/html.js';
 import { backRow, type ScreenView } from '../screens.js';
-import { cardView, expenseIdOf, recordedCard } from './card.js';
+import { cardAt, cardView, expenseIdOf, recordedCard, tappedMessage } from './card.js';
 import { ensureUser } from './start.js';
 
 // Editing an expense from its card (ADR-0011): [Изменить] turns the card into a field picker, a
@@ -156,7 +156,8 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
         await ctx.answerCallbackQuery({
           text: result.changed ? messages.expenseEditedToast : messages.dateUnchanged,
         });
-        const card = recordedCard(cardView(deps, user, result));
+        const view = cardView(deps, user, result);
+        const card = cardAt(deps, user, tappedMessage(ctx), view, recordedCard(view));
         await editHtml(ctx, card.text, { reply_markup: card.markup });
         return;
       }
