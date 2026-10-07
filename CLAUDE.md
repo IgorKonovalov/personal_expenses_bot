@@ -52,6 +52,7 @@ scripts/
 ├── products-coverage.ts  # `pnpm products:coverage`: product-rule coverage on a local db copy
 ├── bench-prices.ts       # `pnpm bench:prices <items>`: times the /prices views on synthetic data
 ├── bench-due.ts          # `pnpm bench:due <users>`: times the due-push read on synthetic users
+├── probe-webapp-url.ts   # `pnpm probe:webapp`: sends the admin web_app buttons of padded lengths
 └── deploy-vps.sh         # the VPS deploy, run by the deploy key's forced command (+ its test)
 tools/
 └── conductor/       # runs queued, approved plans headless in worktree lanes (ADR-0010).
