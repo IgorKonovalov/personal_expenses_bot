@@ -1,6 +1,6 @@
 # 0041: Chart capacity and the comparison with the previous period
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0040](done/0040-chart-polish.md) merged on `main` first (both edit `webapp/src/pie.ts` and its tests)
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
@@ -277,12 +277,20 @@ interface TrendSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | not started | |
+| 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | committed with this row |
 | 2: Comparison with the previous period | dev | not started | |
 | 3: The URL-limit probe | dev | not started | |
 | 4: Measure on real clients and check v2 opens | human | not started | |
 
 ### Notes
+
+- Phase 1: `ChartFold` gained a `share(percent, amountMinor)` formatter. The «Прочее» line's share
+  is the sum of the folded lines' `sharesOf` percents, so the shares still sum to 100 after folding.
+- Phase 1: `webapp/src/bars.ts` lost `showTrend`; the trend is drawn by the section loop in
+  `webapp/src/pie.ts`. `startChart` and `showChart` are now async.
+- Phase 1: the «Еда: 120 000.00 RSD · 78%» done-when is asserted in `webapp/src/payload.test.ts`
+  on a payload whose Еда label is «120 000.00 RSD», as the plan writes it. The bot formats 120000
+  minor units as «1 200.00 RSD», which the domain round trip in `chartPayload.test.ts` uses.
 
 ### Close triggers
 

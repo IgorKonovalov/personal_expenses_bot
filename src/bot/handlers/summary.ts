@@ -56,7 +56,8 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
   };
 }
 
-// The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment (ADR-0025),
+// The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment's `z`
+// (ADR-0025, ADR-0045),
 // rebuilt on every render, the trend ending at the shown period. Undefined outside a private chat
 // (`web_app` buttons work only there), without WEBAPP_URL, when the first block isn't in the
 // ledger's currency (then nothing converted, so there's no pie, as with no expenses at all), and
@@ -86,7 +87,7 @@ function chartUrlOf(
     }),
     messages.chartFold(converted.currency),
   );
-  return payload === undefined ? undefined : `${deps.webappUrl}#d=${payload}`;
+  return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
 }
 
 // Shared by /week, /month and their menu labels.

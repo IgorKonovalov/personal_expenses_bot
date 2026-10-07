@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { showTrend } from './bars.js';
+import { drawTrend } from './bars.js';
 import { messages } from './messages.js';
 import { decodeChartPayload } from './payload.js';
 import { DARK, LIGHT } from './palette.js';
@@ -73,10 +73,10 @@ function fakeDocument(): ChartDocument<FakeNode> {
   };
 }
 
-function page(hash: string, onSelect: () => void = () => {}) {
+async function page(hash: string, onSelect: () => void = () => {}) {
   const doc = fakeDocument();
   const root = new FakeNode('body');
-  showChart(doc, root, hash, {}, onSelect);
+  await showChart(doc, root, hash, {}, onSelect);
   const nodes = root.all().slice(1);
   return {
     doc,
@@ -87,12 +87,46 @@ function page(hash: string, onSelect: () => void = () => {}) {
   };
 }
 
-// base64url of UTF-8 text, as the bot's encoder writes it (src/domain/chartPayload.ts, whose
-// round trip through decodeChartPayload is tested there).
+// base64url of UTF-8 text, as the bot's v1 encoder wrote it.
 function base64url(text: string): string {
-  const binary = String.fromCharCode(...new TextEncoder().encode(text));
+  return base64urlOf(new TextEncoder().encode(text));
+}
+
+function base64urlOf(bytes: Uint8Array): string {
+  const binary = String.fromCharCode(...bytes);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+
+// The `z` value for `payload`: zlib deflate of its UTF-8 JSON as base64url, as the bot's encoder
+// writes it (src/domain/chartPayload.ts, whose round trip through decodeChartPayload is tested
+// there).
+async function deflated(payload: object): Promise<string> {
+  const stream = new Blob([new TextEncoder().encode(JSON.stringify(payload))])
+    .stream()
+    .pipeThrough(new CompressionStream('deflate'));
+  return base64urlOf(new Uint8Array(await new Response(stream).arrayBuffer()));
+}
+
+const OCTOBER_PIE = {
+  k: 'pie',
+  currency: 'RSD',
+  totalMinor: 155000,
+  totalLabel: '1 550.00 RSD',
+  lines: [
+    ['Еда', 120000, '120 000.00 RSD', '78%'],
+    ['Транспорт', 30000, '30 000.00 RSD', '19%'],
+    ['Кафе', 5000, '5 000.00 RSD', '3%'],
+  ],
+  unconverted: [] as string[],
+};
+const OCTOBER_TREND = {
+  k: 'trend',
+  bars: [
+    ['Сентябрь', 140000, '1 400.00 RSD'],
+    ['Октябрь', 155000, '1 550.00 RSD'],
+  ],
+};
+const OCTOBER = { v: 2, title: 'Октябрь 2026', sections: [OCTOBER_PIE, OCTOBER_TREND] };
 
 const SEPTEMBER = {
   v: 1,
@@ -110,45 +144,110 @@ const SEPTEMBER = {
 const encoded = (payload: object) => base64url(JSON.stringify(payload));
 
 describe('decodeChartPayload', () => {
-  it('reads d next to the launch parameters Telegram appends', () => {
+  it('reads d next to the launch parameters Telegram appends', async () => {
     const d = encoded(SEPTEMBER);
 
-    expect(decodeChartPayload(`#tgWebAppVersion=8.0&d=${d}&tgWebAppPlatform=ios`)).toEqual(
+    expect(await decodeChartPayload(`#tgWebAppVersion=8.0&d=${d}&tgWebAppPlatform=ios`)).toEqual(
       SEPTEMBER,
     );
   });
 
-  it('rejects an unknown version, broken base64 or JSON, a missing d, and lines off the total', () => {
+  it('reads a v2 z next to the launch parameters, unknown sections kept as they came', async () => {
+    const payload = { ...OCTOBER, sections: [OCTOBER_PIE, { k: 'nope', x: 1 }, OCTOBER_TREND] };
+    const z = await deflated(payload);
+
+    expect(await decodeChartPayload(`#tgWebAppVersion=8.0&z=${z}`)).toEqual(payload);
+  });
+
+  it('rejects an unknown version, broken base64 or JSON, a missing d, and lines off the total', async () => {
     const valid = SEPTEMBER;
 
-    expect(decodeChartPayload(`#d=${base64url(JSON.stringify({ ...valid, v: 2 }))}`)).toBe(
+    expect(await decodeChartPayload(`#d=${base64url(JSON.stringify({ ...valid, v: 2 }))}`)).toBe(
       undefined,
     );
-    expect(decodeChartPayload('#d=%%%not-base64')).toBe(undefined);
-    expect(decodeChartPayload(`#d=${base64url('{"v":1,')}`)).toBe(undefined);
-    expect(decodeChartPayload('#tgWebAppVersion=8.0')).toBe(undefined);
-    expect(decodeChartPayload('')).toBe(undefined);
+    expect(await decodeChartPayload('#d=%%%not-base64')).toBe(undefined);
+    expect(await decodeChartPayload(`#d=${base64url('{"v":1,')}`)).toBe(undefined);
+    expect(await decodeChartPayload('#tgWebAppVersion=8.0')).toBe(undefined);
+    expect(await decodeChartPayload('')).toBe(undefined);
     expect(
-      decodeChartPayload(`#d=${base64url(JSON.stringify({ ...valid, totalMinor: 150001 }))}`),
+      await decodeChartPayload(`#d=${base64url(JSON.stringify({ ...valid, totalMinor: 150001 }))}`),
     ).toBe(undefined);
     expect(
-      decodeChartPayload(
+      await decodeChartPayload(
         `#d=${base64url(JSON.stringify({ ...valid, lines: [['Еда', 1.5, '0.02 RSD']], totalMinor: 1.5 }))}`,
       ),
     ).toBe(undefined);
   });
 
-  it('reads a trend, and rejects a trend bar of the wrong shape', () => {
+  it('rejects a z that is not deflate, a v1 body in z, and a pie off its total', async () => {
+    expect(await decodeChartPayload(`#z=${base64url(JSON.stringify(OCTOBER))}`)).toBe(undefined);
+    expect(await decodeChartPayload(`#z=${await deflated(SEPTEMBER)}`)).toBe(undefined);
+    const off = { ...OCTOBER, sections: [{ ...OCTOBER_PIE, totalMinor: 155001 }] };
+    expect(await decodeChartPayload(`#z=${await deflated(off)}`)).toBe(undefined);
+    const noShare = {
+      ...OCTOBER,
+      sections: [{ ...OCTOBER_PIE, lines: [['Еда', 155000, '1 550.00 RSD']] }],
+    };
+    expect(await decodeChartPayload(`#z=${await deflated(noShare)}`)).toBe(undefined);
+  });
+
+  it('reads a trend, and rejects a trend bar of the wrong shape', async () => {
     const trend = [
       ['Август', 0, '0.00 RSD'],
       ['Сентябрь', 150000, '1 500.00 RSD'],
     ];
 
-    expect(decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend })}`)?.trend).toEqual(trend);
+    const decoded = await decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend })}`);
+    expect(decoded?.v === 1 ? decoded.trend : undefined).toEqual(trend);
     expect(
-      decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: [['Август', 0.5, '']] })}`),
+      await decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: [['Август', 0.5, '']] })}`),
     ).toBe(undefined);
-    expect(decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: 'Август' })}`)).toBe(undefined);
+    expect(await decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: 'Август' })}`)).toBe(
+      undefined,
+    );
+  });
+});
+
+describe('a v2 chart', () => {
+  it('draws the pie and the trend and nothing for an unknown section between them', async () => {
+    const payload = { ...OCTOBER, sections: [OCTOBER_PIE, { k: 'nope', x: 1 }, OCTOBER_TREND] };
+    const { root, texts } = await page(`#z=${await deflated(payload)}`);
+
+    expect(root.children.map((node) => node.tag)).toEqual(['h1', 'p', 'svg', 'p', 'ul', 'svg']);
+    expect(texts).toEqual([
+      'Октябрь 2026',
+      '1 550.00 RSD',
+      '1 550.00 RSD',
+      'Всего',
+      messages.chartTapHint,
+      ' Еда: 120 000.00 RSD · 78%',
+      ' Транспорт: 30 000.00 RSD · 19%',
+      ' Кафе: 5 000.00 RSD · 3%',
+      'Сентябрь · 1 400.00 RSD',
+      'Октябрь · 1 550.00 RSD',
+    ]);
+  });
+
+  it('shows only chartBroken for a pie whose lines miss its total, or a z that is not deflate', async () => {
+    const off = { ...OCTOBER, sections: [{ ...OCTOBER_PIE, totalMinor: 155001 }, OCTOBER_TREND] };
+    for (const hash of [`#z=${await deflated(off)}`, `#z=${base64url(JSON.stringify(OCTOBER))}`]) {
+      const { tags, texts } = await page(hash);
+      expect(tags).toEqual(['p']);
+      expect(texts).toEqual([messages.chartBroken]);
+    }
+  });
+
+  it('shows only chartUnsupported on a client without DecompressionStream', async () => {
+    const hash = `#z=${await deflated(OCTOBER)}`;
+    vi.stubGlobal('DecompressionStream', undefined);
+    try {
+      const { tags, texts } = await page(hash);
+
+      expect(tags).toEqual(['p']);
+      expect(texts).toEqual([messages.chartUnsupported]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -161,14 +260,18 @@ describe('the trend bars', () => {
     ['Сентябрь', 160000, '1 600.00 RSD'],
     ['Октябрь', 34500, '345.00 RSD'],
   ];
-  const trendPage = (hash: string, theme: ChartTheme = {}) => {
+  // The nodes of the trend's svg, drawn by the whole page.
+  const trendPage = async (hash: string, theme: ChartTheme = {}) => {
     const root = new FakeNode('body');
-    showTrend(fakeDocument(), root, hash, theme);
-    return root.all().slice(1);
+    await showChart(fakeDocument(), root, hash, theme);
+    const trend = root.children.find((node) =>
+      node.attributes.get('viewBox')?.startsWith('0 0 320 '),
+    );
+    return trend?.all().slice(1) ?? [];
   };
 
-  it('draws 6 bars oldest first, a period with nothing spent as a zero-length bar with its name', () => {
-    const nodes = trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`);
+  it('draws 6 bars oldest first, a period with nothing spent as a zero-length bar with its name', async () => {
+    const nodes = await trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`);
 
     const bars = nodes.filter((node) => node.tag === 'rect');
     // In proportion to the largest total, 160000, across the full 320-unit width.
@@ -194,8 +297,8 @@ describe('the trend bars', () => {
     const trend = [
       ['Август', 0, '0.00 RSD'],
       ['Сентябрь', 123456789, '≈ 1 234 567.89 RSD'],
-    ];
-    const nodes = trendPage(`#d=${encoded({ ...SEPTEMBER, trend })}`);
+    ] as const;
+    const nodes = drawTrend(fakeDocument(), trend).all().slice(1);
 
     const texts = nodes.filter((node) => node.tag === 'text');
     expect(texts.map((node) => node.textContent)).toEqual([
@@ -208,13 +311,13 @@ describe('the trend bars', () => {
     ).toEqual(['0', '0']);
   });
 
-  it('draws the shown period in the button colour and earlier ones at half opacity', () => {
-    const bars = (theme: ChartTheme) =>
-      trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`, theme).filter(
+  it('draws the shown period in the button colour and earlier ones at half opacity', async () => {
+    const bars = async (theme: ChartTheme) =>
+      (await trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`, theme)).filter(
         (node) => node.tag === 'rect',
       );
 
-    const themed = bars({ button: '#5288c1' });
+    const themed = await bars({ button: '#5288c1' });
     expect(themed.map((bar) => bar.attributes.get('fill'))).toEqual(Array(6).fill('#5288c1'));
     expect(themed.map((bar) => bar.attributes.get('opacity'))).toEqual([
       '0.5',
@@ -224,18 +327,19 @@ describe('the trend bars', () => {
       '0.5',
       undefined,
     ]);
-    expect(bars({}).at(-1)?.attributes.get('fill')).toBe('#2481cc');
+    expect((await bars({})).at(-1)?.attributes.get('fill')).toBe('#2481cc');
   });
 
-  it('draws nothing without a trend or for a hash the page cannot read', () => {
-    expect(trendPage(`#d=${encoded(SEPTEMBER)}`)).toEqual([]);
-    expect(trendPage('#d=!!!')).toEqual([]);
+  it('draws nothing without a trend or for a hash the page cannot read', async () => {
+    expect(await trendPage(`#d=${encoded(SEPTEMBER)}`)).toEqual([]);
+    expect(await trendPage(`#d=${encoded({ ...SEPTEMBER, trend: [] })}`)).toEqual([]);
+    expect(await trendPage('#d=!!!')).toEqual([]);
   });
 });
 
 describe('the chart page', () => {
-  it('draws one slice per line of the converted block, and each rateless currency as one line', () => {
-    const { nodes, tags, texts } = page(
+  it('draws a v1 d payload as before: one slice per line, and each rateless currency as one line', async () => {
+    const { nodes, tags, texts } = await page(
       `#d=${encoded({ ...SEPTEMBER, unconverted: ['Без курса НБС: 12.50 EUR'] })}`,
     );
 
@@ -262,8 +366,8 @@ describe('the chart page', () => {
     expect(tags.at(-1)).toBe('p');
   });
 
-  it('draws a single positive line as a full ring, not a sector', () => {
-    const { nodes } = page(
+  it('draws a single positive line as a full ring, not a sector', async () => {
+    const { nodes } = await page(
       `#d=${encoded({
         ...SEPTEMBER,
         lines: [
@@ -282,32 +386,30 @@ describe('the chart page', () => {
     expect(slices[0]?.attributes.get('fill-rule')).toBe('evenodd');
   });
 
-  it('puts the total and its caption in the hole, squeezing a centre text past 12 characters', () => {
-    const centre = (totalLabel: string) => {
-      const { nodes } = page(`#d=${encoded({ ...SEPTEMBER, totalLabel })}`);
+  it('puts the total and its caption in the hole, squeezing a centre text past 12 characters', async () => {
+    const centre = async (totalLabel: string) => {
+      const { nodes } = await page(`#d=${encoded({ ...SEPTEMBER, totalLabel })}`);
       const donut = nodes.find(
         (node) => node.tag === 'svg' && node.attributes.get('role') === 'img',
       );
       return donut?.children.filter((node) => node.tag === 'text') ?? [];
     };
 
-    const long = centre('≈ 1 234 567.89 RSD');
+    const long = await centre('≈ 1 234 567.89 RSD');
     expect(long.map((node) => node.textContent)).toEqual(['≈ 1 234 567.89 RSD', 'Всего']);
     expect(long[0]?.attributes.get('textLength')).toBe('1.1');
     expect(long[0]?.attributes.get('lengthAdjust')).toBe('spacingAndGlyphs');
     expect(long[1]?.attributes.has('textLength')).toBe(false);
 
-    const usual = centre('45 230.00 RSD');
+    const usual = await centre('45 230.00 RSD');
     expect(usual.map((node) => node.textContent)).toEqual(['45 230.00 RSD', 'Всего']);
     expect(usual[0]?.attributes.get('textLength')).toBe('1.1');
     expect(usual[1]?.attributes.has('textLength')).toBe(false);
   });
 
-  it('scales the donut and the trend to the page width, through CSSOM only', () => {
+  it('scales the donut and the trend to the page width, through CSSOM only', async () => {
     const hash = `#d=${encoded({ ...SEPTEMBER, trend: [['Сентябрь', 150000, '1 500.00 RSD']] })}`;
-    const { doc, nodes } = page(hash);
-    const root = new FakeNode('body');
-    showTrend(doc, root, hash);
+    const { root, nodes } = await page(hash);
 
     const donut = nodes.find((node) => node.attributes.get('role') === 'img');
     expect(donut?.tag).toBe('svg');
@@ -315,33 +417,33 @@ describe('the chart page', () => {
     expect(donut?.attributes.get('width')).toBe('100%');
     expect(donut?.attributes.get('viewBox')).toBe('-1.02 -1.02 2.04 2.04');
     expect(donut?.style.maxWidth).toBe('360px');
-    const trend = root.children[0];
+    const trend = root.children.at(-1);
     expect(trend?.tag).toBe('svg');
     expect(trend?.attributes.get('width')).toBe('100%');
     expect(trend?.attributes.get('viewBox')).toBe('0 0 320 30');
     // The fake throws on a style attribute, so getting here means none was set; this says so.
-    expect([...nodes, ...root.all()].some((node) => node.attributes.has('style'))).toBe(false);
+    expect(nodes.some((node) => node.attributes.has('style'))).toBe(false);
   });
 
-  it('titles the page «Диаграмма» in chart mode, fallbacks included', () => {
-    expect(page(`#d=${encoded(SEPTEMBER)}`).doc.title).toBe('Диаграмма');
-    expect(page('#d=!!!').doc.title).toBe('Диаграмма');
+  it('titles the page «Диаграмма» in chart mode, fallbacks included', async () => {
+    expect((await page(`#d=${encoded(SEPTEMBER)}`)).doc.title).toBe('Диаграмма');
+    expect((await page('#d=!!!')).doc.title).toBe('Диаграмма');
   });
 
   it.each([
     ['an unknown version', `#d=${base64url(JSON.stringify({ v: 2 }))}`, messages.chartBroken],
     ['broken base64', '#d=!!!', messages.chartBroken],
     ['a missing d', '#tgWebAppVersion=8.0', messages.openFromBot],
-  ])('shows only the fallback line for %s', (_case, hash, fallback) => {
-    const { tags, texts } = page(hash);
+  ])('shows only the fallback line for %s', async (_case, hash, fallback) => {
+    const { tags, texts } = await page(hash);
 
     expect(tags).toEqual(['p']);
     expect(texts).toEqual([fallback]);
   });
 
-  it('puts a category name in the DOM as text only, never as an element', () => {
+  it('puts a category name in the DOM as text only, never as an element', async () => {
     const name = '<img src=x onerror=alert(1)>';
-    const { nodes, texts } = page(
+    const { nodes, texts } = await page(
       `#d=${encoded({ ...SEPTEMBER, lines: [[name, 5000, '50.00 RSD']], totalMinor: 5000, totalLabel: '50.00 RSD' })}`,
     );
 
@@ -353,36 +455,36 @@ describe('the chart page', () => {
 describe('the theme', () => {
   const fills = (nodes: FakeNode[], tag: string) =>
     nodes.filter((node) => node.tag === tag).map((node) => node.attributes.get('fill'));
-  const themed = (bg: string | undefined, payload: object = SEPTEMBER) => {
+  const themed = async (bg: string | undefined, payload: object = SEPTEMBER) => {
     const root = new FakeNode('body');
     const params: { bg_color?: string; hint_color?: string } = {};
     if (bg !== undefined) params.bg_color = bg;
-    startChart(fakeDocument(), root, `#d=${encoded(payload)}`, { themeParams: params });
+    await startChart(fakeDocument(), root, `#d=${encoded(payload)}`, { themeParams: params });
     return root.all();
   };
 
-  it('draws slices from DARK on a black background, and from LIGHT on white or with no theme', () => {
-    expect(fills(themed('#000000'), 'path')).toEqual([DARK[0], DARK[1]]);
-    expect(fills(themed('#ffffff'), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
-    expect(fills(themed(undefined), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
+  it('draws slices from DARK on a black background, and from LIGHT on white or with no theme', async () => {
+    expect(fills(await themed('#000000'), 'path')).toEqual([DARK[0], DARK[1]]);
+    expect(fills(await themed('#ffffff'), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
+    expect(fills(await themed(undefined), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
   });
 
-  it('draws lines past the eighth in the hint colour, in the slices and the legend swatches', () => {
+  it('draws lines past the eighth in the hint colour, in the slices and the legend swatches', async () => {
     const lines = Array.from({ length: 10 }, (_, i) => [`Категория ${i + 1}`, 1000, '10.00 RSD']);
     const payload = { ...SEPTEMBER, lines, totalMinor: 10000 };
-    const nodes = themed(undefined, payload);
+    const nodes = await themed(undefined, payload);
 
     expect(fills(nodes, 'path')).toEqual([...LIGHT, '#999999', '#999999']);
     expect(fills(nodes, 'rect')).toEqual([...LIGHT, '#999999', '#999999']);
 
     const root = new FakeNode('body');
     const webApp = { themeParams: { hint_color: '#708499' } };
-    startChart(fakeDocument(), root, `#d=${encoded(payload)}`, webApp);
+    await startChart(fakeDocument(), root, `#d=${encoded(payload)}`, webApp);
     expect(fills(root.all(), 'path').slice(8)).toEqual(['#708499', '#708499']);
     expect(fills(root.all(), 'rect').slice(8)).toEqual(['#708499', '#708499']);
   });
 
-  it('redraws from the other palette on themeChanged, without duplicating the page', () => {
+  it('redraws from the other palette on themeChanged, without duplicating the page', async () => {
     const params = { bg_color: '#ffffff', text_color: '#000000' };
     const handlers: (() => void)[] = [];
     const expand = vi.fn();
@@ -393,7 +495,7 @@ describe('the theme', () => {
     };
     const root = new FakeNode('body');
     const hash = `#d=${encoded({ ...SEPTEMBER, trend: [['Сентябрь', 150000, '1 500.00 RSD']] })}`;
-    startChart(fakeDocument(), root, hash, webApp);
+    await startChart(fakeDocument(), root, hash, webApp);
     const before = root.all().map((node) => node.tag);
     expect(fills(root.all(), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
     expect(root.style.backgroundColor).toBe('#ffffff');
@@ -412,8 +514,8 @@ describe('the theme', () => {
 });
 
 describe('inspecting a line', () => {
-  const inspectable = (payload: object = SEPTEMBER, onSelect: () => void = () => {}) => {
-    const { root, nodes } = page(`#d=${encoded(payload)}`, onSelect);
+  const inspectable = async (payload: object = SEPTEMBER, onSelect: () => void = () => {}) => {
+    const { root, nodes } = await page(`#d=${encoded(payload)}`, onSelect);
     const donut = nodes.find((node) => node.attributes.get('role') === 'img');
     return {
       root,
@@ -427,8 +529,8 @@ describe('inspecting a line', () => {
   };
   const opacities = (slices: FakeNode[]) => slices.map((slice) => slice.attributes.get('opacity'));
 
-  it('dims the other slices and shows the line in the centre, and a second tap clears it', () => {
-    const { slices, rows, centre } = inspectable();
+  it('dims the other slices and shows the line in the centre, and a second tap clears it', async () => {
+    const { slices, rows, centre } = await inspectable();
 
     rows[1]?.click();
     expect(opacities(slices)).toEqual(['0.35', '1']);
@@ -441,8 +543,8 @@ describe('inspecting a line', () => {
     expect(rows.map((row) => row.style.fontWeight)).toEqual(['', '']);
   });
 
-  it('selects the same line from its slice as from its legend row, and the hole clears it', () => {
-    const { slices, rows, hole, centre } = inspectable();
+  it('selects the same line from its slice as from its legend row, and the hole clears it', async () => {
+    const { slices, rows, hole, centre } = await inspectable();
 
     slices[1]?.click();
     expect(opacities(slices)).toEqual(['0.35', '1']);
@@ -458,9 +560,9 @@ describe('inspecting a line', () => {
     expect(centre()).toEqual(['1 500.00 RSD', 'Всего']);
   });
 
-  it('cuts a long name in the centre and keeps it whole in the legend', () => {
+  it('cuts a long name in the centre and keeps it whole in the legend', async () => {
     const name = 'Развлечения и подписки';
-    const { rows, centre } = inspectable({
+    const { rows, centre } = await inspectable({
       ...SEPTEMBER,
       lines: [
         ['Еда', 120000, '1 200.00 RSD'],
@@ -473,8 +575,8 @@ describe('inspecting a line', () => {
     expect(rows[1]?.all().map((node) => node.textContent)).toContain(` ${name}: 300.00 RSD`);
   });
 
-  it('lets a zero-amount line, which has no slice, be selected from its legend row', () => {
-    const { slices, rows, centre } = inspectable({
+  it('lets a zero-amount line, which has no slice, be selected from its legend row', async () => {
+    const { slices, rows, centre } = await inspectable({
       ...SEPTEMBER,
       lines: [...SEPTEMBER.lines, ['Связь', 0, '0.00 RSD']],
     });
@@ -484,8 +586,8 @@ describe('inspecting a line', () => {
     expect(opacities(slices)).toEqual(['0.35', '0.35']);
   });
 
-  it('shows the tap hint once, under the donut, and gives every legend row a 44px tap height', () => {
-    const { root, rows } = inspectable();
+  it('shows the tap hint once, under the donut, and gives every legend row a 44px tap height', async () => {
+    const { root, rows } = await inspectable();
 
     const tags = root.children.map((node) => node.tag);
     const hint = root.children.filter((node) => node.textContent === messages.chartTapHint);
@@ -495,9 +597,9 @@ describe('inspecting a line', () => {
     expect(rows.map((row) => row.style.minHeight)).toEqual(['44px', '44px']);
   });
 
-  it('puts a selected markup-like name in the centre as text only', () => {
+  it('puts a selected markup-like name in the centre as text only', async () => {
     const name = '<img src=x onerror=alert(1)>';
-    const { nodes, rows, centre } = inspectable({
+    const { nodes, rows, centre } = await inspectable({
       ...SEPTEMBER,
       lines: [
         ['Еда', 120000, '1 200.00 RSD'],
@@ -511,7 +613,7 @@ describe('inspecting a line', () => {
     expect(nodes.filter((node) => node.tag === 'img')).toEqual([]);
   });
 
-  it('reports each selection change, and stores or sends nothing', () => {
+  it('reports each selection change, and stores or sends nothing', async () => {
     const fetch = vi.fn();
     const setItem = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -519,7 +621,7 @@ describe('inspecting a line', () => {
     vi.stubGlobal('sessionStorage', { setItem });
     const onSelect = vi.fn();
     try {
-      const { rows } = inspectable(SEPTEMBER, onSelect);
+      const { rows } = await inspectable(SEPTEMBER, onSelect);
 
       rows[0]?.click();
       rows[1]?.click();

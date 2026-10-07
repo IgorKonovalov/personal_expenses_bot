@@ -303,9 +303,15 @@ the same page in chart mode: the shown period's categories as a donut, in the le
 with the period's total in its centre and a legend under it. The donut and the bars scale to the
 screen width. Paging to another period rebuilds the button for that period.
 
-- The bot puts the period's totals in the button URL's fragment (`#d=…`, base64url JSON), already
-  formatted, so the page makes no request and does no money arithmetic. Only aggregates travel,
-  never an individual expense, and the static host never sees the fragment.
+- The bot puts the period's totals in the button URL's fragment (`#z=…`, deflated JSON as
+  base64url, ADR-0045), already formatted, so the page makes no request and does no money
+  arithmetic. Only aggregates travel, never an individual expense, and the static host never sees
+  the fragment. Buttons sent before it (`#d=…`) still open.
+- The payload is a list of sections the page draws in order, the donut and then the trend; a
+  section kind the page doesn't know is skipped. Deploy the page first: until the `Pages` run
+  has finished, the old page answers a new `#z=` button with its open-from-bot line.
+- Each legend row reads «name: amount · share», the share a whole percent. The shares add up to
+  exactly 100%, and a category whose share rounds to 0 shows «<1%».
 - The donut holds the converted block (ADR-0022). A currency with no NBS rate is one text line
   under the chart, never part of the donut.
 - Tapping a slice or a legend row shows that line's name and amount in the centre and dims the
@@ -317,6 +323,8 @@ screen width. Paging to another period rebuilds the button for that period.
 - A period with no expenses, or with nothing in or converted into the ledger's currency, has no
   button. Neither does a group report or a locked sealed ledger.
 - A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
+  A Telegram app too old to inflate the payload (no `DecompressionStream`) says so instead, and
+  the text report still has every number.
 
 ### Amount rules
 

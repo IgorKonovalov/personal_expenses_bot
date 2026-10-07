@@ -6,6 +6,7 @@ import { collapseTail, type Change } from '../domain/deltas.js';
 import { formatMoney, type Money } from '../domain/money.js';
 import { formatAmount, type Unit } from '../domain/products/amount.js';
 import type { Schedule } from '../domain/schedule.js';
+import { sharesOf } from '../domain/shares.js';
 import type { LocalDate } from '../domain/time.js';
 import type { TipKey } from '../domain/tips.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
@@ -222,6 +223,20 @@ interface ChartView {
     readonly totalMinor: number;
     readonly approximate: boolean;
   }[];
+}
+
+// Each line with its share of their sum in whole percents; all 0 when nothing was spent.
+function zipShares<T extends { readonly amountMinor: number }>(
+  lines: readonly T[],
+): (readonly [T, number])[] {
+  const amounts = lines.map((line) => line.amountMinor);
+  const shares = amounts.some((amount) => amount > 0) ? sharesOf(amounts) : amounts.map(() => 0);
+  return lines.map((line, index) => [line, shares[index] ?? 0]);
+}
+
+// A chart line's share label: «78%», or «<1%» for a positive amount that rounds to 0.
+function chartShare(percent: number, amountMinor: number): string {
+  return percent === 0 && amountMinor > 0 ? messages.chartShareTiny : `${percent}%`;
 }
 
 // A summary push's report: the converted block with each change against the period before, then
@@ -1774,15 +1789,17 @@ export const messages = {
   chartButton: '📈 Диаграмма',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
-  // The trend bars are named like the pager names periods.
+  // Each line carries its share of the pie in whole percents (sharesOf). The trend bars are named
+  // like the pager names periods.
   chart: ({ period, converted, approximate, unconverted, trend }: ChartView): ChartInput => ({
     title: periodTitle(period),
     currency: converted.currency,
     totalLabel: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
-    lines: converted.lines.map((line) => [
+    lines: zipShares(converted.lines).map(([line, percent]) => [
       line.name ?? UNCATEGORIZED,
       line.amountMinor,
       formatMoney({ amountMinor: line.amountMinor, currency: converted.currency }),
+      chartShare(percent, line.amountMinor),
     ]),
     unconverted: unconverted.map(
       (c) => `Без курса НБС: ${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}`,
@@ -1797,7 +1814,10 @@ export const messages = {
   chartFold: (currency: CurrencyCode): ChartFold => ({
     name: 'Прочее',
     label: (amountMinor) => formatMoney({ amountMinor, currency }),
+    share: chartShare,
   }),
+  // A chart line's share when it is positive but rounds to 0%.
+  chartShareTiny: '<1%',
   // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
   // image too large to download (ADR-0019, ADR-0034).
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,

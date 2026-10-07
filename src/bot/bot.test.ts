@@ -3471,15 +3471,15 @@ describe('/week and /month', () => {
     type Markup = { inline_keyboard: { text: string; web_app?: { url: string } }[][] };
     const markupOf = (call: ApiCall | undefined) =>
       (call?.payload as { reply_markup: Markup }).reply_markup;
-    // The chart row's URL, split at the fragment's `d`, with its payload decoded by the page.
-    const chartOf = (markup: Markup) => {
+    // The chart row's URL, split at the fragment, with its payload decoded by the page.
+    const chartOf = async (markup: Markup) => {
       const row = markup.inline_keyboard.at(-1);
       expect(row).toHaveLength(1);
       expect(row?.[0]?.text).toBe(messages.chartButton);
       const url = row?.[0]?.web_app?.url ?? '';
       const at = url.indexOf('#');
       const hash = url.slice(at);
-      return { base: url.slice(0, at), hash, payload: decodeChartPayload(hash) };
+      return { base: url.slice(0, at), hash, payload: await decodeChartPayload(hash) };
     };
 
     it("puts the month's converted block in a web_app URL on WEBAPP_URL, the text unchanged", async () => {
@@ -3493,31 +3493,56 @@ describe('/week and /month', () => {
         [button('◀ Август', 'sum:m:2026-08')],
         [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
       ]);
-      const chart = chartOf(markup);
+      const chart = await chartOf(markup);
       expect(chart.base).toBe(webappUrl);
-      expect(chart.hash).toMatch(/^#d=[A-Za-z0-9_-]+$/);
+      expect(chart.hash).toMatch(/^#z=[A-Za-z0-9_-]+$/);
+      expect(chart.hash).not.toContain('d=');
       expect(chart.payload).toEqual({
-        v: 1,
+        v: 2,
         title: 'Сентябрь 2026',
-        currency: 'RSD',
-        totalMinor: 222000,
-        totalLabel: '2 220.00 RSD',
-        lines: [
-          ['Продукты', 120000, '1 200.00 RSD'],
-          ['Кафе и рестораны', 75000, '750.00 RSD'],
-          ['Транспорт', 20000, '200.00 RSD'],
-          ['Без категории', 7000, '70.00 RSD'],
-        ],
-        unconverted: ['Без курса НБС: 12.50 EUR'],
-        trend: [
-          ['Апрель', 0, '0.00 RSD'],
-          ['Май', 0, '0.00 RSD'],
-          ['Июнь', 0, '0.00 RSD'],
-          ['Июль', 0, '0.00 RSD'],
-          ['Август', 10000, '100.00 RSD'],
-          ['Сентябрь', 222000, '2 220.00 RSD'],
+        sections: [
+          {
+            k: 'pie',
+            currency: 'RSD',
+            totalMinor: 222000,
+            totalLabel: '2 220.00 RSD',
+            lines: [
+              ['Продукты', 120000, '1 200.00 RSD', '54%'],
+              ['Кафе и рестораны', 75000, '750.00 RSD', '34%'],
+              ['Транспорт', 20000, '200.00 RSD', '9%'],
+              ['Без категории', 7000, '70.00 RSD', '3%'],
+            ],
+            unconverted: ['Без курса НБС: 12.50 EUR'],
+          },
+          {
+            k: 'trend',
+            bars: [
+              ['Апрель', 0, '0.00 RSD'],
+              ['Май', 0, '0.00 RSD'],
+              ['Июнь', 0, '0.00 RSD'],
+              ['Июль', 0, '0.00 RSD'],
+              ['Август', 10000, '100.00 RSD'],
+              ['Сентябрь', 222000, '2 220.00 RSD'],
+            ],
+          },
         ],
       });
+    });
+
+    it('labels a positive line whose share rounds to 0 «<1%»', async () => {
+      const { say, add, calls } = await summaryBot({ fixture: false, webappUrl });
+      add('T1', '2026-09-15', 1000000, 'RSD', 'groceries');
+      add('T2', '2026-09-15', 100, 'RSD', 'cafe');
+
+      await say('/month', 2);
+
+      const { payload } = await chartOf(markupOf(calls[0]));
+      const pie = payload?.v === 2 ? payload.sections[0] : undefined;
+      expect(pie !== undefined && 'lines' in pie ? pie.lines : undefined).toEqual([
+        ['Продукты', 1000000, '10 000.00 RSD', '100%'],
+        ['Кафе и рестораны', 100, '1.00 RSD', messages.chartShareTiny],
+      ]);
+      expect(messages.chartShareTiny).toBe('<1%');
     });
 
     it('marks a converted total with ≈ and keeps a rateless currency out of the pie', async () => {
@@ -3525,25 +3550,33 @@ describe('/week and /month', () => {
 
       await say('/week', 2);
 
-      expect(chartOf(markupOf(calls[0])).payload).toEqual({
-        v: 1,
+      expect((await chartOf(markupOf(calls[0]))).payload).toEqual({
+        v: 2,
         title: 'Неделя, 28 сентября – 4 октября',
-        currency: 'RSD',
-        totalMinor: 1710849,
-        totalLabel: '≈ 17 108.49 RSD',
-        lines: [
-          ['Связь и интернет', 1261942, '12 619.42 RSD'],
-          ['Другое', 403907, '4 039.07 RSD'],
-          ['Кафе и рестораны', 45000, '450.00 RSD'],
-        ],
-        unconverted: ['Без курса НБС: 5 000.00 KZT'],
-        trend: [
-          ['24–30 авг', 0, '0.00 RSD'],
-          ['31 авг – 6 сен', 0, '0.00 RSD'],
-          ['7–13 сен', 0, '0.00 RSD'],
-          ['14–20 сен', 0, '0.00 RSD'],
-          ['21–27 сен', 0, '0.00 RSD'],
-          ['28 сен – 4 окт', 1710849, '≈ 17 108.49 RSD'],
+        sections: [
+          {
+            k: 'pie',
+            currency: 'RSD',
+            totalMinor: 1710849,
+            totalLabel: '≈ 17 108.49 RSD',
+            lines: [
+              ['Связь и интернет', 1261942, '12 619.42 RSD', '74%'],
+              ['Другое', 403907, '4 039.07 RSD', '23%'],
+              ['Кафе и рестораны', 45000, '450.00 RSD', '3%'],
+            ],
+            unconverted: ['Без курса НБС: 5 000.00 KZT'],
+          },
+          {
+            k: 'trend',
+            bars: [
+              ['24–30 авг', 0, '0.00 RSD'],
+              ['31 авг – 6 сен', 0, '0.00 RSD'],
+              ['7–13 сен', 0, '0.00 RSD'],
+              ['14–20 сен', 0, '0.00 RSD'],
+              ['21–27 сен', 0, '0.00 RSD'],
+              ['28 сен – 4 окт', 1710849, '≈ 17 108.49 RSD'],
+            ],
+          },
         ],
       });
     });
@@ -3570,21 +3603,29 @@ describe('/week and /month', () => {
         [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
         [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции', 'itm:m:2026-08:1')],
       ]);
-      expect(chartOf(markup).payload).toEqual({
-        v: 1,
+      expect((await chartOf(markup)).payload).toEqual({
+        v: 2,
         title: 'Август 2026',
-        currency: 'RSD',
-        totalMinor: 10000,
-        totalLabel: '100.00 RSD',
-        lines: [['Продукты', 10000, '100.00 RSD']],
-        unconverted: [],
-        trend: [
-          ['Март', 0, '0.00 RSD'],
-          ['Апрель', 0, '0.00 RSD'],
-          ['Май', 0, '0.00 RSD'],
-          ['Июнь', 0, '0.00 RSD'],
-          ['Июль', 0, '0.00 RSD'],
-          ['Август', 10000, '100.00 RSD'],
+        sections: [
+          {
+            k: 'pie',
+            currency: 'RSD',
+            totalMinor: 10000,
+            totalLabel: '100.00 RSD',
+            lines: [['Продукты', 10000, '100.00 RSD', '100%']],
+            unconverted: [],
+          },
+          {
+            k: 'trend',
+            bars: [
+              ['Март', 0, '0.00 RSD'],
+              ['Апрель', 0, '0.00 RSD'],
+              ['Май', 0, '0.00 RSD'],
+              ['Июнь', 0, '0.00 RSD'],
+              ['Июль', 0, '0.00 RSD'],
+              ['Август', 10000, '100.00 RSD'],
+            ],
+          },
         ],
       });
     });
@@ -3594,9 +3635,9 @@ describe('/week and /month', () => {
 
       await say('/week', 2);
 
-      expect(chartOf(markupOf(calls[0])).payload).toMatchObject({
+      expect((await chartOf(markupOf(calls[0]))).payload).toMatchObject({
         title: 'Неделя, 28 сентября – 4 октября',
-        totalMinor: 37000,
+        sections: [{ k: 'pie', totalMinor: 37000 }, { k: 'trend' }],
       });
     });
 

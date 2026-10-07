@@ -1,7 +1,15 @@
-import { showTrend } from './bars.js';
+import { drawTrend } from './bars.js';
 import { messages } from './messages.js';
 import { paletteFor } from './palette.js';
-import { decodeChartPayload, payloadParam, type ChartPayload } from './payload.js';
+import {
+  canInflate,
+  decodeChartPayload,
+  payloadParam,
+  type ChartPayload,
+  type PieSection,
+  type Section,
+  type TrendSection,
+} from './payload.js';
 
 export const SVG = 'http://www.w3.org/2000/svg';
 
@@ -74,75 +82,130 @@ const DIMMED_OPACITY = '0.35';
 // The legend row is the main tap target, since a small slice is hard to hit.
 const ROW_MIN_HEIGHT = '44px';
 
-// Chart mode's entry: expands the sheet, draws the chart and its trend into `root` in the
-// current theme's colours, and redraws them from scratch whenever Telegram's theme changes.
-// The CSSOM writes to `root` are allowed by the CSP's missing style-src (index.html).
-export function startChart<N extends ChartNode<N>>(
+// What chart mode shows for a hash: the payload's title and sections, or one fallback line.
+export type ChartState =
+  | { readonly kind: 'chart'; readonly title: string; readonly sections: readonly Section[] }
+  | { readonly kind: 'fallback'; readonly line: string };
+
+// Chart mode's entry: expands the sheet, decodes the payload in `hash` once, draws it into
+// `root` in the current theme's colours, and redraws it from scratch whenever Telegram's theme
+// changes. The CSSOM writes to `root` are allowed by the CSP's missing style-src (index.html).
+export async function startChart<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   root: N,
   hash: string,
   webApp: ChartWebApp | undefined,
-): void {
+): Promise<void> {
   webApp?.expand?.();
+  doc.title = messages.chartTitle;
+  const state = await chartState(hash);
   const draw = () => {
     const params = webApp?.themeParams;
     if (params?.bg_color !== undefined) root.style.backgroundColor = params.bg_color;
     if (params?.text_color !== undefined) root.style.color = params.text_color;
     const theme = { bg: params?.bg_color, hint: params?.hint_color, button: params?.button_color };
     root.replaceChildren();
-    showChart(doc, root, hash, theme, () => {
+    drawState(doc, root, state, theme, () => {
       webApp?.HapticFeedback?.selectionChanged?.();
     });
-    showTrend(doc, root, hash, theme);
   };
   draw();
   webApp?.onEvent?.('themeChanged', draw);
 }
 
-// Chart mode: titles the page and draws the payload in `hash` into `root`. A missing `d` shows
-// the open-from-bot line, and a `d` the page can't read shows the broken-chart line; neither
-// draws anything. `onSelect` runs on every change of the inspected line.
-export function showChart<N extends ChartNode<N>>(
+// Chart mode: titles the page and draws the payload in `hash` into `root`. `onSelect` runs on
+// every change of the inspected line.
+export async function showChart<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   root: N,
   hash: string,
   theme: ChartTheme = {},
   onSelect: () => void = () => {},
-): void {
+): Promise<void> {
   doc.title = messages.chartTitle;
-  if (payloadParam(hash) === undefined) {
-    root.append(paragraph(doc, messages.openFromBot));
-    return;
-  }
-  const payload = decodeChartPayload(hash);
-  if (payload === undefined) {
-    root.append(paragraph(doc, messages.chartBroken));
-    return;
-  }
-  drawChart(doc, root, payload, theme, onSelect);
+  drawState(doc, root, await chartState(hash), theme, onSelect);
 }
 
-// The title, the total, the donut of the first (converted) currency block with its tap hint and
-// legend, then one line per currency with no rate, which is never drawn. Tapping a slice or a
-// legend row inspects that line; tapping it again, or the hole, goes back to the total. The
-// selection lives in this closure only: it is never stored or sent.
-export function drawChart<N extends ChartNode<N>>(
+// A missing payload shows the open-from-bot line; a `z` payload on a client that can't inflate
+// it, the unsupported-client line; a payload the page can't read, the broken-chart line. A v1
+// payload is read as a pie section and, when it has bars, a trend section.
+export async function chartState(hash: string): Promise<ChartState> {
+  const param = payloadParam(hash);
+  if (param === undefined) return { kind: 'fallback', line: messages.openFromBot };
+  if (param.key === 'z' && !canInflate()) {
+    return { kind: 'fallback', line: messages.chartUnsupported };
+  }
+  const payload = await decodeChartPayload(hash);
+  if (payload === undefined) return { kind: 'fallback', line: messages.chartBroken };
+  return { kind: 'chart', title: payload.title, sections: sectionsOf(payload) };
+}
+
+function sectionsOf(payload: ChartPayload): readonly Section[] {
+  if (payload.v === 2) return payload.sections;
+  const pie: PieSection = {
+    k: 'pie',
+    currency: payload.currency,
+    totalMinor: payload.totalMinor,
+    totalLabel: payload.totalLabel,
+    lines: payload.lines,
+    unconverted: payload.unconverted,
+  };
+  return payload.trend === undefined ? [pie] : [pie, { k: 'trend', bars: payload.trend }];
+}
+
+// The title, then each section in order: a pie, or a trend with bars. A section of a kind the
+// page doesn't know draws nothing.
+function drawState<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   root: N,
-  payload: ChartPayload,
-  theme: ChartTheme = {},
-  onSelect: () => void = () => {},
+  state: ChartState,
+  theme: ChartTheme,
+  onSelect: () => void,
 ): void {
+  if (state.kind === 'fallback') {
+    root.append(paragraph(doc, state.line));
+    return;
+  }
   const title = doc.createElement('h1');
-  title.textContent = payload.title;
-  root.append(title, paragraph(doc, payload.totalLabel));
+  title.textContent = state.title;
+  root.append(title);
+  for (const section of state.sections) {
+    if (isPie(section)) drawPie(doc, root, state.title, section, theme, onSelect);
+    else if (isTrend(section) && section.bars.length > 0) {
+      root.append(drawTrend(doc, section.bars, theme));
+    }
+  }
+}
+
+function isPie(section: Section): section is PieSection {
+  return section.k === 'pie';
+}
+
+function isTrend(section: Section): section is TrendSection {
+  return section.k === 'trend';
+}
+
+// The total, the donut of the converted block with its tap hint and legend, then one line per
+// currency with no rate, which is never drawn. A legend row reads «name: amount · share», its
+// parts the payload's own strings. Tapping a slice or a legend row inspects that line; tapping
+// it again, or the hole, goes back to the total. The selection lives in this closure only: it is
+// never stored or sent.
+function drawPie<N extends ChartNode<N>>(
+  doc: ChartDocument<N>,
+  root: N,
+  title: string,
+  payload: PieSection,
+  theme: ChartTheme,
+  onSelect: () => void,
+): void {
+  root.append(paragraph(doc, payload.totalLabel));
   // A line past the palette's end, or with nothing spent, is in the theme's hint grey.
   const palette = paletteFor(theme.bg);
   const colours = payload.lines.map(
     ([, amountMinor], index) =>
       (amountMinor > 0 ? palette[index] : undefined) ?? theme.hint ?? NEUTRAL,
   );
-  const donut = drawDonut(doc, payload, colours, theme);
+  const donut = drawDonut(doc, title, payload, colours, theme);
   const items: N[] = [];
   let selected: number | undefined;
   const select = (index: number | undefined) => {
@@ -166,7 +229,7 @@ export function drawChart<N extends ChartNode<N>>(
     root.append(donut.svg, paragraph(doc, messages.chartTapHint));
   }
   const legend = doc.createElement('ul');
-  payload.lines.forEach(([name, , label], index) => {
+  payload.lines.forEach(([name, , label, share], index) => {
     const item = doc.createElement('li');
     item.style.minHeight = ROW_MIN_HEIGHT;
     const swatch = svgNode(doc, 'svg', { width: '12', height: '12', viewBox: '0 0 12 12' });
@@ -174,7 +237,8 @@ export function drawChart<N extends ChartNode<N>>(
       svgNode(doc, 'rect', { width: '12', height: '12', fill: colours[index] ?? NEUTRAL }),
     );
     const text = doc.createElement('span');
-    text.textContent = ` ${name}: ${label}`;
+    const parts = share === undefined ? [label] : [label, share];
+    text.textContent = ` ${name}: ${parts.join(' · ')}`;
     item.append(swatch, text);
     item.addEventListener('click', () => {
       toggle(index);
@@ -198,7 +262,7 @@ interface Donut<N> {
 // Shows line `index` in the centre and dims every other slice, or with no index, the total.
 function inspect<N extends ChartNode<N>>(
   donut: Donut<N>,
-  payload: ChartPayload,
+  payload: PieSection,
   index: number | undefined,
 ): void {
   for (const [i, slice] of donut.slices) {
@@ -226,7 +290,8 @@ function shortName(name: string): string {
 // Undefined when no line is positive.
 function drawDonut<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
-  payload: ChartPayload,
+  title: string,
+  payload: PieSection,
   colours: readonly string[],
   theme: ChartTheme,
 ): Donut<N> | undefined {
@@ -239,7 +304,7 @@ function drawDonut<N extends ChartNode<N>>(
     width: '100%',
     viewBox: '-1.02 -1.02 2.04 2.04',
     role: 'img',
-    'aria-label': `${payload.title}: ${payload.totalLabel}`,
+    'aria-label': `${title}: ${payload.totalLabel}`,
   });
   svg.style.maxWidth = DONUT_MAX_WIDTH;
   svg.style.display = 'block';

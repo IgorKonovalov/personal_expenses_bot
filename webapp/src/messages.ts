@@ -13,7 +13,10 @@ export const messages = {
     'Это приложение Telegram не умеет сканировать QR-коды. Откройте «📷 Скан» на телефоне или отправьте боту фото чека.',
   // A chart link whose data is damaged or from a version of the bot the page can't read.
   chartBroken:
-    'Не получилось открыть диаграмму. Откройте отчёт /week или /month заново и нажмите «📈 Диаграмма».',
+    'Не получилось открыть диаграмму. Откройте отчёт в боте заново и нажмите «📈 Диаграмма».',
+  // A compressed chart link on a client without DecompressionStream: reopening can't help.
+  chartUnsupported:
+    'Это приложение Telegram не может показать диаграмму. Обновите Telegram — а пока все цифры есть в текстовом отчёте.',
   // The page title in chart mode, shown in Telegram's header.
   chartTitle: 'Диаграмма',
   // Under the total in the donut's hole.

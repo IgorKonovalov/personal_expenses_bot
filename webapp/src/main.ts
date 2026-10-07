@@ -3,7 +3,8 @@ import { modeOf, startScan, type ScanWebApp } from './scan.js';
 
 // The page's entry, loaded after telegram-web-app.js. Opened outside Telegram, the script and
 // so `window.Telegram` may be missing: the page then draws in its default colours, or only shows
-// its fallback line. `#m=scan` is scan mode; anything else is chart mode, which reads `d`.
+// its fallback line. `#m=scan` is scan mode; anything else is chart mode, which reads `z` or `d`
+// and draws once it is decoded.
 declare global {
   interface Window {
     readonly Telegram?: {
@@ -22,5 +23,5 @@ if (modeOf(hash) === 'scan') {
     if (status !== null) status.textContent = line;
   });
 } else {
-  startChart<HTMLElement | SVGElement>(document, document.body, hash, webApp);
+  void startChart<HTMLElement | SVGElement>(document, document.body, hash, webApp);
 }
