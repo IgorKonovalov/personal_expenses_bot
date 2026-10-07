@@ -11,13 +11,13 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0043](0043-chart-category-detail.md) | Category detail in the chart: tap a category, see its last six periods | approved (2026-10-07) |
 | [0044](0044-charts-for-tags-and-prices.md) | Charts for tag reports and product prices | approved (2026-10-07) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0043](done/0043-chart-category-detail.md) | Category detail in the chart: tap a category, see its last six periods | done (2026-10-07): built as planned, one minor and one nit open, Phase 2 live check owed, v0.33.0 |
 | [0042](done/0042-chart-pace-and-budget-burn-down.md) | Spending pace in the chart, and a burn-down chart for the budget | done (2026-10-07): built as planned, one minor and one nit fixed at close, one nit open, Phase 3 live check owed, v0.32.0 |
 | [0041](done/0041-chart-capacity-and-period-comparison.md) | Chart capacity and the comparison with the previous period | done (2026-10-07): built as planned, two minors and two nits fixed at close, one nit open, Phase 4 live check owed, v0.31.0 |
 | [0040](done/0040-chart-polish.md) | Chart polish: a donut that fits the screen, tap to inspect, colours that hold in dark theme | done (2026-10-07): built as planned, one minor fixed at close, two nits open, Phase 4 live check owed, v0.30.0 |

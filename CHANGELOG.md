@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.33.0 (2026-10-07)
+
+From Plan 0043 (category detail in the chart).
+
+- Tapping a category in the `/week` or `/month` chart opens a panel right under its legend row:
+  the category's totals over the shown period and the five before it, as bars, captioned
+  «Последние 6 месяцев» or «Последние 6 недель». A second tap closes it.
+- The history travels in a new `catTrend` payload section, shed first when the payload is over
+  budget (the smallest categories' series first). A category without a series says
+  «Истории этой категории здесь нет».
+
 ## 0.32.0 (2026-10-07)
 
 From Plan 0042 (spending pace in the chart, and a burn-down chart for the budget).
