@@ -1,12 +1,13 @@
 # 0030: Charts in the Mini App, static with no backend
 
-> **Status:** in-progress
+> **Status:** done (2026-10-07): built as planned, one minor and one nit fixed at close, two nits
+> open, Phase 2 (publish, measure the URL limit) and Phase 4 (live check on a phone) owed
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0032](done/0032-live-qr-scan-mini-app.md) (the `webapp/` page, Pages workflow and
+> **Depends on:** [Plan 0032](0032-live-qr-scan-mini-app.md) (the `webapp/` page, Pages workflow and
 > `WEBAPP_URL`), merged on `main` before this plan starts
-> **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
-> [ADR-0011](../adrs/0011-navigation-model.md) (screens, persistent menu),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
+> **Related ADRs:** [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
+> [ADR-0011](../../adrs/0011-navigation-model.md) (screens, persistent menu),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
 
 ## TL;DR
 
@@ -237,6 +238,140 @@ interface ChartPayloadV1 {
   `node scripts/check-doc-links.mjs` exit 0, 291 links.
 - **Outstanding `human` phases:** Phase 2 (publish, measure the URL limit; owed after the merge)
   and Phase 4 (live check on a phone). Neither blocks the merge.
+
+## Close review
+
+Round 1, tip e213ae1, run headless by the conductor. The review follows in full, its headings
+demoted one level.
+
+**Verdict:** Clean. Both `dev` phases deliver their done-whens and the tests behind them assert the
+claimed values. There are no blockers or majors, one minor (the README omits the trend bars) and
+three nits. The plan can close, with Phases 2 and 4 (`human`, `Blocks merge: no`) still owed after
+the merge.
+
+### Gate (run in this session, at e213ae1)
+
+- `pnpm typecheck`: exit 0 (root and `webapp/tsconfig.json`).
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 129 files, 1793 tests.
+- `node scripts/check-doc-links.mjs`: exit 0, 297 relative links resolve.
+- `git diff --stat main...HEAD -- webapp/index.html webapp/src/scan.test.ts webapp/src/scan.ts`:
+  empty, so the CSP and scan mode are untouched as Phase 1 requires.
+
+### Alignment
+
+- Phase 1 (3a994ba) and Phase 3 (0112fca) are done. Phases 2 and 4 are `human` and owed after the
+  merge, as the log says. Each phase has exactly one in-vocabulary owner tag.
+- Phase 1 done-whens:
+  - Round trip: `src/domain/chartPayload.test.ts:41` decodes through the page's
+    `decodeChartPayload` and `toEqual`s the full payload, with `totalMinor: 150000`.
+  - Converted block only: `webapp/src/payload.test.ts:168` asserts two slice paths with exact
+    arc geometry, and the EUR line as text. `src/bot/bot.test.ts` "marks a converted total with ≈"
+    keeps KZT out of `lines` and in `unconverted`.
+  - Fallbacks and XSS: `payload.test.ts:188` covers an unknown `v`, broken base64 and a missing
+    `d`, each giving only one `p` holding the right fallback. `payload.test.ts:199` finds no `img`
+    node, and the fake DOM throws on `innerHTML`.
+  - Button: `bot.test.ts` "the 📈 Диаграмма button" checks the base equals `WEBAPP_URL` and
+    `#d=` holds base64url, the payload after paging to August, `/week`, no button in a group, none
+    for an empty period, and none for a period with nothing in the ledger currency. That last case
+    is a disclosed extension. The unset-`WEBAPP_URL` case is covered by the existing summary
+    tests' exact markup, which still pass unchanged.
+- Phase 3 done-whens:
+  - Folding property: `chartPayload.test.ts:114` runs 200 seeded random cases, some with a
+    pre-existing «Прочее» category. It asserts length ≤ budget, the folded sum equal to the
+    original `totalMinor`, and at most one «Прочее». Trend dropping (`:142`) and the undefined
+    case (`:153`) are tested. The handler maps undefined to no button (`summary.ts:75`).
+  - Trend periods: `src/services/periodTrend.test.ts:99` pins 2026-05..2026-10 with exact totals
+    for 2026-10-15 in Europe/Belgrade, including zero months. Each bar comes from
+    `ledgerPeriodSummary` (`periodTrend.ts:37`).
+  - Zero bar: `payload.test.ts:133` asserts width `'0'` rows keep their name and label.
+- Deviations are disclosed in the log: a mirrored payload type instead of a type-only import, the
+  round trip tested on the bot side, and `bot.test.ts` edited outside Files touched. The mirror
+  can't drift silently, because the round-trip `toEqual` would fail. No ADR is reversed.
+  ADR-0025's static page, fragment-only data and unchanged CSP all hold.
+
+### Layering, correctness, privacy
+
+- grammY stays in `src/bot/`. `src/domain/chartPayload.ts` is pure and gets its copy (the fold
+  name and labels) from `messages.chartFold`. All bot copy is in `src/bot/messages.ts`, and all
+  page copy in `webapp/src/messages.ts`.
+- Money: the fold sums integers and `chartPayload` guards `Number.isSafeInteger`. The page uses
+  floats only for geometry, and every amount it shows is a bot label.
+- Time: trend periods come from `previous()` on the shown period, read in the ledger's timezone
+  through `ledgerPeriodSummary`.
+- Idempotency: the button is read-only, so a re-render only rebuilds the URL.
+- Privacy: nothing logs `webappUrl` or the payload (`git grep webappUrl -- src`). The payload
+  holds aggregates only. A locked ledger returns before `chartUrlOf` (`summary.ts:88`, `:126`).
+
+### Findings
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+1. **The README omits the trend bars.**
+   - *Where:* `README.md:298-311` ("Mini App: charts").
+   - *What:* The section describes only the pie and legend. Phase 3 added a user-visible trend
+     section: 6 bars of the converted totals, ending at the shown period, with «≈ » on converted
+     periods. The log's close triggers list it as a user-visible surface.
+   - *Why it matters:* Lens 4. The README is the user-facing description of what the button
+     opens, and it now understates it.
+   - *Fix:* Add one bullet: "Under the pie, 6 bars show the converted totals of the shown period
+     and the five before it, oldest first. A period with nothing spent keeps its row with a
+     zero-length bar." A docs-only commit.
+
+#### nit
+
+1. **The chart page keeps the title «Скан чека».**
+   - *Where:* `webapp/index.html:12`, `webapp/src/main.ts:32-39`.
+   - *What:* Chart mode doesn't set `document.title`, so the Mini App header (on clients that
+     show it) reads «Скан чека». `index.html` had to stay unchanged, but `main.ts` could set
+     `document.title` from a `webapp/src/messages.ts` string. This is outside the plan's
+     done-whens, so it's a followup, not a fix-pass item.
+2. **A long trend label may be clipped.**
+   - *Where:* `webapp/src/bars.ts:8-11`, `:54`.
+   - *What:* The largest bar ends at x=220, and its label starts at 224 in a 320-wide viewBox. At
+     font-size 11 (about 6 px a digit), «≈ 1 234 567.89 RSD» is roughly 100 px wide and overruns
+     to about 324. Six-digit totals fit, at about 312. This is unverified on a device.
+   - *Fix:* Phase 4's live check should look for it. If it shows, shrink `BAR_WIDTH` or anchor
+     the label inside the bar.
+3. **The plan's Followups section is stale.**
+   - *Where:* `docs/plans/0030-mini-app-charts-and-qr-scan.md:243`.
+   - *What:* The followup says to re-queue 0030 once Plan 0032 is merged. 0030 is in
+     `tools/conductor/queue.json` and this review ran.
+   - *Fix:* The close session drops the bullet.
+
+### Bookkeeping owed (close session)
+
+- Fix minor 1 (the README trend bullet) before or at close. It's docs-only, and the close session
+  may make it.
+- Flip `Status:` to `done` with the date and verdict, then `git mv` to `docs/plans/done/` and
+  repair links both ways (`../adrs/` to `../../adrs/`, and `done/0032-…` to `0032-…` inside the
+  moved plan). Run `node scripts/check-doc-links.mjs`.
+- Phases 2 and 4 stay owed (`human`, `Blocks merge: no`). Record them as outstanding in the close
+  review. Phase 2 may lower `CHART_PAYLOAD_BUDGET` in a later fix.
+- Refresh the `docs/plans/README.md` row (it still reads `approved`) and bump the next free
+  number if the index tracks it.
+- No paired ADR to accept: ADR-0025 is already accepted.
+- Version: a minor bump (a feature plan). Add the `package.json` version, a `CHANGELOG.md` entry
+  and a `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013).
+- Drop the stale Followups bullet (nit 3). Nits 1 and 2 can go to `tools/conductor/FOLLOWUPS.md`
+  or a future plan.
+
+### Resolution at close
+
+- No earlier round raised findings, so no fix round ran.
+- Minor 1 fixed at close in a8ef541 (README trend bullet).
+- Nit 3 fixed at close in b0a15ed (stale Followups bullet replaced by nits 1 and 2).
+- Nits 1 and 2 stay open, listed under Followups.
+- Phase 2 (publish, measure the URL limit) and Phase 4 (live check on a phone) stay owed.
+- Version 0.27.0 (minor: a feature plan). No ADR to accept: ADR-0025 was already accepted.
 
 ## Followups
 

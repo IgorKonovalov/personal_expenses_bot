@@ -2,7 +2,7 @@
 
 > **Status:** proposed
 > **Date:** 2026-10-01
-> **Related plan(s):** [Plan 0030](../plans/0030-mini-app-charts-and-qr-scan.md)
+> **Related plan(s):** [Plan 0030](../plans/done/0030-mini-app-charts-and-qr-scan.md)
 
 ## Context
 

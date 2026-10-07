@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.27.0 (2026-10-07)
+
+From Plan 0030 (charts in the Mini App).
+
+- With `WEBAPP_URL` set, `/week` and `/month` in a private chat end with «📈 Диаграмма». It opens
+  the Mini App page with the shown period's categories as a pie in the ledger's currency, plus a
+  legend; currencies with no rate are text lines under it.
+- Under the pie, 6 bars show the converted totals of the shown period and the five before it.
+- The page makes no request: the bot sends the formatted aggregates in the link's fragment. An
+  empty period, a group report or a locked sealed ledger gets no button.
+
 ## 0.26.0 (2026-10-07)
 
 From Plan 0036 (product prices across months).
