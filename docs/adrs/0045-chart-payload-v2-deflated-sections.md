@@ -61,7 +61,7 @@ and the bot can be a version apart in either direction.
 
 ### Negative
 - **Clients older than Safari 16.4 or Chromium 80 can't open a v2 chart.** They show the
-  `chartBroken` line, and the text report still works. Plan 0041's live check tries the clients
+  `chartUnsupported` line, and the text report still works. Plan 0041's live check tries the clients
   the user actually has. We know of no old-iOS user, and that is unverified.
 - **Decoding is asynchronous.** The page draws after a promise resolves, so the page code and the
   tests await. A slow device shows an empty page for a moment.
