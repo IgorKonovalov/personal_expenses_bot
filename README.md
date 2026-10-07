@@ -276,6 +276,24 @@ The bot is free for everyone, with no paid tier
 - The admin's `/refund <charge id>` returns the Stars through Telegram and marks the donation
   refunded. A second `/refund` of the same charge id doesn't call Telegram.
 
+### Mini App: live receipt scan
+
+With `WEBAPP_URL` set, the private-chat menu gains «📷 Скан»
+([ADR-0025](docs/adrs/0025-static-mini-app-fragment-in-senddata-out.md)). It opens a static page
+in scan mode, which opens Telegram's own live QR scanner. The first code read goes back to the
+bot and is recorded exactly like a pasted receipt link, duplicate check included.
+
+- The page lives in `webapp/`: `index.html` plus TypeScript built by `pnpm build:webapp` (plain
+  `tsc`, no bundler, no runtime dependencies) into `webapp/dist/`. The `Pages` workflow
+  publishes it to GitHub Pages on a push to `main` that touches it. Enable Pages with the source
+  "GitHub Actions", then set `WEBAPP_URL` to the published URL, without a `#fragment`.
+- The page makes no network request: its CSP allows scripts from `telegram.org` and itself only.
+  The scanned text leaves the page only by `sendData`, and the bot never logs it.
+- The live scanner exists on Telegram's mobile apps. Elsewhere (Desktop, web) the page says so,
+  and a photo or the pasted link still works.
+- Telegram keeps showing an old menu until the next `/start` or `/help` reply, so the button
+  appears after one of them. A group never gets it: `web_app` buttons work in private chats only.
+
 ### Amount rules
 
 One rule for everyone, regardless of locale ([ADR-0004](docs/adrs/0004-amount-parsing-rule.md)):

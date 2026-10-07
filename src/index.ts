@@ -79,6 +79,7 @@ const bot = createBot({
   keys,
   donationLinks,
   donateUrl: config.donateUrl,
+  webappUrl: config.webappUrl,
   // Late-bound: the notifier needs bot.api, built just below. No update is handled before
   // polling starts.
   notifyAdmin: (body) => notifyAdmin(body),

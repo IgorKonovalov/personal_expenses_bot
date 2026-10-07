@@ -1521,6 +1521,10 @@ export const messages = {
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
   // A photo where a QR symbol was located but no pass read it (ADR-0034).
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
+  // The private menu's `web_app` button that opens the Mini App's live QR scanner (ADR-0025).
+  scanButton: '📷 Скан',
+  // A scanned QR whose text isn't a receipt verification link.
+  scanNotReceipt: html`Этот QR-код не похож на чек из Сербии или Черногории. Наведите камеру на QR-код чека.`,
 
   // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
   // one page of rows, above [Записать все (N)], the pager and [Отмена].

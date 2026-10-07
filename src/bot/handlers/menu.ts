@@ -29,7 +29,7 @@ const ROUTES: readonly MenuRoute[] = [
   },
   { label: messages.menu.budget, command: 'budget', run: sendBudget },
   { label: messages.menu.settings, command: 'settings', run: sendSettings },
-  { label: messages.menu.help, command: 'help', run: (ctx) => sendHelp(ctx) },
+  { label: messages.menu.help, command: 'help', run: (ctx, deps) => sendHelp(ctx, deps.webappUrl) },
   { label: messages.menu.more, run: sendMore },
 ];
 

@@ -42,6 +42,7 @@ import { registerTags } from './handlers/tags.js';
 import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
+import { registerWebAppData } from './handlers/webAppData.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
 import { onboarding } from './middleware/onboarding.js';
@@ -58,6 +59,8 @@ export interface HandlerDeps {
   readonly defaultCurrency: CurrencyCode;
   // The process's unlocked sealed-ledger keys (ADR-0020), shared with every worker.
   readonly keys: LedgerKeyring;
+  // WEBAPP_URL: the Mini App page behind the private menu's «📷 Скан» (ADR-0025). Absent hides it.
+  readonly webappUrl?: string | undefined;
 }
 
 // The handlers that check admission or serve the admin (ADR-0024).
@@ -132,8 +135,9 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   dm.use(clearFlowOnCommand(options));
 
   // Commands and exact menu labels first: the text handler treats any other text as a flow
-  // answer, a receipt link or an expense attempt; a PDF is read as a bank statement; photos and
-  // image files are read for a receipt QR; whatever else isn't text gets the help reply.
+  // answer, a receipt link or an expense attempt; a Mini App scan is read as a receipt link; a
+  // PDF is read as a bank statement; photos and image files are read for a receipt QR; whatever
+  // else isn't text gets the help reply.
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
@@ -149,7 +153,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerUnlock(dm, options);
   registerCancel(dm, options);
   registerDeleteAccount(dm, options);
-  registerHelp(dm);
+  registerHelp(dm, options);
   registerChangelog(dm);
   registerPrivacy(dm);
   registerDonate(dm, donateDeps);
@@ -164,6 +168,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerCard(dm, options);
   registerCategory(dm, options);
   registerText(dm, donateDeps);
+  registerWebAppData(dm, options);
   const download = telegramFileDownloader(options.token);
   registerStatement(dm, options, download);
   registerReceiptMedia(dm, options, download);

@@ -13,7 +13,7 @@ import {
 import { provisionUser } from '../../services/provisionUser.js';
 import type { HandlerDeps } from '../bot.js';
 import { ONBOARDING_EDIT, ONBOARDING_OK } from '../callbackData.js';
-import { menuKeyboard } from '../keyboards.js';
+import { menuKeyboardFor } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { editHtml, replyHtml, type Html } from '../render/html.js';
 import { cardFor, cardView } from './card.js';
@@ -38,9 +38,9 @@ const LEDGER_SETTINGS_PAYLOAD = /^gs_([0-9a-f-]{36})$/;
 // An invite code, the shape the access middleware redeems before this handler runs.
 const INVITE_PAYLOAD = /^[A-Za-z0-9_-]{11}$/;
 
-// The welcome, with the menu keyboard.
-export async function sendWelcome(ctx: Context): Promise<void> {
-  await replyHtml(ctx, messages.welcome, { reply_markup: menuKeyboard() });
+// The welcome, with the menu keyboard: «📷 Скан» on it only given `webappUrl`.
+export async function sendWelcome(ctx: Context, webappUrl?: string): Promise<void> {
+  await replyHtml(ctx, messages.welcome, { reply_markup: menuKeyboardFor(ctx, webappUrl) });
 }
 
 // The setup check, with [Да, всё верно] and [Изменить]. A message carries one keyboard, so the
@@ -68,7 +68,7 @@ async function sendTour(
   const now = deps.now();
   const onboarded = isOnboarded(deps, user);
   if (onboarded && mayReplay) replayOnboarding(deps, user);
-  await sendWelcome(ctx);
+  await sendWelcome(ctx, deps.webappUrl);
   if (onboarded && !mayReplay) return;
   // A concurrent first update claimed it and sends the check itself.
   if (!onboarded && !claimOnboarding(deps, user, now)) return;

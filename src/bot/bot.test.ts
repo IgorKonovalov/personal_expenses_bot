@@ -26,6 +26,7 @@ import { CATEGORY_PRESETS } from '../domain/categoryPresets.js';
 import { CURRENCY_CODES, toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
+import { decodeReceiptUrl } from '../domain/receipts/index.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
 import { buildPdf } from '../domain/statements/testing/buildPdf.js';
 import {
@@ -108,6 +109,7 @@ import {
   preCheckoutUpdate,
   successfulPaymentUpdate,
   textUpdate,
+  webAppDataUpdate,
   withMessageIds,
   type ApiCall,
   type TestBotOptions,
@@ -246,6 +248,61 @@ describe('menu and help', () => {
       },
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
     ]);
+  });
+
+  it('puts a 📷 Скан web_app button opening WEBAPP_URL in scan mode on the /start and /help menus', async () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    const { bot, calls } = createTestBot({ webappUrl });
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help' }));
+    await bot.handleUpdate(textUpdate({ updateId: 3, text: '❓ Помощь' }));
+
+    const scanMenu = {
+      ...menuKeyboard,
+      keyboard: [
+        [
+          ...(menuKeyboard.keyboard[0] ?? []),
+          { text: messages.scanButton, web_app: { url: `${webappUrl}#m=scan` } },
+        ],
+        menuKeyboard.keyboard[1],
+      ],
+    };
+    const markups = calls
+      .filter((call) => (call.payload as { text?: unknown }).text !== undefined)
+      .map((call) => (call.payload as { reply_markup?: unknown }).reply_markup)
+      .filter((markup) => markup !== undefined && 'keyboard' in (markup as object));
+    expect(markups).toEqual([scanMenu, scanMenu, scanMenu]);
+    expect(messages.scanButton).toBe('📷 Скан');
+  });
+
+  it('keeps the menu as it is without WEBAPP_URL and in a group with it', async () => {
+    const plain = createTestBot();
+    const scan = createTestBot({ webappUrl: 'https://example.github.io/bot/' });
+    for (const { bot } of [plain, scan]) {
+      await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+      await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help' }));
+    }
+    expect(plain.calls[0]?.payload).toMatchObject({ reply_markup: menuKeyboard });
+    expect(plain.calls.at(-1)?.payload).toMatchObject({ reply_markup: menuKeyboard });
+
+    for (const { bot } of [plain, scan]) {
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 3,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+    }
+    plain.calls.length = 0;
+    scan.calls.length = 0;
+    for (const { bot } of [plain, scan]) {
+      await bot.handleUpdate(groupTextUpdate({ updateId: 4, text: '/help' }));
+    }
+    expect(sentTexts(plain.calls)).toEqual([messages.groupHelp]);
+    expect(scan.calls).toEqual(plain.calls);
   });
 
   it('seeds the personal ledger categories once across two /start', async () => {
@@ -5011,6 +5068,74 @@ describe('fiscal receipts', () => {
     expect(db.prepare('SELECT fetch_state, fiscal_id FROM receipts').all()).toEqual([
       { fetch_state: 'pending', fiscal_id: 'AAAA1111-AAAA1111-16898' },
     ]);
+  });
+
+  describe('a Mini App scan (web_app_data)', () => {
+    function scanBot() {
+      const harness = receiptBot({ logLevel: 'info' });
+      let updateId = 100;
+      const scan = (data: string) =>
+        harness.bot.handleUpdate(
+          webAppDataUpdate({ updateId: ++updateId, messageId: updateId, data, date: RECEIPT_SENT }),
+        );
+      return { ...harness, scan };
+    }
+
+    it('records the scanned link like the pasted one: 82912 RSD, and a repeat is «Уже записано.»', async () => {
+      const { send, scan, calls, db, logLines } = scanBot();
+      await send('/start');
+      calls.length = 0;
+
+      await scan(RS_LINK);
+
+      const [expenseId] = expenseIds(db);
+      expect(calls).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: ALLOWED_ID,
+            text: RS_CARD,
+            reply_markup: receiptKeyboard(String(expenseId)),
+            ...htmlParseMode,
+          },
+        },
+      ]);
+      expect(
+        db.prepare('SELECT amount_minor, currency, description, occurred_on FROM expenses').all(),
+      ).toEqual([
+        { amount_minor: 82912, currency: 'RSD', description: 'Чек', occurred_on: '2026-10-01' },
+      ]);
+      calls.length = 0;
+
+      await scan(RS_LINK);
+
+      expect(sentTexts(calls)).toEqual([`Уже записано.\n${RS_CARD}`]);
+      expect(expenseCount(db)).toEqual({ n: 1 });
+      for (const line of logLines) {
+        expect(line).not.toContain(RS_LINK);
+        expect(line).not.toContain('suf.purs.gov.rs');
+      }
+    });
+
+    it('answers data that is not a receipt link and records nothing, a 5000-byte string included', async () => {
+      const { send, scan, calls, db, logLines } = scanBot();
+      await send('/start');
+      calls.length = 0;
+      // The decoder trims, so this would record the receipt if the length went unchecked.
+      const long = `${RS_LINK}${' '.repeat(5000 - RS_LINK.length)}`;
+      expect(new TextEncoder().encode(long).length).toBe(5000);
+      expect(decodeReceiptUrl(long).kind).toBe('receipt');
+
+      await scan('https://example.org/not-a-receipt');
+      await scan(long);
+
+      expect(sentTexts(calls)).toEqual([messages.scanNotReceipt, messages.scanNotReceipt]);
+      expect(expenseCount(db)).toEqual({ n: 0 });
+      for (const line of logLines) {
+        expect(line).not.toContain('example.org');
+        expect(line).not.toContain('suf.purs.gov.rs');
+      }
+    });
   });
 
   it('dates the receipt the 30th for a London user, and the card names the date', async () => {

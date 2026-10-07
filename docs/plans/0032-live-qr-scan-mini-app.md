@@ -1,6 +1,6 @@
 # 0032: A live QR scan in a Mini App records a receipt
 
-> **Status:** approved (2026-10-05)
+> **Status:** in-progress
 > **Created:** 2026-10-05
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
 > [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),
@@ -152,10 +152,27 @@ flowchart LR
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: «📷 Скан» records a receipt | dev | not started | |
+| 1: Walking skeleton: «📷 Скан» records a receipt | dev | done | committed with this row |
 | 2: Publish and scan a real receipt | human | not started | |
 
 ### Notes
+
+- Phase 1: `package.json` `typecheck` also runs `tsc -p webapp/tsconfig.json --noEmit`, since
+  the root `tsconfig.json` (not in Files touched) doesn't include `webapp/`. `build:webapp`
+  deletes the emitted `*.test.js` from `webapp/dist/`, because one `webapp/tsconfig.json` covers
+  both the page and its test. Phase 1 commit.
+- Phase 1: the `upload-pages-artifact` (v3.0.1) and `deploy-pages` (v4.0.5) SHAs in `pages.yml`
+  were pinned from memory: the session had no network to resolve the tags. The first Pages run
+  in Phase 2 is their check. Phase 1 commit.
+- Phase 1: `webAppData.ts` caps the data at 4096 bytes with a `TextEncoder` length check before
+  `decodeReceiptUrl`. The 5000-byte test string is the receipt link padded with spaces, which
+  `decodeReceiptUrl` alone would record. Phase 1 commit.
+- Phase 1: `sendWelcome` takes the URL as an optional argument, and the onboarding middleware's
+  welcome (`src/bot/middleware/onboarding.ts`, not in Files touched) still calls it without one.
+  A never-onboarded user's first welcome so carries today's menu. `/start` and `/help` carry the
+  button. Phase 1 commit.
+- Phase 1: `eslint.config.js` gains a `webapp/**/*.ts` block: no import from outside
+  `webapp/src/` and no package import, plus `webapp/dist/` in `ignores`. Phase 1 commit.
 
 ### Close triggers
 

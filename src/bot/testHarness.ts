@@ -42,6 +42,8 @@ export interface TestBotOptions {
   readonly failMethods?: readonly string[];
   // DONATE_URL.
   readonly donateUrl?: string;
+  // WEBAPP_URL.
+  readonly webappUrl?: string;
   // First contact and tips (ADR-0028), both off unless a test is about them.
   readonly onboarding?: boolean;
   readonly tips?: boolean;
@@ -79,6 +81,7 @@ export function createTestBot(options: TestBotOptions = {}) {
     botInfo,
     donationLinks,
     donateUrl: options.donateUrl,
+    webappUrl: options.webappUrl,
     notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
   });
   admitOnFirstDm(bot, deps, [SECOND_ALLOWED_ID]);
@@ -246,6 +249,27 @@ export function textUpdate(opts: {
             ],
           }
         : {}),
+    },
+  };
+}
+
+// The service message a Mini App's sendData produces in the sender's DM.
+export function webAppDataUpdate(opts: {
+  updateId: number;
+  data: string;
+  fromId?: number;
+  messageId?: number;
+  date?: Date;
+}): Update {
+  const fromId = opts.fromId ?? ALLOWED_ID;
+  return {
+    update_id: opts.updateId,
+    message: {
+      message_id: opts.messageId ?? 1,
+      date: Math.floor((opts.date ?? new Date('2026-09-29T21:50:00Z')).getTime() / 1000),
+      chat: { id: fromId, type: 'private', first_name: 'Test' },
+      from: { id: fromId, is_bot: false, first_name: 'Test' },
+      web_app_data: { data: opts.data, button_text: '📷 Скан' },
     },
   };
 }
