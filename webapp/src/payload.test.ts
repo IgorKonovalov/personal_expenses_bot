@@ -2,7 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { showTrend } from './bars.js';
 import { messages } from './messages.js';
 import { decodeChartPayload } from './payload.js';
-import { showChart, type ChartDocument, type ChartNode, type ChartStyle } from './pie.js';
+import { DARK, LIGHT } from './palette.js';
+import {
+  showChart,
+  startChart,
+  type ChartDocument,
+  type ChartNode,
+  type ChartStyle,
+  type ChartTheme,
+  type ChartWebApp,
+} from './pie.js';
 
 // A DOM stand-in: builds a tree from createElement/createElementNS and textContent alone. It has
 // no markup parser, and assigning markup through innerHTML or outerHTML throws. Inline style goes
@@ -16,6 +25,8 @@ class FakeNode implements ChartNode<FakeNode> {
     margin: '',
     minHeight: '',
     fontWeight: '',
+    backgroundColor: '',
+    color: '',
   };
   readonly attributes = new Map<string, string>();
   readonly children: FakeNode[] = [];
@@ -33,6 +44,9 @@ class FakeNode implements ChartNode<FakeNode> {
   }
   append(...nodes: FakeNode[]): void {
     this.children.push(...nodes);
+  }
+  replaceChildren(...nodes: FakeNode[]): void {
+    this.children.splice(0, this.children.length, ...nodes);
   }
   addEventListener(_type: 'click', listener: () => void): void {
     this.listeners.push(listener);
@@ -147,9 +161,9 @@ describe('the trend bars', () => {
     ['Сентябрь', 160000, '1 600.00 RSD'],
     ['Октябрь', 34500, '345.00 RSD'],
   ];
-  const trendPage = (hash: string) => {
+  const trendPage = (hash: string, theme: ChartTheme = {}) => {
     const root = new FakeNode('body');
-    showTrend(fakeDocument(), root, hash);
+    showTrend(fakeDocument(), root, hash, theme);
     return root.all().slice(1);
   };
 
@@ -157,28 +171,60 @@ describe('the trend bars', () => {
     const nodes = trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`);
 
     const bars = nodes.filter((node) => node.tag === 'rect');
+    // In proportion to the largest total, 160000, across the full 320-unit width.
     expect(bars.map((bar) => bar.attributes.get('width'))).toEqual([
-      '8.59',
+      '25',
       '0',
       '0',
-      '27.5',
-      '110',
-      '23.72',
+      '80',
+      '320',
+      '69',
     ]);
     expect(nodes.filter((node) => node.tag === 'text').map((node) => node.textContent)).toEqual([
-      'Май',
-      '125.00 RSD',
-      'Июнь',
-      '0.00 RSD',
-      'Июль',
-      '0.00 RSD',
-      'Август',
-      '400.00 RSD',
-      'Сентябрь',
-      '1 600.00 RSD',
-      'Октябрь',
-      '345.00 RSD',
+      'Май · 125.00 RSD',
+      'Июнь · 0.00 RSD',
+      'Июль · 0.00 RSD',
+      'Август · 400.00 RSD',
+      'Сентябрь · 1 600.00 RSD',
+      'Октябрь · 345.00 RSD',
     ]);
+  });
+
+  it('starts every row text, amount included, at x 0, so a long amount cannot pass the viewBox', () => {
+    const trend = [
+      ['Август', 0, '0.00 RSD'],
+      ['Сентябрь', 123456789, '≈ 1 234 567.89 RSD'],
+    ];
+    const nodes = trendPage(`#d=${encoded({ ...SEPTEMBER, trend })}`);
+
+    const texts = nodes.filter((node) => node.tag === 'text');
+    expect(texts.map((node) => node.textContent)).toEqual([
+      'Август · 0.00 RSD',
+      'Сентябрь · ≈ 1 234 567.89 RSD',
+    ]);
+    expect(texts.map((node) => node.attributes.get('x'))).toEqual(['0', '0']);
+    expect(
+      nodes.filter((node) => node.tag === 'rect').map((bar) => bar.attributes.get('x')),
+    ).toEqual(['0', '0']);
+  });
+
+  it('draws the shown period in the button colour and earlier ones at half opacity', () => {
+    const bars = (theme: ChartTheme) =>
+      trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`, theme).filter(
+        (node) => node.tag === 'rect',
+      );
+
+    const themed = bars({ button: '#5288c1' });
+    expect(themed.map((bar) => bar.attributes.get('fill'))).toEqual(Array(6).fill('#5288c1'));
+    expect(themed.map((bar) => bar.attributes.get('opacity'))).toEqual([
+      '0.5',
+      '0.5',
+      '0.5',
+      '0.5',
+      '0.5',
+      undefined,
+    ]);
+    expect(bars({}).at(-1)?.attributes.get('fill')).toBe('#2481cc');
   });
 
   it('draws nothing without a trend or for a hash the page cannot read', () => {
@@ -272,7 +318,7 @@ describe('the chart page', () => {
     const trend = root.children[0];
     expect(trend?.tag).toBe('svg');
     expect(trend?.attributes.get('width')).toBe('100%');
-    expect(trend?.attributes.get('viewBox')).toBe('0 0 320 24');
+    expect(trend?.attributes.get('viewBox')).toBe('0 0 320 30');
     // The fake throws on a style attribute, so getting here means none was set; this says so.
     expect([...nodes, ...root.all()].some((node) => node.attributes.has('style'))).toBe(false);
   });
@@ -301,6 +347,67 @@ describe('the chart page', () => {
 
     expect(nodes.filter((node) => node.tag === 'img')).toEqual([]);
     expect(texts).toContain(` ${name}: 50.00 RSD`);
+  });
+});
+
+describe('the theme', () => {
+  const fills = (nodes: FakeNode[], tag: string) =>
+    nodes.filter((node) => node.tag === tag).map((node) => node.attributes.get('fill'));
+  const themed = (bg: string | undefined, payload: object = SEPTEMBER) => {
+    const root = new FakeNode('body');
+    const params: { bg_color?: string; hint_color?: string } = {};
+    if (bg !== undefined) params.bg_color = bg;
+    startChart(fakeDocument(), root, `#d=${encoded(payload)}`, { themeParams: params });
+    return root.all();
+  };
+
+  it('draws slices from DARK on a black background, and from LIGHT on white or with no theme', () => {
+    expect(fills(themed('#000000'), 'path')).toEqual([DARK[0], DARK[1]]);
+    expect(fills(themed('#ffffff'), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
+    expect(fills(themed(undefined), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
+  });
+
+  it('draws lines past the eighth in the hint colour, in the slices and the legend swatches', () => {
+    const lines = Array.from({ length: 10 }, (_, i) => [`Категория ${i + 1}`, 1000, '10.00 RSD']);
+    const payload = { ...SEPTEMBER, lines, totalMinor: 10000 };
+    const nodes = themed(undefined, payload);
+
+    expect(fills(nodes, 'path')).toEqual([...LIGHT, '#999999', '#999999']);
+    expect(fills(nodes, 'rect')).toEqual([...LIGHT, '#999999', '#999999']);
+
+    const root = new FakeNode('body');
+    const webApp = { themeParams: { hint_color: '#708499' } };
+    startChart(fakeDocument(), root, `#d=${encoded(payload)}`, webApp);
+    expect(fills(root.all(), 'path').slice(8)).toEqual(['#708499', '#708499']);
+    expect(fills(root.all(), 'rect').slice(8)).toEqual(['#708499', '#708499']);
+  });
+
+  it('redraws from the other palette on themeChanged, without duplicating the page', () => {
+    const params = { bg_color: '#ffffff', text_color: '#000000' };
+    const handlers: (() => void)[] = [];
+    const expand = vi.fn();
+    const webApp: ChartWebApp = {
+      themeParams: params,
+      expand,
+      onEvent: (_event, handler) => handlers.push(handler),
+    };
+    const root = new FakeNode('body');
+    const hash = `#d=${encoded({ ...SEPTEMBER, trend: [['Сентябрь', 150000, '1 500.00 RSD']] })}`;
+    startChart(fakeDocument(), root, hash, webApp);
+    const before = root.all().map((node) => node.tag);
+    expect(fills(root.all(), 'path')).toEqual([LIGHT[0], LIGHT[1]]);
+    expect(root.style.backgroundColor).toBe('#ffffff');
+    expect(expand).toHaveBeenCalledTimes(1);
+
+    params.bg_color = '#000000';
+    params.text_color = '#ffffff';
+    for (const handler of handlers) handler();
+
+    expect(fills(root.all(), 'path')).toEqual([DARK[0], DARK[1]]);
+    expect(root.all().map((node) => node.tag)).toEqual(before);
+    expect(root.children.filter((node) => node.tag === 'h1')).toHaveLength(1);
+    expect(root.style.backgroundColor).toBe('#000000');
+    expect(root.style.color).toBe('#ffffff');
   });
 });
 

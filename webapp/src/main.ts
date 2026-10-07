@@ -1,5 +1,4 @@
-import { showTrend } from './bars.js';
-import { showChart } from './pie.js';
+import { startChart, type ChartWebApp } from './pie.js';
 import { modeOf, startScan, type ScanWebApp } from './scan.js';
 
 // The page's entry, loaded after telegram-web-app.js. Opened outside Telegram, the script and
@@ -8,16 +7,7 @@ import { modeOf, startScan, type ScanWebApp } from './scan.js';
 declare global {
   interface Window {
     readonly Telegram?: {
-      readonly WebApp?: ScanWebApp & {
-        readonly ready?: () => void;
-        readonly expand?: () => void;
-        readonly HapticFeedback?: { readonly selectionChanged?: () => void };
-        readonly themeParams?: {
-          readonly bg_color?: string;
-          readonly text_color?: string;
-          readonly hint_color?: string;
-        };
-      };
+      readonly WebApp?: ScanWebApp & ChartWebApp & { readonly ready?: () => void };
     };
   }
 }
@@ -32,15 +22,5 @@ if (modeOf(hash) === 'scan') {
     if (status !== null) status.textContent = line;
   });
 } else {
-  // Full height, so the donut and its legend fit without dragging the sheet up.
-  webApp?.expand?.();
-  const theme = webApp?.themeParams;
-  // CSSOM writes, which the CSP's missing style-src doesn't block (index.html).
-  if (theme?.bg_color !== undefined) document.body.style.backgroundColor = theme.bg_color;
-  if (theme?.text_color !== undefined) document.body.style.color = theme.text_color;
-  const colours = { bg: theme?.bg_color, hint: theme?.hint_color };
-  showChart<HTMLElement | SVGElement>(document, document.body, hash, colours, () =>
-    webApp?.HapticFeedback?.selectionChanged?.(),
-  );
-  showTrend<HTMLElement | SVGElement>(document, document.body, hash, colours);
+  startChart<HTMLElement | SVGElement>(document, document.body, hash, webApp);
 }

@@ -200,8 +200,8 @@ a tap handler are a few dozen lines of SVG.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | 647be3b |
-| 2: Tap a slice or a legend row to inspect it | dev | done | committed with this row |
-| 3: Theme-aware palettes and a trend layout that can't clip | dev | not started | |
+| 2: Tap a slice or a legend row to inspect it | dev | done | 1681f75 |
+| 3: Theme-aware palettes and a trend layout that can't clip | dev | done | committed with this row |
 | 4: Live check, light and dark | human | not started | |
 
 ### Notes
@@ -216,6 +216,12 @@ a tap handler are a few dozen lines of SVG.
   checked by stubbing `fetch`, `localStorage` and `sessionStorage` in the test, plus
   `git grep -E "localStorage|sessionStorage|fetch|sendData|XMLHttpRequest"` over `pie.ts`,
   `bars.ts` and `main.ts` (no match); `showChart` has no handle to `sendData`.
+- Phase 3: a trend row's «period · amount» is one `text` node at `x="0"`, so the period/amount
+  same-`x` done-when holds by construction; the test asserts every text and bar `x` is `0`. The
+  chart-mode wiring (expand, body colours, `themeChanged` redraw) moved from `main.ts` into a
+  new `startChart` in `pie.ts` so the test can fire the handler; the redraw empties `root` with
+  `replaceChildren`, added to `ChartNode`. Outside Telegram the bars use `#2481cc`. All bars,
+  zero ones included, fill with the button colour (zero bars were `hint_color`).
 
 ### Close triggers
 

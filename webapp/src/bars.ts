@@ -2,12 +2,15 @@ import { decodeChartPayload, type TrendBar } from './payload.js';
 import type { ChartDocument, ChartNode, ChartTheme } from './pie.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
-const BAR_COLOUR = '#4e79a7';
-const NEUTRAL = '#999999';
-// One row per period: its name, the bar, then the formatted total past the bar's end.
-const ROW = 24;
-const LABEL_WIDTH = 110;
-const BAR_WIDTH = 110;
+// Telegram's default button colour, for a page opened outside Telegram.
+const BUTTON = '#2481cc';
+const EARLIER_OPACITY = '0.5';
+// One row per period: a text line «period · amount» at x 0, then under it a bar that may use the
+// full width. No text is placed relative to a bar's end, so no label can run past the viewBox.
+const ROW = 30;
+const TEXT_BASELINE = 12;
+const BAR_TOP = 16;
+const BAR_HEIGHT = 10;
 const WIDTH = 320;
 const MAX_WIDTH = '480px';
 
@@ -24,8 +27,9 @@ export function showTrend<N extends ChartNode<N>>(
 }
 
 // One horizontal bar per period, oldest at the top, its length in proportion to the largest
-// total. A period with nothing spent keeps its row and name, with a zero-length bar. Floats here
-// are geometry only; every amount shown is the bot's label.
+// total. A period with nothing spent keeps its row and text, with a zero-length bar. The shown
+// (last) period's bar is in the theme's button colour, earlier ones in the same colour at half
+// opacity. Floats here are geometry only; every amount shown is the bot's label.
 export function drawTrend<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   trend: readonly TrendBar[],
@@ -37,33 +41,29 @@ export function drawTrend<N extends ChartNode<N>>(
   const svg = svgNode(doc, 'svg', { width: '100%', viewBox: `0 0 ${WIDTH} ${height}` });
   svg.style.maxWidth = MAX_WIDTH;
   svg.style.display = 'block';
+  const fill = theme.button ?? BUTTON;
   trend.forEach(([periodLabel, totalMinor, label], index) => {
     const top = index * ROW;
-    const length = largest > 0 && totalMinor > 0 ? (totalMinor / largest) * BAR_WIDTH : 0;
-    const rounded = Math.round(length * 100) / 100;
-    const baseline = String(top + ROW / 2 + 4);
+    const length = largest > 0 && totalMinor > 0 ? (totalMinor / largest) * WIDTH : 0;
+    const shade = index === trend.length - 1 ? {} : { opacity: EARLIER_OPACITY };
     svg.append(
-      text(doc, periodLabel, { x: '0', y: baseline }),
+      text(doc, `${periodLabel} · ${label}`, String(top + TEXT_BASELINE)),
       svgNode(doc, 'rect', {
-        x: String(LABEL_WIDTH),
-        y: String(top + 4),
-        width: String(rounded),
-        height: String(ROW - 8),
-        fill: totalMinor > 0 ? BAR_COLOUR : (theme.hint ?? NEUTRAL),
+        x: '0',
+        y: String(top + BAR_TOP),
+        width: String(Math.round(length * 100) / 100),
+        height: String(BAR_HEIGHT),
+        fill,
+        ...shade,
       }),
-      text(doc, label, { x: String(LABEL_WIDTH + rounded + 4), y: baseline }),
     );
   });
   return svg;
 }
 
-// An SVG text node in the page's text colour, its string set through `textContent` only.
-function text<N extends ChartNode<N>>(
-  doc: ChartDocument<N>,
-  value: string,
-  position: { x: string; y: string },
-): N {
-  const node = svgNode(doc, 'text', { ...position, 'font-size': '11', fill: 'currentColor' });
+// An SVG text node at x 0 in the page's text colour, its string set through `textContent` only.
+function text<N extends ChartNode<N>>(doc: ChartDocument<N>, value: string, y: string): N {
+  const node = svgNode(doc, 'text', { x: '0', y, 'font-size': '11', fill: 'currentColor' });
   node.textContent = value;
   return node;
 }

@@ -1,4 +1,6 @@
+import { showTrend } from './bars.js';
 import { messages } from './messages.js';
+import { paletteFor } from './palette.js';
 import { decodeChartPayload, payloadParam, type ChartPayload } from './payload.js';
 
 export const SVG = 'http://www.w3.org/2000/svg';
@@ -11,6 +13,8 @@ export interface ChartStyle {
   margin: string;
   minHeight: string;
   fontWeight: string;
+  backgroundColor: string;
+  color: string;
 }
 
 // The slice of the DOM the chart builds with. Every string from the payload reaches the page
@@ -22,6 +26,7 @@ export interface ChartNode<N> {
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
   append(...nodes: N[]): void;
+  replaceChildren(...nodes: N[]): void;
   addEventListener(type: 'click', listener: () => void): void;
 }
 
@@ -35,22 +40,23 @@ export interface ChartDocument<N extends ChartNode<N>> {
 export interface ChartTheme {
   readonly bg?: string | undefined;
   readonly hint?: string | undefined;
+  readonly button?: string | undefined;
 }
 
-// Categorical slice colours, in line order; a twelfth category reuses the first.
-const PALETTE = [
-  '#4e79a7',
-  '#f28e2b',
-  '#e15759',
-  '#76b7b2',
-  '#59a14f',
-  '#edc948',
-  '#b07aa1',
-  '#ff9da7',
-  '#9c755f',
-  '#bab0ac',
-  '#86bcb6',
-];
+// The slice of `Telegram.WebApp` chart mode uses; every member is absent outside Telegram or on
+// a client too old for it. `themeParams` is updated in place before `themeChanged` fires.
+export interface ChartWebApp {
+  readonly themeParams?: {
+    readonly bg_color?: string;
+    readonly text_color?: string;
+    readonly hint_color?: string;
+    readonly button_color?: string;
+  };
+  readonly expand?: () => void;
+  readonly onEvent?: (event: 'themeChanged', handler: () => void) => void;
+  readonly HapticFeedback?: { readonly selectionChanged?: () => void };
+}
+
 const NEUTRAL = '#999999';
 // The donut's hole, as a fraction of its outer radius 1.
 const DONUT_INNER = 0.6;
@@ -67,6 +73,31 @@ const NAME_FIT = 14;
 const DIMMED_OPACITY = '0.35';
 // The legend row is the main tap target, since a small slice is hard to hit.
 const ROW_MIN_HEIGHT = '44px';
+
+// Chart mode's entry: expands the sheet, draws the chart and its trend into `root` in the
+// current theme's colours, and redraws them from scratch whenever Telegram's theme changes.
+// The CSSOM writes to `root` are allowed by the CSP's missing style-src (index.html).
+export function startChart<N extends ChartNode<N>>(
+  doc: ChartDocument<N>,
+  root: N,
+  hash: string,
+  webApp: ChartWebApp | undefined,
+): void {
+  webApp?.expand?.();
+  const draw = () => {
+    const params = webApp?.themeParams;
+    if (params?.bg_color !== undefined) root.style.backgroundColor = params.bg_color;
+    if (params?.text_color !== undefined) root.style.color = params.text_color;
+    const theme = { bg: params?.bg_color, hint: params?.hint_color, button: params?.button_color };
+    root.replaceChildren();
+    showChart(doc, root, hash, theme, () => {
+      webApp?.HapticFeedback?.selectionChanged?.();
+    });
+    showTrend(doc, root, hash, theme);
+  };
+  draw();
+  webApp?.onEvent?.('themeChanged', draw);
+}
 
 // Chart mode: titles the page and draws the payload in `hash` into `root`. A missing `d` shows
 // the open-from-bot line, and a `d` the page can't read shows the broken-chart line; neither
@@ -105,8 +136,11 @@ export function drawChart<N extends ChartNode<N>>(
   const title = doc.createElement('h1');
   title.textContent = payload.title;
   root.append(title, paragraph(doc, payload.totalLabel));
-  const colours = payload.lines.map(([, amountMinor], index) =>
-    amountMinor > 0 ? (PALETTE[index % PALETTE.length] ?? NEUTRAL) : (theme.hint ?? NEUTRAL),
+  // A line past the palette's end, or with nothing spent, is in the theme's hint grey.
+  const palette = paletteFor(theme.bg);
+  const colours = payload.lines.map(
+    ([, amountMinor], index) =>
+      (amountMinor > 0 ? palette[index] : undefined) ?? theme.hint ?? NEUTRAL,
   );
   const donut = drawDonut(doc, payload, colours, theme);
   const items: N[] = [];
