@@ -217,7 +217,7 @@ interface PaceSection {
 |---|---|---|---|
 | 1: Walking skeleton: the pace line on the `/month` chart | dev | done | 468f2e8 |
 | 2: The budget burn-down chart | dev | done | 7279552 |
-| 3: Live check | human | not started | |
+| 3: Live check | human | owed | |
 
 ### Notes
 
