@@ -1,6 +1,6 @@
 # 0042: Spending pace in the chart, and a burn-down chart for the budget
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
@@ -215,11 +215,22 @@ interface PaceSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: the pace line on the `/month` chart | dev | not started | |
+| 1: Walking skeleton: the pace line on the `/month` chart | dev | done | committed with this row |
 | 2: The budget burn-down chart | dev | not started | |
 | 3: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1, outside `Files touched`: `webapp/src/pie.ts` gained the `pace` branch of the section
+  loop (`drawState`), which calls `drawPace` from `webapp/src/line.ts`. `webapp/src/main.ts` is
+  unchanged: the loop lives in `pie.ts`.
+- Phase 1: `src/domain/chartPayload.ts` also gained `encodePacePayload(title, pace)` (one pace
+  section, nothing shed) and the `limit` field of the bot's `PaceSection`, for Phase 2, whose
+  `Files touched` doesn't list the file. The page validates `limit` from Phase 2.
+- Phase 1: the pace captions carry no «≈» when the series holds converted spending; the pie's
+  total and the trend bars do.
+- Phase 1: the x-axis spans the longer of `days` and the previous series, so a previous period
+  longer than the shown one (31 against 30 days) ends at the right edge.
 
 ### Close triggers
 

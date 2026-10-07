@@ -49,7 +49,24 @@ export interface TrendSection {
   readonly bars: readonly TrendBar[];
 }
 
-export type ChartSection = PieSection | TrendSection;
+// A period's spending pace: cumulative spend by day, each series an integer in minor units at the
+// end of each day, day 1 first. Day d of `previous` is drawn against day d of `current`.
+export interface PaceSection {
+  readonly k: 'pace';
+  // The period's length in days.
+  readonly days: number;
+  // One point per elapsed day, through today or the period's end.
+  readonly current: readonly number[];
+  // The previous period, all its days.
+  readonly previous?: readonly number[];
+  // A budget's limit and its formatted caption; the allowance line runs from 0 to it.
+  readonly limit?: readonly [limitMinor: number, label: string];
+  // The current series' caption, then the previous series' or, on a budget chart, the allowance
+  // line's.
+  readonly captions: readonly [current: string, second?: string];
+}
+
+export type ChartSection = PieSection | PaceSection | TrendSection;
 
 export interface ChartPayloadV2 {
   readonly v: typeof CHART_PAYLOAD_VERSION;
@@ -58,8 +75,8 @@ export interface ChartPayloadV2 {
   readonly sections: readonly ChartSection[];
 }
 
-// What the messages module formats: the pie's fields, and the trend bars. A trend with no bars
-// is left out of the payload.
+// What the messages module formats: the pie's fields, the pace, and the trend bars. A trend with
+// no bars is left out of the payload.
 export interface ChartInput {
   readonly title: string;
   readonly currency: string;
@@ -67,6 +84,7 @@ export interface ChartInput {
   readonly totalChange?: string;
   readonly lines: readonly ChartLine[];
   readonly unconverted: readonly string[];
+  readonly pace?: PaceSection;
   readonly trend?: readonly TrendBar[];
 }
 
@@ -79,7 +97,7 @@ export interface ChartFold {
 }
 
 // The payload for `input`: a pie section whose `totalMinor` is the exact integer sum of the
-// lines, then a trend section when there are bars.
+// lines, then the pace section when there is one, then a trend section when there are bars.
 export function chartPayload(input: ChartInput): ChartPayloadV2 {
   const pie: PieSection = {
     k: 'pie',
@@ -94,28 +112,47 @@ export function chartPayload(input: ChartInput): ChartPayloadV2 {
   return {
     v: CHART_PAYLOAD_VERSION,
     title: input.title,
-    sections: trend.length === 0 ? [pie] : [pie, { k: 'trend', bars: trend }],
+    sections: [
+      pie,
+      ...(input.pace === undefined ? [] : [input.pace]),
+      ...(trend.length === 0 ? [] : [{ k: 'trend', bars: trend } as const]),
+    ],
   };
 }
 
 // The `z` value of the button URL's fragment: zlib deflate of the payload's UTF-8 JSON, as
 // base64url (unpadded), so it holds no `&`, `=` or `#` that would split Telegram's launch
 // parameters. Over `budget`, detail is shed in order (ADR-0045): every change label at once, the
-// total's included, then the oldest trend bars one by one, which with the last one drops the
-// trend section, then the smallest lines fold into one `fold` line, more of them each try. Each
-// step is compressed again, since how well a payload compresses depends on its content.
-// Undefined when nothing fits.
+// total's included, then the pace section's previous series with its caption, then the pace
+// section, then the oldest trend bars one by one, which with the last one drops the trend
+// section, then the smallest lines fold into one `fold` line, more of them each try. Each step is
+// compressed again, since how well a payload compresses depends on its content. Undefined when
+// nothing fits.
 export function encodeChartPayload(
   input: ChartInput,
   fold: ChartFold,
   budget: number = CHART_PAYLOAD_BUDGET,
 ): string | undefined {
   for (const candidate of shedding(input, fold)) {
-    const encoded = deflateSync(Buffer.from(JSON.stringify(chartPayload(candidate)), 'utf8'));
-    const z = encoded.toString('base64url');
+    const z = encode(chartPayload(candidate));
     if (z.length <= budget) return z;
   }
   return undefined;
+}
+
+// The `z` value of a payload titled `title` holding the one pace section `pace`, as
+// encodeChartPayload encodes it. Nothing is shed: undefined over `budget`.
+export function encodePacePayload(
+  title: string,
+  pace: PaceSection,
+  budget: number = CHART_PAYLOAD_BUDGET,
+): string | undefined {
+  const z = encode({ v: CHART_PAYLOAD_VERSION, title, sections: [pace] });
+  return z.length <= budget ? z : undefined;
+}
+
+function encode(payload: ChartPayloadV2): string {
+  return deflateSync(Buffer.from(JSON.stringify(payload), 'utf8')).toString('base64url');
 }
 
 // `input` itself, then each step of shedding, every one smaller than the one before.
@@ -132,12 +169,23 @@ function* shedding(input: ChartInput, fold: ChartFold): Generator<ChartInput> {
       share,
     ]),
     unconverted: input.unconverted,
-    ...(input.trend === undefined ? {} : { trend: input.trend }),
   };
+  const { pace } = input;
+  const trend = input.trend ?? [];
   if (input.totalChange !== undefined || input.lines.some((line) => line[4] !== undefined)) {
-    yield bare;
+    yield { ...bare, ...(pace === undefined ? {} : { pace }), trend };
   }
-  const trend = bare.trend ?? [];
+  if (pace?.previous !== undefined) {
+    const current: PaceSection = {
+      k: 'pace',
+      days: pace.days,
+      current: pace.current,
+      ...(pace.limit === undefined ? {} : { limit: pace.limit }),
+      captions: [pace.captions[0]],
+    };
+    yield { ...bare, pace: current, trend };
+  }
+  if (pace !== undefined) yield { ...bare, trend };
   for (let dropped = 1; dropped <= trend.length; dropped++) {
     yield { ...bare, trend: trend.slice(dropped) };
   }

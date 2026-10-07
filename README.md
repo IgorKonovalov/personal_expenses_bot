@@ -307,8 +307,8 @@ bars scale to the screen width. Paging to another period rebuilds the button for
   base64url, ADR-0045), already formatted, so the page makes no request and does no money
   arithmetic. Only aggregates travel, never an individual expense, and the static host never sees
   the fragment. Buttons sent before it (`#d=…`) still open.
-- The payload is a list of sections the page draws in order, the donut and then the trend; a
-  section kind the page doesn't know is skipped. Deploy the page first: until the `Pages` run
+- The payload is a list of sections the page draws in order, the donut, the pace and then the
+  trend; a section kind the page doesn't know is skipped. Deploy the page first: until the `Pages` run
   has finished, the old page answers a new `#z=` button with its open-from-bot line.
 - Each legend row reads «name: amount · share · change», the share a whole percent. The shares
   add up to exactly 100%, and a category whose share rounds to 0 shows «<1%». The change is an
@@ -324,7 +324,14 @@ bars scale to the screen width. Paging to another period rebuilds the button for
   other slices. A second tap on it, or a tap in the centre, goes back to the total.
 - The slice colours follow the Telegram theme, a light or a dark palette, and the chart redraws
   when the theme changes. Lines past the eighth are drawn in the theme's hint colour.
-- Under the donut, 6 bars show the converted totals of the shown period and the five before it,
+- Under the donut, the pace: the shown period's cumulative spending by day as a line in the
+  theme's button colour, over the previous period's in its hint colour, day 1 against day 1. Above
+  it, a caption per line after a swatch of its colour. A running period reads «К 15 октября: …»
+  and the previous one by the same day, «К 15 сентября: …»; a past one names each period whole,
+  «За август 2026: …». The line runs through today, so an expense dated later is in the total
+  but not yet on the line. Over the size budget, the previous period's line goes right after the
+  change labels, then the pace itself, before any trend bar.
+- Under the pace, 6 bars show the converted totals of the shown period and the five before it,
   oldest first. A period with nothing spent keeps its row with a zero-length bar.
 - A period with no expenses, or with nothing in or converted into the ledger's currency, has no
   button. Neither does a group report or a locked sealed ledger.

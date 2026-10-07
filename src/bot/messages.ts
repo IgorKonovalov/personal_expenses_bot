@@ -1,6 +1,7 @@
 import type { LedgerKind } from '../db/ledgers.js';
-import type { ChartFold, ChartInput, ChartLine } from '../domain/chartPayload.js';
+import type { ChartFold, ChartInput, ChartLine, PaceSection } from '../domain/chartPayload.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { addDays } from '../domain/dateText.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
 import { formatMoney, type Money } from '../domain/money.js';
@@ -234,6 +235,23 @@ interface ChartView {
         readonly total: Change;
       }
     | undefined;
+}
+
+// A period's cumulative spend by day and the period before it's, in `currency` (minor units).
+// `running`: the ledger's today is inside the shown period, whose points run through it.
+interface PaceView {
+  readonly currency: CurrencyCode;
+  readonly running: boolean;
+  readonly current: PaceSeriesView;
+  readonly previous: PaceSeriesView;
+}
+
+interface PaceSeriesView {
+  readonly period: PeriodRef;
+  readonly days: number;
+  readonly points: readonly number[];
+  // The last day the points run through.
+  readonly through: LocalDate;
 }
 
 // Each line with its share of their sum in whole percents; all 0 when nothing was spent.
@@ -1878,6 +1896,32 @@ export const messages = {
       `${point.approximate ? '≈ ' : ''}${formatMoney({ amountMinor: point.totalMinor, currency: converted.currency })}`,
     ]),
   }),
+  // A chart's pace section: the cumulative spend by day of the shown period over the previous
+  // one's, each with its caption, plain. A running period names how much by today, and the
+  // previous one by the same day, clipped at its end: «К 15 октября: …», «К 15 сентября: …». A
+  // past one names each period whole: «За август 2026: …», «За неделю 21–27 сентября: …».
+  chartPace: ({ currency, running, current, previous }: PaceView): PaceSection => {
+    const amount = (amountMinor: number) => formatMoney({ amountMinor, currency });
+    const byDay = (date: LocalDate, amountMinor: number) => {
+      const { day, month } = dateParts(date);
+      return `К ${day} ${GENITIVE_MONTHS[month] ?? ''}: ${amount(amountMinor)}`;
+    };
+    const whole = (series: PaceSeriesView) =>
+      `За ${periodAfterZa(series.period)}: ${amount(series.points.at(-1) ?? 0)}`;
+    const sameDay = Math.min(current.points.length, previous.days);
+    return {
+      k: 'pace',
+      days: current.days,
+      current: current.points,
+      previous: previous.points,
+      captions: running
+        ? [
+            byDay(current.through, current.points.at(-1) ?? 0),
+            byDay(addDays(previous.period.from, sameDay - 1), previous.points[sameDay - 1] ?? 0),
+          ]
+        : [whole(current), whole(previous)],
+    };
+  },
   // The pie line the smallest categories fold into when a chart is too large for its button.
   chartFold: (currency: CurrencyCode): ChartFold => ({
     name: 'Прочее',

@@ -50,12 +50,26 @@ export interface TrendSection {
   readonly bars: readonly TrendBar[];
 }
 
+// A period's cumulative spend by day, in minor units, day 1 first; day d of `previous` is drawn
+// against day d of `current`.
+export interface PaceSection {
+  readonly k: 'pace';
+  // The period's length in days.
+  readonly days: number;
+  // One point per elapsed day.
+  readonly current: readonly number[];
+  // The previous period, all its days.
+  readonly previous?: readonly number[];
+  // The current series' caption, then the previous series' when there is one.
+  readonly captions: readonly [current: string, second?: string];
+}
+
 // A section of a kind this page doesn't draw: kept by the decoder, skipped by the page.
 export interface UnknownSection {
   readonly k: string;
 }
 
-export type Section = PieSection | TrendSection | UnknownSection;
+export type Section = PieSection | PaceSection | TrendSection | UnknownSection;
 
 export interface ChartPayloadV2 {
   readonly v: 2;
@@ -128,7 +142,7 @@ function isPayloadV2(value: unknown): value is ChartPayloadV2 {
   );
 }
 
-// A section with a string kind; a pie or a trend must also have its own shape.
+// A section with a string kind; a pie, a pace or a trend must also have its own shape.
 function isSection(value: unknown): value is Section {
   if (!isRecord(value) || typeof value['k'] !== 'string') return false;
   switch (value['k']) {
@@ -142,9 +156,35 @@ function isSection(value: unknown): value is Section {
       );
     case 'trend':
       return isBars(value['bars']);
+    case 'pace':
+      return isPace(value);
     default:
       return true;
   }
+}
+
+// A positive whole number of days, a current series of at most that many safe integers, an
+// optional previous series of safe integers, and one or two string captions.
+function isPace(value: Record<string, unknown>): boolean {
+  const days = value['days'];
+  const current = value['current'];
+  const previous = value['previous'];
+  const captions = value['captions'];
+  return (
+    Number.isSafeInteger(days) &&
+    typeof days === 'number' &&
+    days > 0 &&
+    isAmounts(current) &&
+    current.length <= days &&
+    (previous === undefined || isAmounts(previous)) &&
+    isStrings(captions) &&
+    captions.length >= 1 &&
+    captions.length <= 2
+  );
+}
+
+function isAmounts(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => Number.isSafeInteger(item));
 }
 
 // Pie lines of `min` to `max` elements, every one past the third a string, whose amounts sum to

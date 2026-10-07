@@ -8,6 +8,7 @@ import {
   CHART_PAYLOAD_BUDGET,
   chartPayload,
   encodeChartPayload,
+  encodePacePayload,
   type ChartFold,
   type ChartInput,
   type ChartLine,
@@ -105,6 +106,23 @@ describe('encodeChartPayload', () => {
 
   it('writes unpadded base64url, with nothing that splits a fragment parameter', () => {
     expect(encodeChartPayload(OCTOBER, FOLD)).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('encodes a payload of one pace section alone, and refuses it over budget', async () => {
+    const pace = {
+      k: 'pace',
+      days: 30,
+      current: [100, 300],
+      limit: [3000000, 'Лимит: 30 000.00 RSD'],
+      captions: ['Потрачено к 26 сентября: 3.00 RSD', 'Осталось на сегодня: 1 997.00 RSD'],
+    } as const;
+
+    expect(await decode(encodePacePayload('Бюджет: 25 сен – 24 окт', pace))).toEqual({
+      v: 2,
+      title: 'Бюджет: 25 сен – 24 окт',
+      sections: [pace],
+    });
+    expect(encodePacePayload('Бюджет', pace, 10)).toBeUndefined();
   });
 
   it('refuses a total beyond the safe integer range', () => {
@@ -248,6 +266,71 @@ describe('the payload budget', () => {
 
     expect(pie.totalChange).toBe('↑11% к сентябрю');
     expect(pie.lines).toEqual(input.lines);
+  });
+
+  describe('the pace section', () => {
+    const points = (count: number, next: () => number) => {
+      let total = 0;
+      return Array.from({ length: count }, () => (total += Math.floor(next() * 9_999_999)));
+    };
+    const paceInput = (next: () => number): ChartInput => ({
+      ...OCTOBER,
+      lines: many(6, next).map(([name, amount, label, share], i): ChartLine => [
+        name,
+        amount,
+        label,
+        share,
+        `↑${i + 1}%`,
+      ]),
+      totalChange: '↑11% к сентябрю',
+      pace: {
+        k: 'pace',
+        days: 31,
+        current: points(15, next),
+        previous: points(30, next),
+        captions: ['К 15 октября: 1.00 RSD', 'К 15 сентября: 2.00 RSD'],
+      },
+      trend: trend(6, next),
+    });
+    const sizeOf = (input: ChartInput) => encodeChartPayload(input, FOLD, Infinity)?.length ?? 0;
+    const paceOf = (payload: ChartPayloadV2) =>
+      payload.sections.find((section) => section.k === 'pace');
+
+    it('goes between the pie and the trend, round-tripping whole', async () => {
+      const input = paceInput(random(12));
+
+      const decoded = await decode(encodeChartPayload(input, FOLD, Infinity));
+
+      expect(decoded.sections.map((section) => section.k)).toEqual(['pie', 'pace', 'trend']);
+      expect(paceOf(decoded)).toEqual(input.pace);
+    });
+
+    it('sheds the previous series and its caption after the change labels, then the pace, before any trend bar', async () => {
+      const input = paceInput(random(13));
+      // Just under the full payload: the change labels go, the pace stays whole.
+      const changesShed = await decode(encodeChartPayload(input, FOLD, sizeOf(input) - 1));
+      const withoutChanges = encodeChartPayload(input, FOLD, sizeOf(input) - 1)?.length ?? 0;
+
+      // Just under the payload without change labels: the previous series goes.
+      const noPrevious = await decode(encodeChartPayload(input, FOLD, withoutChanges - 1));
+      const lastWithPace = encodeChartPayload(input, FOLD, withoutChanges - 1)?.length ?? 0;
+      // Just under that: the pace section goes, every trend bar kept.
+      const noPace = await decode(encodeChartPayload(input, FOLD, lastWithPace - 1));
+
+      expect(pieOf(changesShed).totalChange).toBeUndefined();
+      expect(paceOf(changesShed)).toEqual(input.pace);
+      expect(pieOf(noPrevious).totalChange).toBeUndefined();
+      expect(paceOf(noPrevious)).toEqual({
+        k: 'pace',
+        days: 31,
+        current: input.pace?.current,
+        captions: ['К 15 октября: 1.00 RSD'],
+      });
+      expect(barsOf(noPrevious)).toEqual(input.trend);
+      expect(paceOf(noPace)).toBeUndefined();
+      expect(barsOf(noPace)).toEqual(input.trend);
+      expect(pieOf(noPace).lines).toEqual(input.lines.map((line) => line.slice(0, 4)));
+    });
   });
 
   it('is undefined when nothing is left to fold or drop', () => {

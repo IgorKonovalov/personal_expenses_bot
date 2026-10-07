@@ -1,4 +1,5 @@
 import { drawTrend } from './bars.js';
+import { drawPace } from './line.js';
 import { messages } from './messages.js';
 import { paletteFor } from './palette.js';
 import {
@@ -6,6 +7,7 @@ import {
   decodeChartPayload,
   payloadParam,
   type ChartPayload,
+  type PaceSection,
   type PieSection,
   type Section,
   type TrendSection,
@@ -153,8 +155,8 @@ function sectionsOf(payload: ChartPayload): readonly Section[] {
   return payload.trend === undefined ? [pie] : [pie, { k: 'trend', bars: payload.trend }];
 }
 
-// The title, then each section in order: a pie, or a trend with bars. A section of a kind the
-// page doesn't know draws nothing.
+// The title, then each section in order: a pie, a pace, or a trend with bars. A section of a
+// kind the page doesn't know draws nothing.
 function drawState<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   root: N,
@@ -171,6 +173,7 @@ function drawState<N extends ChartNode<N>>(
   root.append(title);
   for (const section of state.sections) {
     if (isPie(section)) drawPie(doc, root, state.title, section, theme, onSelect);
+    else if (isPace(section)) root.append(...drawPace(doc, section, theme));
     else if (isTrend(section) && section.bars.length > 0) {
       root.append(drawTrend(doc, section.bars, theme));
     }
@@ -179,6 +182,10 @@ function drawState<N extends ChartNode<N>>(
 
 function isPie(section: Section): section is PieSection {
   return section.k === 'pie';
+}
+
+function isPace(section: Section): section is PaceSection {
+  return section.k === 'pace';
 }
 
 function isTrend(section: Section): section is TrendSection {

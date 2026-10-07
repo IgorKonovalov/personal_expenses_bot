@@ -287,6 +287,126 @@ describe('a v2 chart', () => {
   });
 });
 
+describe('the pace section', () => {
+  const PACE = {
+    k: 'pace',
+    days: 5,
+    current: [10000, 20000, 45000],
+    previous: [30000, 30000, 60000, 80000, 90000],
+    captions: ['К 3 октября: 450.00 RSD', 'К 3 сентября: 600.00 RSD'],
+  };
+  const pacePage = async (pace: object, theme: ChartTheme = {}) => {
+    const root = new FakeNode('body');
+    const hash = `#z=${await deflated({ ...OCTOBER, sections: [OCTOBER_PIE, pace, OCTOBER_TREND] })}`;
+    await showChart(fakeDocument(), root, hash, theme);
+    const lines = root.all().filter((node) => node.tag === 'polyline');
+    const chart = root.children.find((node) => node.children.includes(lines[0] ?? root));
+    return { root, lines, chart };
+  };
+  const pointsOf = (line: FakeNode | undefined) =>
+    (line?.attributes.get('points') ?? '').split(' ').map((point) => point.split(',').map(Number));
+
+  it('draws the previous line muted and the current one in the accent colour, under its captions', async () => {
+    const { root, lines } = await pacePage(PACE, { button: '#5288c1', hint: '#708499' });
+
+    expect(lines.map((line) => line.attributes.get('stroke'))).toEqual(['#708499', '#5288c1']);
+    // Between the donut's legend and the trend: two captions, then the chart.
+    expect(root.children.map((node) => node.tag)).toEqual([
+      'h1',
+      'p',
+      'svg',
+      'p',
+      'ul',
+      'p',
+      'p',
+      'svg',
+      'svg',
+    ]);
+    const captions = root.children.slice(5, 7);
+    expect(captions.map((p) => p.children.map((node) => node.tag))).toEqual([
+      ['svg', 'span'],
+      ['svg', 'span'],
+    ]);
+    expect(captions.map((p) => p.children[1]?.textContent)).toEqual([
+      ' К 3 октября: 450.00 RSD',
+      ' К 3 сентября: 600.00 RSD',
+    ]);
+    // Each swatch's fill is its line's stroke.
+    const swatchFill = (p: FakeNode | undefined) =>
+      p
+        ?.all()
+        .find((node) => node.tag === 'rect')
+        ?.attributes.get('fill');
+    expect(swatchFill(captions[0])).toBe(lines[1]?.attributes.get('stroke'));
+    expect(swatchFill(captions[1])).toBe(lines[0]?.attributes.get('stroke'));
+  });
+
+  it('keeps every point inside the viewBox, the previous line ending at its top', async () => {
+    const { lines, chart } = await pacePage({
+      ...PACE,
+      days: 31,
+      current: Array.from({ length: 15 }, (_, i) => (i + 1) * 3000),
+      previous: Array.from({ length: 30 }, (_, i) => (i + 1) * 3000),
+    });
+
+    expect(chart?.attributes.get('viewBox')).toBe('0 0 320 160');
+    const [previous, current] = lines.map(pointsOf);
+    for (const [x = NaN, y = NaN] of [...(previous ?? []), ...(current ?? [])]) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(320);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThanOrEqual(160);
+    }
+    // 90000 is the top; the current line's 45000 is halfway up.
+    expect(previous?.at(-1)?.[1]).toBe(0);
+    expect(current?.at(-1)?.[1]).toBe(80);
+    expect(previous?.[0]).toEqual([0, 160]);
+    expect(current).toHaveLength(16);
+  });
+
+  it('spans the x-axis over a previous period longer than the shown one', async () => {
+    const { lines } = await pacePage({
+      ...PACE,
+      days: 30,
+      current: [100],
+      previous: Array.from({ length: 31 }, () => 100),
+    });
+
+    expect(pointsOf(lines[0]).at(-1)).toEqual([320, 0]);
+  });
+
+  it('puts a markup-like caption in the DOM as text only', async () => {
+    const name = '<img src=x onerror=alert(1)>';
+    const { root } = await pacePage({ ...PACE, captions: [name] });
+
+    expect(root.all().filter((node) => node.tag === 'img')).toEqual([]);
+    expect(root.all().map((node) => node.textContent)).toContain(` ${name}`);
+  });
+
+  it('draws a v2 payload without a pace section as before', async () => {
+    const { root } = await pacePage({ k: 'nope' });
+
+    expect(root.all().filter((node) => node.tag === 'polyline')).toEqual([]);
+    expect(root.children.map((node) => node.tag)).toEqual(['h1', 'p', 'svg', 'p', 'ul', 'svg']);
+  });
+
+  it('rejects a pace of the wrong shape', async () => {
+    const broken = [
+      { ...PACE, days: 0 },
+      { ...PACE, days: 2 },
+      { ...PACE, current: [1.5] },
+      { ...PACE, previous: ['1'] },
+      { ...PACE, captions: [] },
+      { ...PACE, captions: ['a', 'b', 'c'] },
+    ];
+    for (const pace of broken) {
+      expect(
+        await decodeChartPayload(`#z=${await deflated({ ...OCTOBER, sections: [pace] })}`),
+      ).toBe(undefined);
+    }
+  });
+});
+
 describe('the trend bars', () => {
   const TREND = [
     ['Май', 12500, '125.00 RSD'],

@@ -6,7 +6,12 @@ import { inflateRawSync } from 'node:zlib';
 import { Composer, type Bot, type InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { decodeChartPayload, type PieSection, type Section } from '../../webapp/src/payload.js';
+import {
+  decodeChartPayload,
+  type PaceSection,
+  type PieSection,
+  type Section,
+} from '../../webapp/src/payload.js';
 import { setBudgetLimit } from '../db/budgets.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
@@ -3482,6 +3487,9 @@ describe('/week and /month', () => {
       const hash = url.slice(at);
       return { base: url.slice(0, at), hash, payload: await decodeChartPayload(hash) };
     };
+    // `count` pace points of `amountMinor`.
+    const days = (count: number, amountMinor: number): number[] =>
+      Array<number>(count).fill(amountMinor);
 
     it("puts the month's converted block in a web_app URL on WEBAPP_URL, the text unchanged", async () => {
       const { say, calls } = await summaryBot({ webappUrl });
@@ -3515,6 +3523,14 @@ describe('/week and /month', () => {
               ['Без категории', 7000, '70.00 RSD', '3%', 'новое'],
             ],
             unconverted: ['Без курса НБС: 12.50 EUR'],
+          },
+          {
+            k: 'pace',
+            days: 30,
+            // B on the 1st, C on the 15th, G, D and H on the 27th to 29th; E has no rate.
+            current: [...days(14, 45000), ...days(12, 165000), 185000, 215000, 222000, 222000],
+            previous: [...days(30, 0), 10000],
+            captions: ['К 30 сентября: 2 220.00 RSD', 'К 30 августа: 0.00 RSD'],
           },
           {
             k: 'trend',
@@ -3569,6 +3585,13 @@ describe('/week and /month', () => {
             unconverted: ['Без курса НБС: 5 000.00 KZT'],
           },
           {
+            k: 'pace',
+            days: 7,
+            current: days(3, 1710849),
+            previous: days(7, 0),
+            captions: ['К 30 сентября: 17 108.49 RSD', 'К 23 сентября: 0.00 RSD'],
+          },
+          {
             k: 'trend',
             bars: [
               ['24–30 авг', 0, '0.00 RSD'],
@@ -3616,6 +3639,13 @@ describe('/week and /month', () => {
             totalLabel: '100.00 RSD',
             lines: [['Продукты', 10000, '100.00 RSD', '100%', 'новое']],
             unconverted: [],
+          },
+          {
+            k: 'pace',
+            days: 31,
+            current: [...days(30, 0), 10000],
+            previous: days(31, 0),
+            captions: ['За август 2026: 100.00 RSD', 'За июль 2026: 0.00 RSD'],
           },
           {
             k: 'trend',
@@ -3738,6 +3768,96 @@ describe('/week and /month', () => {
       });
     });
 
+    describe('the pace section', () => {
+      const OCT15 = new Date('2026-10-15T10:00:00Z');
+      const isPace = (section: Section): section is PaceSection => section.k === 'pace';
+      const sectionsOf = async (call: ApiCall | undefined) => {
+        const { payload } = await chartOf(markupOf(call));
+        if (payload?.v !== 2) throw new Error('a v2 payload expected');
+        const pie = payload.sections.find((section): section is PieSection => section.k === 'pie');
+        const pace = payload.sections.find(isPace);
+        const bars = payload.sections.flatMap((section) =>
+          section.k === 'trend' && 'bars' in section ? [section.bars] : [],
+        )[0];
+        if (pie === undefined || pace === undefined) throw new Error('a pie and a pace expected');
+        return { pie, pace, bars };
+      };
+
+      it('runs October through the 15th against all of September, ending at the pie and trend totals', async () => {
+        const { db, say, add, calls } = await summaryBot({ fixture: false, webappUrl, now: OCT15 });
+        storeSept28Rates(db);
+        // 2 October and 28 September both read the list of the 28th.
+        setFxDay(db, '2026-10-02' as LocalDate, '2026-09-28' as LocalDate, OCT15);
+        // Sent at 00:30 on 1 October in Belgrade: dated 1 October.
+        await say('450 кофе', 2, new Date('2026-09-30T22:30:00Z'));
+        add('O1', '2026-10-02', 1250, 'EUR', 'groceries');
+        add('O2', '2026-10-15', 30000, 'RSD', 'transport');
+        add('S1', '2026-09-10', 60000, 'RSD', 'groceries');
+        add('S2', '2026-09-28', 333, 'EUR', 'groceries');
+        add('S3', '2026-09-20', 40000, 'RSD', 'transport');
+        calls.length = 0;
+
+        await say('/month', 3);
+
+        const { pie, pace, bars } = await sectionsOf(calls[0]);
+        expect(pace.days).toBe(31);
+        expect(pace.current).toHaveLength(15);
+        expect(pace.previous).toHaveLength(30);
+        // The coffee is on October day 1, and not in September.
+        expect(pace.current[0]).toBe(45000);
+        // 12.50 EUR at 117.4993 is 1 468.74 RSD, rounded once, as the pie counts it.
+        expect(pace.current[1]).toBe(45000 + 146874);
+        expect(pace.current.at(-1)).toBe(pie.totalMinor);
+        expect(pie.totalMinor).toBe(45000 + 146874 + 30000);
+        // 3.33 EUR is 391.27 RSD.
+        expect(pace.previous?.at(-1)).toBe(bars?.at(-2)?.[1]);
+        expect(pace.previous?.at(-1)).toBe(60000 + 39127 + 40000);
+        // Day min(15, 30) = 15 of September: S1 only.
+        expect(pace.captions).toEqual(['К 15 октября: 2 218.74 RSD', 'К 15 сентября: 600.00 RSD']);
+      });
+
+      it('runs a past August, paged to on 15 October, through all 31 days', async () => {
+        const { say, add, tap, calls } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: OCT15,
+        });
+        add('A1', '2026-08-03', 12000, 'RSD', 'groceries');
+        add('J1', '2026-07-31', 5000, 'RSD', 'groceries');
+        await say('/month', 2);
+        calls.length = 0;
+
+        await tap('sum:m:2026-09', 101);
+        await tap('sum:m:2026-08', 101);
+
+        const { pace } = await sectionsOf(calls[3]);
+        expect(pace.current).toHaveLength(31);
+        expect(pace.current.at(-1)).toBe(12000);
+        expect(pace.previous).toEqual([...days(30, 0), 5000]);
+        expect(pace.captions).toEqual(['За август 2026: 120.00 RSD', 'За июль 2026: 50.00 RSD']);
+      });
+
+      it('names a past week «За неделю 21–27 сентября»', async () => {
+        const { say, add, tap, calls } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: OCT15,
+        });
+        add('W1', '2026-09-22', 10000, 'RSD', 'groceries');
+        await say('/week', 2);
+        calls.length = 0;
+
+        await tap('sum:w:2026-09-21', 101);
+
+        const { pace } = await sectionsOf(calls[1]);
+        expect(pace.days).toBe(7);
+        expect(pace.captions).toEqual([
+          'За неделю 21–27 сентября: 100.00 RSD',
+          'За неделю 14–20 сентября: 0.00 RSD',
+        ]);
+      });
+    });
+
     it('is on /week too, titled with the week', async () => {
       const { say, calls } = await summaryBot({ webappUrl });
 
@@ -3745,7 +3865,18 @@ describe('/week and /month', () => {
 
       expect((await chartOf(markupOf(calls[0]))).payload).toMatchObject({
         title: 'Неделя, 28 сентября – 4 октября',
-        sections: [{ k: 'pie', totalMinor: 37000 }, { k: 'trend' }],
+        sections: [
+          { k: 'pie', totalMinor: 37000 },
+          {
+            k: 'pace',
+            days: 7,
+            // D on Monday 28th, H on the 29th; G on Sunday 27th closes the week before.
+            current: [30000, 37000, 37000],
+            previous: [...days(6, 0), 20000],
+            captions: ['К 30 сентября: 370.00 RSD', 'К 23 сентября: 0.00 RSD'],
+          },
+          { k: 'trend' },
+        ],
       });
     });
 

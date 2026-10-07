@@ -9,6 +9,7 @@ import {
   ledgerPeriodSummary,
   type PeriodSummary,
 } from '../../services/periodSummary.js';
+import { periodPace } from '../../services/periodPace.js';
 import { periodChart } from '../../services/periodTrend.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -29,7 +30,8 @@ import { ensureUser } from './start.js';
 // (handlers/items.ts), and [По категориям] into its drill-down (handlers/drill.ts).
 
 // The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with each
-// category's change against the previous period and the trend of its converted totals under it.
+// category's change against the previous period, its spending pace by day over the previous
+// period's, and the trend of its converted totals under it.
 function summaryView(summary: PeriodSummary, chartUrl: string | undefined): ScreenView {
   const row = [
     InlineKeyboard.text(messages.periodPrev(summary.previous), summaryPageData(summary.previous)),
@@ -58,7 +60,8 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
 
 // The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment's `z`
 // (ADR-0025, ADR-0045), rebuilt on every render, the trend ending at the shown period and each
-// line compared with the previous period (periodChart). Undefined outside a private chat
+// line compared with the previous period (periodChart), and the pace of both (periodPace).
+// Undefined outside a private chat
 // (`web_app` buttons work only there), without WEBAPP_URL, when the first block isn't in the
 // ledger's currency (then nothing converted, so there's no pie, as with no expenses at all), and
 // when the payload can't fit its budget.
@@ -71,21 +74,21 @@ function chartUrlOf(
   if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
   const [converted, ...unconverted] = summary.currencies;
   if (converted?.currency !== summary.ledger.defaultCurrency) return undefined;
-  const chart = periodChart(deps, {
-    user,
-    ledgerId: summary.ledger.id,
-    period: summary.period,
-    now: deps.now(),
-  });
+  const read = { user, ledgerId: summary.ledger.id, period: summary.period, now: deps.now() };
+  const chart = periodChart(deps, read);
+  const pace = periodPace(deps, read);
   const payload = encodeChartPayload(
-    messages.chart({
-      period: summary.period,
-      converted,
-      approximate: summary.convertedFrom.length > 0,
-      unconverted,
-      trend: chart?.trend ?? [],
-      comparison: chart?.comparison,
-    }),
+    {
+      ...messages.chart({
+        period: summary.period,
+        converted,
+        approximate: summary.convertedFrom.length > 0,
+        unconverted,
+        trend: chart?.trend ?? [],
+        comparison: chart?.comparison,
+      }),
+      ...(pace === undefined ? {} : { pace: messages.chartPace(pace) }),
+    },
     messages.chartFold(converted.currency),
   );
   return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
