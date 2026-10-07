@@ -279,7 +279,7 @@ interface TrendSection {
 |---|---|---|---|
 | 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | 6b7d2f3 |
 | 2: Comparison with the previous period | dev | done | bfcbaed |
-| 3: The URL-limit probe | dev | done | committed with this row |
+| 3: The URL-limit probe | dev | done | 6f6031e |
 | 4: Measure on real clients and check v2 opens | human | not started | |
 
 ### Notes
@@ -312,5 +312,18 @@ interface TrendSection {
   was not run against Telegram in this session; that is Phase 4.
 
 ### Close triggers
+
+- Phases 1-3 (`dev`) are done in 6b7d2f3, bfcbaed and 6f6031e. Phase 4 (`human`, does not block
+  merge) has not started.
+- Gate on the tip (6f6031e): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  139 files and 1953 tests passed; `pnpm build` exit 0; `pnpm build:webapp` exit 0;
+  `node --test "scripts/*.test.mjs"` exit 0, 7 tests passed; `node scripts/check-doc-links.mjs`
+  exit 0, 335 relative links resolve.
+- `git diff --stat 3bd1e1e -- webapp/index.html webapp/src/scan.ts webapp/src/scan.test.ts src/db
+  pnpm-lock.yaml` is empty: no CSP, scan-mode, storage or dependency change.
+- `CHART_PAYLOAD_BUDGET` is still 2048, now measured on `z`. `CHART_PAYLOAD_VERSION` is 2.
+- New files: `src/domain/shares.ts`, `scripts/probe-webapp-url.ts` (+ tests). New bot messages:
+  `chartShareTiny`, `chartChangeUp`, `chartChangeDown`, `chartChangeZero`, `chartChangeNew`. New
+  page message: `chartUnsupported`; `chartBroken` reworded. New package script `probe:webapp`.
 
 ## Followups
