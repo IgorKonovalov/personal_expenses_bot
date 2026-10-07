@@ -16,6 +16,8 @@ export interface Config {
   readonly backupKeep: number;
   // An external donation page, shown as a /donate button (ADR-0027). Unset hides the button.
   readonly donateUrl: string | undefined;
+  // The static Mini App page (ADR-0025), behind the private menu's «📷 Скан». Unset hides it.
+  readonly webappUrl: string | undefined;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -84,6 +86,14 @@ export function loadConfig(env: Env): Config {
     throw new Error(`DONATE_URL must be an https: URL, such as https://ko-fi.com/example`);
   }
 
+  // The bot appends its own `#m=…` fragment, so the URL may not carry one.
+  const webappUrl = optional(env, 'WEBAPP_URL');
+  if (webappUrl !== undefined && (!isHttpsUrl(webappUrl) || webappUrl.includes('#'))) {
+    throw new Error(
+      `WEBAPP_URL must be an https: URL without a #fragment, such as https://example.github.io/bot/`,
+    );
+  }
+
   return {
     botToken,
     adminTelegramId,
@@ -95,6 +105,7 @@ export function loadConfig(env: Env): Config {
     backupDir: optional(env, 'BACKUP_DIR'),
     backupKeep: Number(backupKeep),
     donateUrl,
+    webappUrl,
   };
 }
 

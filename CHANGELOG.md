@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.25.0 (2026-10-07)
+
+From Plan 0032 (live QR scan in a Mini App).
+
+- With `WEBAPP_URL` set, the private-chat menu from `/start` and `/help` gains «📷 Скан». It opens
+  a static Mini App page that starts Telegram's live QR scanner, and the first code read is
+  recorded exactly like a pasted receipt link, duplicates included.
+- A scanned code that isn't a receipt link gets a short reply and records nothing.
+- Clients without the scanner (Telegram Desktop and web) show a line saying so; the photo and
+  link paths remain.
+
 ## 0.24.0 (2026-10-06)
 
 From Plan 0026 (monthly summary push).

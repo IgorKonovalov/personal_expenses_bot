@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <!-- No connect-src: the page makes no network request. Data leaves only by sendData (ADR-0025). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src https://telegram.org 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Скан чека</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script type="module" src="main.js"></script>
+  </head>
+  <body>
+    <p id="status"></p>
+  </body>
+</html>

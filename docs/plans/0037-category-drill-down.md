@@ -1,0 +1,246 @@
+# 0037: Category drill-down: from /week or /month to a category's expenses, and on to each expense's card
+
+> **Status:** approved (2026-10-07)
+> **Created:** 2026-10-06
+> **Related ADRs:** [ADR-0040](../adrs/0040-expense-card-inside-a-screen-anchor.md) (the card
+> inside a screen anchor), [ADR-0011](../adrs/0011-navigation-model.md) (cards, screens, the
+> anchor), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
+
+## TL;DR
+
+`/week` and `/month` gain a `[По категориям]` button. It turns the summary into a picker of the
+period's categories. A category shows that period's expenses in it, newest first, eight to a page,
+each line numbered, with number buttons under it. A number opens that expense's real card in the
+same message, with `[« Назад]` to the list. That lets the user fix a misfiled expense's category
+(or its amount, date, or delete it) straight from the report, instead of scrolling the chat for
+its confirmation. Private chats only. The first thing the user sees: `/month`, `[По категориям]`,
+`[Продукты]`, `[3]`, `[Категория]` → `Кафе`, `[« Назад]`, and the list no longer has it.
+
+## Context & problem
+
+The summary shows totals per category and nothing else (`src/bot/handlers/summary.ts`). The only
+way to change an expense's category is the `[Категория]` button on its card, and the card is the
+confirmation message in the chat (ADR-0011). Finding a wrong entry from last month means
+scrolling. Plan 0004 named the drill-down as its natural next plan under "does NOT do".
+
+A card has never lived inside a screen before. Its `exp:*` handlers re-render it with no way
+back, and its callback data has no room to carry one. ADR-0040 settles how the card gets its back
+row from the anchor's session row.
+
+## Decision
+
+The drill-down is three new states of the summary screen, in the summary's own anchor: a category
+picker, an expense list, and an expense card. Each one is recorded in `SummaryScreen.drill`. The
+picker and the list are screen callbacks (`drl:*`), and only the anchor accepts them (ADR-0011).
+The card is the real card, drawn by the existing code, plus a back row that one helper adds when
+the anchor says the card is in a drill-down (ADR-0040). We rejected a re-categorise picker in the
+screen with no card, because it can't edit or delete and duplicates the card's picker. We rejected
+sending the card as a new message, because it fills the chat and has no way back (both in
+ADR-0040). Group chats get no drill-down. Their report pages statelessly with no per-user anchor,
+a list would show every description to the whole chat, and most taps would be refused because
+editing is author-only.
+
+The UX (states, copy, callback layout) comes from a ux-telegram design on 2026-10-06.
+
+## Architecture diagram
+
+```mermaid
+stateDiagram-v2
+    Digest: Digest (sum:*)
+    Picker: Category picker (drl:p)
+    List: Expense list (drl:c)
+    Card: Expense card (drl:e)
+    Prompt: Edit prompt (ExpenseScreen.returnTo)
+    Digest --> Picker: [По категориям]
+    Picker --> Digest: [« Назад] (sum:m|w)
+    Picker --> List: [category]
+    List --> Picker: [« Назад] (drl:p, the page holding it)
+    List --> Card: [n]
+    Card --> List: [« Назад] (drl:back)
+    Card --> Card: exp:* actions keep the back row
+    Card --> Prompt: [Изменить] -> field
+    Prompt --> Card: answer / [Отмена]
+    Prompt --> List: drl:back after expiry
+```
+
+## Implementation phases
+
+Each phase ships as its own commit. `dev` implements all phases in one session with no review
+between phases. The architect reviews once at the end, in a fresh session.
+
+### Phase 1: The picker and the list, read-only
+- **Owner skill:** dev
+- **What:** `[По категориям]` on the summary opens the category picker. A category opens its
+  numbered, paged expense list. `[« Назад]` goes back up each level. Number buttons are present
+  but answer silently until Phase 2.
+- **Files touched:** `src/services/periodCategory.ts` (new) + `.test.ts`, `src/db/expenses.ts`
+  (only if the existing period query can't serve it), `src/services/flowSessions.ts`
+  (`SummaryScreen.drill`), `src/bot/callbackData.ts`, `src/bot/handlers/drill.ts` (new) +
+  `drill.test.ts`, `src/bot/handlers/summary.ts`, `src/bot/messages.ts` + `messages.test.ts`,
+  `src/bot/bot.ts`, `src/bot/flows.ts` (the summary branch of the restore switch, if the new
+  `drill` field needs it).
+- **Done when:**
+  - The summary keyboard is `[◀ prev] [next ▶]` / `[По категориям] [Позиции]`. A period with
+    no expenses has no `[По категориям]`. The group report (`src/bot/group/summary.ts`) carries no
+    `drl:*` button, pinned in `src/bot/group/group.test.ts`.
+  - **Picker order** follows the digest: the first currency block's lines by amount, then the
+    categories found only in the unconverted blocks in order of appearance, then
+    `messages.uncategorized` last. A category in two blocks gets one button. Pinned with a fixture
+    holding RSD expenses in Продукты and Кафе and an unconverted-currency expense in Продукты:
+    the buttons are exactly Продукты, Кафе.
+  - **List content:** expenses of that ledger, period and category (`null` = uncategorized),
+    newest first by `occurred_on`, then `occurred_at`, then id. Deleted expenses are excluded.
+    Each line shows `{n}. {d MMM} — {original amount and currency} · {description}`, with the
+    description HTML-escaped and cut to 40 characters plus `…`. In a shared ledger, the author's
+    member name follows, or `messages.unnamedAuthor` when it has none.
+  - **Header totals equal the digest's line(s) for that category.** Both sum per-expense
+    conversions (`summarizeConverted`), so this holds by construction. A service test asserts it
+    with a fixture holding one foreign expense with a rate and one without: the list's blocks
+    equal the matching lines of `ledgerPeriodSummary`.
+  - **Paging:** 19 expenses in a category give 3 pages (8, 8, 3). Page 3 shows lines 17–19 and
+    buttons `[17] [18] [19]`, and the pager reads `[◀] [3/3] [▶]`. Number buttons go in rows of 4.
+  - **Back:** the list's `[« Назад]` opens the picker page that holds its category (category 10
+    of 12 → picker page 2). The picker's `[« Назад]` is the digest of the same period, and it
+    clears `drill`.
+  - **Empty category** (every expense moved out): `drillListEmpty` with `[« Назад]` only.
+  - **Guards**, each pinned with a test: a `drl:*` tap on a message that isn't the anchor gets
+    `staleScreen` and edits nothing. A ledger locked between taps (ADR-0020) gets
+    `ledgerLockedToast` and edits nothing. A forged period, a future period, or a category id
+    absent from the ledger answers silently and edits nothing (like the pager). A user who left
+    the ledger gets the same.
+  - Every `drl:*` builder goes through `assertCallbackData`. The widest,
+    `drl:c:w:2026-09-28:<16-digit id>:9999`, is 40 bytes, pinned in a test.
+  - `messages.uncategorized` replaces the four inline `'Без категории'` literals in
+    `src/bot/messages.ts`, and the existing message tests still pass unchanged.
+
+### Phase 2: The card in the drill-down
+- **Owner skill:** dev
+- **What:** a number opens the expense's card in the anchor. One helper adds `[« Назад]` to every
+  card re-rendered on the anchor while it shows this expense in a drill-down (ADR-0040), and a
+  viewer who isn't the author sees `[« Назад]` alone.
+- **Files touched:** `src/bot/handlers/card.ts` (the helper), `src/bot/handlers/drill.ts` +
+  `drill.test.ts`, `src/bot/handlers/category.ts`, `src/bot/handlers/edit.ts`,
+  `src/bot/handlers/receipt.ts`, `src/bot/handlers/recurring.ts`, `src/bot/flows.ts`,
+  `src/services/flowSessions.ts`, `src/bot/callbackData.ts`.
+- **Done when:**
+  - `[n]` (`drl:e:<uuid>`, 42 bytes) is accepted only on the anchor while it shows a list, and only
+    for an expense of the anchor's ledger. Otherwise: `staleScreen`, or `expenseNotFound`, with
+    no edit. It renders `cardFor(cardView(...))` plus `[« Назад]` on its own bottom row, and
+    records `drill.expenseId`.
+  - **The back row survives every card action on the anchor.** One test per re-render site taps
+    the action on a drill-down card and asserts the last keyboard row is `[« Назад]`
+    (`drl:back`): set category (`category.ts`, both the change and the picker's back via
+    `SHOW_EXPENSE`), delete and restore (`card.ts`), the date quick button (`edit.ts`), receipt
+    items' back and retry (`receipt.ts`), repeat's back (`recurring.ts`).
+  - **Old cards are unchanged:** the same actions on a confirmation that isn't the anchor produce
+    no `drl:back` row, pinned with one test per action kind.
+  - **Read-only for others:** in a shared ledger, another member's expense opens with
+    `[« Назад]` as its only button.
+  - **Back to the list:** after moving the expense from Продукты to Кафе, `drl:back` shows
+    Продукты's list on the same page, re-read from the DB, without that expense, and its header
+    total is lower by exactly that expense's amount (converted the way the digest converts it).
+    Back from a deleted expense's card shows the list without it. If the page no longer exists
+    (the last expense of the last page moved out), the last page that does is shown.
+
+### Phase 3: Edit prompts from the drill-down card
+- **Owner skill:** dev
+- **What:** an edit prompt started from a drill-down card keeps the way back. `ExpenseScreen`
+  gains `returnTo: SummaryScreen`. When the flow ends, the anchor becomes that summary screen
+  again, and the card it restores has `[« Назад]`.
+- **Files touched:** `src/services/flowSessions.ts`, `src/bot/handlers/edit.ts`,
+  `src/bot/flows.ts`, `src/bot/handlers/drill.ts` + `drill.test.ts`.
+- **Done when:**
+  - Typing a valid amount, typing `/cancel`, tapping `[Отмена]`, and the `gone` path each leave
+    the anchor as the summary screen with `drill.expenseId` set, and the card's last row as
+    `[« Назад]`. One test per path.
+  - A prompt left past `FLOW_TTL_MS`: tapping `drl:back` on the card still shows the list
+    (`drl:back` accepts an `ExpenseScreen` with `returnTo`).
+  - An edit started from an ordinary confirmation stores no `returnTo`, and its restored card has
+    no back row (the existing edit tests stay green unchanged).
+  - A date edit that moves the expense out of the period: back shows the list without it.
+
+### Phase 4: Live check
+- **Owner skill:** human
+- **What:** on the deployed bot, with real data: `/month` → `[По категориям]` → a category → an
+  expense → change its category → `[« Назад]` twice → `[« Назад]` to the digest.
+- **Done when:** the moved expense left the first category's list, the digest's two category
+  lines changed by its amount, and each `[« Назад]` landed where the diagram says. Also checked
+  once in a shared ledger (another member's expense opens read-only), and once on a phone, where
+  the number rows don't wrap.
+
+## Data shapes
+
+```ts
+// illustrative: src/services/flowSessions.ts
+interface PeriodRef { readonly kind: 'week' | 'month'; readonly key: string } // periodKey()
+
+type Drill =
+  | { readonly level: 'picker'; readonly period: PeriodRef; readonly page: number }
+  | { readonly level: 'list'; readonly period: PeriodRef; readonly categoryId: number | null;
+      readonly page: number; readonly expenseId?: ExpenseId } // expenseId: the card is open
+
+interface SummaryScreen { readonly name: 'summary'; readonly ledgerId: LedgerId; readonly drill?: Drill }
+interface ExpenseScreen { readonly name: 'expense'; readonly expenseId: ExpenseId; readonly returnTo?: SummaryScreen }
+```
+
+| Button | Callback data | Max bytes |
+|---|---|---|
+| `[По категориям]`, picker pager, list's back | `drl:p:<m\|w>:<key>:<page>` | 23 |
+| A category, list pager | `drl:c:<m\|w>:<key>:<categoryId\|n>:<page>` | 40 |
+| `[n]` | `drl:e:<uuid>` | 42 |
+| The card's `[« Назад]` | `drl:back` | 8 |
+
+The picker's `[« Назад]` reuses `sum:<m|w>:<key>`, and the summary handler clears `drill`.
+
+Copy (messages module, polite "вы", Russian plurals through the existing helper):
+
+| Key | Text |
+|---|---|
+| `drillButton` | `По категориям` |
+| `drillPicker(view)` | `<b>{period title} — «{ledger}»</b>`, the category lines unfolded, then `Выберите категорию, чтобы увидеть её траты.` |
+| `drillList(view)` | `<b>{category} · {period title, lower case}</b>` / `«{ledger}» · {N трат} · {totals as in the digest}`, a blank line, the numbered lines |
+| `drillListEmpty(view)` | `В категории «{category}» за {period, lower case} трат нет.` |
+| `uncategorized` | `Без категории` |
+
+## Risks & open questions
+
+- **A missed re-render site** drops the back row and strands the user on a card inside the
+  drill-down (ADR-0040's main cost). Phase 2 pins every site in today's tree. A card action added
+  later must call the helper. The close review greps `recordedCard(`, `deletedCard(` and
+  `cardFor(` against the helper.
+- **Privacy:** the list shows descriptions, so it renders only after the same membership and
+  sealed-ledger checks as the digest (`openExpenses`). Group chats are excluded for this reason
+  too. Nothing new is logged above debug.
+- **Money:** list lines show original amounts only. Header totals come from the same
+  `summarizeConverted` the digest uses, never from adding up the lines' amounts.
+- **Time:** the period and every line's date are in the ledger's effective timezone, the same as
+  the digest. A shared ledger in another zone is covered by the shared-ledger list test.
+- **Idempotency:** every `drl:*` tap is navigation and only re-renders. Category changes keep
+  their existing `unchanged` path.
+- **Session row size:** `drill` adds a few short fields to the summary anchor's JSON.
+
+## What this plan does NOT do
+
+- No drill-down in group chats. That would need a per-user anchor in groups, a future plan if
+  asked.
+- No drill-down from `/today`, `/tag` or the summary push.
+- No search or filter by description or amount.
+- No bulk re-categorisation ("move all of these to Кафе").
+- No `/help` or tip copy for the button. It sits on the summary, where it's found. A tip can come
+  with a later onboarding pass.
+
+## Implementation log
+
+| phase | owner | state | commit |
+|---|---|---|---|
+| 1: The picker and the list, read-only | dev | not started | |
+| 2: The card in the drill-down | dev | not started | |
+| 3: Edit prompts from the drill-down card | dev | not started | |
+| 4: Live check | human | not started | |
+
+### Notes
+
+### Close triggers
+
+## Followups

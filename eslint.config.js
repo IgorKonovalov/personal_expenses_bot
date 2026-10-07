@@ -31,6 +31,7 @@ export default tseslint.config(
       'node_modules/',
       'coverage/',
       'dist/',
+      'webapp/dist/',
       'data/',
       '.claude/',
       'scripts/**/*.mjs',
@@ -136,6 +137,23 @@ export default tseslint.config(
     files: ['src/services/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', { paths: [botFramework], patterns: [botLayer] }],
+    },
+  },
+  {
+    // The Mini App page (ADR-0025) is built alone by plain tsc and served statically: it shares
+    // no code with the bot and has no runtime dependencies.
+    files: ['webapp/**/*.ts'],
+    ignores: ['webapp/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['**/src/**', '../../*'], message: 'The page imports only webapp/src/.' },
+            { regex: '^[^.]', message: 'The page has no runtime dependencies.' },
+          ],
+        },
+      ],
     },
   },
   {

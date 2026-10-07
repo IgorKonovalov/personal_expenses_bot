@@ -27,9 +27,11 @@ src/
 ├── heartbeat.ts     # liveness file + the Docker health-check entry
 ├── version.ts       # the running version, read from package.json at boot
 └── index.ts         # boot: config, db, bot
+webapp/              # the static Mini App page (ADR-0025): plain tsc, no deps, own messages module
 Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
 docker-compose.yml   # the one service: volume, backup bind mount, heartbeat health check
 .github/workflows/   # deploy.yml: `check` on PRs and pushes, SSH deploy on push to main
+                     #   pages.yml: builds webapp/ and publishes it to GitHub Pages
 docs/
 ├── adrs/            # NNNN-<slug>.md: decisions + rejected alternatives. Append-only once accepted.
 │   └── README.md    #   ADR index + next free number

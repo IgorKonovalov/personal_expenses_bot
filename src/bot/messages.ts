@@ -1040,6 +1040,7 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.25.0': html`Кнопка «📷 Скан» в меню открывает сканер QR-кода прямо в Telegram: наведите камеру на чек, и трата запишется без фото. Кнопка появится после следующего /start или /help и работает в мобильных приложениях Telegram.`,
   '0.24.0': html`Итоги приходят сами: утром после конца месяца, в 09:00 по вашему времени, бот присылает сумму и категории с изменением к прошлому месяцу, итог бюджета и три самые крупные траты. С бюджетом итоги приходят за платёжный период. Итоги недели по понедельникам включаются в /settings, там же и под самим сообщением итоги отключаются.`,
   '0.23.0': html`Позиции чека теперь свёрнуты прямо в карточке — одно касание открывает их. /week и /month сворачивают категории под итогом. Кнопка [Позиции] в /today, /week и /month показывает купленное за период по категориям. В /settings можно включить удаление своих сообщений после записи траты.`,
   '0.22.0': html`Новые пользователи получают приветствие и проверку настроек: часовой пояс и валюту. Иногда после ответа приходит короткая подсказка о функции, не чаще раза в день; отключаются они кнопкой под подсказкой или в /settings. /start показывает знакомство заново.`,
@@ -1675,6 +1676,10 @@ export const messages = {
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
   // A photo where a QR symbol was located but no pass read it (ADR-0034).
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
+  // The private menu's `web_app` button that opens the Mini App's live QR scanner (ADR-0025).
+  scanButton: '📷 Скан',
+  // A scanned QR whose text isn't a receipt verification link.
+  scanNotReceipt: html`Этот QR-код не похож на чек из Сербии или Черногории. Наведите камеру на QR-код чека.`,
 
   // A bank statement PDF (Plan 0027): its card purchases, the new ones' totals per currency and
   // one page of rows, above [Записать все (N)], the pager and [Отмена].
