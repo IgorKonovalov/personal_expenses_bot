@@ -469,7 +469,8 @@ New message: `heavyJobBusy`.
   Phase 7 (`human`, does not block merge) has not started.
 - Gate on the tip (69afe53): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
   134 files and 1839 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs`
-  exit 0, 309 relative links resolve.
+  exit 0, 309 relative links resolve. Review round 2 reran the gate on ce354c2 (docs-only
+  changes since 69afe53) with the same results.
 - `pnpm bench:due 10000`: warm 2,610.4 ms before Phase 4, warm 58.1 ms after it (Notes).
 - New migration: `0027_unreachable_users.sql` (`users.unreachable_at`).
 - New message: `heavyJobBusy`. Changed copy input: `deleteAccountPrompt` now gets 28 days with
