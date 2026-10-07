@@ -14,9 +14,9 @@ const BAR_HEIGHT = 10;
 const WIDTH = 320;
 const MAX_WIDTH = '480px';
 
-// The trend section: one horizontal bar per period, oldest at the top, its length in proportion to the largest
-// total. A period with nothing spent keeps its row and text, with a zero-length bar. The shown
-// (last) period's bar is in the theme's button colour, earlier ones in the same colour at half
+// The trend section: one horizontal bar per period, oldest at the top, its length in proportion
+// to the largest total. A period with nothing spent keeps its row and text, with a zero-length
+// bar. The shown (last) period's bar is in the theme's button colour, earlier ones in the same colour at half
 // opacity. Floats here are geometry only; every amount shown is the bot's label.
 export function drawTrend<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
