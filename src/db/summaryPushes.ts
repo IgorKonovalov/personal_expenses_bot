@@ -45,6 +45,32 @@ export function findSummaryPush(
     .get(ledgerId, kind, periodKey);
 }
 
+export interface PushKey {
+  readonly ledgerId: LedgerId;
+  readonly kind: SummaryKind;
+  readonly periodKey: string;
+}
+
+// Which of `keys` are claimed, as `claimKey` strings. One statement whatever the number of keys,
+// each looked up by the primary key: a scheduler tick checks every recipient's candidates at once.
+export function listClaimedPushes(db: Db, keys: readonly PushKey[]): Set<string> {
+  const rows = db
+    .prepare<[string], { ledger_id: string; kind: SummaryKind; period_key: string }>(
+      `SELECT s.ledger_id, s.kind, s.period_key
+         FROM json_each(?) j
+         JOIN summary_pushes s
+           ON s.ledger_id = json_extract(j.value, '$[0]')
+          AND s.kind = json_extract(j.value, '$[1]')
+          AND s.period_key = json_extract(j.value, '$[2]')`,
+    )
+    .all(JSON.stringify(keys.map((key) => [key.ledgerId, key.kind, key.periodKey])));
+  return new Set(rows.map((row) => claimKey(row.ledger_id as LedgerId, row.kind, row.period_key)));
+}
+
+export function claimKey(ledgerId: LedgerId, kind: SummaryKind, periodKey: string): string {
+  return `${ledgerId} ${kind} ${periodKey}`;
+}
+
 // Account deletion: the ledger's rows go with it. Returns how many went.
 export function deleteLedgerSummaryPushes(db: Db, ledgerId: LedgerId): number {
   return db.prepare<[string]>('DELETE FROM summary_pushes WHERE ledger_id = ?').run(ledgerId)

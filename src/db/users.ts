@@ -1,5 +1,6 @@
+import { toCurrencyCode } from '../domain/currencies.js';
 import type { Db } from './connection.js';
-import type { LedgerId } from './ledgers.js';
+import type { Ledger, LedgerId } from './ledgers.js';
 
 export type UserId = string & { readonly __brand: 'UserId' };
 
@@ -305,21 +306,74 @@ export interface PushRecipient {
 // Every user with either push on who can still be written to: not blocked, not deleted, not
 // unreachable, with a Telegram identity.
 export function listPushRecipients(db: Db): PushRecipient[] {
+  return listPushTargets(db).map((target) => target.recipient);
+}
+
+// A push recipient with what deciding their due pushes reads: the personal ledger and its
+// budget's period start day.
+export interface PushTarget {
+  readonly recipient: PushRecipient;
+  // Undefined when the user has no personal ledger.
+  readonly ledger: Ledger | undefined;
+  // 1 without a budget.
+  readonly periodStartDay: number;
+}
+
+interface PushTargetRow extends UserRow {
+  external_id: string;
+  monthly_push: number;
+  weekly_push: number;
+  ledger_id: string | null;
+  ledger_name: string | null;
+  default_currency: string | null;
+  ledger_timezone: string | null;
+  period_start_day: number | null;
+}
+
+// listPushRecipients' users with their personal ledger and budget, in one query: a scheduler
+// tick reads every recipient, so nothing here may cost a statement per user.
+export function listPushTargets(db: Db): PushTarget[] {
   return db
-    .prepare<[], UserRow & { external_id: string; monthly_push: number; weekly_push: number }>(
-      `SELECT u.id, u.timezone, u.active_ledger_id, i.external_id, u.monthly_push, u.weekly_push
-         FROM users u JOIN auth_identities i ON i.user_id = u.id AND i.provider = 'telegram'
+    .prepare<[], PushTargetRow>(
+      `SELECT u.id, u.timezone, u.active_ledger_id, i.external_id, u.monthly_push, u.weekly_push,
+              l.id AS ledger_id, l.name AS ledger_name, l.default_currency,
+              l.timezone AS ledger_timezone, b.period_start_day
+         FROM users u
+         JOIN auth_identities i ON i.user_id = u.id AND i.provider = 'telegram'
+         LEFT JOIN ledgers l ON l.owner_user_id = u.id AND l.kind = 'personal'
+         LEFT JOIN ledger_budgets b ON b.ledger_id = l.id
         WHERE (u.monthly_push = 1 OR u.weekly_push = 1)
           AND u.blocked_at IS NULL AND u.deleted_at IS NULL AND u.unreachable_at IS NULL
         ORDER BY u.id`,
     )
     .all()
     .map((row) => ({
-      user: toUser(row),
-      telegramId: Number(row.external_id),
-      monthly: row.monthly_push === 1,
-      weekly: row.weekly_push === 1,
+      recipient: {
+        user: toUser(row),
+        telegramId: Number(row.external_id),
+        monthly: row.monthly_push === 1,
+        weekly: row.weekly_push === 1,
+      },
+      ledger: toPersonalLedger(row),
+      periodStartDay: row.period_start_day ?? 1,
     }));
+}
+
+function toPersonalLedger(row: PushTargetRow): Ledger | undefined {
+  if (row.ledger_id === null || row.ledger_name === null || row.default_currency === null) {
+    return undefined;
+  }
+  const defaultCurrency = toCurrencyCode(row.default_currency);
+  if (defaultCurrency === undefined) {
+    throw new Error(`ledger ${row.ledger_id} has an unknown default currency`);
+  }
+  return {
+    id: row.ledger_id as LedgerId,
+    kind: 'personal',
+    name: row.ledger_name,
+    defaultCurrency,
+    timezone: row.ledger_timezone,
+  };
 }
 
 function toUser(row: UserRow): User {

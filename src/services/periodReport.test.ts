@@ -307,6 +307,51 @@ describe('dueSummaries and claimSummary', () => {
     expect(dueSummaries(deps, NOW)).toHaveLength(1);
   });
 
+  it('prepares as many statements for 3 recipients as for 30', () => {
+    // `count` recipients in all: the beforeEach user plus more, some weekly, some on a payday
+    // budget, one claimed.
+    const preparedFor = (count: number): { prepared: number; due: number } => {
+      db = openDatabase(':memory:');
+      runMigrations(db, NOW);
+      deps = { ...deps, db };
+      for (let i = 0; i < count; i++) {
+        const { user: u, ledger: l } = provisionUser(deps, {
+          provider: 'telegram',
+          externalId: String(5000 + i),
+          defaultTimezone: i % 2 === 0 ? 'Europe/Belgrade' : 'Asia/Tokyo',
+          defaultCurrency: 'RSD',
+          now: NOW,
+        });
+        if (i % 3 === 0) setPushOn(db, u.id, 'weekly', true);
+        if (i % 4 === 1) setBudgetStartDay(db, l.id, { startDay: 15, currency: 'RSD' }, NOW);
+        if (i === 2) {
+          claimSummaryPush(db, {
+            ledgerId: l.id,
+            kind: 'period',
+            periodKey: '2026-09',
+            outcome: 'sent',
+            createdAt: NOW,
+          });
+        }
+      }
+      let prepared = 0;
+      const prepare = db.prepare.bind(db);
+      db.prepare = (source: string) => {
+        prepared += 1;
+        return prepare(source);
+      };
+      const due = dueSummaries(deps, new Date('2026-10-05T07:00:00Z')).length;
+      return { prepared, due };
+    };
+
+    const few = preparedFor(3);
+    const many = preparedFor(30);
+
+    expect(few.due).toBeGreaterThan(0);
+    expect(many.due).toBeGreaterThan(few.due);
+    expect(many.prepared).toBe(few.prepared);
+  });
+
   it('turns a push off once', () => {
     expect(turnSummaryPushOff(deps, user, 'monthly')).toBe(true);
     expect(turnSummaryPushOff(deps, user, 'monthly')).toBe(false);

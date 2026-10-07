@@ -366,8 +366,8 @@ New message: `heavyJobBusy`.
 |---|---|---|---|
 | 1: download timeouts and slow-update log | dev | done | 8163c57 |
 | 2: unreachable users | dev | done | 5a1f804 |
-| 3: paced, retried, capped scheduled sends | dev | done | committed with this row |
-| 4: due pushes from one bulk read | dev | not started | |
+| 3: paced, retried, capped scheduled sends | dev | done | 882f4e3 |
+| 4: due pushes from one bulk read | dev | done | committed with this row |
 | 5: photos and statements in a child process | dev | not started | |
 | 6: compressed backups | dev | not started | |
 | 7: live checks | human | not started | |
@@ -392,6 +392,16 @@ New message: `heavyJobBusy`.
   plus the import.
 - Phase 3, observed and not acted on: shutdown waits for the tick in flight, which can now hold
   up to 200 paced sends (8 s) plus any 429 sleeps; Docker's default stop grace is 10 s.
+- Phase 4: `listPushRecipients` keeps its shape and becomes a projection of the new
+  `listPushTargets` (the one joined query, with the personal ledger LEFT JOINed, so a user with
+  no personal ledger is still a recipient). `dueSummaries` reads `listPushTargets`; this kept
+  `src/db/users.test.ts` unchanged. Besides the zone and local-date memos, the closed periods
+  per (local date, start day) and the due instants per (period end, zone) are memoized for the
+  call. The claimed-key query (`listClaimedPushes`) looks each candidate up by the primary key
+  through `json_each`.
+- Phase 4 bench, `pnpm bench:due 10000` on this dev machine (9,571 pushes due at
+  2026-10-05T07:00Z): on 882f4e3 plus the bench script, cold 2,659.0 ms and warm 2,610.4 ms;
+  on this phase's commit, cold 78.6 ms and warm 58.1 ms (mean of 5 warm runs).
 
 ### Close triggers
 

@@ -20,6 +20,7 @@
     "qr:corpus": "tsx scripts/qr-corpus.ts",
     "products:coverage": "tsx scripts/products-coverage.ts",
     "bench:prices": "tsx scripts/bench-prices.ts",
+    "bench:due": "tsx scripts/bench-due.ts",
     "prepare": "husky"
   },
   "lint-staged": {
