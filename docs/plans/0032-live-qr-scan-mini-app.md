@@ -152,7 +152,7 @@ flowchart LR
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: «📷 Скан» records a receipt | dev | done | committed with this row |
+| 1: Walking skeleton: «📷 Скан» records a receipt | dev | done | 5f85749 |
 | 2: Publish and scan a real receipt | human | not started | |
 
 ### Notes
@@ -176,9 +176,18 @@ flowchart LR
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `webapp/` (index.html with CSP, `main.ts`, `scan.ts`, `messages.ts`,
+  `tsconfig.json`), `pnpm build:webapp`, `.github/workflows/pages.yml`, optional `WEBAPP_URL`
+  config key, the `web_app_data` handler (`src/bot/handlers/webAppData.ts`), and the
+  `menuKeyboardFor` helper in `src/bot/keyboards.ts`.
+- **User-visible surface changed:** with `WEBAPP_URL` set, the private `/start` and `/help` menu
+  gains «📷 Скан» at the end of its first row. New bot copy `messages.scanButton` and
+  `messages.scanNotReceipt`. New page copy in `webapp/src/messages.ts`. README section "Mini
+  App: live receipt scan". `.env.example` documents `WEBAPP_URL`.
+- **Gate at the tip:** `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm test` exit 0 (117
+  files, 1684 tests), `pnpm build` exit 0, `pnpm build:webapp` exit 0 (emits `index.html`,
+  `main.js`, `messages.js`, `scan.js`), `node --test "scripts/*.test.mjs"` exit 0 (7 tests),
+  `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 2 (publish and scan a real receipt), `Blocks merge: no`.
 
 ## Followups
