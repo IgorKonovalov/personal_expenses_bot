@@ -238,7 +238,7 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
 | 1: The picker and the list, read-only | dev | done | eff64db |
 | 2: The card in the drill-down | dev | done | be7e716 |
 | 3: Edit prompts from the drill-down card | dev | done | a74caf8 |
-| 4: Live check | human | not started | |
+| 4: Live check | human | owed | |
 
 ### Notes
 
