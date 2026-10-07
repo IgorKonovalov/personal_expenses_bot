@@ -365,8 +365,8 @@ New message: `heavyJobBusy`.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: download timeouts and slow-update log | dev | done | 8163c57 |
-| 2: unreachable users | dev | done | committed with this row |
-| 3: paced, retried, capped scheduled sends | dev | not started | |
+| 2: unreachable users | dev | done | 5a1f804 |
+| 3: paced, retried, capped scheduled sends | dev | done | committed with this row |
 | 4: due pushes from one bulk read | dev | not started | |
 | 5: photos and statements in a child process | dev | not started | |
 | 6: compressed backups | dev | not started | |
@@ -384,6 +384,14 @@ New message: `heavyJobBusy`.
   provider skips every private-chat notice for an unreachable author (reminders, `auto` cards
   and asks), not reminders only; group notices still go out. `isUnreachable` was added to
   `src/db/users.ts` for that check.
+- Phase 3: after the last 429 retry the sender rethrows the error, and the provider's existing
+  catch logs the one warn (`summary push failed` / `recurring notice failed`); the sender itself
+  logs only a 403, at info. The sender also serialises concurrent sends through a promise chain.
+  `src/bot/bot.test.ts` and `src/bot/group/group.test.ts` (outside `Files touched`) each build
+  a recurring provider, so each now passes a sender instead of `bot.api`: a one-line change
+  plus the import.
+- Phase 3, observed and not acted on: shutdown waits for the tick in flight, which can now hold
+  up to 200 paced sends (8 s) plus any 429 sleeps; Docker's default stop grace is 10 s.
 
 ### Close triggers
 

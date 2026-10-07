@@ -18,6 +18,7 @@ import { undoExpense } from '../../services/recordExpense.js';
 import { register } from '../../scheduler/types.js';
 import { runTick } from '../../scheduler/worker.js';
 import { recurringProvider } from '../recurringProvider.js';
+import { scheduledSender } from '../scheduledSender.js';
 import {
   assertCallbackData,
   editFieldData,
@@ -1281,7 +1282,8 @@ describe('recurring rules on group ledgers (Plan 0025)', () => {
       defaultCurrency: 'RSD' as const,
       keys: test.keys,
     };
-    const providers = [register(recurringProvider(deps, test.bot.api))];
+    const sender = scheduledSender({ ...deps, api: test.bot.api, sleep: () => Promise.resolve() });
+    const providers = [register(recurringProvider(deps, sender))];
     const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
     const ruleId = test.db.prepare('SELECT id FROM recurring_rules').pluck().get() as string;
     const recorded = () =>

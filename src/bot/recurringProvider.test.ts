@@ -9,6 +9,7 @@ import type { HandlerDeps } from './bot.js';
 import { messages } from './messages.js';
 import { htmlParseMode } from './render/html.js';
 import { recurringProvider } from './recurringProvider.js';
+import { scheduledSender } from './scheduledSender.js';
 import { ALLOWED_ID, callbackUpdate, createTestBot, textUpdate } from './testHarness.js';
 
 const EXPENSE_ID = '00000000-0000-4000-8000-000000000003';
@@ -32,7 +33,14 @@ async function rentRule() {
     defaultCurrency: 'RSD',
     keys: harness.keys,
   };
-  const providers = [register(recurringProvider(deps, bot.api))];
+  const sender = scheduledSender({
+    api: bot.api,
+    db: harness.db,
+    logger: deps.logger,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+  });
+  const providers = [register(recurringProvider(deps, sender))];
   const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
   return { ...harness, clock, tick };
 }

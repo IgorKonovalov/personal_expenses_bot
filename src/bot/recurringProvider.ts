@@ -1,4 +1,4 @@
-import { InlineKeyboard, type Api } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { localDateOf } from '../domain/time.js';
 import type { Provider } from '../scheduler/types.js';
 import { effectiveTimezone } from '../services/recordExpense.js';
@@ -16,16 +16,18 @@ import { REMINDER_EXPENSE, groupDeleteData } from './callbackData.js';
 import { plaintext } from '../services/ledgerKeys.js';
 import { askCard, recurringRecordedCard, sealedAskCard } from './handlers/recurring.js';
 import { messages } from './messages.js';
-import { sendHtml, type Html } from './render/html.js';
+import type { Html } from './render/html.js';
+import type { ScheduledSender } from './scheduledSender.js';
 import type { ScreenView } from './screens.js';
 
 // The scheduler's provider for recurring rules (ADR-0031). The service records or claims each
-// due occurrence and commits; the notices are sent afterwards. A failed send is logged and not
-// retried: an `auto` expense stays recorded and shows in /today. An author who blocked the bot
-// (ADR-0043) has their occurrences recorded or claimed as usual, and no notice is sent to their
-// private chat; a group's notices still go to the group.
+// due occurrence and commits; the notices are sent afterwards, through the sender's pacing and
+// 429 retries (ADR-0043). A send that still fails is logged: an `auto` expense stays recorded and
+// shows in /today. An author who blocked the bot (ADR-0043) has their occurrences recorded or
+// claimed as usual, and no notice is sent to their private chat; a group's notices still go to
+// the group.
 
-export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule> {
+export function recurringProvider(deps: HandlerDeps, sender: ScheduledSender): Provider<DueRule> {
   return {
     name: 'recurring',
     due: (now) => dueRules(deps, now),
@@ -36,10 +38,10 @@ export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule
         return;
       }
       const skipped = result.fired.filter((f) => f.kind === 'skipped').length;
-      if (skipped > 0) await send(deps, api, result, messages.recurringAskMissed(skipped));
+      if (skipped > 0) await send(deps, sender, result, messages.recurringAskMissed(skipped));
       for (const fired of result.fired) {
         const view = notice(deps, result, fired, now);
-        if (view !== undefined) await send(deps, api, result, view.text, view);
+        if (view !== undefined) await send(deps, sender, result, view.text, view);
       }
     },
   };
@@ -88,14 +90,13 @@ function notice(
 
 async function send(
   deps: HandlerDeps,
-  api: Api,
+  sender: ScheduledSender,
   result: FireResult,
   text: Html,
   view?: ScreenView,
 ): Promise<void> {
   try {
-    await sendHtml(
-      api,
+    await sender.send(
       result.groupChatId ?? result.author.telegramId,
       text,
       view === undefined ? {} : { reply_markup: view.markup },

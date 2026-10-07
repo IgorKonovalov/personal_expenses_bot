@@ -15,11 +15,12 @@ import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/se
 import type { HandlerDeps } from './bot.js';
 import { messages } from './messages.js';
 import { htmlParseMode } from './render/html.js';
+import { scheduledSender } from './scheduledSender.js';
 import { summaryProvider } from './summaryProvider.js';
 import { ALLOWED_ID, callbackUpdate, createTestBot, textUpdate } from './testHarness.js';
 
 // A Europe/Belgrade user (the harness default) whose personal ledger exists from 20 August.
-async function pushBot() {
+async function pushBot(logger = createLogger('silent')) {
   const clock = new Date('2026-08-20T10:00:00Z');
   const harness = createTestBot({ now: clock });
   await harness.bot.handleUpdate(textUpdate({ updateId: 1, text: '/today' }));
@@ -31,14 +32,21 @@ async function pushBot() {
   const userId = db.prepare('SELECT id FROM users').pluck().get() as UserId;
   const deps: HandlerDeps = {
     db,
-    logger: createLogger('silent'),
+    logger,
     newId: randomUUID,
     now: () => clock,
     defaultTimezone: 'Europe/Belgrade',
     defaultCurrency: 'RSD',
     keys: harness.keys,
   };
-  const providers = [register(summaryProvider(deps, harness.bot.api))];
+  const sender = scheduledSender({
+    api: harness.bot.api,
+    db,
+    logger: deps.logger,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+  });
+  const providers = [register(summaryProvider(deps, sender))];
   const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
   let n = 0;
   // A plaintext expense in a preset's category, or in none.
@@ -253,6 +261,57 @@ describe('the summary provider: the monthly push', () => {
       'Другое: 1 100.00 RSD (новое)',
       'и ещё 1 категория: 70.00 RSD',
     ]);
+  });
+});
+
+describe('the summary provider: refused sends (ADR-0043)', () => {
+  it('keeps the push claimed and logs one warn after three 429s in a row', async () => {
+    const logLines: string[] = [];
+    const { bot, db, tick, add } = await pushBot(
+      createLogger('info', { write: (line: string) => void logLines.push(line) }),
+    );
+    add('2026-09-10', 1240000, 'cafe');
+    let attempts = 0;
+    bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'sendMessage') return prev(method, payload, signal);
+      attempts += 1;
+      return Promise.resolve({
+        ok: false,
+        error_code: 429,
+        description: 'Too Many Requests',
+        parameters: { retry_after: 3 },
+      });
+    });
+
+    await tick('2026-10-01T07:00:00Z');
+    await tick('2026-10-01T07:01:00Z');
+
+    expect(attempts).toBe(3);
+    expect(db.prepare('SELECT period_key, outcome FROM summary_pushes').all()).toEqual([
+      { period_key: '2026-09', outcome: 'sent' },
+    ]);
+    const warns = logLines.map((line) => JSON.parse(line) as { level: number; msg: string });
+    expect(warns.filter((line) => line.level === 40).map((line) => line.msg)).toEqual([
+      'summary push failed',
+    ]);
+  });
+
+  it('marks the recipient unreachable on a 403, with one attempt', async () => {
+    const { bot, db, tick, add } = await pushBot();
+    add('2026-09-10', 1240000, 'cafe');
+    let attempts = 0;
+    bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'sendMessage') return prev(method, payload, signal);
+      attempts += 1;
+      return Promise.resolve({ ok: false, error_code: 403, description: 'Forbidden' });
+    });
+
+    await tick('2026-10-01T07:00:00Z');
+
+    expect(attempts).toBe(1);
+    expect(db.prepare('SELECT unreachable_at FROM users').pluck().get()).toBe(
+      '2026-08-20T10:00:00.000Z',
+    );
   });
 });
 

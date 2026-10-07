@@ -53,6 +53,7 @@ import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MORE_BUTTONS } from './handlers/more.js';
 import { startReceiptWorker } from './receiptWorker.js';
 import { recurringProvider } from './recurringProvider.js';
+import { scheduledSender } from './scheduledSender.js';
 import {
   BUDGET_CAP,
   BUDGET_CAP_CLEAR,
@@ -6276,7 +6277,12 @@ describe('recurring expenses', () => {
       defaultCurrency: 'RSD' as CurrencyCode,
       keys: harness.keys,
     };
-    const providers = [register(recurringProvider(deps, harness.bot.api))];
+    const sender = scheduledSender({
+      ...deps,
+      api: harness.bot.api,
+      sleep: () => Promise.resolve(),
+    });
+    const providers = [register(recurringProvider(deps, sender))];
     const tick = (at: string) => runTick({ logger: deps.logger, providers }, new Date(at));
     // Sent messages get ids, so a screen can become the anchor.
     let messageId = 100;

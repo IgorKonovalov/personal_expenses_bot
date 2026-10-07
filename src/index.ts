@@ -6,6 +6,7 @@ import { createDonationLinks, type DonationLinks } from './bot/handlers/donate.j
 import { messages } from './bot/messages.js';
 import { startReceiptWorker } from './bot/receiptWorker.js';
 import { recurringProvider } from './bot/recurringProvider.js';
+import { scheduledSender } from './bot/scheduledSender.js';
 import { summaryProvider } from './bot/summaryProvider.js';
 import { loadConfig } from './config.js';
 import { startBackups, type BackupSchedule } from './db/backup.js';
@@ -125,12 +126,14 @@ const scheduledDeps = {
   defaultCurrency: config.defaultCurrency,
   keys,
 };
+// One sender for every scheduled message: paced, retried on 429, marking a 403 (ADR-0043).
+const sender = scheduledSender({ api: bot.api, db, logger, now: () => new Date() });
 const scheduler = startScheduler({
   logger,
   now: () => new Date(),
   providers: [
-    register(recurringProvider(scheduledDeps, bot.api)),
-    register(summaryProvider(scheduledDeps, bot.api)),
+    register(recurringProvider(scheduledDeps, sender)),
+    register(summaryProvider(scheduledDeps, sender)),
   ],
 });
 

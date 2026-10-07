@@ -1,4 +1,4 @@
-import { GrammyError, InlineKeyboard, type Api, type Composer, type Context } from 'grammy';
+import { GrammyError, InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { PushKind } from '../db/users.js';
 import type { Provider } from '../scheduler/types.js';
 import { isLocked } from '../services/ledgerKeys.js';
@@ -20,14 +20,16 @@ import {
 } from './callbackData.js';
 import { ensureUser } from './handlers/start.js';
 import { messages } from './messages.js';
-import { editHtml, sendHtml } from './render/html.js';
+import { editHtml } from './render/html.js';
+import type { ScheduledSender } from './scheduledSender.js';
 import type { ScreenView } from './screens.js';
 
 // The scheduler's provider for the summary pushes (ADR-0031). The service claims each push
-// before it is sent; a failed send is logged and not retried. A sealed ledger that is locked
-// gets a push with no figures and [Показать], which renders the report in place once unlocked.
+// before it is sent. The sender paces it and retries a 429 (ADR-0043); a send that still fails
+// is logged and the push stays claimed. A sealed ledger that is locked gets a push with no
+// figures and [Показать], which renders the report in place once unlocked.
 
-export function summaryProvider(deps: HandlerDeps, api: Api): Provider<DueSummary> {
+export function summaryProvider(deps: HandlerDeps, sender: ScheduledSender): Provider<DueSummary> {
   return {
     name: 'summary',
     due: (now) => dueSummaries(deps, now),
@@ -35,7 +37,7 @@ export function summaryProvider(deps: HandlerDeps, api: Api): Provider<DueSummar
       if (claimSummary(deps, due, now) !== 'sent') return;
       const view = pushView(deps, due);
       try {
-        await sendHtml(api, due.recipient.telegramId, view.text, { reply_markup: view.markup });
+        await sender.send(due.recipient.telegramId, view.text, { reply_markup: view.markup });
       } catch (error) {
         deps.logger.warn(
           {
