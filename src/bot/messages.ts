@@ -1,5 +1,7 @@
 import type { LedgerKind } from '../db/ledgers.js';
 import type {
+  BarsInput,
+  BarsRow,
   CatTrendPoint,
   CatTrendSection,
   ChartFold,
@@ -711,6 +713,11 @@ function priceLine(line: PriceLineView, unit: Unit): string {
   }
   if (line.unsized > 0) parts.push(`${itemCount(line.unsized)} без размера`);
   return parts.join(' · ');
+}
+
+// `Сентябрь 2026` for `2026-09`.
+function productMonth(month: string): string {
+  return `${MONTHS[Number(month.slice(5, 7)) - 1] ?? ''} ${month.slice(0, 4)}`;
 }
 
 // `1 покупка`, `2 покупки`, `5 покупок`, `11 покупок`.
@@ -1822,15 +1829,62 @@ export const messages = {
     joinHtml(
       [
         html`<b>${name} — «${ledgerName(ledger)}»</b>`,
-        ...months.map(
-          (m) =>
-            html`${MONTHS[Number(m.month.slice(5, 7)) - 1] ?? ''} ${m.month.slice(0, 4)}: ${priceLine(m, unit)}`,
-        ),
+        ...months.map((m) => html`${productMonth(m.month)}: ${priceLine(m, unit)}`),
         html``,
         ...totals.map((t) => html`Всего: ${priceLine(t, unit)}`),
       ],
       '\n',
     ),
+  // A product's chart, plain: titled with the product, the price per unit by month, then the
+  // spend by month, both oldest first and only for the months in `currency`, the ledger's. A
+  // month with no sized item has a price row with no bar. The months in other currencies are
+  // listed under the prices as the text screen lists them.
+  productChart: ({
+    name,
+    unit,
+    currency,
+    months,
+  }: {
+    readonly name: string;
+    readonly unit: Unit;
+    readonly currency: CurrencyCode;
+    // Newest first, as the text screen lists them.
+    readonly months: readonly (PriceLineView & { readonly month: string })[];
+  }): BarsInput => {
+    const oldest = [...months].reverse();
+    const own = oldest.filter((m) => m.currency === currency);
+    const notes = oldest
+      .filter((m) => m.currency !== currency)
+      .map((m) => `${productMonth(m.month)}: ${priceLine(m, unit)}`);
+    return {
+      title: name,
+      primary: {
+        k: 'bars',
+        caption: `Цена за 1 ${UNIT_LABELS[unit]}`,
+        rows: own.map((m): BarsRow =>
+          m.unitPriceMinor === undefined
+            ? [productMonth(m.month), null, messages.chartPriceUnsized]
+            : [
+                productMonth(m.month),
+                m.unitPriceMinor,
+                `${formatMoney({ amountMinor: m.unitPriceMinor, currency })}/${UNIT_LABELS[unit]}`,
+              ],
+        ),
+        ...(notes.length === 0 ? {} : { notes }),
+      },
+      secondary: {
+        k: 'bars',
+        caption: 'Траты по месяцам',
+        rows: own.map((m): BarsRow => [
+          productMonth(m.month),
+          m.spentMinor,
+          formatMoney({ amountMinor: m.spentMinor, currency }),
+        ]),
+      },
+    };
+  },
+  // A product chart's price row for a month with no sized item.
+  chartPriceUnsized: 'размер не указан',
   // A product button whose product no item names any more; the list is shown again.
   productGone: 'Этого продукта больше нет в чеках',
   // The tag's total, count and dates, then each currency's categories by amount; the first

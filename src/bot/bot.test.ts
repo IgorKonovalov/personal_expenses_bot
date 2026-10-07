@@ -8,6 +8,7 @@ import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   decodeChartPayload,
+  type BarsSection,
   type CatTrendSection,
   type PaceSection,
   type PieSection,
@@ -24,7 +25,7 @@ import {
   type ExpenseId,
 } from '../db/expenses.js';
 import { setFxDay, storeFxList } from '../db/fxRates.js';
-import type { LedgerId } from '../db/ledgers.js';
+import { findActiveLedger, type LedgerId } from '../db/ledgers.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
 import { insertReceipt, markReceiptFetched, type ReceiptId } from '../db/receipts.js';
 import type { RuleId } from '../db/recurring.js';
@@ -52,7 +53,8 @@ import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { recordReceipt } from '../services/recordReceipt.js';
-import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
+import { createLedgerKeyring, isLocked, openExpenses } from '../services/ledgerKeys.js';
+import { ledgerProduct } from '../services/productPrices.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createJobQueue, type JobResult, type JobRunner } from '../jobs/queue.js';
 import { encodeChartPayload } from '../domain/chartPayload.js';
@@ -9399,8 +9401,11 @@ describe('/prices (Plan 0036)', () => {
   // Tuesday 6 October 2026, 12:00 in Belgrade.
   const NOW = new Date('2026-10-06T10:00:00Z');
 
-  async function pricesBot() {
-    const harness = createTestBot({ now: NOW });
+  async function pricesBot(opts: { webappUrl?: string } = {}) {
+    const harness = createTestBot({
+      now: NOW,
+      ...(opts.webappUrl === undefined ? {} : { webappUrl: opts.webappUrl }),
+    });
     withMessageIds(harness.bot, 100);
     const { bot, db } = harness;
     let updateId = 0;
@@ -9418,8 +9423,12 @@ describe('/prices (Plan 0036)', () => {
       defaultTimezone: 'Europe/Belgrade',
     };
     let fiscal = 0;
-    // A receipt issued at noon of the local `day`, fetched with `items`.
-    const receipt = (day: string, items: readonly (readonly [string, string, number])[]) => {
+    // A receipt in `currency` issued at noon of the local `day`, fetched with `items`.
+    const receipt = (
+      day: string,
+      items: readonly (readonly [string, string, number])[],
+      currency: 'RSD' | 'EUR' = 'RSD',
+    ) => {
       const instant = new Date(`${day}T10:00:00Z`);
       const result = recordReceipt(deps, {
         user,
@@ -9428,7 +9437,7 @@ describe('/prices (Plan 0036)', () => {
           fiscalId: `FISCAL-${++fiscal}`,
           merchantKey: 'rs:test',
           totalMinor: items.reduce((sum, [, , minor]) => sum + minor, 0),
-          currency: 'RSD',
+          currency,
           issuedAt: instant,
           verifyUrl: `https://example.test/v/${fiscal}`,
         },
@@ -9461,7 +9470,7 @@ describe('/prices (Plan 0036)', () => {
     const anchor = () =>
       db.prepare('SELECT anchor_message_id FROM flow_sessions').pluck().get() as number;
     harness.calls.length = 0;
-    return { ...harness, user, say, tap, receipt, fixture, anchor };
+    return { ...harness, user, deps, say, tap, receipt, fixture, anchor };
   }
 
   const LIST =
@@ -9802,6 +9811,120 @@ describe('/prices (Plan 0036)', () => {
     });
     expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
       text: LIST,
+    });
+  });
+
+  describe('the 📈 Диаграмма button', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    type Row = { text: string; callback_data?: string; web_app?: { url: string } }[];
+    const rowsOf = (calls: readonly ApiCall[]) =>
+      (lastEdit(calls)?.reply_markup as { inline_keyboard: Row[] } | undefined)?.inline_keyboard;
+    // The product screen's chart row, its URL split at the fragment and the payload decoded by
+    // the page.
+    const chartOf = async (calls: readonly ApiCall[]) => {
+      const row = rowsOf(calls)?.[0];
+      expect(row).toHaveLength(1);
+      expect(row?.[0]?.text).toBe(messages.chartButton);
+      const url = row?.[0]?.web_app?.url ?? '';
+      const at = url.indexOf('#');
+      const payload = await decodeChartPayload(url.slice(at));
+      if (payload?.v !== 2) throw new Error('a v2 payload expected');
+      return { base: url.slice(0, at), payload };
+    };
+    // Milk in RSD: July 2 l for 259.80, August one unsized item for 150.00, September 1 l for
+    // 134.90; and June 1 l for 1.50 EUR.
+    const milkBot = async () => {
+      const bot = await pricesBot({ webappUrl });
+      bot.receipt('2026-06-15', [['MLEKO 1L', '1', 150]], 'EUR');
+      bot.receipt('2026-07-15', [['MLEKO 1L', '2', 25980]]);
+      bot.receipt('2026-08-15', [['MLEKO IMLEK', '1', 15000]]);
+      bot.receipt('2026-09-15', [['MLEKO 1L', '1', 13490]]);
+      await bot.say('/prices');
+      bot.calls.length = 0;
+      return bot;
+    };
+
+    it('charts the price per l by month, an unsized month with no bar, then the spend', async () => {
+      const { tap, calls, anchor, deps, keys, user, db } = await milkBot();
+
+      await tap('prc:o:b:milk', anchor());
+
+      const chart = await chartOf(calls);
+      expect(chart.base).toBe(webappUrl);
+      expect(chart.payload).toEqual({
+        v: 2,
+        title: 'Молоко',
+        sections: [
+          {
+            k: 'bars',
+            caption: 'Цена за 1 л',
+            rows: [
+              ['Июль 2026', 12990, '129.90 RSD/л'],
+              ['Август 2026', null, 'размер не указан'],
+              ['Сентябрь 2026', 13490, '134.90 RSD/л'],
+            ],
+            notes: ['Июнь 2026: 1.50 EUR · 1 л · 1.50 EUR/л'],
+          },
+          {
+            k: 'bars',
+            caption: 'Траты по месяцам',
+            rows: [
+              ['Июль 2026', 25980, '259.80 RSD'],
+              ['Август 2026', 15000, '150.00 RSD'],
+              ['Сентябрь 2026', 13490, '134.90 RSD'],
+            ],
+          },
+        ],
+      });
+      expect(messages.chartPriceUnsized).toBe('размер не указан');
+      // Each row's amount is its month line's, read from the service.
+      const ledger = findActiveLedger(db, user.id);
+      if (ledger === undefined) throw new Error('setup: no ledger');
+      const product = ledgerProduct(
+        { ...deps, keys },
+        { user, ledgerId: ledger.id, ref: 'b:milk' },
+      );
+      if (product === undefined || isLocked(product)) throw new Error('setup: no product');
+      const own = [...product.months].reverse().filter((m) => m.currency === 'RSD');
+      const [price, spend] = chart.payload.sections as BarsSection[];
+      expect(price?.rows.map(([, amountMinor]) => amountMinor)).toEqual(
+        own.map((m) => m.unitPriceMinor ?? null),
+      );
+      expect(spend?.rows.map(([, amountMinor]) => amountMinor)).toEqual(
+        own.map((m) => m.spentMinor),
+      );
+      expect(rowsOf(calls)?.slice(1)).toEqual([
+        [{ text: 'Названия', callback_data: 'prc:nm:b:milk' }],
+        [{ text: '« Назад', callback_data: 'prc:p:1' }],
+      ]);
+    });
+
+    it('is absent for a product with no month in the ledger currency', async () => {
+      const { tap, calls, anchor, receipt, say } = await pricesBot({ webappUrl });
+      receipt('2026-09-20', [['BANANA /KG', '1.000', 200]], 'EUR');
+      await say('/prices');
+      calls.length = 0;
+
+      await tap('prc:o:b:bananas', anchor());
+
+      expect(lastEdit(calls)?.text).toContain('<b>Бананы — ');
+      expect(JSON.stringify(calls)).not.toContain('web_app');
+    });
+
+    it('is absent without WEBAPP_URL, the screen as before', async () => {
+      const { tap, calls, anchor, receipt, say } = await pricesBot();
+      receipt('2026-09-15', [['MLEKO 1L', '1', 13490]]);
+      await say('/prices');
+      calls.length = 0;
+
+      await tap('prc:o:b:milk', anchor());
+
+      expect(lastEdit(calls)?.reply_markup).toEqual({
+        inline_keyboard: [
+          [{ text: 'Названия', callback_data: 'prc:nm:b:milk' }],
+          [{ text: '« Назад', callback_data: 'prc:p:1' }],
+        ],
+      });
     });
   });
 });

@@ -7,8 +7,12 @@ import {
 import {
   CHART_PAYLOAD_BUDGET,
   chartPayload,
+  encodeBarsPayload,
   encodeChartPayload,
   encodePacePayload,
+  type BarsInput,
+  type BarsRow,
+  type BarsSection,
   type CatTrendPoint,
   type CatTrendSection,
   type ChartFold,
@@ -433,5 +437,69 @@ describe('the payload budget', () => {
     expect(
       encodeChartPayload({ ...OCTOBER, trend: trend(6, random(10)) }, FOLD, 50),
     ).toBeUndefined();
+  });
+});
+
+describe('encodeBarsPayload', () => {
+  // `count` rows, oldest first, with varied amounts so deflate can't fold them.
+  const rows = (count: number, next: () => number): BarsRow[] =>
+    Array.from({ length: count }, (_, index) => {
+      const amountMinor = Math.floor(next() * 10_000_000);
+      return [`Месяц ${String(index + 1)}`, amountMinor, `${String(amountMinor)} RSD`];
+    });
+  const MILK: BarsInput = {
+    title: 'Молоко',
+    primary: {
+      k: 'bars',
+      caption: 'Цена за 1 л',
+      rows: [
+        ['Июль 2026', 12990, '129.90 RSD/л'],
+        ['Август 2026', null, 'размер не указан'],
+        ['Сентябрь 2026', 13490, '134.90 RSD/л'],
+      ],
+      notes: ['Июнь 2026: 1.50 EUR · 1 л · 1.50 EUR/л'],
+    },
+    secondary: {
+      k: 'bars',
+      caption: 'Траты по месяцам',
+      rows: [
+        ['Июль 2026', 25980, '259.80 RSD'],
+        ['Август 2026', 15000, '150.00 RSD'],
+        ['Сентябрь 2026', 13490, '134.90 RSD'],
+      ],
+    },
+  };
+
+  it('round-trips both sections through the page decoder, a null row kept', async () => {
+    expect(await decode(encodeBarsPayload(MILK))).toEqual({
+      v: 2,
+      title: 'Молоко',
+      sections: [MILK.primary, MILK.secondary],
+    });
+  });
+
+  it('sheds the secondary section before any primary row, then the oldest primary rows', async () => {
+    const input: BarsInput = {
+      title: 'Молоко',
+      primary: { k: 'bars', caption: 'Цена за 1 л', rows: rows(24, random(3)) },
+      secondary: { k: 'bars', caption: 'Траты по месяцам', rows: rows(24, random(4)) },
+    };
+    const sizeOf = (budget: number) => encodeBarsPayload(input, budget)?.length ?? 0;
+    const full = sizeOf(Infinity);
+
+    const first = await decode(encodeBarsPayload(input, full - 1));
+    expect(first.sections).toEqual([input.primary]);
+
+    let budget = sizeOf(full - 1) - 1;
+    const kept: number[] = [];
+    for (let left = 23; left >= 1; left--) {
+      const decoded = await decode(encodeBarsPayload(input, budget));
+      const [section] = decoded.sections as BarsSection[];
+      expect(section?.rows).toEqual(input.primary.rows.slice(24 - left));
+      kept.push(section?.rows.length ?? 0);
+      budget = sizeOf(budget) - 1;
+    }
+    expect(kept).toEqual(Array.from({ length: 23 }, (_, index) => 23 - index));
+    expect(encodeBarsPayload(input, budget)).toBeUndefined();
   });
 });

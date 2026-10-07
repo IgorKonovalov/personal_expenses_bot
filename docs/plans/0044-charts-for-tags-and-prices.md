@@ -144,8 +144,8 @@ interface BarsSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a tag report opens a donut | dev | done | committed with this row |
-| 2: A product's prices by month | dev | not started | |
+| 1: Walking skeleton: a tag report opens a donut | dev | done | 27d3375 |
+| 2: A product's prices by month | dev | done | committed with this row |
 | 3: Live check | human | not started | |
 
 ### Notes
@@ -157,6 +157,15 @@ interface BarsSection {
 - Phase 1: `src/domain/chartPayload.ts` and its test are unchanged; a `ChartInput` with no
   pace, trend or catTrend already encodes one pie section.
 - Phase 1: the group case is a bot test of `src/bot/group/tags.ts`, which is unchanged.
+- Phase 2: the page's section dispatch lives in `webapp/src/pie.ts` (`drawState`), not
+  `webapp/src/main.ts`: the `bars` branch went into `pie.ts`, outside `Files touched`, and
+  `main.ts` is unchanged.
+- Phase 2: the encoder is a separate `encodeBarsPayload` (sections `primary`, `secondary`), not a
+  mode of `encodeChartPayload`. It keeps the last price row: one row over budget is undefined.
+- Phase 2: the other-currency month lines ride as `notes` on the price section, so they stay when
+  the spend section is shed. They are never shed.
+- Phase 2: a bars row draws its label at x 0 and its text ending at the right edge, two `text`
+  nodes, where a trend row is one «label · amount» node.
 
 ### Close triggers
 

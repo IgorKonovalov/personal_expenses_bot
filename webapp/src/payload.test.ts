@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { drawTrend } from './bars.js';
+import { drawBars, drawTrend } from './bars.js';
 import { messages } from './messages.js';
 import { decodeChartPayload } from './payload.js';
 import { DARK, LIGHT } from './palette.js';
@@ -564,6 +564,102 @@ describe('the trend bars', () => {
     expect(await trendPage(`#d=${encoded(SEPTEMBER)}`)).toEqual([]);
     expect(await trendPage(`#d=${encoded({ ...SEPTEMBER, trend: [] })}`)).toEqual([]);
     expect(await trendPage('#d=!!!')).toEqual([]);
+  });
+});
+
+describe('the bars section', () => {
+  const PRICE = {
+    k: 'bars',
+    caption: 'Цена за 1 л',
+    rows: [
+      ['Июль 2026', 12990, '129.90 RSD/л'],
+      ['Август 2026', null, 'размер не указан'],
+      ['Сентябрь 2026', 13490, '134.90 RSD/л'],
+    ],
+    notes: ['Июнь 2026: 1.50 EUR · 1 л · 1.50 EUR/л'],
+  };
+  const SPEND = {
+    k: 'bars',
+    caption: 'Траты по месяцам',
+    rows: [
+      ['Июль 2026', 25980, '259.80 RSD'],
+      ['Август 2026', 15000, '150.00 RSD'],
+      ['Сентябрь 2026', 13490, '134.90 RSD'],
+    ],
+  };
+  const MILK = { v: 2, title: 'Молоко', sections: [PRICE, SPEND] };
+
+  it('reads bars with a null row, and rejects a row or a note of the wrong shape', async () => {
+    expect(await decodeChartPayload(`#z=${await deflated(MILK)}`)).toEqual(MILK);
+    for (const bad of [
+      { ...PRICE, rows: [['Июль 2026', 129.9, '129.90 RSD/л']] },
+      { ...PRICE, rows: [['Июль 2026', '12990', '129.90 RSD/л']] },
+      { ...PRICE, rows: [['Июль 2026', 12990]] },
+      { ...PRICE, notes: [1] },
+      { ...PRICE, caption: undefined },
+    ]) {
+      expect(await decodeChartPayload(`#z=${await deflated({ ...MILK, sections: [bad] })}`)).toBe(
+        undefined,
+      );
+    }
+  });
+
+  it('draws each section as its caption, its rows and its notes; a null row has no rect', async () => {
+    const { root, texts } = await page(`#z=${await deflated(MILK)}`);
+
+    expect(root.children.map((node) => node.tag)).toEqual(['h1', 'p', 'svg', 'p', 'p', 'svg']);
+    expect(texts).toEqual([
+      'Молоко',
+      'Цена за 1 л',
+      'Июль 2026',
+      '129.90 RSD/л',
+      'Август 2026',
+      'размер не указан',
+      'Сентябрь 2026',
+      '134.90 RSD/л',
+      'Июнь 2026: 1.50 EUR · 1 л · 1.50 EUR/л',
+      'Траты по месяцам',
+      'Июль 2026',
+      '259.80 RSD',
+      'Август 2026',
+      '150.00 RSD',
+      'Сентябрь 2026',
+      '134.90 RSD',
+    ]);
+    const price = root.children[2];
+    // Row 2 (y 30 to 60) holds the null row: its label and text, and no rect.
+    const august = price?.children.filter((node) => {
+      const y = Number(node.attributes.get('y'));
+      return y >= 30 && y < 60;
+    });
+    expect(august?.map((node) => [node.tag, node.textContent])).toEqual([
+      ['text', 'Август 2026'],
+      ['text', 'размер не указан'],
+    ]);
+    // In proportion to the largest price, 13490, across the full 320-unit width.
+    const bars = price?.children.filter((node) => node.tag === 'rect');
+    expect(bars?.map((bar) => [bar.attributes.get('y'), bar.attributes.get('width')])).toEqual([
+      ['16', '308.14'],
+      ['76', '320'],
+    ]);
+    const spend = root.children[5]?.children.filter((node) => node.tag === 'rect');
+    expect(spend?.map((bar) => bar.attributes.get('width'))).toEqual(['320', '184.76', '166.16']);
+  });
+
+  it('starts each label at x 0 and ends each text at the right edge', () => {
+    const [, svg] = drawBars(fakeDocument(), {
+      k: 'bars',
+      caption: 'Цена за 1 л',
+      rows: [['Июль 2026', 12990, '129.90 RSD/л']],
+    });
+    const texts = svg?.children.filter((node) => node.tag === 'text');
+
+    expect(
+      texts?.map((node) => [node.attributes.get('x'), node.attributes.get('text-anchor')]),
+    ).toEqual([
+      ['0', undefined],
+      ['320', 'end'],
+    ]);
   });
 });
 

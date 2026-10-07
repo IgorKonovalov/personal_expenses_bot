@@ -82,7 +82,21 @@ export interface CatTrendSection {
   readonly series: readonly (readonly [line: number, points: readonly CatTrendPoint[]])[];
 }
 
-export type ChartSection = PieSection | PaceSection | TrendSection | CatTrendSection;
+// One bar of a bars section: its label, its amount in minor units, null for a row drawn with no
+// bar, and its formatted text.
+export type BarsRow = readonly [label: string, amountMinor: number | null, text: string];
+
+// Labelled horizontal bars on one axis, in one currency, under a caption.
+export interface BarsSection {
+  readonly k: 'bars';
+  readonly caption: string;
+  // Oldest first.
+  readonly rows: readonly BarsRow[];
+  // Lines listed under the bars as text, never drawn: amounts in other currencies.
+  readonly notes?: readonly string[];
+}
+
+export type ChartSection = PieSection | PaceSection | TrendSection | CatTrendSection | BarsSection;
 
 export interface ChartPayloadV2 {
   readonly v: typeof CHART_PAYLOAD_VERSION;
@@ -171,6 +185,33 @@ export function encodePacePayload(
 ): string | undefined {
   const z = encode({ v: CHART_PAYLOAD_VERSION, title, sections: [pace] });
   return z.length <= budget ? z : undefined;
+}
+
+// A payload of bars sections: `primary`, then `secondary` when there is one.
+export interface BarsInput {
+  readonly title: string;
+  readonly primary: BarsSection;
+  readonly secondary?: BarsSection;
+}
+
+// The `z` value of a payload titled `input.title` holding its bars sections, as
+// encodeChartPayload encodes it. Over `budget`, the secondary section goes first, then the
+// primary's oldest rows one by one, its last row kept. Undefined when nothing fits.
+export function encodeBarsPayload(
+  input: BarsInput,
+  budget: number = CHART_PAYLOAD_BUDGET,
+): string | undefined {
+  const { title, primary, secondary } = input;
+  const candidates: (readonly BarsSection[])[] =
+    secondary === undefined ? [] : [[primary, secondary]];
+  for (let dropped = 0; dropped < Math.max(primary.rows.length, 1); dropped++) {
+    candidates.push([{ ...primary, rows: primary.rows.slice(dropped) }]);
+  }
+  for (const sections of candidates) {
+    const z = encode({ v: CHART_PAYLOAD_VERSION, title, sections });
+    if (z.length <= budget) return z;
+  }
+  return undefined;
 }
 
 function encode(payload: ChartPayloadV2): string {

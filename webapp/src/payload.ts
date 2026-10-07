@@ -83,12 +83,26 @@ export interface CatTrendSection {
   readonly series: readonly (readonly [line: number, points: readonly CatTrendPoint[]])[];
 }
 
+// One bar: its label, its amount in minor units, null for a row with no bar, and its formatted
+// text.
+export type BarsRow = readonly [label: string, amountMinor: number | null, text: string];
+
+// Labelled horizontal bars on one axis under a caption, oldest first.
+export interface BarsSection {
+  readonly k: 'bars';
+  readonly caption: string;
+  readonly rows: readonly BarsRow[];
+  // Lines listed under the bars as text, never drawn.
+  readonly notes?: readonly string[];
+}
+
 // A section of a kind this page doesn't draw: kept by the decoder, skipped by the page.
 export interface UnknownSection {
   readonly k: string;
 }
 
-export type Section = PieSection | PaceSection | TrendSection | CatTrendSection | UnknownSection;
+export type Section =
+  PieSection | PaceSection | TrendSection | CatTrendSection | BarsSection | UnknownSection;
 
 export interface ChartPayloadV2 {
   readonly v: 2;
@@ -161,7 +175,8 @@ function isPayloadV2(value: unknown): value is ChartPayloadV2 {
   );
 }
 
-// A section with a string kind; a pie, a pace, a trend or a catTrend must also have its own shape.
+// A section with a string kind; a pie, a pace, a trend, a catTrend or a bars section must also
+// have its own shape.
 function isSection(value: unknown): value is Section {
   if (!isRecord(value) || typeof value['k'] !== 'string') return false;
   switch (value['k']) {
@@ -179,9 +194,31 @@ function isSection(value: unknown): value is Section {
       return isPace(value);
     case 'catTrend':
       return isCatTrend(value);
+    case 'bars':
+      return isBarsSection(value);
     default:
       return true;
   }
+}
+
+// A string caption, rows of a string, a safe integer or null, and a string, and optional string
+// notes.
+function isBarsSection(value: Record<string, unknown>): boolean {
+  const rows = value['rows'];
+  const notes = value['notes'];
+  return (
+    typeof value['caption'] === 'string' &&
+    Array.isArray(rows) &&
+    rows.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === 3 &&
+        typeof row[0] === 'string' &&
+        (row[1] === null || Number.isSafeInteger(row[1])) &&
+        typeof row[2] === 'string',
+    ) &&
+    (notes === undefined || isStrings(notes))
+  );
 }
 
 // A string caption, string period names, and series of a non-negative whole line index with one

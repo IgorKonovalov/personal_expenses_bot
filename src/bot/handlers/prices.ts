@@ -1,6 +1,7 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { InlineKeyboardButton } from 'grammy/types';
 import type { User } from '../../db/users.js';
+import { encodeBarsPayload } from '../../domain/chartPayload.js';
 import {
   setAnchor,
   startFlow,
@@ -99,16 +100,30 @@ function listOrEmpty(list: ProductList, page: number): ScreenView {
     : priceListView(list, page);
 }
 
-function productView(product: ProductView): ScreenView {
+function productView(product: ProductView, chartUrl: string | undefined): ScreenView {
   return {
     text: messages.productView(product),
     markup: InlineKeyboard.from([
+      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
       ...(product.reviewable
         ? [[InlineKeyboard.text(messages.namesButton, productNamesData(product.ref))]]
         : []),
       backRow(pricesPageData(1)),
     ]),
   };
+}
+
+// The chart button's URL: WEBAPP_URL with the product's price per unit and spend by month in the
+// fragment's `z` (ADR-0025, ADR-0045), from the month lines the text shows. Undefined outside a
+// private chat (`web_app` buttons work only there), without WEBAPP_URL, for a product with no
+// month in the ledger's currency, and when the payload can't fit its budget. A locked sealed
+// ledger never gets here: its tap is the locked toast.
+function chartUrlOf(ctx: Context, deps: HandlerDeps, product: ProductView): string | undefined {
+  if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
+  const currency = product.ledger.defaultCurrency;
+  if (!product.months.some((m) => m.currency === currency)) return undefined;
+  const payload = encodeBarsPayload(messages.productChart({ ...product, currency }));
+  return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
 }
 
 // /prices and its [☰ Ещё] button: page 1 of the active ledger's products, as a new anchor.
@@ -192,7 +207,7 @@ async function showProduct(
   }
   await ctx.answerCallbackQuery();
   saveScreen(deps, tap, plain(tap));
-  await renderAnchor(ctx, tap.anchor, productView(product));
+  await renderAnchor(ctx, tap.anchor, productView(product, chartUrlOf(ctx, deps, product)));
 }
 
 // The ledger's items for a review tap, or undefined once the tap is answered: a locked ledger
