@@ -201,7 +201,7 @@ a tap handler are a few dozen lines of SVG.
 |---|---|---|---|
 | 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | 647be3b |
 | 2: Tap a slice or a legend row to inspect it | dev | done | 1681f75 |
-| 3: Theme-aware palettes and a trend layout that can't clip | dev | done | committed with this row |
+| 3: Theme-aware palettes and a trend layout that can't clip | dev | done | 604ec76 |
 | 4: Live check, light and dark | human | not started | |
 
 ### Notes
@@ -222,7 +222,21 @@ a tap handler are a few dozen lines of SVG.
   new `startChart` in `pie.ts` so the test can fire the handler; the redraw empties `root` with
   `replaceChildren`, added to `ChartNode`. Outside Telegram the bars use `#2481cc`. All bars,
   zero ones included, fill with the button colour (zero bars were `hint_color`).
+- Followup noticed, not acted on: the README's «Mini App: charts» section doesn't mention tapping,
+  the theme palettes or the trend row layout (README was in Phase 1's `Files touched` only).
 
 ### Close triggers
+
+- Phases 1-3 (`dev`) are done in 647be3b, 1681f75 and 604ec76. Phase 4 (`human`, does not block
+  merge) has not started.
+- Gate on the tip (604ec76): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  137 files and 1912 tests passed; `pnpm build:webapp` exit 0; `node scripts/check-doc-links.mjs`
+  exit 0, 335 relative links resolve.
+- `git diff --stat 691f433 -- webapp/index.html webapp/src/scan.ts webapp/src/scan.test.ts src`
+  is empty: no CSP, scan-mode or bot change.
+- New page messages: `chartTitle`, `chartTotalCaption`, `chartTapHint`. New file
+  `webapp/src/palette.ts` (+ test). New export `startChart` in `webapp/src/pie.ts`; `main.ts`
+  calls it for chart mode. `ChartNode` gains `style`, `removeAttribute`, `replaceChildren`,
+  `addEventListener`; `ChartDocument` gains `title`.
 
 ## Followups
