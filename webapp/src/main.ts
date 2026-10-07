@@ -10,6 +10,7 @@ declare global {
     readonly Telegram?: {
       readonly WebApp?: ScanWebApp & {
         readonly ready?: () => void;
+        readonly expand?: () => void;
         readonly themeParams?: {
           readonly bg_color?: string;
           readonly text_color?: string;
@@ -30,11 +31,13 @@ if (modeOf(hash) === 'scan') {
     if (status !== null) status.textContent = line;
   });
 } else {
+  // Full height, so the donut and its legend fit without dragging the sheet up.
+  webApp?.expand?.();
   const theme = webApp?.themeParams;
   // CSSOM writes, which the CSP's missing style-src doesn't block (index.html).
   if (theme?.bg_color !== undefined) document.body.style.backgroundColor = theme.bg_color;
   if (theme?.text_color !== undefined) document.body.style.color = theme.text_color;
   const colours = { bg: theme?.bg_color, hint: theme?.hint_color };
-  showChart<Element>(document, document.body, hash, colours);
-  showTrend<Element>(document, document.body, hash, colours);
+  showChart<HTMLElement | SVGElement>(document, document.body, hash, colours);
+  showTrend<HTMLElement | SVGElement>(document, document.body, hash, colours);
 }

@@ -9,6 +9,7 @@ const ROW = 24;
 const LABEL_WIDTH = 110;
 const BAR_WIDTH = 110;
 const WIDTH = 320;
+const MAX_WIDTH = '480px';
 
 // The trend section under the pie: the payload in `hash` drawn as bars, when it has a trend.
 // A hash the page can't read draws nothing here; the pie's fallback line already says why.
@@ -32,11 +33,10 @@ export function drawTrend<N extends ChartNode<N>>(
 ): N {
   const largest = Math.max(0, ...trend.map(([, totalMinor]) => totalMinor));
   const height = String(trend.length * ROW);
-  const svg = svgNode(doc, 'svg', {
-    width: String(WIDTH),
-    height,
-    viewBox: `0 0 ${WIDTH} ${height}`,
-  });
+  // Scales with the page; the viewBox keeps the rows' proportions.
+  const svg = svgNode(doc, 'svg', { width: '100%', viewBox: `0 0 ${WIDTH} ${height}` });
+  svg.style.maxWidth = MAX_WIDTH;
+  svg.style.display = 'block';
   trend.forEach(([periodLabel, totalMinor, label], index) => {
     const top = index * ROW;
     const length = largest > 0 && totalMinor > 0 ? (totalMinor / largest) * BAR_WIDTH : 0;

@@ -1,6 +1,6 @@
 # 0040: Chart polish: a donut that fits the screen, tap to inspect, colours that hold in dark theme
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in)
 
@@ -199,12 +199,17 @@ a tap handler are a few dozen lines of SVG.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a full-width donut with the total in its centre | dev | not started | |
+| 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | committed with this row |
 | 2: Tap a slice or a legend row to inspect it | dev | not started | |
 | 3: Theme-aware palettes and a trend layout that can't clip | dev | not started | |
 | 4: Live check, light and dark | human | not started | |
 
 ### Notes
+
+- Phase 1: the `<p>` with `totalLabel` above the donut stays, so the total shows twice. The
+  trend SVG's CSSOM `maxWidth` is `480px` (the plan names only the donut's). `ChartDocument`
+  gains `title`, its `createElementNS` takes the SVG namespace literal, and `main.ts` draws with
+  `N = HTMLElement | SVGElement`, whose `style` the CSSOM writes need.
 
 ### Close triggers
 

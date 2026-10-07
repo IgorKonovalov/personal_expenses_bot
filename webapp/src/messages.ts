@@ -14,4 +14,8 @@ export const messages = {
   // A chart link whose data is damaged or from a version of the bot the page can't read.
   chartBroken:
     'Не получилось открыть диаграмму. Откройте отчёт /week или /month заново и нажмите «📈 Диаграмма».',
+  // The page title in chart mode, shown in Telegram's header.
+  chartTitle: 'Диаграмма',
+  // Under the total in the donut's hole.
+  chartTotalCaption: 'Всего',
 } as const;
