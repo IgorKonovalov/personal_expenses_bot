@@ -1,8 +1,8 @@
 # 0039: Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned after one docs fix pass, one nit fixed at close, one nit open, Phase 7 live checks owed, v0.28.0
 > **Created:** 2026-10-07
-> **Related ADRs:** [ADR-0042](../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md), [ADR-0043](../adrs/0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md), [ADR-0044](../adrs/0044-compressed-backups-seven-daily-four-weekly.md), [ADR-0036](../adrs/0036-stay-on-node-memory-work-targets-heavy-jobs.md), [ADR-0031](../adrs/0031-local-time-scheduler.md)
+> **Related ADRs:** [ADR-0042](../../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md), [ADR-0043](../../adrs/0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md), [ADR-0044](../../adrs/0044-compressed-backups-seven-daily-four-weekly.md), [ADR-0036](../../adrs/0036-stay-on-node-memory-work-targets-heavy-jobs.md), [ADR-0031](../../adrs/0031-local-time-scheduler.md)
 
 ## TL;DR
 
@@ -482,4 +482,123 @@ New message: `heavyJobBusy`.
   `Dockerfile` gains a build-stage check of the `dist/` child; no image was built here.
 - No new dependency, command or callback data.
 
+## Close review
+
+Phase 7 (`human`, does not block merge) is owed: the live checks, including the 2026-11-01 push
+run and the `memory.peak` reading.
+
+### Review round 2 (tip ce354c2), in full
+
+# Plan 0039 review, round 2 (tip ce354c22855a5d7a30afd47d9418787e0bf92242)
+
+**Verdict:** Clean. Both round-1 fixes are correct, the gate is green on the tip, and the plan is
+ready to close. Two nits remain, and neither blocks the close.
+
+## Gate (run in this session, on the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 134 files and 1839 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 309 relative links resolve.
+- After the runs, `git status --porcelain` is empty, so the tree is untouched.
+
+## What changed since round 1 (0e38233..ce354c2)
+
+`git diff --stat` shows only `CLAUDE.md`, `PRIVACY.md` and the plan's implementation log. No code
+changed, so round 1's phase-by-phase alignment still holds. I reread these assertions on the tip
+and they still hold:
+
+- `src/db/backup.test.ts`:
+  - the gunzip round-trip `toEqual`s the source rows;
+  - the 1 August to 7 October run leaves exactly the 10 planned files;
+  - a boot with today's file present writes nothing and keeps its content (`'earlier'`);
+  - `backupRetentionDays` is 28 with the defaults.
+- `src/bot/scheduledSender.test.ts:69-113`:
+  - a 429 gives sleeps `[3000]` and 2 attempts;
+  - three 429s give 3 attempts;
+  - a 403 gives 1 attempt and sets `unreachable_at` to `NOW`;
+  - the sends are spaced 40 ms apart.
+- `src/bot/bot.test.ts:5702-5784`:
+  - the headline: B's expenses are `[45000]` while the photo is latched, and `[45000, 82912]`
+    after the latch opens;
+  - a timeout logs `outcome: 'timeout'`;
+  - the full queue answers `[heavyJobBusy]` with `started() === 1`.
+- `src/services/periodReport.test.ts:352`: `many.prepared === few.prepared`.
+
+## Round-1 findings
+
+- **Major 1 (PRIVACY.md retention): resolved in 04dad73.**
+  - `PRIVACY.md:19-21` now names 7 dailies (`BACKUP_KEEP`) and 4 Sundays (`BACKUP_KEEP_WEEKLY`).
+    It bounds a copy's life at the larger of `BACKUP_KEEP` days and `BACKUP_KEEP_WEEKLY` weeks,
+    28 days by default. That matches `backupRetentionDays` (`max(keep, 7 x keepWeekly)`).
+  - `PRIVACY.md:52-53` says deleted data stays in backups up to 28 days by default.
+  - So the policy now agrees with the `/delete_account` copy.
+  - No remaining "14" retention claim is in README, PRIVACY, `.env.example` or the messages
+    module (`git grep`). ADR-0044 line 10 describes the state before the change, which is correct.
+- **Minor 1 (CLAUDE.md map): resolved in 7ffff91.** The map now lists `src/jobs/` (ADR-0042) and
+  `scripts/bench-due.ts`, and both exist in the tree.
+- **Nit 1 (the scheduler test imports the bot layer): not acted on,** and the log says so. It is
+  carried below.
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+None.
+
+### nit
+
+1. **The scheduler's test imports the bot layer** (carried from round 1).
+   - **Where:** `src/scheduler/worker.test.ts:3` imports `SEND_GAP_MS` from
+     `../bot/scheduledSender.js`.
+   - **Why it matters:** the scheduler layer's test reaches up into the grammy-loading bot
+     adapter for one constant.
+   - **Fix:** move the fan-out arithmetic test into `src/bot/scheduledSender.test.ts`, or assert
+     the literal 40 in the worker test.
+2. **The close triggers name a stale tip.**
+   - **Where:** `docs/plans/0039-scale-hardening.md:470` reads "Gate on the tip (69afe53)", but
+     the tip is now ce354c2. That commit changes only docs, and the gate counts are the same.
+   - **Why it matters:** the log is slightly stale. Nothing is wrong.
+   - **Fix:** the close session can leave it, or note that this round's gate was run on ce354c2.
+
+## Bookkeeping owed (close session)
+
+- Accept ADR-0042, ADR-0043 and ADR-0044, and refresh `docs/adrs/README.md`. Consider a dated
+  `## Outcome` on two of them:
+  - ADR-0042: child startup measured at 41 to 45 ms from `dist/`, and about 148 ms per photo end
+    to end.
+  - ADR-0044: a measured gzip ratio of 5.92.
+- Set the plan's `Status:` to `done` with the date and verdict, `git mv` it to
+  `docs/plans/done/`, repair the links in both directions, and run
+  `node scripts/check-doc-links.mjs`.
+- Move the `docs/plans/README.md` row to recently closed. Phase 7 (`human`, does not block merge)
+  stays owed after the merge.
+- Version: a minor bump. The plan ships new copy (`heavyJobBusy`), a new env key
+  (`BACKUP_KEEP_WEEKLY`) and a changed `BACKUP_KEEP` default. That means `package.json`, a
+  `CHANGELOG.md` entry and a `versionAnnouncements` entry.
+- Followups for a later plan, from round 1 and still open:
+  - Shutdown can outlast Docker's 10 s stop grace, through a paced tick or the job drain.
+  - One user can fill all 8 waiting job slots.
+
+### Resolution of earlier rounds and of this round
+
+- Round 1, major (PRIVACY.md backup retention): fixed in 04dad73.
+- Round 1, minor (CLAUDE.md map lacks `src/jobs/` and `scripts/bench-due.ts`): fixed in 7ffff91.
+- Round 2, nit 2 (the close triggers name a stale tip): fixed at close in 6d105b7.
+- Round 2, nit 1 (the scheduler test imports the bot layer): open.
+- At close: ADR-0042, ADR-0043 and ADR-0044 accepted, with dated outcomes on ADR-0042 (child
+  startup) and ADR-0044 (gzip ratio 5.92). Version bumped to 0.28.0.
+
 ## Followups
+
+- Shutdown can outlast Docker's 10 s stop grace, through a paced tick or the job drain.
+- One user can fill all 8 waiting job slots.
+- `src/scheduler/worker.test.ts` imports `SEND_GAP_MS` from the bot layer (round 2 nit 1).

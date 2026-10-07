@@ -1,8 +1,8 @@
 # ADR-0043: Scheduled sends are paced and capped per tick, skip unreachable users, and find due pushes in bulk
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07)
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0039](../plans/0039-scale-hardening.md)
+> **Related plan(s):** [Plan 0039](../plans/done/0039-scale-hardening.md)
 
 ## Context
 

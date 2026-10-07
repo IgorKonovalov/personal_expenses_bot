@@ -1,8 +1,8 @@
 # ADR-0042: Receipt-photo and statement jobs run in a short-lived child process, handed off by the handler
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07), with an outcome
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0039](../plans/0039-scale-hardening.md)
+> **Related plan(s):** [Plan 0039](../plans/done/0039-scale-hardening.md)
 
 ## Context
 
@@ -77,3 +77,9 @@ the slow-update log (Plan 0039 Phase 1) shows stalls that are not heavy jobs.
 
 ### Alternative C: stay inline, add timeouts only
 Cheapest, but each photo still blocks every user for up to 2.5 s. Timeouts alone don't fix that.
+
+## Outcome (2026-10-07)
+
+Plan 0039 Phase 5 measured the child's start, fork to `ready`, at 41 to 45 ms from `dist/` (102
+to 106 ms from source under tsx), and about 148 ms per photo job end to end on the dev machine.
+That is below the 150 to 250 ms estimated under Negative.

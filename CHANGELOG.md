@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.28.0 (2026-10-07)
+
+From Plan 0039 (scale hardening).
+
+- A receipt photo or a PDF statement is read in a separate process, so nobody else's message
+  waits behind it. When 8 files are already waiting, the bot asks the sender to send theirs again
+  in a minute (`heavyJobBusy`).
+- Photo and statement downloads give up after 30 s instead of 5 minutes. Updates slower than 1 s
+  log a `slow update` warning, and the event-loop delay is logged hourly.
+- Monthly and weekly pushes and recurring notices are paced, retried after a Telegram 429, and
+  capped at 200 per tick. Users who blocked the bot are skipped until they write again.
+- Backups are gzip-compressed (`expenses-YYYY-MM-DD.sqlite.gz`), keeping 7 dailies
+  (`BACKUP_KEEP`, was 14) and 4 Sunday copies (new `BACKUP_KEEP_WEEKLY`). A restore needs
+  `gunzip` first. `/delete_account` now says deleted data stays in backups up to 28 days.
+
 ## 0.27.1 (2026-10-07)
 
 From Plan 0038 (the /prices view cost).

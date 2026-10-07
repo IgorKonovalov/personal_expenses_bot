@@ -1,8 +1,8 @@
 # ADR-0044: Backups are gzip-compressed, with 7 daily and 4 weekly copies kept
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07), with an outcome
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0039](../plans/0039-scale-hardening.md)
+> **Related plan(s):** [Plan 0039](../plans/done/0039-scale-hardening.md)
 
 ## Context
 
@@ -59,3 +59,10 @@ Fine at today's few MB, and it costs disk linearly. It lost on the projection ab
 ### Alternative C: zstd
 `node:zlib`'s zstd compresses better and faster, but it is experimental in Node 24. gzip is
 stable and good enough.
+
+## Outcome (2026-10-07)
+
+Plan 0039 Phase 6 measured one backup of a synthetic database with 200,000 expenses at
+85,983,232 bytes uncompressed and 14,520,943 bytes compressed, a ratio of 5.92. Each file is
+about one sixth of the database, not the estimated one third, so the kept files take roughly
+2 times the database on disk.
