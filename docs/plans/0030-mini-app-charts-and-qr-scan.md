@@ -183,9 +183,9 @@ interface ChartPayloadV1 {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: /month opens a pie chart | dev | done | committed with this row |
+| 1: Walking skeleton: /month opens a pie chart | dev | done | 3a994ba |
 | 2: Publish and measure the URL limit | human | owed | |
-| 3: Payload budget and the trend chart | dev | not started | |
+| 3: Payload budget and the trend chart | dev | done | committed with this row |
 | 4: Live check on a phone | human | not started | |
 
 ### Notes
@@ -207,6 +207,20 @@ interface ChartPayloadV1 {
   missing `d` shows it; a `d` the page can't read shows the new `chartBroken` line.
 - Phase 1: the bot test file imports `decodeChartPayload` from `webapp/src/payload.ts` to read
   the button URL.
+- Phase 3: `src/bot/bot.test.ts` (outside `Files touched`) gained the `trend` field in the three
+  existing payload `toEqual` assertions of the chart-button tests.
+- Phase 3: the trend lives in a new `src/services/periodTrend.ts` (+ test), which calls
+  `ledgerPeriodSummary` once per period: six summaries per chart render.
+- Phase 3: the trend ends at the shown period, so a paged-to screen's trend ends at that period.
+- Phase 3: `encodeChartPayload(input, fold, budget)` takes the «Прочее» name and its amount
+  formatter from `messages.chartFold(currency)`, and returns undefined when nothing fits. The
+  budget is measured on the `d` value's length. An existing category named «Прочее» joins the
+  fold line, so the name never appears twice.
+- Phase 3: the bars are horizontal, one row per period (name, bar, label), drawn by
+  `webapp/src/bars.ts` `showTrend`, which `main.ts` calls after `showChart` (`pie.ts` is not in
+  `Files touched`), so they sit under the pie's legend and rateless-currency lines.
+- Phase 3: a trend bar's label carries «≈ » when that period holds converted foreign spending, as
+  the screen's total does.
 
 ### Close triggers
 

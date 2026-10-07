@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { showTrend } from './bars.js';
 import { messages } from './messages.js';
 import { decodeChartPayload } from './payload.js';
 import { showChart, type ChartDocument, type ChartNode } from './pie.js';
@@ -94,6 +95,72 @@ describe('decodeChartPayload', () => {
         `#d=${base64url(JSON.stringify({ ...valid, lines: [['Еда', 1.5, '0.02 RSD']], totalMinor: 1.5 }))}`,
       ),
     ).toBe(undefined);
+  });
+
+  it('reads a trend, and rejects a trend bar of the wrong shape', () => {
+    const trend = [
+      ['Август', 0, '0.00 RSD'],
+      ['Сентябрь', 150000, '1 500.00 RSD'],
+    ];
+
+    expect(decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend })}`)?.trend).toEqual(trend);
+    expect(
+      decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: [['Август', 0.5, '']] })}`),
+    ).toBe(undefined);
+    expect(decodeChartPayload(`#d=${encoded({ ...SEPTEMBER, trend: 'Август' })}`)).toBe(undefined);
+  });
+});
+
+describe('the trend bars', () => {
+  const TREND = [
+    ['Май', 12500, '125.00 RSD'],
+    ['Июнь', 0, '0.00 RSD'],
+    ['Июль', 0, '0.00 RSD'],
+    ['Август', 40000, '400.00 RSD'],
+    ['Сентябрь', 160000, '1 600.00 RSD'],
+    ['Октябрь', 34500, '345.00 RSD'],
+  ];
+  const trendPage = (hash: string) => {
+    const doc: ChartDocument<FakeNode> = {
+      createElement: (tag) => new FakeNode(tag),
+      createElementNS: (namespace, tag) => new FakeNode(tag, namespace),
+    };
+    const root = new FakeNode('body');
+    showTrend(doc, root, hash);
+    return root.all().slice(1);
+  };
+
+  it('draws 6 bars oldest first, a period with nothing spent as a zero-length bar with its name', () => {
+    const nodes = trendPage(`#d=${encoded({ ...SEPTEMBER, trend: TREND })}`);
+
+    const bars = nodes.filter((node) => node.tag === 'rect');
+    expect(bars.map((bar) => bar.attributes.get('width'))).toEqual([
+      '8.59',
+      '0',
+      '0',
+      '27.5',
+      '110',
+      '23.72',
+    ]);
+    expect(nodes.filter((node) => node.tag === 'text').map((node) => node.textContent)).toEqual([
+      'Май',
+      '125.00 RSD',
+      'Июнь',
+      '0.00 RSD',
+      'Июль',
+      '0.00 RSD',
+      'Август',
+      '400.00 RSD',
+      'Сентябрь',
+      '1 600.00 RSD',
+      'Октябрь',
+      '345.00 RSD',
+    ]);
+  });
+
+  it('draws nothing without a trend or for a hash the page cannot read', () => {
+    expect(trendPage(`#d=${encoded(SEPTEMBER)}`)).toEqual([]);
+    expect(trendPage('#d=!!!')).toEqual([]);
   });
 });
 

@@ -1,3 +1,4 @@
+import { showTrend } from './bars.js';
 import { showChart } from './pie.js';
 import { modeOf, startScan, type ScanWebApp } from './scan.js';
 
@@ -33,8 +34,7 @@ if (modeOf(hash) === 'scan') {
   // CSSOM writes, which the CSP's missing style-src doesn't block (index.html).
   if (theme?.bg_color !== undefined) document.body.style.backgroundColor = theme.bg_color;
   if (theme?.text_color !== undefined) document.body.style.color = theme.text_color;
-  showChart<Element>(document, document.body, hash, {
-    bg: theme?.bg_color,
-    hint: theme?.hint_color,
-  });
+  const colours = { bg: theme?.bg_color, hint: theme?.hint_color };
+  showChart<Element>(document, document.body, hash, colours);
+  showTrend<Element>(document, document.body, hash, colours);
 }

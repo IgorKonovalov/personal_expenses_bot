@@ -1,4 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { User } from '../../db/users.js';
 import { encodeChartPayload } from '../../domain/chartPayload.js';
 import { parsePeriod, type Period } from '../../domain/periods.js';
 import type { SummaryScreen } from '../../services/flowSessions.js';
@@ -8,6 +9,7 @@ import {
   ledgerPeriodSummary,
   type PeriodSummary,
 } from '../../services/periodSummary.js';
+import { periodTrend } from '../../services/periodTrend.js';
 import type { HandlerDeps } from '../bot.js';
 import { SUMMARY_PAGE, periodItemsData, summaryPageData } from '../callbackData.js';
 import { messages } from '../messages.js';
@@ -21,7 +23,8 @@ import { ensureUser } from './start.js';
 // was opened on. [Позиции] under the pager turns the screen into the period's receipt items
 // (handlers/items.ts).
 
-// The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App.
+// The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with the
+// trend of its converted totals under it.
 function summaryView(summary: PeriodSummary, chartUrl: string | undefined): ScreenView {
   const row = [
     InlineKeyboard.text(messages.periodPrev(summary.previous), summaryPageData(summary.previous)),
@@ -40,22 +43,36 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
 }
 
 // The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment (ADR-0025),
-// rebuilt on every render. Undefined outside a private chat (`web_app` buttons work only there),
-// without WEBAPP_URL, and when the first block isn't in the ledger's currency: then nothing
-// converted, so there's no pie, as with no expenses at all.
-function chartUrlOf(ctx: Context, deps: HandlerDeps, summary: PeriodSummary): string | undefined {
+// rebuilt on every render, the trend ending at the shown period. Undefined outside a private chat
+// (`web_app` buttons work only there), without WEBAPP_URL, when the first block isn't in the
+// ledger's currency (then nothing converted, so there's no pie, as with no expenses at all), and
+// when the payload can't fit its budget.
+function chartUrlOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  summary: PeriodSummary,
+): string | undefined {
   if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
   const [converted, ...unconverted] = summary.currencies;
   if (converted?.currency !== summary.ledger.defaultCurrency) return undefined;
+  const trend = periodTrend(deps, {
+    user,
+    ledgerId: summary.ledger.id,
+    period: summary.period,
+    now: deps.now(),
+  });
   const payload = encodeChartPayload(
     messages.chart({
       period: summary.period,
       converted,
       approximate: summary.convertedFrom.length > 0,
       unconverted,
+      trend: trend ?? [],
     }),
+    messages.chartFold(converted.currency),
   );
-  return `${deps.webappUrl}#d=${payload}`;
+  return payload === undefined ? undefined : `${deps.webappUrl}#d=${payload}`;
 }
 
 // Shared by /week, /month and their menu labels.
@@ -73,7 +90,13 @@ export async function sendSummary(
     return;
   }
   const screen: SummaryScreen = { name: 'summary', ledgerId: summary.ledger.id };
-  await showScreen(ctx, deps, user, screen, summaryView(summary, chartUrlOf(ctx, deps, summary)));
+  await showScreen(
+    ctx,
+    deps,
+    user,
+    screen,
+    summaryView(summary, chartUrlOf(ctx, deps, user, summary)),
+  );
   if (kind === 'month') await offerTip(ctx, deps, user, 'monthShown');
 }
 
@@ -107,7 +130,11 @@ export function registerSummary(bot: Composer<Context>, deps: HandlerDeps): void
     // A forged or future period is answered silently and edits nothing.
     await ctx.answerCallbackQuery();
     if (summary !== undefined) {
-      await renderAnchor(ctx, tap.anchor, summaryView(summary, chartUrlOf(ctx, deps, summary)));
+      await renderAnchor(
+        ctx,
+        tap.anchor,
+        summaryView(summary, chartUrlOf(ctx, deps, tap.user, summary)),
+      );
     }
   });
 }

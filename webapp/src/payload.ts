@@ -4,6 +4,9 @@
 
 export type ChartLine = readonly [name: string, amountMinor: number, label: string];
 
+// One trend bar: the period's name, its total in minor units, and that total formatted.
+export type TrendBar = readonly [periodLabel: string, totalMinor: number, label: string];
+
 export interface ChartPayload {
   readonly v: 1;
   readonly title: string;
@@ -14,6 +17,8 @@ export interface ChartPayload {
   readonly lines: readonly ChartLine[];
   // One formatted line per currency with no rate.
   readonly unconverted: readonly string[];
+  // The shown period and the ones before it, oldest first; absent when the bot left none.
+  readonly trend?: readonly TrendBar[];
 }
 
 // The raw `d` value from the fragment. Telegram appends its own launch parameters (`tgWebAppData`
@@ -49,7 +54,8 @@ function isChartPayload(value: unknown): value is ChartPayload {
     typeof p['totalLabel'] !== 'string' ||
     !Array.isArray(p['lines']) ||
     !Array.isArray(p['unconverted']) ||
-    !p['unconverted'].every((line) => typeof line === 'string')
+    !p['unconverted'].every((line) => typeof line === 'string') ||
+    (p['trend'] !== undefined && !(Array.isArray(p['trend']) && p['trend'].every(isLine)))
   ) {
     return false;
   }
@@ -61,6 +67,7 @@ function isChartPayload(value: unknown): value is ChartPayload {
   return sum === p['totalMinor'];
 }
 
+// A pie line or a trend bar: a string, a safe integer and a string.
 function isLine(value: unknown): value is ChartLine {
   return (
     Array.isArray(value) &&

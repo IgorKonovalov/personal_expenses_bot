@@ -1,5 +1,5 @@
 import type { LedgerKind } from '../db/ledgers.js';
-import type { ChartInput } from '../domain/chartPayload.js';
+import type { ChartFold, ChartInput } from '../domain/chartPayload.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
@@ -215,6 +215,13 @@ interface ChartView {
   // True when the converted block holds foreign spending.
   readonly approximate: boolean;
   readonly unconverted: SummaryView['currencies'];
+  // The shown period and the ones before it, oldest first, each total in `converted.currency`.
+  // `approximate` as above, per period.
+  readonly trend: readonly {
+    readonly period: PeriodRef;
+    readonly totalMinor: number;
+    readonly approximate: boolean;
+  }[];
 }
 
 // A summary push's report: the converted block with each change against the period before, then
@@ -1695,7 +1702,8 @@ export const messages = {
   chartButton: '📈 Диаграмма',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
-  chart: ({ period, converted, approximate, unconverted }: ChartView): ChartInput => ({
+  // The trend bars are named like the pager names periods.
+  chart: ({ period, converted, approximate, unconverted, trend }: ChartView): ChartInput => ({
     title: periodTitle(period),
     currency: converted.currency,
     totalLabel: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
@@ -1707,6 +1715,16 @@ export const messages = {
     unconverted: unconverted.map(
       (c) => `Без курса НБС: ${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}`,
     ),
+    trend: trend.map((point) => [
+      periodLabel(point.period),
+      point.totalMinor,
+      `${point.approximate ? '≈ ' : ''}${formatMoney({ amountMinor: point.totalMinor, currency: converted.currency })}`,
+    ]),
+  }),
+  // The pie line the smallest categories fold into when a chart is too large for its button.
+  chartFold: (currency: CurrencyCode): ChartFold => ({
+    name: 'Прочее',
+    label: (amountMinor) => formatMoney({ amountMinor, currency }),
   }),
   // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
   // image too large to download (ADR-0019, ADR-0034).
