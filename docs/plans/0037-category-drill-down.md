@@ -162,6 +162,7 @@ between phases. The architect reviews once at the end, in a fresh session.
 
 ### Phase 4: Live check
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** on the deployed bot, with real data: `/month` → `[По категориям]` → a category → an
   expense → change its category → `[« Назад]` twice → `[« Назад]` to the digest.
 - **Done when:** the moved expense left the first category's list, the digest's two category
