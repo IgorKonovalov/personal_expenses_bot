@@ -137,7 +137,7 @@ interface CatTrendSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a tapped category shows its six periods | dev | done | committed with this row |
+| 1: Walking skeleton: a tapped category shows its six periods | dev | done | 4c40f26 |
 | 2: Live check | human | not started | |
 
 ### Notes
@@ -160,5 +160,20 @@ interface CatTrendSection {
   README stays unformatted. The edits are hand-wrapped.
 
 ### Close triggers
+
+- Phase 1 (`dev`) is done in 4c40f26. Phase 2 (`human`) has not started. It does not block the
+  merge.
+- Gate on the tip (4c40f26):
+  - `pnpm typecheck` exited 0.
+  - `pnpm lint` exited 0.
+  - `pnpm test` exited 0, with 141 files and 2003 tests passed.
+  - `pnpm build` exited 0.
+  - `pnpm build:webapp` exited 0.
+  - `node scripts/check-doc-links.mjs` exited 0, with 335 relative links resolving.
+- `CHART_PAYLOAD_BUDGET` is still 2048 and `CHART_PAYLOAD_VERSION` is still 2.
+- No new file. No migration, dependency or `webapp/index.html` change.
+- New exports: `CatTrendSection` and `CatTrendPoint` (bot and page).
+- `TrendPoint` gained `lines`.
+- New page message: `chartNoHistory`.
 
 ## Followups
