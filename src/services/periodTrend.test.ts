@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from '../db/expenses.js';
@@ -11,9 +11,15 @@ import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring } from './ledgerKeys.js';
 import { currentPeriodSummary, ledgerPeriodSummary } from './periodSummary.js';
-import { periodTrend } from './periodTrend.js';
+import { periodChart, periodTrend } from './periodTrend.js';
 import { provisionUser } from './provisionUser.js';
 import type { RecordDeps } from './recordExpense.js';
+
+// Counts the reads periodChart makes, still running the real summary.
+vi.mock('./periodSummary.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./periodSummary.js')>();
+  return { ...original, ledgerPeriodSummary: vi.fn(original.ledgerPeriodSummary) };
+});
 
 // Thursday 15 October, 12:00 in Europe/Belgrade (CEST).
 const NOW = new Date('2026-10-15T10:00:00Z');
@@ -151,5 +157,103 @@ describe('periodTrend', () => {
     expect(
       periodTrend(deps, { user: other, ledgerId, period: current('month'), now: NOW }),
     ).toBeUndefined();
+  });
+});
+
+describe('periodChart', () => {
+  const october = monthOf('2026-10-01' as LocalDate);
+  const groceries = 'groceries';
+
+  // The plan's month ledger: Еда is groceries, Транспорт transport, Кафе cafe.
+  beforeEach(() => {
+    db.prepare('DELETE FROM expenses').run();
+    add('S1', '2026-09-10', 60000, 'RSD', groceries);
+    add('S2', '2026-09-20', 40000, 'RSD', groceries);
+    add('S3', '2026-09-20', 40000, 'RSD', 'transport');
+    add('O1', '2026-10-02', 120000, 'RSD', groceries);
+    add('O2', '2026-10-15', 30000, 'RSD', 'transport');
+    add('O3', '2026-10-01', 5000, 'RSD', 'cafe');
+    vi.mocked(ledgerPeriodSummary).mockClear();
+  });
+
+  const changesOf = (now: Date, period = october) => {
+    const chart = periodChart(deps, { user, ledgerId, period, now });
+    return {
+      chart,
+      lines: chart?.comparison?.lines.map((line) => [line.amountMinor, line.change]),
+    };
+  };
+
+  it('compares a past October whole with September', () => {
+    const { chart, lines } = changesOf(new Date('2026-11-03T10:00:00Z'));
+
+    expect(lines).toEqual([
+      [120000, { kind: 'change', deltaMinor: 20000, percent: 20 }],
+      [30000, { kind: 'change', deltaMinor: -10000, percent: -25 }],
+      [5000, { kind: 'new' }],
+    ]);
+    // 155000 against 140000: 10.71% rounds to 11.
+    expect(chart?.comparison?.total).toEqual({ kind: 'change', deltaMinor: 15000, percent: 11 });
+    expect(chart?.comparison?.window).toEqual(monthOf('2026-09-01' as LocalDate));
+    expect(chart?.comparison?.whole).toBe(true);
+  });
+
+  it('compares a running October on the 15th with 1–15 September', () => {
+    const { chart, lines } = changesOf(NOW);
+
+    expect(chart?.comparison?.window).toEqual({
+      kind: 'month',
+      from: '2026-09-01',
+      to: '2026-09-15',
+    });
+    expect(chart?.comparison?.whole).toBe(false);
+    expect(lines).toEqual([
+      [120000, { kind: 'change', deltaMinor: 60000, percent: 100 }],
+      [30000, { kind: 'new' }],
+      [5000, { kind: 'new' }],
+    ]);
+    // 155000 against 60000: 158.33%.
+    expect(chart?.comparison?.total).toEqual({ kind: 'change', deltaMinor: 95000, percent: 158 });
+  });
+
+  it('clips a running window on 30 March to the whole of February', () => {
+    const march = monthOf('2026-03-01' as LocalDate);
+    add('M1', '2026-03-10', 10000, 'RSD', groceries);
+
+    const { chart } = changesOf(new Date('2026-03-30T10:00:00Z'), march);
+
+    expect(chart?.comparison?.window).toEqual(monthOf('2026-02-01' as LocalDate));
+    expect(chart?.comparison?.whole).toBe(true);
+  });
+
+  it('compares a week on Wednesday 7 October with 28–30 September', () => {
+    const week = weekOf('2026-10-07' as LocalDate);
+    add('W1', '2026-10-06', 1000, 'RSD', groceries);
+
+    const { chart } = changesOf(new Date('2026-10-07T10:00:00Z'), week);
+
+    expect(chart?.comparison?.window).toEqual({
+      kind: 'week',
+      from: '2026-09-28',
+      to: '2026-09-30',
+    });
+    expect(chart?.comparison?.whole).toBe(false);
+  });
+
+  it('leaves out a category spent on only in the window', () => {
+    add('S4', '2026-09-05', 9000, 'RSD', 'telecom');
+
+    const { lines } = changesOf(NOW);
+
+    expect(lines?.map(([amount]) => amount)).toEqual([120000, 30000, 5000]);
+  });
+
+  it('reads 6 summaries for a past period and 7 for a running one', () => {
+    changesOf(new Date('2026-11-03T10:00:00Z'));
+    expect(ledgerPeriodSummary).toHaveBeenCalledTimes(6);
+
+    vi.mocked(ledgerPeriodSummary).mockClear();
+    changesOf(NOW);
+    expect(ledgerPeriodSummary).toHaveBeenCalledTimes(7);
   });
 });

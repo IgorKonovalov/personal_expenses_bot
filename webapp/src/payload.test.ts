@@ -228,6 +228,42 @@ describe('a v2 chart', () => {
     ]);
   });
 
+  it('adds each line change to its legend row, and the total change to the centre', async () => {
+    const pie = {
+      ...OCTOBER_PIE,
+      totalChange: '↑11% к сентябрю',
+      lines: [
+        ['Еда', 120000, '120 000.00 RSD', '78%', '↑20%'],
+        ['Транспорт', 30000, '30 000.00 RSD', '19%', '↓25%'],
+        ['Кафе', 5000, '5 000.00 RSD', '3%', 'новое'],
+      ],
+    };
+    const { nodes, texts } = await page(`#z=${await deflated({ ...OCTOBER, sections: [pie] })}`);
+
+    expect(texts).toContain(' Еда: 120 000.00 RSD · 78% · ↑20%');
+    expect(texts).toContain(' Транспорт: 30 000.00 RSD · 19% · ↓25%');
+    expect(texts).toContain(' Кафе: 5 000.00 RSD · 3% · новое');
+    const donut = nodes.find((node) => node.attributes.get('role') === 'img');
+    const centre = donut?.children.filter((node) => node.tag === 'text');
+    expect(centre?.map((node) => node.textContent)).toEqual(['1 550.00 RSD', '↑11% к сентябрю']);
+    // Past 12 characters, the caption is squeezed to the hole's width.
+    expect(centre?.[1]?.attributes.get('textLength')).toBe('1.1');
+  });
+
+  it('rejects a change that is not a string, and a line past the change', async () => {
+    const lines = (extra: unknown[]) => [['Еда', 155000, '1 550.00 RSD', '100%', ...extra]];
+    for (const extra of [[20], ['↑20%', 'x']]) {
+      const pie = { ...OCTOBER_PIE, lines: lines(extra) };
+      expect(
+        await decodeChartPayload(`#z=${await deflated({ ...OCTOBER, sections: [pie] })}`),
+      ).toBe(undefined);
+    }
+    const badTotal = { ...OCTOBER_PIE, totalChange: 11 };
+    expect(
+      await decodeChartPayload(`#z=${await deflated({ ...OCTOBER, sections: [badTotal] })}`),
+    ).toBe(undefined);
+  });
+
   it('shows only chartBroken for a pie whose lines miss its total, or a z that is not deflate', async () => {
     const off = { ...OCTOBER, sections: [{ ...OCTOBER_PIE, totalMinor: 155001 }, OCTOBER_TREND] };
     for (const hash of [`#z=${await deflated(off)}`, `#z=${base64url(JSON.stringify(OCTOBER))}`]) {

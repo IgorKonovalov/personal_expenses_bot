@@ -9,7 +9,7 @@ import {
   ledgerPeriodSummary,
   type PeriodSummary,
 } from '../../services/periodSummary.js';
-import { periodTrend } from '../../services/periodTrend.js';
+import { periodChart } from '../../services/periodTrend.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   SUMMARY_PAGE,
@@ -28,8 +28,8 @@ import { ensureUser } from './start.js';
 // was opened on. [Позиции] under the pager turns the screen into the period's receipt items
 // (handlers/items.ts), and [По категориям] into its drill-down (handlers/drill.ts).
 
-// The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with the
-// trend of its converted totals under it.
+// The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with each
+// category's change against the previous period and the trend of its converted totals under it.
 function summaryView(summary: PeriodSummary, chartUrl: string | undefined): ScreenView {
   const row = [
     InlineKeyboard.text(messages.periodPrev(summary.previous), summaryPageData(summary.previous)),
@@ -57,8 +57,8 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
 }
 
 // The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment's `z`
-// (ADR-0025, ADR-0045),
-// rebuilt on every render, the trend ending at the shown period. Undefined outside a private chat
+// (ADR-0025, ADR-0045), rebuilt on every render, the trend ending at the shown period and each
+// line compared with the previous period (periodChart). Undefined outside a private chat
 // (`web_app` buttons work only there), without WEBAPP_URL, when the first block isn't in the
 // ledger's currency (then nothing converted, so there's no pie, as with no expenses at all), and
 // when the payload can't fit its budget.
@@ -71,7 +71,7 @@ function chartUrlOf(
   if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
   const [converted, ...unconverted] = summary.currencies;
   if (converted?.currency !== summary.ledger.defaultCurrency) return undefined;
-  const trend = periodTrend(deps, {
+  const chart = periodChart(deps, {
     user,
     ledgerId: summary.ledger.id,
     period: summary.period,
@@ -83,7 +83,8 @@ function chartUrlOf(
       converted,
       approximate: summary.convertedFrom.length > 0,
       unconverted,
-      trend: trend ?? [],
+      trend: chart?.trend ?? [],
+      comparison: chart?.comparison,
     }),
     messages.chartFold(converted.currency),
   );

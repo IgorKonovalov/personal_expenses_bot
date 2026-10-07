@@ -14,9 +14,15 @@ export const CHART_PAYLOAD_VERSION = 2;
 // which opens it with its own launch parameters added; 2048 is the smallest size measured.
 export const CHART_PAYLOAD_BUDGET = 2048;
 
-// One pie slice: the category name, its amount in minor units, its formatted amount, and its
-// formatted share of the pie.
-export type ChartLine = readonly [name: string, amountMinor: number, label: string, share: string];
+// One pie slice: the category name, its amount in minor units, its formatted amount, its
+// formatted share of the pie, and its formatted change against the previous period when known.
+export type ChartLine = readonly [
+  name: string,
+  amountMinor: number,
+  label: string,
+  share: string,
+  change?: string,
+];
 
 // One trend bar: the period's name, its converted total in minor units, and that total formatted.
 export type TrendBar = readonly [periodLabel: string, totalMinor: number, label: string];
@@ -28,6 +34,9 @@ export interface PieSection {
   // The sum of the lines' amounts, an integer in minor units.
   readonly totalMinor: number;
   readonly totalLabel: string;
+  // The total's change with the basis it is against, «↑11% к сентябрю»; absent when there is no
+  // change to show or it was shed.
+  readonly totalChange?: string;
   // Largest first, as the text screen lists them.
   readonly lines: readonly ChartLine[];
   // One formatted line per currency with no rate, never added to the pie.
@@ -55,6 +64,7 @@ export interface ChartInput {
   readonly title: string;
   readonly currency: string;
   readonly totalLabel: string;
+  readonly totalChange?: string;
   readonly lines: readonly ChartLine[];
   readonly unconverted: readonly string[];
   readonly trend?: readonly TrendBar[];
@@ -76,6 +86,7 @@ export function chartPayload(input: ChartInput): ChartPayloadV2 {
     currency: input.currency,
     totalMinor: totalOf(input.lines),
     totalLabel: input.totalLabel,
+    ...(input.totalChange === undefined ? {} : { totalChange: input.totalChange }),
     lines: input.lines,
     unconverted: input.unconverted,
   };
@@ -89,10 +100,11 @@ export function chartPayload(input: ChartInput): ChartPayloadV2 {
 
 // The `z` value of the button URL's fragment: zlib deflate of the payload's UTF-8 JSON, as
 // base64url (unpadded), so it holds no `&`, `=` or `#` that would split Telegram's launch
-// parameters. Over `budget`, detail is shed in order (ADR-0045): the oldest trend bars one by one,
-// which with the last one drops the trend section, then the smallest lines fold into one `fold`
-// line, more of them each try. Each step is compressed again, since how well a payload
-// compresses depends on its content. Undefined when nothing fits.
+// parameters. Over `budget`, detail is shed in order (ADR-0045): every change label at once, the
+// total's included, then the oldest trend bars one by one, which with the last one drops the
+// trend section, then the smallest lines fold into one `fold` line, more of them each try. Each
+// step is compressed again, since how well a payload compresses depends on its content.
+// Undefined when nothing fits.
 export function encodeChartPayload(
   input: ChartInput,
   fold: ChartFold,
@@ -109,12 +121,28 @@ export function encodeChartPayload(
 // `input` itself, then each step of shedding, every one smaller than the one before.
 function* shedding(input: ChartInput, fold: ChartFold): Generator<ChartInput> {
   yield input;
-  const trend = input.trend ?? [];
-  for (let dropped = 1; dropped <= trend.length; dropped++) {
-    yield { ...input, trend: trend.slice(dropped) };
+  const bare: ChartInput = {
+    title: input.title,
+    currency: input.currency,
+    totalLabel: input.totalLabel,
+    lines: input.lines.map(([name, amountMinor, label, share]) => [
+      name,
+      amountMinor,
+      label,
+      share,
+    ]),
+    unconverted: input.unconverted,
+    ...(input.trend === undefined ? {} : { trend: input.trend }),
+  };
+  if (input.totalChange !== undefined || input.lines.some((line) => line[4] !== undefined)) {
+    yield bare;
   }
-  for (let folded = 1; folded <= input.lines.length; folded++) {
-    yield { ...input, trend: [], lines: foldSmallest(input.lines, folded, fold) };
+  const trend = bare.trend ?? [];
+  for (let dropped = 1; dropped <= trend.length; dropped++) {
+    yield { ...bare, trend: trend.slice(dropped) };
+  }
+  for (let folded = 1; folded <= bare.lines.length; folded++) {
+    yield { ...bare, trend: [], lines: foldSmallest(bare.lines, folded, fold) };
   }
 }
 

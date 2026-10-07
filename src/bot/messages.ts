@@ -1,5 +1,5 @@
 import type { LedgerKind } from '../db/ledgers.js';
-import type { ChartFold, ChartInput } from '../domain/chartPayload.js';
+import type { ChartFold, ChartInput, ChartLine } from '../domain/chartPayload.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
@@ -223,6 +223,17 @@ interface ChartView {
     readonly totalMinor: number;
     readonly approximate: boolean;
   }[];
+  // The shown period against the one before it: `lines` hold each converted line's change, in
+  // the order of `converted.lines`. `window` is what was compared against, `whole` true when it
+  // is the whole previous period. Absent: no change labels.
+  readonly comparison?:
+    | {
+        readonly window: PeriodRef;
+        readonly whole: boolean;
+        readonly lines: readonly { readonly change: Change }[];
+        readonly total: Change;
+      }
+    | undefined;
 }
 
 // Each line with its share of their sum in whole percents; all 0 when nothing was spent.
@@ -237,6 +248,29 @@ function zipShares<T extends { readonly amountMinor: number }>(
 // A chart line's share label: «78%», or «<1%» for a positive amount that rounds to 0.
 function chartShare(percent: number, amountMinor: number): string {
   return percent === 0 && amountMinor > 0 ? messages.chartShareTiny : `${percent}%`;
+}
+
+// A chart's change label: «↑20%», «↓25%», «±0%» or «новое».
+function chartChange(change: Change): string {
+  if (change.kind === 'new') return messages.chartChangeNew;
+  if (change.percent > 0) return messages.chartChangeUp(change.percent);
+  if (change.percent < 0) return messages.chartChangeDown(-change.percent);
+  return messages.chartChangeZero;
+}
+
+// What a chart's total change is against: «к сентябрю», «к неделе 28 сентября – 4 октября», or
+// for the first days of a period, «к 1–15 сентября», «к 28–30 сентября», «к 1 сентября».
+function chartBasis(window: PeriodRef, whole: boolean): string {
+  if (whole) {
+    return window.kind === 'month'
+      ? `к ${DATIVE_MONTHS[dateParts(window.from).month] ?? ''}`
+      : `к неделе ${weekRange(window, GENITIVE_MONTHS)}`;
+  }
+  if (window.from === window.to) {
+    const { day, month } = dateParts(window.from);
+    return `к ${day} ${GENITIVE_MONTHS[month] ?? ''}`;
+  }
+  return `к ${weekRange(window, GENITIVE_MONTHS)}`;
 }
 
 // A summary push's report: the converted block with each change against the period before, then
@@ -394,6 +428,21 @@ const GENITIVE_MONTHS = [
   'октября',
   'ноября',
   'декабря',
+] as const;
+// After `к`: `к сентябрю`.
+const DATIVE_MONTHS = [
+  'январю',
+  'февралю',
+  'марту',
+  'апрелю',
+  'маю',
+  'июню',
+  'июлю',
+  'августу',
+  'сентябрю',
+  'октябрю',
+  'ноябрю',
+  'декабрю',
 ] as const;
 
 function dateParts(date: LocalDate): { year: string; month: number; day: number } {
@@ -1789,18 +1838,36 @@ export const messages = {
   chartButton: '📈 Диаграмма',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
-  // Each line carries its share of the pie in whole percents (sharesOf). The trend bars are named
+  // Each line carries its share of the pie in whole percents (sharesOf), then its change against
+  // the previous period. The total's change names its basis once, in the donut's centre; with
+  // nothing to compare against (`new`), the centre keeps its caption. The trend bars are named
   // like the pager names periods.
-  chart: ({ period, converted, approximate, unconverted, trend }: ChartView): ChartInput => ({
+  chart: ({
+    period,
+    converted,
+    approximate,
+    unconverted,
+    trend,
+    comparison,
+  }: ChartView): ChartInput => ({
     title: periodTitle(period),
     currency: converted.currency,
     totalLabel: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
-    lines: zipShares(converted.lines).map(([line, percent]) => [
-      line.name ?? UNCATEGORIZED,
-      line.amountMinor,
-      formatMoney({ amountMinor: line.amountMinor, currency: converted.currency }),
-      chartShare(percent, line.amountMinor),
-    ]),
+    ...(comparison === undefined || comparison.total.kind === 'new'
+      ? {}
+      : {
+          totalChange: `${chartChange(comparison.total)} ${chartBasis(comparison.window, comparison.whole)}`,
+        }),
+    lines: zipShares(converted.lines).map(([line, percent], index): ChartLine => {
+      const shown = [
+        line.name ?? UNCATEGORIZED,
+        line.amountMinor,
+        formatMoney({ amountMinor: line.amountMinor, currency: converted.currency }),
+        chartShare(percent, line.amountMinor),
+      ] as const;
+      const change = comparison?.lines[index]?.change;
+      return change === undefined ? shown : [...shown, chartChange(change)];
+    }),
     unconverted: unconverted.map(
       (c) => `Без курса НБС: ${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}`,
     ),
@@ -1818,6 +1885,12 @@ export const messages = {
   }),
   // A chart line's share when it is positive but rounds to 0%.
   chartShareTiny: '<1%',
+  // A chart's change against the previous period: up or down by `percent` (a positive whole
+  // number), unchanged, or nothing spent on it before, the summary push's word.
+  chartChangeUp: (percent: number) => `↑${percent}%`,
+  chartChangeDown: (percent: number) => `↓${percent}%`,
+  chartChangeZero: '±0%',
+  chartChangeNew: 'новое',
   // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
   // image too large to download (ADR-0019, ADR-0034).
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,

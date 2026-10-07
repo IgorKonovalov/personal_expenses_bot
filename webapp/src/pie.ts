@@ -186,8 +186,9 @@ function isTrend(section: Section): section is TrendSection {
 }
 
 // The total, the donut of the converted block with its tap hint and legend, then one line per
-// currency with no rate, which is never drawn. A legend row reads «name: amount · share», its
-// parts the payload's own strings. Tapping a slice or a legend row inspects that line; tapping
+// currency with no rate, which is never drawn. A legend row reads «name: amount · share · change»,
+// its parts the payload's own strings, each present only when sent. With no line selected, the
+// centre shows the total over its change and basis, or over «Всего» without one. Tapping a slice or a legend row inspects that line; tapping
 // it again, or the hole, goes back to the total. The selection lives in this closure only: it is
 // never stored or sent.
 function drawPie<N extends ChartNode<N>>(
@@ -229,7 +230,7 @@ function drawPie<N extends ChartNode<N>>(
     root.append(donut.svg, paragraph(doc, messages.chartTapHint));
   }
   const legend = doc.createElement('ul');
-  payload.lines.forEach(([name, , label, share], index) => {
+  payload.lines.forEach(([name, , label, share, change], index) => {
     const item = doc.createElement('li');
     item.style.minHeight = ROW_MIN_HEIGHT;
     const swatch = svgNode(doc, 'svg', { width: '12', height: '12', viewBox: '0 0 12 12' });
@@ -237,7 +238,7 @@ function drawPie<N extends ChartNode<N>>(
       svgNode(doc, 'rect', { width: '12', height: '12', fill: colours[index] ?? NEUTRAL }),
     );
     const text = doc.createElement('span');
-    const parts = share === undefined ? [label] : [label, share];
+    const parts = [label, share, change].filter((part) => part !== undefined);
     text.textContent = ` ${name}: ${parts.join(' · ')}`;
     item.append(swatch, text);
     item.addEventListener('click', () => {
@@ -272,7 +273,7 @@ function inspect<N extends ChartNode<N>>(
   const [top, bottom] = donut.centre;
   if (line === undefined) {
     setCentre(top, payload.totalLabel, CENTRE_FONT);
-    setCentre(bottom, messages.chartTotalCaption, CAPTION_FONT);
+    setCentre(bottom, payload.totalChange ?? messages.chartTotalCaption, CAPTION_FONT);
   } else {
     setCentre(top, shortName(line[0]), CENTRE_FONT);
     setCentre(bottom, line[2], CENTRE_FONT);

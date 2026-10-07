@@ -277,8 +277,8 @@ interface TrendSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | committed with this row |
-| 2: Comparison with the previous period | dev | not started | |
+| 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | 6b7d2f3 |
+| 2: Comparison with the previous period | dev | done | committed with this row |
 | 3: The URL-limit probe | dev | not started | |
 | 4: Measure on real clients and check v2 opens | human | not started | |
 
@@ -291,6 +291,18 @@ interface TrendSection {
 - Phase 1: the «Еда: 120 000.00 RSD · 78%» done-when is asserted in `webapp/src/payload.test.ts`
   on a payload whose Еда label is «120 000.00 RSD», as the plan writes it. The bot formats 120000
   minor units as «1 200.00 RSD», which the domain round trip in `chartPayload.test.ts` uses.
+- Phase 2: the comparison lives in a new `periodChart` in `src/services/periodTrend.ts`, which
+  returns the trend plus the window, the per-line `CategoryDelta`s and the total `Change`;
+  `periodTrend` stays as a wrapper. The handler calls `periodChart`.
+- Phase 2: the 6/7 read count is asserted in `periodTrend.test.ts` on `periodChart`, the chart's
+  reads. The screen's own summary read (`currentPeriodSummary` for `/month`, `ledgerPeriodSummary`
+  when paged) is outside that count.
+- Phase 2: the bot-level scenarios in `bot.test.ts` use preset names: Продукты for Еда, Кафе и
+  рестораны for Кафе.
+- Phase 2: "the centre falls back to «Всего»" over budget is asserted in two parts: the shed
+  payload has no `totalChange` (`chartPayload.test.ts`), and a pie without one shows «Всего»
+  (`payload.test.ts`).
+- Phase 2: a running window of one day reads «к 1 сентября»; the plan names no basis for it.
 
 ### Close triggers
 

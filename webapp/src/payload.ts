@@ -4,8 +4,15 @@
 // src/domain/chartPayload.ts, which the page can't import: it is built alone and shares no code
 // with the bot.
 
-// A pie line: name, amount in minor units, formatted amount, then the formatted share in v2.
-export type ChartLine = readonly [name: string, amountMinor: number, label: string, share?: string];
+// A pie line: name, amount in minor units, formatted amount, then in v2 the formatted share and,
+// when the bot sent one, the formatted change against the previous period.
+export type ChartLine = readonly [
+  name: string,
+  amountMinor: number,
+  label: string,
+  share?: string,
+  change?: string,
+];
 
 // One trend bar: the period's name, its total in minor units, and that total formatted.
 export type TrendBar = readonly [periodLabel: string, totalMinor: number, label: string];
@@ -30,6 +37,8 @@ export interface PieSection {
   // The integer sum of the lines' amounts, in minor units.
   readonly totalMinor: number;
   readonly totalLabel: string;
+  // The total's change with its basis, «↑11% к сентябрю»: the centre's caption when present.
+  readonly totalChange?: string;
   readonly lines: readonly ChartLine[];
   // One formatted line per currency with no rate.
   readonly unconverted: readonly string[];
@@ -127,8 +136,9 @@ function isSection(value: unknown): value is Section {
       return (
         typeof value['currency'] === 'string' &&
         typeof value['totalLabel'] === 'string' &&
+        (value['totalChange'] === undefined || typeof value['totalChange'] === 'string') &&
         isStrings(value['unconverted']) &&
-        linesSumTo(value['lines'], value['totalMinor'], 4)
+        linesSumTo(value['lines'], value['totalMinor'], 4, 5)
       );
     case 'trend':
       return isBars(value['bars']);
@@ -137,12 +147,13 @@ function isSection(value: unknown): value is Section {
   }
 }
 
-// Pie lines of `length` elements whose amounts sum to `totalMinor`, a safe integer.
-function linesSumTo(lines: unknown, totalMinor: unknown, length: number): boolean {
+// Pie lines of `min` to `max` elements, every one past the third a string, whose amounts sum to
+// `totalMinor`, a safe integer.
+function linesSumTo(lines: unknown, totalMinor: unknown, min: number, max = min): boolean {
   if (!Array.isArray(lines) || !Number.isSafeInteger(totalMinor)) return false;
   let sum = 0;
   for (const line of lines) {
-    if (!isTriple(line) || line.length !== length) return false;
+    if (!isTriple(line) || line.length < min || line.length > max) return false;
     if (line.slice(3).some((extra) => typeof extra !== 'string')) return false;
     sum += line[1];
   }

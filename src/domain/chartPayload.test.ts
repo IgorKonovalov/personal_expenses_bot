@@ -208,6 +208,48 @@ describe('the payload budget', () => {
     expect(foldedCases).toBeGreaterThan(20);
   });
 
+  it('sheds the change labels first, keeping every trend bar, when just over budget', async () => {
+    const next = random(11);
+    const lines = many(12, next).map(([name, amount, label, share], i): ChartLine => [
+      name,
+      amount,
+      label,
+      share,
+      `↑${i + 1}%`,
+    ]);
+    const input = {
+      ...OCTOBER,
+      lines,
+      totalChange: '↑11% к сентябрю',
+      trend: trend(6, next),
+    };
+    const full = encodeChartPayload(input, FOLD, Infinity)?.length ?? 0;
+
+    const decoded = await decode(encodeChartPayload(input, FOLD, full - 1));
+
+    const pie = pieOf(decoded);
+    expect(pie.totalChange).toBeUndefined();
+    expect(pie.lines).toEqual(lines.map((line) => line.slice(0, 4)));
+    expect(barsOf(decoded)).toEqual(input.trend);
+  });
+
+  it('carries the change labels and the total change when they fit', async () => {
+    const input: ChartInput = {
+      ...OCTOBER,
+      totalChange: '↑11% к сентябрю',
+      lines: [
+        ['Еда', 120000, '1 200.00 RSD', '78%', '↑20%'],
+        ['Транспорт', 30000, '300.00 RSD', '19%', '↓25%'],
+        ['Кафе', 5000, '50.00 RSD', '3%', 'новое'],
+      ],
+    };
+
+    const pie = pieOf(await decode(encodeChartPayload(input, FOLD)));
+
+    expect(pie.totalChange).toBe('↑11% к сентябрю');
+    expect(pie.lines).toEqual(input.lines);
+  });
+
   it('is undefined when nothing is left to fold or drop', () => {
     expect(
       encodeChartPayload({ ...OCTOBER, trend: trend(6, random(10)) }, FOLD, 50),

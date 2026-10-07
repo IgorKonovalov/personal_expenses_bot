@@ -6,7 +6,7 @@ import { inflateRawSync } from 'node:zlib';
 import { Composer, type Bot, type InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { decodeChartPayload } from '../../webapp/src/payload.js';
+import { decodeChartPayload, type PieSection, type Section } from '../../webapp/src/payload.js';
 import { setBudgetLimit } from '../db/budgets.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
@@ -3078,9 +3078,10 @@ describe('/week and /month', () => {
 
   // A bot whose sendMessage answers with real message ids (the anchor needs them), holding the
   // plan's fixture ledger A to H once `/start` has provisioned the user.
-  async function summaryBot(opts: { fixture?: boolean; webappUrl?: string } = {}) {
+  async function summaryBot(opts: { fixture?: boolean; webappUrl?: string; now?: Date } = {}) {
+    const now = opts.now ?? NOW;
     const db = openDatabase(':memory:');
-    runMigrations(db, NOW);
+    runMigrations(db, now);
     quietFirstContact(db);
     let ids = 0;
     // The /start welcome and setup check take 99 and 100, so the first screen after them is 101.
@@ -3092,10 +3093,10 @@ describe('/week and /month', () => {
       logger: silentLogger(),
       db,
       newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
-      now: () => NOW,
+      now: () => now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(() => NOW),
+      keys: createLedgerKeyring(() => now),
       botInfo,
       webappUrl: opts.webappUrl,
     });
@@ -3108,7 +3109,7 @@ describe('/week and /month', () => {
       return Promise.resolve({ ok: true, result: result as never });
     });
     let updateId = 0;
-    const say = (text: string, message: number, date = NOW) =>
+    const say = (text: string, message: number, date = now) =>
       bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId: message, text, date }));
     const tap = (data: string, message: number) =>
       bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: message }));
@@ -3506,11 +3507,12 @@ describe('/week and /month', () => {
             currency: 'RSD',
             totalMinor: 222000,
             totalLabel: '2 220.00 RSD',
+            // Running on 30 September: compared with 1–30 August, which had nothing.
             lines: [
-              ['Продукты', 120000, '1 200.00 RSD', '54%'],
-              ['Кафе и рестораны', 75000, '750.00 RSD', '34%'],
-              ['Транспорт', 20000, '200.00 RSD', '9%'],
-              ['Без категории', 7000, '70.00 RSD', '3%'],
+              ['Продукты', 120000, '1 200.00 RSD', '54%', 'новое'],
+              ['Кафе и рестораны', 75000, '750.00 RSD', '34%', 'новое'],
+              ['Транспорт', 20000, '200.00 RSD', '9%', 'новое'],
+              ['Без категории', 7000, '70.00 RSD', '3%', 'новое'],
             ],
             unconverted: ['Без курса НБС: 12.50 EUR'],
           },
@@ -3539,8 +3541,8 @@ describe('/week and /month', () => {
       const { payload } = await chartOf(markupOf(calls[0]));
       const pie = payload?.v === 2 ? payload.sections[0] : undefined;
       expect(pie !== undefined && 'lines' in pie ? pie.lines : undefined).toEqual([
-        ['Продукты', 1000000, '10 000.00 RSD', '100%'],
-        ['Кафе и рестораны', 100, '1.00 RSD', messages.chartShareTiny],
+        ['Продукты', 1000000, '10 000.00 RSD', '100%', 'новое'],
+        ['Кафе и рестораны', 100, '1.00 RSD', messages.chartShareTiny, 'новое'],
       ]);
       expect(messages.chartShareTiny).toBe('<1%');
     });
@@ -3560,9 +3562,9 @@ describe('/week and /month', () => {
             totalMinor: 1710849,
             totalLabel: '≈ 17 108.49 RSD',
             lines: [
-              ['Связь и интернет', 1261942, '12 619.42 RSD', '74%'],
-              ['Другое', 403907, '4 039.07 RSD', '23%'],
-              ['Кафе и рестораны', 45000, '450.00 RSD', '3%'],
+              ['Связь и интернет', 1261942, '12 619.42 RSD', '74%', 'новое'],
+              ['Другое', 403907, '4 039.07 RSD', '23%', 'новое'],
+              ['Кафе и рестораны', 45000, '450.00 RSD', '3%', 'новое'],
             ],
             unconverted: ['Без курса НБС: 5 000.00 KZT'],
           },
@@ -3612,7 +3614,7 @@ describe('/week and /month', () => {
             currency: 'RSD',
             totalMinor: 10000,
             totalLabel: '100.00 RSD',
-            lines: [['Продукты', 10000, '100.00 RSD', '100%']],
+            lines: [['Продукты', 10000, '100.00 RSD', '100%', 'новое']],
             unconverted: [],
           },
           {
@@ -3627,6 +3629,112 @@ describe('/week and /month', () => {
             ],
           },
         ],
+      });
+    });
+
+    describe('the comparison with the previous period', () => {
+      // A month ledger in Europe/Belgrade: September and October as the plan's fixture, with
+      // Продукты for Еда and Кафе и рестораны for Кафе.
+      async function octoberBot(now: Date) {
+        const bot = await summaryBot({ fixture: false, webappUrl, now });
+        bot.add('S1', '2026-09-10', 60000, 'RSD', 'groceries');
+        bot.add('S2', '2026-09-20', 40000, 'RSD', 'groceries');
+        bot.add('S3', '2026-09-20', 40000, 'RSD', 'transport');
+        bot.add('O1', '2026-10-02', 120000, 'RSD', 'groceries');
+        bot.add('O2', '2026-10-15', 30000, 'RSD', 'transport');
+        bot.add('O3', '2026-10-01', 5000, 'RSD', 'cafe');
+        return bot;
+      }
+      const isPie = (section: Section): section is PieSection => section.k === 'pie';
+      const pieOf = async (call: ApiCall | undefined) => {
+        const { payload } = await chartOf(markupOf(call));
+        const pie = payload?.v === 2 ? payload.sections[0] : undefined;
+        if (pie === undefined || !isPie(pie)) throw new Error('a pie section expected');
+        return pie;
+      };
+
+      it('compares a past October whole with September, the basis «к сентябрю»', async () => {
+        const { say, tap, calls } = await octoberBot(new Date('2026-11-03T10:00:00Z'));
+        await say('/month', 2);
+        calls.length = 0;
+
+        await tap('sum:m:2026-10', 101);
+
+        const pie = await pieOf(calls[1]);
+        expect(pie.lines).toEqual([
+          ['Продукты', 120000, '1 200.00 RSD', '78%', '↑20%'],
+          ['Транспорт', 30000, '300.00 RSD', '19%', '↓25%'],
+          ['Кафе и рестораны', 5000, '50.00 RSD', '3%', 'новое'],
+        ]);
+        expect(pie.totalChange).toBe('↑11% к сентябрю');
+      });
+
+      it('compares a running October with 1–15 September on the 15th', async () => {
+        const { say, calls } = await octoberBot(new Date('2026-10-15T10:00:00Z'));
+
+        await say('/month', 2);
+
+        const pie = await pieOf(calls[0]);
+        expect(pie.lines).toEqual([
+          ['Продукты', 120000, '1 200.00 RSD', '78%', '↑100%'],
+          ['Транспорт', 30000, '300.00 RSD', '19%', 'новое'],
+          ['Кафе и рестораны', 5000, '50.00 RSD', '3%', 'новое'],
+        ]);
+        expect(pie.totalChange).toBe('↑158% к 1–15 сентября');
+      });
+
+      it('names a running window clipped to the whole of February «к февралю»', async () => {
+        const { say, add, calls } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: new Date('2026-03-30T10:00:00Z'),
+        });
+        add('F1', '2026-02-28', 5000, 'RSD', 'groceries');
+        add('M1', '2026-03-10', 10000, 'RSD', 'groceries');
+
+        await say('/month', 2);
+
+        const pie = await pieOf(calls[0]);
+        expect(pie.lines).toEqual([['Продукты', 10000, '100.00 RSD', '100%', '↑100%']]);
+        expect(pie.totalChange).toBe('↑100% к февралю');
+      });
+
+      it('compares a week on Wednesday with 28–30 September, leaving out a category spent on only then', async () => {
+        const { say, add, calls } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: new Date('2026-10-07T10:00:00Z'),
+        });
+        add('W1', '2026-10-05', 10000, 'RSD', 'groceries');
+        add('W2', '2026-09-29', 5000, 'RSD', 'groceries');
+        add('W3', '2026-09-30', 1000, 'RSD', 'telecom');
+        // Thursday 1 October is past the window's three days.
+        add('W4', '2026-10-01', 99900, 'RSD', 'groceries');
+
+        await say('/week', 2);
+
+        const pie = await pieOf(calls[0]);
+        expect(pie.lines).toEqual([['Продукты', 10000, '100.00 RSD', '100%', '↑100%']]);
+        // 10000 against 6000.
+        expect(pie.totalChange).toBe('↑67% к 28–30 сентября');
+      });
+
+      it('names a past week «к неделе 28 сентября – 4 октября»', async () => {
+        const { say, add, tap, calls } = await summaryBot({
+          fixture: false,
+          webappUrl,
+          now: new Date('2026-10-15T10:00:00Z'),
+        });
+        add('P1', '2026-09-28', 10000, 'RSD', 'groceries');
+        add('P2', '2026-10-05', 10000, 'RSD', 'groceries');
+        await say('/week', 2);
+        calls.length = 0;
+
+        await tap('sum:w:2026-10-05', 101);
+
+        const pie = await pieOf(calls[1]);
+        expect(pie.lines).toEqual([['Продукты', 10000, '100.00 RSD', '100%', '±0%']]);
+        expect(pie.totalChange).toBe('±0% к неделе 28 сентября – 4 октября');
       });
     });
 
