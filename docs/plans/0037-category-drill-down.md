@@ -237,7 +237,7 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
 |---|---|---|---|
 | 1: The picker and the list, read-only | dev | done | eff64db |
 | 2: The card in the drill-down | dev | done | be7e716 |
-| 3: Edit prompts from the drill-down card | dev | done | committed with this row |
+| 3: Edit prompts from the drill-down card | dev | done | a74caf8 |
 | 4: Live check | human | not started | |
 
 ### Notes
@@ -274,7 +274,26 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
   drill-down without editing those files.
 - Phase 3: `drl:back` on an `ExpenseScreen` anchor also cancels a still-pending edit of that
   expense, so a later typed text is not taken as the answer while the anchor shows the list.
+- Followup, not acted on: if a drill-down card's edit prompt loses its pending flow some other way
+  (any command or menu tap clears it) and the user then taps `[Отмена]`, `cancelFlowIf` finds
+  nothing to cancel, the anchor stays the `ExpenseScreen`, and `cardAt` (which reads only a summary
+  anchor) draws the card without `[« Назад]`. `drl:back` itself still accepts that anchor.
 
 ### Close triggers
+
+- Phases 1-3 (`dev`) are done in eff64db, be7e716 and a74caf8. Phase 4 (`human`, does not block
+  merge) has not started.
+- Gate on the tip (a74caf8): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  136 files and 1891 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs` exit 0,
+  309 relative links resolve.
+- New callback data: `drl:p:<m|w>:<key>:<page>`, `drl:c:<m|w>:<key>:<categoryId|n>:<page>`,
+  `drl:e:<uuid>`, `drl:back`. New session fields: `SummaryScreen.drill`,
+  `ExpenseScreen.returnTo`.
+- New messages: `uncategorized`, `unnamedAuthor`, `drillButton`, `drillCategoryButton`,
+  `drillNumberButton`, `drillPicker`, `drillList`, `drillListEmpty`. Changed keyboard: the private
+  `/week` and `/month` second row is `[По категориям] [Позиции]` when the period has expenses.
+- New modules: `src/services/periodCategory.ts`, `src/bot/handlers/drill.ts`. New helper:
+  `cardAt` in `src/bot/handlers/card.ts`.
+- No new dependency, command, migration or env key.
 
 ## Followups
