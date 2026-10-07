@@ -240,5 +240,5 @@ interface ChartPayloadV1 {
 
 ## Followups
 
-- Re-queue in `tools/conductor/queue.json` (and run `conductor.mjs ready 0030`) once Plan 0032
-  is merged: its readiness check needs `webapp/` on `main`.
+- The chart page keeps the title «Скан чека» (round 1 nit 1).
+- A long trend label may be clipped at the viewBox edge; Phase 4 checks for it (round 1 nit 2).
