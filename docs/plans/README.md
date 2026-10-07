@@ -12,13 +12,13 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0036](0036-product-prices-across-months.md) | Product prices across months: receipt items grouped into products, with spend, amount and unit price per month | approved (2026-10-06) |
 | [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0036](done/0036-product-prices-across-months.md) | Product prices across months: receipt items grouped into products, with spend, amount and unit price per month | done (2026-10-07): built as planned, one minor and one nit fixed at close, two minors open, Phase 6 real receipts owed, v0.26.0 |
 | [0032](done/0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | done (2026-10-07): built as planned, three minors open, Phase 2 publish and real scan owed, v0.25.0 |
 | [0026](done/0026-monthly-summary-push.md) | Monthly summary push: last period's report arrives on its own | done (2026-10-06): built as planned, one minor and one nit open, Phase 5 real month owed, v0.24.0 |
 | [0035](done/0035-collapsed-lists-period-items-tidy-chat.md) | Collapsed lists, receipt items by category for a day, week or month, and an opt-in tidy chat | done (2026-10-06): built as planned, one minor and one nit fixed at close, one nit open, Phase 6 live check owed, v0.23.0 |

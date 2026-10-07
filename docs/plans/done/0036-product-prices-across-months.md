@@ -1,11 +1,12 @@
 # 0036: Product prices across months: receipt items grouped into products, with spend, amount and unit price per month
 
-> **Status:** in-progress
+> **Status:** done (2026-10-07): built as planned, one nit and one minor fixed at close, two
+> minors open, Phase 6 real receipts owed, v0.26.0
 > **Created:** 2026-10-06
-> **Related ADRs:** [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md)
-> (matching and unit-price math), [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md)
-> (static Mini App), [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (the review flow's state),
-> [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
+> **Related ADRs:** [ADR-0039](../../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md)
+> (matching and unit-price math), [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md)
+> (static Mini App), [ADR-0009](../../adrs/0009-persisted-flow-sessions.md) (the review flow's state),
+> [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers)
 
 ## TL;DR
 
@@ -351,8 +352,167 @@ most `u:` plus an integer, or `b:` plus a catalog key of at most 24 ASCII charac
 - New command: `/prices`, in `messages.commands`, the help text and a [☰ Ещё] button (`more:prc`).
 - New script: `pnpm products:coverage`.
 
+## Close review
+
+Round 1, a fresh conductor review session on tip db589a4. It is reproduced in full below.
+
+# Plan 0036 review, round 1 (tip db589a491a065d7189e269d32904028ce3804a9c)
+
+**Verdict:** Plan 0036 is built as planned and its gate is green. The findings are three minors
+and one nit, with no blocker or major, so the plan can close once the bookkeeping below is done.
+
+## Gate (run in this session, on the tip)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0. 126 files and 1763 tests passed. The log's 125/1754 was counted at
+  94fc8b6, before main was merged in.
+- `node scripts/check-doc-links.mjs`: exit 0, 291 relative links resolve.
+
+## Alignment
+
+- Phases 1 to 5 (`dev`) are done. Phase 6 (`human`, `Blocks merge: no`) is owed. Each phase has
+  exactly one in-vocabulary owner tag.
+- I read the assertion of every done-when test:
+  - Phase 1: `src/domain/products/normalize.test.ts` (both normalize strings exactly) and
+    `match.test.ts` (items 1-8, the exclusion, the key check). `productPrices.test.ts` checks the
+    ranking `[Молоко 73500, Бананы 24900, Хлеб 6500]`, the deleted expense, and another member's
+    receipt in a shared ledger (exact `[['RSD', 73500]]`). `bot.test.ts` `/prices (Plan 0036)`
+    has the exact list text and keyboard, and `ledgerLocked` for a locked sealed ledger.
+  - Phase 2: `amount.test.ts` checks the exact amounts (2_000_000n, 1_000_000n, 1_245_000n),
+    `0.535` → 535n, `1.2345` rejected, 20000, 14951 and 18455. `productPrices.test.ts` checks
+    the full October/September/all-time lines with `toEqual`: 45700/30700/2_000_000n/unsized
+    1/15350, 27800/13900, and 73500/58500/4_000_000n/14625.
+  - Phase 3: `productReview.test.ts` checks the queue `['cokoladno mleko 0,2l', 'kesa']`, kesa
+    leaving the queue (1), October 55600/40600/2_200_000n/18455, mleko imlek dropping October to
+    30700, and one row after a double answer. `bot.test.ts` covers the same paths end to end,
+    through `prc:rv` and `prc:nm`. `deleteAccount.test.ts` checks the item_products rows.
+  - Phase 4: 9900 / 200_000n / 49500, «молоко» refused against «Молоко», one product for a
+    double-tapped unit, and the user_products rows on account deletion.
+  - Phase 5: `productsCoverage.test.ts`: 6 rules / 0 overrides, spend 104900 of 115100, the
+    unmatched 9900 + 300, both names, and `total_changes()` unchanged.
+- I checked the done-when arithmetic by hand against `amount.ts`: `divideHalfUp` is
+  `(2n + d) / 2d` on bigint. `0,5l` parses to 500 000 thousandths of ml, and `2,8%mm` is skipped
+  by the lookbehind. It agrees.
+- The logged deviations are sound and in the plan's spirit: the `prc:r:<position>:<choice>`
+  shape, the queue held in the anchor's screen context, and the piece price at 10^3. No ADR is
+  silently reversed. The piece formula does contradict the ADR-0039 text, though: see the
+  bookkeeping.
+
+## Layering, correctness, privacy
+
+- grammY is imported only in `src/bot/`. The domain imports no db and no Telegram code. All copy
+  is in `messages.ts`, and shop text and user product names go through `html`.
+- Money and amounts are integers. `BigInt(` appears only in `amount.ts`. Every `Number(` in the
+  new bot code reads a callback page or index or a month string, never a quantity. The only `/`
+  outside `amount.ts` is the coverage percentage, which is on spend.
+- "The last 12 months" is computed in the user's effective timezone, and the
+  2025-10-31/2025-11-01 boundary is tested.
+- Idempotency: answers upsert on `(user_id, name_key)`. A unit tap consumes `newProduct` in the
+  transaction that creates the product, and the typed name completes its flow by `inputKey`.
+- No callback data carries an item name. Every builder goes through `assertCallbackData`, and the
+  longest is `prc:r:9999:b:<24>`, at 37 bytes.
+- The only info log is `{ userId, productId }`. Fixtures use invented names.
+
+## Findings
+
+### blocker
+
+None.
+
+### major
+
+None.
+
+### minor
+
+1. **The product view has no length bound.**
+   - *Where:* `src/bot/messages.ts:1548` (`productView`), rendered by
+     `src/bot/handlers/prices.ts:102`.
+   - *What:* every month of every currency is printed, plus the totals, with no cap and no
+     paging. One line is about 70 visible characters
+     (`Октябрь 2026: 457.00 RSD · 2 л · 153.50 RSD/л · 1 позиция без размера`).
+   - *Why it matters:* after about 55 months in one currency, or half that with two currencies,
+     the text passes Telegram's 4096 characters. `editMessageText` then fails, and the product
+     button does nothing. Every other long report in `messages.ts` guards this (ADR-0012's
+     `MAX_VISIBLE_CHARS`, the paged item lists). It is latent today because receipts are recent.
+   - *Fix:* show at most the newest N months (24 fits easily), with the all-time line kept and a
+     note that older months are folded into it, or page the months. Add a test that 60 months in
+     two currencies stay within 4096 visible characters.
+
+2. **The arithmetic gate checks fewer files than its done-when names.**
+   - *Where:* `src/services/productPrices.test.ts:255`.
+   - *What:* Phase 2 promises "No `parseFloat`, `Number(...)` on quantities, or `/` on amounts
+     outside `amount.ts`. A test or lint grep checks this." The test scans `src/domain/products/*`
+     (without `amount.ts`) and `src/services/productPrices.ts` only.
+     `src/services/productReview.ts`, `src/tools/productsCoverage.ts` and
+     `src/bot/handlers/prices.ts` also read items, and none of them is scanned.
+   - *Why it matters:* the claim is true on today's tree. I grepped those files, and the only
+     hits are callback indices, month strings and the coverage percentage. But a future
+     `Number(item.quantity)` in `productReview.ts` or the coverage tool would pass the gate.
+   - *Fix:* add `src/services/productReview.ts` to `files`. For the coverage tool and the
+     handler, either scan them with a pattern scoped to quantities (`/quantity\)|parseFloat/`),
+     or move `percent` into `amount.ts` (or a money helper) so the tool can join the strict scan.
+
+3. **The README's command table has no `/prices` row.**
+   - *Where:* `README.md`, the private-chat command table (next to `/tags` at line 38).
+   - *What:* the plan adds a user-visible command, a [☰ Ещё] button and a review flow. `/help`
+     and `messages.commands` carry it, but the README table, which lists every private command
+     (`/debts`, `/tags`, `/export` …), does not.
+   - *Why it matters:* lens 4 says the README follows a user-observable change. Without the row,
+     the README undersells the bot and goes stale.
+   - *Fix:* add a `/prices` row. It should cover: products from your own fetched receipt items
+     in the active ledger, by 12-month spend; a product's months with spend, amount and price per
+     l/kg/piece; [Разобрать] for unmatched names; [Названия] to correct a name; [Новый продукт];
+     and the sealed-ledger behaviour (rules only, while unlocked).
+
+### nit
+
+1. **A displaced doc comment.**
+   - *Where:* `src/bot/messages.ts:465`.
+   - *What:* the comment ``// `1 позиция`, `2 позиции`, `5 позиций`, `21 позиция`.`` belonged
+     to `itemCount`. It now sits above the new `PriceLineView` block, and `itemCount` (line 500)
+     has lost it.
+   - *Fix:* move the comment back above `itemCount`, and give `purchaseCount` its own one-line
+     example comment.
+
+## Bookkeeping owed at close
+
+- **ADR-0039 → accepted, with a dated `## Outcome`.** The decision text gives
+  `round_half_up(total_minor * 10^6 / amount_milli)` per litre, kilogram *or piece*. For pieces
+  that would be a price per thousand pieces. The implementation uses `10^3` for pieces (Plan 0036
+  log, Phase 2). Record that. Also record that overrides are keyed per user, not per ledger, and
+  apply in every plaintext ledger, while a sealed ledger ignores them.
+- **CLAUDE.md "Where things live"**: `src/tools/` is a new top-level `src/` directory
+  (`productsCoverage.ts`, local reports run by `scripts/`), and the map doesn't list it.
+  `scripts/products-coverage.ts` could join the `scripts/` lines too.
+- **Version:** this is a feature plan (new command, two migrations), so a minor bump with a
+  `CHANGELOG.md` entry and its `versionAnnouncements` entry.
+- **Plan index:** move 0036 to recently closed, and note that Phase 6 (`human`) is still owed.
+- **Followups to carry:** the Mini App chart plan (after Plan 0030 Phase 1). The log's own
+  followups are also worth carrying: a size in another dimension stays unsized, a piece product
+  without `kom` is unsized, the list's back button always goes to page 1, and own-product names
+  are not checked for clashes with each other.
+
+### Resolution at close
+
+- Earlier rounds: none. Round 1 is the only review, so no fix round resolved anything.
+- Minor 3 (README `/prices` row) is fixed in cdddc38, which also adds [Цены] to the [☰ Ещё] list.
+- Nit 1 (displaced comment) is fixed in 1cd4bd7.
+- Minors 1 (product view length) and 2 (arithmetic gate scope) stay open as followups below.
+- Bookkeeping done in the close commit: ADR-0039 accepted with an `## Outcome`, `src/tools/` and
+  `scripts/products-coverage.ts` added to CLAUDE.md, v0.26.0, and the plan index row.
+- Phase 6 (`human`, real receipts) stays **owed**.
+
 ## Followups
 
 - A plan for the product price chart in the Mini App ([📈 График] on the product view), after Plan
   0030 Phase 1. Its payload carries month, spend, amount and unit price for up to 24 months in the
   ledger's default currency, and other currencies appear as text lines.
+- Close review minor 1: cap or page the product view's months so it stays within 4096
+  characters.
+- Close review minor 2: widen the arithmetic gate in `src/services/productPrices.test.ts` to
+  `productReview.ts`, the coverage tool and the prices handler.
+- From the log: a pack size in another dimension stays unsized, a piece product without `kom` is
+  unsized, the list's back button always returns to page 1, and own-product names aren't checked
+  for clashes with each other.

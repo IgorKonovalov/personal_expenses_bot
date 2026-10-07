@@ -22,6 +22,7 @@ src/
 ├── statements/      # the bank-statement adapter: PDF text as positioned lines (pdfjs-dist, lazy)
 ├── fx/              # the rates adapter: the NBS middle-rate fetcher and its hourly worker
 ├── scheduler/       # the local-time scheduler (ADR-0031): the 60 s tick and its providers
+├── tools/           # local reports the owner runs from scripts/ (products coverage); not in the bot
 ├── config.ts        # env -> typed config, validated at boot
 ├── logger.ts        # pino factory
 ├── heartbeat.ts     # liveness file + the Docker health-check entry
@@ -47,6 +48,7 @@ docs/
                      #   + ux-telegram (reviews/designs chat UX, writes nothing; ADR-0005)
 scripts/
 ├── check-doc-links.mjs   # every relative markdown link resolves (run at every plan close)
+├── products-coverage.ts  # `pnpm products:coverage`: product-rule coverage on a local db copy
 └── deploy-vps.sh         # the VPS deploy, run by the deploy key's forced command (+ its test)
 tools/
 └── conductor/       # runs queued, approved plans headless in worktree lanes (ADR-0010).

@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.26.0 (2026-10-07)
+
+From Plan 0036 (product prices across months).
+
+- `/prices` (and [Цены] under [☰ Ещё]) lists the products in your fetched receipts in the active
+  ledger, «Молоко», «Хлеб», «Бананы», ordered by spend over the last 12 months.
+- A product shows each month's spend, the amount bought and the price per litre, kilogram or
+  piece, plus the all-time totals. Items with no readable pack size count in spend only.
+- [Разобрать] walks the item names the built-in rules missed, [Названия] corrects which names
+  count under a product, and [Новый продукт] adds your own. A sealed ledger uses the rules only.
+- `pnpm products:coverage` reports, on a local database copy, how many items the rules match.
+
 ## 0.25.0 (2026-10-07)
 
 From Plan 0032 (live QR scan in a Mini App).

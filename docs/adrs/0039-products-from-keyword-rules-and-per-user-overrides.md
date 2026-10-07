@@ -1,8 +1,8 @@
 # ADR-0039: Receipt items map to products through built-in keyword rules plus per-user overrides, and unit prices are computed in exact integers
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07)
 > **Date:** 2026-10-06
-> **Related plan(s):** [Plan 0036](../plans/0036-product-prices-across-months.md)
+> **Related plan(s):** [Plan 0036](../plans/done/0036-product-prices-across-months.md)
 
 ## Context
 
@@ -68,4 +68,11 @@ shops is what the user asked to see.
 
 ## Outcome
 
-_(Added only at acceptance if implementation falsified something above.)_
+**2026-10-07, at the Plan 0036 close.** Two points of the decision text don't hold as written:
+
+- **A piece price uses `10^3`, not `10^6`.** A piece is already the base unit, so
+  `total_minor * 10^6 / amount_milli` would give a price per thousand pieces. The code computes
+  `round_half_up(total_minor * 10^3 / amount_milli)` for pieces, and keeps `10^6` for litres and
+  kilograms.
+- **Overrides are keyed per user, not per ledger.** One answer applies in every plaintext ledger
+  the user views. A sealed ledger ignores overrides and uses the rules only, as decided.
