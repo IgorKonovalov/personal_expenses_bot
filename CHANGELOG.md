@@ -2,6 +2,16 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.34.0 (2026-10-07)
+
+From Plan 0044 (charts for tag reports and product prices).
+
+- A tag's report from `/tags`, in a private chat, gets a «📈 Диаграмма» row: the report's
+  converted block as a donut by category, with currencies that have no rate as text lines.
+- A product's view in `/prices` gets one too: the price per unit by month as bars («Цена за 1 л»),
+  a month with no sized item as «размер не указан» with no bar, then «Траты по месяцам». Only
+  months in the ledger's currency are drawn. The payload gains a `bars` section kind.
+
 ## 0.33.0 (2026-10-07)
 
 From Plan 0043 (category detail in the chart).

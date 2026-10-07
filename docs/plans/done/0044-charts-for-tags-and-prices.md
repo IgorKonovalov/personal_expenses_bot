@@ -1,11 +1,11 @@
 # 0044: Charts for tag reports and product prices
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, one minor fixed at close, Phase 3 live check owed, v0.34.0
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its `pie` section), merged on `main` first
-> **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
-> [ADR-0029](../adrs/0029-tags-on-the-expense-row.md) (tags),
-> [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md) (products)
+> **Depends on:** [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2 and its `pie` section), merged on `main` first
+> **Related ADRs:** [ADR-0045](../../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
+> [ADR-0029](../../adrs/0029-tags-on-the-expense-row.md) (tags),
+> [ADR-0039](../../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md) (products)
 
 ## TL;DR
 
@@ -185,5 +185,108 @@ interface BarsSection {
 - New exports: `BarsSection` and `BarsRow` (bot and page), `BarsInput` and `encodeBarsPayload`
   (bot), `drawBars` (page).
 - New messages: `tagChart`, `productChart`, `chartPriceUnsized`.
+
+## Close review
+
+Closed 2026-10-07 on review round 1 (tip 4b330fa). Minor 1 is fixed at close in a5d05a0 (the
+README lists the product chart). Phase 3 (`human`, the live phone check) stays owed. No earlier
+round raised a finding.
+
+### Plan 0044 review, round 1 (tip 4b330fa)
+
+**Verdict:** Clean. Both `dev` phases do what the plan asked, the assertions match their done-whens, and the gate is green. The one open finding is minor: the README's chart list doesn't mention the product chart. The plan can close once the close session decides whether to fix that or file it as a followup.
+
+#### Gate (run in this session on the tip)
+
+- `pnpm typecheck`: exit 0 (both `tsc` projects, bot and webapp).
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0. 141 files and 2017 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0. 335 relative links resolve.
+
+#### Lens 1: alignment
+
+- **Phases:** 1 and 2 are done in 27d3375 and 3358159. Phase 3 (`human`, `Blocks merge: no`) is owed after the merge and the Pages run. Each phase has one owner tag from the allowed set.
+- **Deviations the log discloses**, all checked against the tree:
+  - The page's section dispatch went into `webapp/src/pie.ts` (`drawState`), not `main.ts`.
+  - The encoder is a separate `encodeBarsPayload` function.
+  - `chartPayload.ts` and its test are unchanged in Phase 1.
+  - The other-currency lines ride as `notes` on the price section.
+
+  None of these goes against the plan's intent.
+- **Phase 1 done-whens:**
+  - `src/bot/bot.test.ts:9090` asserts the full decoded payload from a hand-built report, through `messages.tagChart`, `encodeChartPayload` and the page's `decodeChartPayload`:
+    - the title `#отпуск`
+    - `totalMinor` 1000000
+    - shares `60%/25%/15%`
+    - one `unconverted` line, «Без курса НБС: 50.00 KZT»
+    - `pie.totalMinor === converted.totalMinor`
+  - A real-bot tap then decodes 191404, which matches the text's `≈ 1 914.04 RSD`.
+  - Nothing converted: the keyboard is the back row alone.
+  - Without `WEBAPP_URL`: the whole `editMessageText` call equals the expected one, with the text identical and only the back row.
+  - Locked: the only call is the locked toast.
+  - Group: no `web_app` anywhere in the calls. `src/bot/group/tags.ts` is untouched by the diff, so the group report is unchanged.
+- **Phase 2 done-whens:**
+  - `bot.test.ts:9834` uses the plan's milk fixture: July 2 l for 25980, August unsized for 15000, September 1 l for 13490, plus June in EUR. It asserts:
+    - the price rows `[Июль 2026, 12990]`, `[Август 2026, null, «размер не указан»]` and `[Сентябрь 2026, 13490]`
+    - the spend rows 25980, 15000 and 13490
+    - the captions «Цена за 1 л» and «Траты по месяцам»
+    - the EUR month as a note, not a row
+  - The test cross-checks every amount against `ledgerProduct(...)` (`unitPriceMinor ?? null` and `spentMinor`), as the plan asked.
+  - Shedding: `src/domain/chartPayload.test.ts:767` shows the spend section goes first at `full - 1`, then the price rows go oldest first, one at a time, down to a single row, then the result is undefined.
+  - No month in the ledger currency: no `web_app`.
+  - Fake DOM: `webapp/src/payload.test.ts:998` shows the null row's slot (y 30 to 60) holds exactly two `text` nodes and no `rect`. The bar widths are proportional (308.14 / 320).
+- **ADRs:** none reversed. Payload v2, the 2048 budget and `CHART_PAYLOAD_VERSION` 2 are unchanged (ADR-0045).
+- **The log** is shorter than the phases section. Its close triggers match the tree.
+
+#### Lens 2: layering
+
+- grammY is imported only in `src/bot/`.
+- `encodeBarsPayload` and `BarsSection` live in the domain with no I/O.
+- All copy is in `messages`: `tagChart`, `productChart` and `chartPriceUnsized`.
+- Each handler only gates and calls the encoder.
+- The tag report and the product view each have one render path, and both carry the chart URL (`tags.ts:165`, `prices.ts:210`).
+
+#### Lens 3: correctness
+
+- **Money:**
+  - Rows carry integer `unitPriceMinor` and `spentMinor`.
+  - The page validates `Number.isSafeInteger` or `null`.
+  - Floats on the page are bar geometry only, and the text shown is the bot's.
+  - The price and spend rows are filtered to `product.ledger.defaultCurrency` and formatted in that same currency. Other currencies never reach an axis.
+- **Telegram limits:** the URL is capped by the existing payload budget, and the encoder returns undefined when nothing fits (no button).
+- **Privacy:** the payloads carry only what the text screens already show. The tests use synthetic fixtures.
+- **Locked ledgers:** the product view's locked tap answers with the toast before `chartUrlOf` runs (`prices.ts:200`). It is the same for tags.
+
+#### Lens 4: docs
+
+See the minor finding below.
+
+#### Findings
+
+##### blocker
+None.
+
+##### major
+None.
+
+##### minor
+
+1. **The README's chart list omits the product chart.** (Fixed at close in a5d05a0.)
+   - **What:** README.md's "Mini App: charts" section lists every screen with a «📈 Диаграмма» button (`/week`, `/month`, `/budget`, and now the tag report at `README.md:352`), but not the `/prices` product view that Phase 2 added. The `/prices` row in the command table doesn't mention it either, while `/budget`'s row at `README.md:32` does.
+   - **Where:** `README.md:352` (the end of the chart list) and the `/prices` row of the command table.
+   - **Why it matters:** the button is a change users can see. Lens 4 asks for the README to describe it, and the chart list currently reads as complete. Dev's log records this as a followup that wasn't acted on, because Phase 2's `Files touched` had no `README.md`. That is the plan's omission, not dev's.
+   - **Fix:** after the tag bullet, add a bullet along these lines: "A product's view in `/prices`, in a private chat, opens with its own «📈 Диаграмма» row. Its chart is titled with the product, and shows the price per unit by month («Цена за 1 л») as bars, with a month that has no sized item shown as «размер не указан» and no bar, then «Траты по месяцам». Only months in the ledger's currency are drawn; other currencies are text lines under the prices. A product with no month in the ledger's currency, or a locked sealed ledger, gets no button." Optionally add a matching clause to the `/prices` command-table row. The close session can apply this as part of the docs bookkeeping, since no code changes.
+
+##### nit
+None.
+
+#### Bookkeeping owed at close
+
+- Fix or file minor 1 (the README product-chart bullet).
+- Flip `Status:` to `done` with the date and verdict, then `git mv` the plan to `docs/plans/done/`. Repair the links (`Depends on: done/0041…` becomes a sibling link, and `../adrs/` becomes `../../adrs/`), then run `node scripts/check-doc-links.mjs`.
+- No paired ADR to accept.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Bump the version: this is a feature plan, so a minor bump to v0.34.0. Add a `CHANGELOG.md` entry and a `versionAnnouncements` entry (ADR-0013) naming both new charts.
+- Phase 3 (`human`, the live phone check) stays owed after the merge and the Pages run. It doesn't block the merge.
 
 ## Followups
