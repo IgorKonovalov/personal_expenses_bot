@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { softDeleteExpense } from '../db/expenses.js';
+import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { Ledger } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
 import { createLogger } from '../logger.js';
 import type { CategoryId } from '../db/categories.js';
+import { allowanceThrough } from '../domain/budget.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import {
   answerBudgetFlow,
   budgetEnd,
+  budgetPace,
   budgetScreen,
   clearCap,
   groupBudgetStatus,
@@ -192,6 +195,90 @@ describe('payday periods', () => {
       period: { from: '2026-09-30', to: '2026-10-30' },
     });
     expect(status(OCT_1)?.limit).toBeUndefined();
+  });
+});
+
+describe('budgetPace: the burn-down of a payday period', () => {
+  // 2026-10-07 12:00 in Moscow: day 13 of the 30-day period 25 Sep - 24 Oct.
+  const OCT_7 = new Date('2026-10-07T09:00:00Z');
+  const at = (day: string) => new Date(`${day}T09:00:00Z`);
+
+  function payday() {
+    const flow = { kind: 'budgetStartDay', ledgerId: ledger.id } as const;
+    expect(startBudgetFlow(deps, { user, flow, now: OCT_7 })).toBe(true);
+    answerBudgetFlow(deps, { user, flow, text: '25', inputKey: `tg:1:${++messageId}`, now: OCT_7 });
+    expect(setLimit('30000', OCT_7).kind).toBe('set');
+  }
+
+  // RSD per EUR and per RUB on `day`, so a EUR expense converts into the RUB budget.
+  function storeRates(day: string) {
+    const date = day as LocalDate;
+    const fetchedAt = at(day);
+    storeFxList(
+      db,
+      {
+        listDate: date,
+        listNumber: 1,
+        rates: [
+          { currency: 'EUR', unit: 1, middleE4: 1174993 },
+          { currency: 'RUB', unit: 1, middleE4: 13000 },
+        ],
+      },
+      fetchedAt,
+    );
+    setFxDay(db, date, date, fetchedAt);
+  }
+
+  const pace = (now: Date = OCT_7) => budgetPace(deps, { user, ledger, now });
+
+  it('has 30 days and 13 points through 7 October, ending at the spend todayLeft is reckoned from', () => {
+    payday();
+    storeRates('2026-10-05');
+    spend('450 кофе', at('2026-09-26'));
+    spend('3000 продукты', at('2026-10-03'));
+    spend('12,50 EUR такси', at('2026-10-05'));
+    // After today: in the period, not yet on the line.
+    spend('900 ужин', at('2026-10-10'));
+
+    const burn = pace();
+    const s = status(OCT_7);
+
+    expect(burn?.status.period).toEqual({
+      from: '2026-09-25',
+      to: '2026-10-24',
+      day: 13,
+      days: 30,
+    });
+    expect(burn?.points).toHaveLength(13);
+    const todayLeft = s?.limit?.todayLeftMinor ?? NaN;
+    expect(burn?.points.at(-1)).toBe(allowanceThrough(3_000_000, 30, 13) - todayLeft);
+    // 12.50 EUR at 117.4993 RSD over 1.30 RSD per RUB is 1 129.80 RUB, rounded once.
+    expect(burn?.points.at(-1)).toBe(45_000 + 300_000 + 112_980);
+    expect(burn?.points.slice(0, 3)).toEqual([0, 45_000, 45_000]);
+    expect(burn?.status.limit).toEqual(s?.limit);
+  });
+
+  it('leaves an essential category out under scope optional, as budgetStatus does', () => {
+    payday();
+    setScope(deps, { user, ledgerId: ledger.id, scope: 'optional', now: OCT_7 });
+    spend('3000 продукты', at('2026-10-03'));
+    spend('450 кофе', at('2026-10-04'));
+
+    const burn = pace();
+
+    expect(burn?.points.at(-1)).toBe(45_000);
+    expect(burn?.points.at(-1)).toBe(
+      allowanceThrough(3_000_000, 30, 13) - (status(OCT_7)?.limit?.todayLeftMinor ?? NaN),
+    );
+  });
+
+  it('is undefined without a limit', () => {
+    const flow = { kind: 'budgetStartDay', ledgerId: ledger.id } as const;
+    startBudgetFlow(deps, { user, flow, now: OCT_7 });
+    answerBudgetFlow(deps, { user, flow, text: '25', inputKey: 'tg:1:x', now: OCT_7 });
+
+    expect(status(OCT_7)).toBeDefined();
+    expect(pace()).toBeUndefined();
   });
 });
 

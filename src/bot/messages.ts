@@ -592,6 +592,11 @@ function todayLeft(amountMinor: number, currency: CurrencyCode): string {
     : `Осталось на сегодня: ${formatMoney({ amountMinor, currency })}`;
 }
 
+// `Лимит: 30 000.00 RSD`: the /budget screen's limit, and its chart's caption.
+function limitAmount(amountMinor: number, currency: CurrencyCode): string {
+  return `Лимит: ${formatMoney({ amountMinor, currency })}`;
+}
+
 // `до 31 окт: 29 550.00 RUB` or `до 31 окт перерасход 1 000.00 RUB`.
 function periodLeft(amountMinor: number, currency: CurrencyCode, to: LocalDate): string {
   return amountMinor < 0
@@ -2244,7 +2249,7 @@ export const messages = {
       lines.push(noLimit);
     } else {
       lines.push(
-        html`Лимит: ${formatMoney({ amountMinor: limit.limitMinor, currency })}, потрачено ${formatMoney({ amountMinor: limit.spentMinor, currency })}`,
+        html`${limitAmount(limit.limitMinor, currency)}, потрачено ${formatMoney({ amountMinor: limit.spentMinor, currency })}`,
         html`${todayLeft(limit.todayLeftMinor, currency)}`,
         limit.periodLeftMinor < 0
           ? html`Перерасход за период: ${formatMoney({ amountMinor: -limit.periodLeftMinor, currency })}`
@@ -2275,6 +2280,36 @@ export const messages = {
       );
     }
     return joinHtml(lines, '\n');
+  },
+  // The /budget screen's chart (ADR-0025): its title, and one pace section of the period's spend
+  // by day through today against the limit, plain. The captions repeat the screen's own words:
+  // how much by today, today's leftover as the screen states it, and the limit.
+  budgetChart: ({
+    currency,
+    period,
+    limit,
+    points,
+  }: {
+    readonly currency: CurrencyCode;
+    readonly period: { readonly from: LocalDate; readonly to: LocalDate; readonly days: number };
+    readonly limit: { readonly limitMinor: number; readonly todayLeftMinor: number };
+    readonly points: readonly number[];
+  }): { readonly title: string; readonly pace: PaceSection } => {
+    const { day, month } = dateParts(addDays(period.from, Math.max(points.length, 1) - 1));
+    const spent = formatMoney({ amountMinor: points.at(-1) ?? 0, currency });
+    return {
+      title: `Бюджет: ${shortDate(period.from)} – ${shortDate(period.to)}`,
+      pace: {
+        k: 'pace',
+        days: period.days,
+        current: points,
+        limit: [limit.limitMinor, limitAmount(limit.limitMinor, currency)],
+        captions: [
+          `Потрачено к ${day} ${GENITIVE_MONTHS[month] ?? ''}: ${spent}`,
+          todayLeft(limit.todayLeftMinor, currency),
+        ],
+      },
+    };
   },
   // /budget in a bound group: the same figures, read-only. Without a budget, where to set one.
   groupBudget: (view: BudgetScreenView): Html => {

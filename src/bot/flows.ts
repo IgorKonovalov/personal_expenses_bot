@@ -129,7 +129,7 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     screen.name === 'settings'
       ? settingsView(deps, user, screen.ledgerId)
       : screen.name === 'budget'
-        ? budgetView(deps, user, screen)
+        ? budgetView(ctx, deps, user, screen)
         : categoriesScreenFor(deps, user, screen);
   if (view !== undefined) await renderAnchor(ctx, anchor, view);
 }
@@ -228,7 +228,7 @@ export async function answerFlow(
           fromSettings === true
             ? { name: 'budget', ledgerId: flow.ledgerId, fromSettings }
             : { name: 'budget', ledgerId: flow.ledgerId };
-        const view = budgetView(deps, user, screen, result.droppedCapsCurrency);
+        const view = budgetView(ctx, deps, user, screen, result.droppedCapsCurrency);
         if (view !== undefined) await show(ctx, anchor, view);
         return;
       }

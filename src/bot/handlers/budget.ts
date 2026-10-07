@@ -2,9 +2,11 @@ import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { BudgetScope } from '../../db/budgets.js';
 import type { CategoryId } from '../../db/categories.js';
 import type { User } from '../../db/users.js';
+import { encodePacePayload } from '../../domain/chartPayload.js';
 import type { CurrencyCode } from '../../domain/currencies.js';
 import {
   activeLedgerId,
+  budgetPace,
   budgetScreen,
   clearCap,
   setScope,
@@ -48,8 +50,14 @@ import { ensureUser } from './start.js';
 // The limit and the period start day are asked through text flows (ADR-0009); flows.ts takes
 // the answers.
 
-// Opened from a settings hub, the screen ends with [« Назад] to it.
-function screenView(view: BudgetScreenView, screen: BudgetScreen, header?: Html): ScreenView {
+// Opened from a settings hub, the screen ends with [« Назад] to it. With a chart URL, its first
+// row is «📈 Диаграмма», the screen's one read action, above the settings.
+function screenView(
+  view: BudgetScreenView,
+  screen: BudgetScreen,
+  chartUrl: string | undefined,
+  header?: Html,
+): ScreenView {
   const body = messages.budgetScreen(view);
   const current = view.status?.scope ?? 'all';
   const scopeButton = (scope: BudgetScope) => {
@@ -62,6 +70,7 @@ function screenView(view: BudgetScreenView, screen: BudgetScreen, header?: Html)
   return {
     text: header === undefined ? body : joinHtml([header, body], '\n\n'),
     markup: InlineKeyboard.from([
+      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
       [InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)],
       [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
       [scopeButton('all'), scopeButton('optional')],
@@ -71,10 +80,36 @@ function screenView(view: BudgetScreenView, screen: BudgetScreen, header?: Html)
   };
 }
 
+// The chart button's URL: WEBAPP_URL with the budget period's burn-down in the fragment's `z`
+// (ADR-0025, ADR-0045), rebuilt on every render. Undefined outside a private chat (`web_app`
+// buttons work only there), without WEBAPP_URL, for a budget with no limit, and when the payload
+// can't fit its budget. A locked sealed ledger never gets here: its screen is the locked line.
+function chartUrlOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  view: BudgetScreenView,
+): string | undefined {
+  if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
+  if (view.status?.limit === undefined) return undefined;
+  const pace = budgetPace(deps, { user, ledger: view.ledger, now: deps.now() });
+  if (pace === undefined) return undefined;
+  const { status, points } = pace;
+  const chart = messages.budgetChart({
+    currency: status.currency,
+    period: status.period,
+    limit: status.limit,
+    points,
+  });
+  const payload = encodePacePayload(chart.title, chart.pace);
+  return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
+}
+
 // The screen for the ledger an anchor names; undefined once the user no longer owns it, and the
 // locked message alone while its sealed ledger is locked (ADR-0020). `droppedCapsCurrency` puts
 // the line about deleted category caps above it.
 export function budgetView(
+  ctx: Context,
   deps: HandlerDeps,
   user: User,
   screen: BudgetScreen,
@@ -91,6 +126,7 @@ export function budgetView(
   return screenView(
     view,
     screen,
+    chartUrlOf(ctx, deps, user, view),
     droppedCapsCurrency === undefined ? undefined : messages.budgetCapsDropped(droppedCapsCurrency),
   );
 }
@@ -195,7 +231,7 @@ export async function sendBudget(ctx: Context, deps: HandlerDeps): Promise<void>
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
   const screen: BudgetScreen = { name: 'budget', ledgerId: activeLedgerId(deps, user) };
-  const view = budgetView(deps, user, screen);
+  const view = budgetView(ctx, deps, user, screen);
   if (view === undefined) {
     await replyHtml(ctx, messages.budgetOwnerOnly);
     return;
@@ -236,7 +272,11 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
     const tap = await budgetTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, screenView(tap.view, tap.screen));
+    await renderAnchor(
+      ctx,
+      tap.anchor,
+      screenView(tap.view, tap.screen, chartUrlOf(ctx, deps, tap.user, tap.view)),
+    );
   });
 
   bot.callbackQuery(BUDGET_SCOPE, async (ctx) => {
@@ -254,7 +294,7 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
         return;
       case 'set': {
         await ctx.answerCallbackQuery({ text: messages.budgetScopeChangedToast });
-        const view = budgetView(deps, tap.user, tap.screen);
+        const view = budgetView(ctx, deps, tap.user, tap.screen);
         if (view !== undefined) await renderAnchor(ctx, tap.anchor, view);
         return;
       }

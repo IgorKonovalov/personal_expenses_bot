@@ -60,7 +60,10 @@ export interface PaceSection {
   readonly current: readonly number[];
   // The previous period, all its days.
   readonly previous?: readonly number[];
-  // The current series' caption, then the previous series' when there is one.
+  // A budget's limit and its formatted caption: the allowance line runs from 0 to it.
+  readonly limit?: readonly [limitMinor: number, label: string];
+  // The current series' caption, then the previous series' or, with a limit, the allowance
+  // line's.
   readonly captions: readonly [current: string, second?: string];
 }
 
@@ -164,11 +167,13 @@ function isSection(value: unknown): value is Section {
 }
 
 // A positive whole number of days, a current series of at most that many safe integers, an
-// optional previous series of safe integers, and one or two string captions.
+// optional previous series of safe integers, an optional limit of a positive safe integer and a
+// string, and one or two string captions.
 function isPace(value: Record<string, unknown>): boolean {
   const days = value['days'];
   const current = value['current'];
   const previous = value['previous'];
+  const limit = value['limit'];
   const captions = value['captions'];
   return (
     Number.isSafeInteger(days) &&
@@ -177,6 +182,13 @@ function isPace(value: Record<string, unknown>): boolean {
     isAmounts(current) &&
     current.length <= days &&
     (previous === undefined || isAmounts(previous)) &&
+    (limit === undefined ||
+      (Array.isArray(limit) &&
+        limit.length === 2 &&
+        Number.isSafeInteger(limit[0]) &&
+        typeof limit[0] === 'number' &&
+        limit[0] > 0 &&
+        typeof limit[1] === 'string')) &&
     isStrings(captions) &&
     captions.length >= 1 &&
     captions.length <= 2

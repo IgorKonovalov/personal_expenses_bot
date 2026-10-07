@@ -390,6 +390,80 @@ describe('the pace section', () => {
     expect(root.children.map((node) => node.tag)).toEqual(['h1', 'p', 'svg', 'p', 'ul', 'svg']);
   });
 
+  describe('a budget burn-down', () => {
+    const BUDGET = {
+      k: 'pace',
+      days: 30,
+      current: Array.from({ length: 13 }, (_, i) => (i === 12 ? 3500000 : 100000 * (i + 1))),
+      limit: [3000000, 'Лимит: 30 000.00 RSD'],
+      captions: ['Потрачено к 7 октября: 35 000.00 RSD', 'Сегодня перерасход 22 000.00 RSD'],
+    };
+    const budgetPage = async (theme: ChartTheme = {}) => {
+      const root = new FakeNode('body');
+      const hash = `#z=${await deflated({ v: 2, title: 'Бюджет: 25 сен – 24 окт', sections: [BUDGET] })}`;
+      await showChart(fakeDocument(), root, hash, theme);
+      return { root, lines: root.all().filter((node) => node.tag === 'polyline') };
+    };
+
+    it('draws the allowance dashed in the hint colour, the spend ending at the top above its end', async () => {
+      const { root, lines } = await budgetPage({ button: '#5288c1', hint: '#708499' });
+
+      const [allowance, spend] = lines;
+      expect(lines).toHaveLength(2);
+      expect(allowance?.attributes.get('stroke')).toBe('#708499');
+      expect(allowance?.attributes.get('stroke-dasharray')).toBe('6 4');
+      expect(spend?.attributes.get('stroke')).toBe('#5288c1');
+      expect(spend?.attributes.has('stroke-dasharray')).toBe(false);
+      // From (0, 0) to (30 days, the limit): 3000000 of the 3500000 top.
+      expect(pointsOf(allowance)).toEqual([
+        [0, 160],
+        [320, 22.86],
+      ]);
+      const last = pointsOf(spend).at(-1);
+      expect(last).toEqual([138.67, 0]);
+      for (const [x = NaN, y = NaN] of pointsOf(spend)) {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(320);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThanOrEqual(160);
+      }
+      // Under the title: the three captions, then the chart.
+      expect(root.children.map((node) => node.tag)).toEqual(['h1', 'p', 'p', 'p', 'svg']);
+      const captions = root.children.slice(1, 4);
+      expect(captions.map((p) => p.children[1]?.textContent)).toEqual([
+        ' Потрачено к 7 октября: 35 000.00 RSD',
+        ' Сегодня перерасход 22 000.00 RSD',
+        ' Лимит: 30 000.00 RSD',
+      ]);
+      const swatchFill = (p: FakeNode | undefined) =>
+        p
+          ?.all()
+          .find((node) => node.tag === 'rect')
+          ?.attributes.get('fill');
+      expect(captions.map(swatchFill)).toEqual(['#5288c1', '#708499', '#708499']);
+    });
+
+    it('puts the limit at the top when the spend is under it', async () => {
+      const root = new FakeNode('body');
+      const under = { ...BUDGET, current: [1000000] };
+      await showChart(
+        fakeDocument(),
+        root,
+        `#z=${await deflated({ v: 2, title: 'Бюджет', sections: [under] })}`,
+      );
+      const [allowance] = root.all().filter((node) => node.tag === 'polyline');
+
+      expect(pointsOf(allowance).at(-1)).toEqual([320, 0]);
+    });
+
+    it('rejects a limit of the wrong shape', async () => {
+      for (const limit of [[0, 'Лимит'], [1.5, 'Лимит'], [3000000], [3000000, 5]]) {
+        const hash = `#z=${await deflated({ v: 2, title: 'Бюджет', sections: [{ ...BUDGET, limit }] })}`;
+        expect(await decodeChartPayload(hash)).toBe(undefined);
+      }
+    });
+  });
+
   it('rejects a pace of the wrong shape', async () => {
     const broken = [
       { ...PACE, days: 0 },

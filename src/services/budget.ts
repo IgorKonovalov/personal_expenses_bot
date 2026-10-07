@@ -29,8 +29,10 @@ import {
 import type { User, UserId } from '../db/users.js';
 import { countInto, dayOfPeriod, isSafeLimit, remainders } from '../domain/budget.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import { addDays } from '../domain/dateText.js';
 import { parseExpenseText } from '../domain/expenseText.js';
 import { parseAmount, type AmountReading } from '../domain/money.js';
+import { cumulativeByDay, type DatedAmount } from '../domain/pace.js';
 import { budgetPeriodOf, type DateRange } from '../domain/periods.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
@@ -163,6 +165,51 @@ export function budgetStatus(
         spentInPeriodMinor: inPeriod.countedMinor,
       }),
     },
+  };
+}
+
+// A budget with a limit, and its cumulative counted spend by day of the period through today,
+// day 1 first, in the budget's currency.
+export interface BudgetPace {
+  readonly status: BudgetStatus & { readonly limit: BudgetLimitStatus };
+  readonly points: readonly number[];
+}
+
+// The burn-down of the ledger's limit as of the user's `now`, counted the way budgetStatus counts
+// it: the scope's expenses, each foreign one converted at its day's rate and rounded before the
+// sum (ADR-0023), one with no rate left out. So the last point is the spend through today that
+// today's leftover is reckoned from. Undefined for a non-member, a ledger without a limit, or a
+// sealed ledger that is locked.
+export function budgetPace(
+  deps: Deps,
+  input: { readonly user: User; readonly ledger: Ledger; readonly now: Date },
+): BudgetPace | undefined {
+  const status = memberBudgetStatus(deps, input);
+  if (status === undefined || isLocked(status) || status.limit === undefined) return undefined;
+  const { ledger, budget, period } = status;
+  const opened = openExpenses(
+    deps,
+    ledger.id,
+    listLedgerExpensesBetween(deps.db, {
+      ledgerId: ledger.id,
+      memberId: input.user.id,
+      from: period.from,
+      to: period.to,
+    }),
+  );
+  if (opened.kind === 'locked') return undefined;
+  const rateOf = rateLookupBetween(deps.db, period.from, period.to);
+  const items: DatedAmount[] = [];
+  for (const expense of inScope(deps, budget, opened.expenses)) {
+    const counted = countInto([expense], budget.currency, rateOf);
+    if (counted.notCounted.size === 0) {
+      items.push({ occurredOn: expense.occurredOn, amountMinor: counted.countedMinor });
+    }
+  }
+  const today = addDays(period.from, period.day - 1);
+  return {
+    status: { ...status, limit: status.limit },
+    points: cumulativeByDay(items, period.from, period.days, today),
   };
 }
 

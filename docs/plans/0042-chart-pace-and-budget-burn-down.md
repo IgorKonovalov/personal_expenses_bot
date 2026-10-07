@@ -215,8 +215,8 @@ interface PaceSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: the pace line on the `/month` chart | dev | done | committed with this row |
-| 2: The budget burn-down chart | dev | not started | |
+| 1: Walking skeleton: the pace line on the `/month` chart | dev | done | 468f2e8 |
+| 2: The budget burn-down chart | dev | done | committed with this row |
 | 3: Live check | human | not started | |
 
 ### Notes
@@ -231,6 +231,17 @@ interface PaceSection {
   total and the trend bars do.
 - Phase 1: the x-axis spans the longer of `days` and the previous series, so a previous period
   longer than the shown one (31 against 30 days) ends at the right edge.
+- Phase 1: the first commit attempt failed in the pre-commit hook on a 5 s timeout in
+  `src/services/recurring.test.ts` ("an edited occurrence still opens, sealed under its own id");
+  the rerun passed unchanged.
+- Phase 2, outside `Files touched`: `budgetView` takes `ctx` first, to read the chat type, so its
+  callers `src/bot/flows.ts` (two calls) and `src/bot/handlers/settings.ts` (one) pass it. The
+  button then shows on every render of the screen: `/budget`, a settings answer, scope, the hub.
+- Phase 2: the limit caption and the screen's limit line share a new `limitAmount` helper in
+  `messages.ts`; the screen's text is unchanged.
+- Phase 2: the limit caption sits after the allowance line's swatch, as the leftover caption does.
+- Phase 2: the group done-when is asserted on a bound group without a budget (`groupBudget`'s
+  "not set" text); the group composer never builds the private screen.
 
 ### Close triggers
 

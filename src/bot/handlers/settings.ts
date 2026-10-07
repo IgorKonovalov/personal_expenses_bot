@@ -421,7 +421,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
       return;
     }
     const budget: BudgetScreen = { name: 'budget', ledgerId: screen.ledgerId, fromSettings: true };
-    const view = budgetView(deps, tap.user, budget);
+    const view = budgetView(ctx, deps, tap.user, budget);
     if (view === undefined) {
       await ctx.answerCallbackQuery({ text: messages.budgetNotOwnerToast });
       return;

@@ -10,13 +10,16 @@ const HEIGHT = 160;
 const MAX_WIDTH = '480px';
 const STROKE_WIDTH = '2';
 const SWATCH = '12';
+const DASH = '6 4';
 
 // The pace section: one caption per line above the chart, each after a swatch in its line's
 // colour, then the lines of cumulative spend by day. Day d of every series sits at the same x,
 // d / span of the width, span the longer of the period and the previous series, so a shorter
 // previous period ends early; each line starts at 0 before day 1. The y-axis top is the largest
-// last point, so no line leaves the viewBox. The previous series is in the theme's hint colour,
-// the current one in its button colour, drawn last on top. Floats here are geometry only; every
+// of the last points and the limit, so no line leaves the viewBox. The previous series, or on a
+// budget chart the dashed allowance line, is in the theme's hint colour, the current one in its
+// button colour, drawn last on top. A budget chart's captions are the spend, today's leftover
+// and the limit, the last two after the allowance line's swatch. Floats here are geometry only; every
 // amount shown is the bot's caption.
 export function drawPace<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
@@ -27,7 +30,8 @@ export function drawPace<N extends ChartNode<N>>(
   const muted = theme.hint ?? HINT;
   const previous = pace.previous ?? [];
   const span = Math.max(pace.days, previous.length, 1);
-  const top = Math.max(0, pace.current.at(-1) ?? 0, previous.at(-1) ?? 0);
+  const limitMinor = pace.limit?.[0] ?? 0;
+  const top = Math.max(0, pace.current.at(-1) ?? 0, previous.at(-1) ?? 0, limitMinor);
   const svg = svgNode(doc, 'svg', { width: '100%', viewBox: `0 0 ${WIDTH} ${HEIGHT}` });
   svg.style.maxWidth = MAX_WIDTH;
   svg.style.display = 'block';
@@ -36,20 +40,31 @@ export function drawPace<N extends ChartNode<N>>(
   if (pace.previous !== undefined) {
     svg.append(polyline(doc, previous, span, top, muted));
     if (secondCaption !== undefined) captions.push(caption(doc, secondCaption, muted));
+  } else if (pace.limit !== undefined) {
+    // The allowance: a straight dashed line from 0 before day 1 to the limit on the last day.
+    const allowance = polyline(doc, [], span, top, muted, [pace.days, limitMinor]);
+    allowance.setAttribute('stroke-dasharray', DASH);
+    svg.append(allowance);
+    if (secondCaption !== undefined) captions.push(caption(doc, secondCaption, muted));
+    captions.push(caption(doc, pace.limit[1], muted));
   }
   svg.append(polyline(doc, pace.current, span, top, accent));
   return [...captions, svg];
 }
 
-// A line from 0 before day 1 through each day's point, in viewBox units, y growing downward.
+// A line from 0 before day 1 through each day's point, or with `end`, straight to that
+// [day, amountMinor], in viewBox units, y growing downward.
 function polyline<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   series: readonly number[],
   span: number,
   top: number,
   stroke: string,
+  end?: readonly [day: number, amountMinor: number],
 ): N {
-  const points = [[0, 0], ...series.map((amountMinor, index) => [index + 1, amountMinor])].map(
+  const days =
+    end === undefined ? series.map((amountMinor, index) => [index + 1, amountMinor]) : [end];
+  const points = [[0, 0], ...days].map(
     ([day = 0, amountMinor = 0]) =>
       `${round((day / span) * WIDTH)},${round(HEIGHT - (top > 0 ? (amountMinor / top) * HEIGHT : 0))}`,
   );

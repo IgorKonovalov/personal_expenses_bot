@@ -2550,10 +2550,11 @@ describe('/budget and the card line (ADR-0017)', () => {
   const OCT_1 = new Date('2026-10-01T10:00:00Z');
   const botInfo = createTestBot().bot.botInfo;
 
-  function budgetBot() {
-    const clock = { now: OCT_1 };
+  function budgetBot(opts: { webappUrl?: string | undefined; now?: Date } = {}) {
+    const clock = { now: opts.now ?? OCT_1 };
+    const keys = createLedgerKeyring(() => clock.now);
     const db = openDatabase(':memory:');
-    runMigrations(db, OCT_1);
+    runMigrations(db, clock.now);
     quietFirstContact(db);
     let ids = 0;
     let messageId = 100;
@@ -2567,8 +2568,9 @@ describe('/budget and the card line (ADR-0017)', () => {
       now: () => clock.now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(() => clock.now),
+      keys,
       botInfo,
+      webappUrl: opts.webappUrl,
     });
     const calls: ApiCall[] = [];
     bot.api.config.use((_prev, method, payload) => {
@@ -2583,7 +2585,7 @@ describe('/budget and the card line (ADR-0017)', () => {
       bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text, date: clock.now }));
     const tap = (data: string, messageId: number) =>
       bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
-    return { bot, db, calls, clock, say, tap };
+    return { bot, db, calls, clock, keys, say, tap };
   }
 
   const lastText = (calls: readonly ApiCall[]) => sentTexts(calls).at(-1);
@@ -2597,6 +2599,143 @@ describe('/budget and the card line (ADR-0017)', () => {
     harness.calls.length = 0;
     return harness;
   }
+
+  describe('the 📈 Диаграмма button', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    // 12:00 in Belgrade: day 13 of the payday period 25 September – 24 October.
+    const OCT_7 = new Date('2026-10-07T10:00:00Z');
+    type Markup = {
+      inline_keyboard: { text: string; web_app?: { url: string }; callback_data?: string }[][];
+    };
+
+    // A budget from the 25th with a 30 000.00 RSD limit (or only a Кафе cap), `spent` typed on
+    // the 7th, then /budget: its screen's call.
+    async function screenOf(opts: {
+      webappUrl?: string;
+      limit?: boolean;
+      spent?: string;
+      locked?: boolean;
+    }) {
+      const h = budgetBot({ webappUrl: opts.webappUrl, now: OCT_7 });
+      await h.say('/budget', 1);
+      await h.tap('bud:day', 101);
+      await h.say('25', 2);
+      if (opts.limit === false) {
+        const cafe = h.db
+          .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+          .pluck()
+          .get() as CategoryId;
+        await h.tap(BUDGET_CAPS_OPEN, 101);
+        await h.tap(budgetCapData(cafe), 101);
+        await h.say('5000', 3);
+      } else {
+        await h.tap('bud:lim', 101);
+        await h.say('30000', 3);
+      }
+      if (opts.spent !== undefined) await h.say(opts.spent, 4);
+      if (opts.locked === true) {
+        const user = findUserByIdentity(h.db, 'telegram', String(ALLOWED_ID));
+        if (user === undefined) throw new Error('setup: no user');
+        const keyDeps = { db: h.db, logger: silentLogger(), keys: h.keys };
+        const ledger = await sealPersonalLedger(keyDeps, user, OCT_7);
+        h.keys.lock(ledger.id);
+      }
+      h.calls.length = 0;
+      await h.say('/budget', 5);
+      const screen = h.calls.filter((call) => 'text' in (call.payload as object)).at(-1);
+      return screen?.payload as { text: string; reply_markup?: Markup };
+    }
+
+    const chartOf = async (markup: Markup | undefined) => {
+      const button = markup?.inline_keyboard[0]?.[0];
+      expect(markup?.inline_keyboard[0]).toHaveLength(1);
+      expect(button?.text).toBe(messages.chartButton);
+      const url = button?.web_app?.url ?? '';
+      expect(url.startsWith(`${webappUrl}#z=`)).toBe(true);
+      const payload = await decodeChartPayload(url.slice(url.indexOf('#')));
+      if (payload?.v !== 2) throw new Error('a v2 payload expected');
+      return payload;
+    };
+
+    it('opens the period burn-down from the first row, its captions in the screen words', async () => {
+      const screen = await screenOf({ webappUrl, spent: '13500 продукты' });
+      const plain = await screenOf({ spent: '13500 продукты' });
+
+      // The rest of the screen is as without WEBAPP_URL.
+      expect(screen.text).toBe(plain.text);
+      expect(screen.reply_markup?.inline_keyboard.slice(1)).toEqual(
+        plain.reply_markup?.inline_keyboard,
+      );
+      const payload = await chartOf(screen.reply_markup);
+      expect(payload.title).toBe('Бюджет: 25 сен – 24 окт');
+      const [pace] = payload.sections;
+      expect(payload.sections).toHaveLength(1);
+      expect(pace).toEqual({
+        k: 'pace',
+        days: 30,
+        current: [...Array<number>(12).fill(0), 1_350_000],
+        limit: [3_000_000, 'Лимит: 30 000.00 RSD'],
+        captions: ['Потрачено к 7 октября: 13 500.00 RSD', 'Сегодня перерасход 500.00 RSD'],
+      });
+      // allowanceThrough(3000000, 30, 13) = 1300000, so today is 500.00 RSD over.
+      const lines = screen.text.split('\n');
+      expect(lines).toContain('Лимит: 30 000.00 RSD, потрачено 13 500.00 RSD');
+      expect(lines).toContain('Сегодня перерасход 500.00 RSD');
+    });
+
+    it("words a positive leftover as the screen's todayLeft line", async () => {
+      const screen = await screenOf({ webappUrl, spent: '10000 продукты' });
+
+      const [pace] = (await chartOf(screen.reply_markup)).sections;
+      const captions = pace !== undefined && 'captions' in pace ? pace.captions : [];
+      expect(captions).toEqual([
+        'Потрачено к 7 октября: 10 000.00 RSD',
+        'Осталось на сегодня: 3 000.00 RSD',
+      ]);
+      expect(screen.text.split('\n')).toContain('Осталось на сегодня: 3 000.00 RSD');
+    });
+
+    it.each([
+      ['a budget with caps only', { limit: false }, 'Кафе и рестораны: 450.00 из 5 000.00 RSD'],
+      ['a locked sealed ledger', { locked: true }, messages.ledgerLocked],
+    ])('is absent for %s, the screen as without WEBAPP_URL', async (_case, opts, shown) => {
+      const screen = await screenOf({ webappUrl, spent: '450 кофе', ...opts });
+      const plain = await screenOf({ spent: '450 кофе', ...opts });
+
+      expect(screen.text).toContain(shown);
+      expect(JSON.stringify(screen)).not.toContain('web_app');
+      expect(screen).toEqual(plain);
+    });
+
+    it('is absent without WEBAPP_URL', async () => {
+      const screen = await screenOf({ spent: '450 кофе' });
+
+      expect(screen.reply_markup?.inline_keyboard[0]).toEqual([
+        { text: 'Задать лимит', callback_data: 'bud:lim' },
+      ]);
+      expect(JSON.stringify(screen)).not.toContain('web_app');
+    });
+
+    it('is absent from a group /budget with WEBAPP_URL set', async () => {
+      const { bot, calls } = createTestBot({ now: OCT_7, webappUrl });
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 1,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 2, text: '/budget', messageId: 12, date: OCT_7 }),
+      );
+
+      expect(sentTexts(calls)[0]).toContain('Бюджет');
+      expect(JSON.stringify(calls)).not.toContain('web_app');
+    });
+  });
 
   it.each(['/budget', '💰 Бюджет'])('opens the screen with no limit on %j', async (text) => {
     const { say, calls } = budgetBot();
