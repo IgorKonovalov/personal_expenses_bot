@@ -55,6 +55,7 @@ import { recordReceipt } from '../services/recordReceipt.js';
 import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createJobQueue, type JobResult, type JobRunner } from '../jobs/queue.js';
+import { encodeChartPayload } from '../domain/chartPayload.js';
 import { createBot, inProcessRunner, privateComposer, registerCommands } from './bot.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MORE_BUTTONS } from './handlers/more.js';
@@ -9007,6 +9008,200 @@ describe('tags (Plan 0012)', () => {
       payload: { callback_query_id: expect.any(String) as string, text: messages.tagGone },
     });
     expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
+  });
+
+  describe('the 📈 Диаграмма button', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    type Row = { text: string; callback_data?: string; web_app?: { url: string } }[];
+    const payloadOf = (call: ApiCall | undefined) =>
+      call?.payload as { text: string; reply_markup: { inline_keyboard: Row[] } };
+    // The report's chart row, its URL split at the fragment and the payload decoded by the page.
+    const chartOf = async (call: ApiCall | undefined) => {
+      const row = payloadOf(call).reply_markup.inline_keyboard[0];
+      expect(row).toHaveLength(1);
+      expect(row?.[0]?.text).toBe(messages.chartButton);
+      const url = row?.[0]?.web_app?.url ?? '';
+      const at = url.indexOf('#');
+      return { base: url.slice(0, at), payload: await decodeChartPayload(url.slice(at)) };
+    };
+    // #отпуск: 450 RSD, 12.50 EUR at 117.1234 and 50 KZT with no rate, or the KZT alone when not
+    // `converted`; its report opened from /tags.
+    const sendReport = async (opts: { webappUrl?: string; converted?: boolean } = {}) => {
+      const harness = createTestBot(
+        opts.webappUrl === undefined ? {} : { webappUrl: opts.webappUrl },
+      );
+      let updateId = 0;
+      const say = (text: string, messageId: number) =>
+        harness.bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text }));
+      storeEurRate(harness.db);
+      if (opts.converted !== false) {
+        await say('450 кофе #отпуск', 1);
+        await say('12,50 EUR такси #отпуск', 2);
+      }
+      await say('50 KZT хлеб #отпуск', 3);
+      await harness.bot.handleUpdate(
+        callbackUpdate({ updateId: ++updateId, data: `tag:s:${hashOf('отпуск')}`, messageId: 50 }),
+      );
+      return harness;
+    };
+
+    it('decodes Жильё, Транспорт, Еда and 50.00 KZT to a 1 000 000 pie at 60/25/15', async () => {
+      const block = (currency: CurrencyCode, lines: [string, number][]) => ({
+        currency,
+        totalMinor: lines.reduce((sum, [, amountMinor]) => sum + amountMinor, 0),
+        lines: lines.map(([name, amountMinor]) => ({ name, amountMinor })),
+      });
+      const converted = block('RSD', [
+        ['Жильё', 600000],
+        ['Транспорт', 250000],
+        ['Еда', 150000],
+      ]);
+      const report = {
+        name: 'отпуск',
+        converted,
+        convertedFrom: [],
+        unconverted: [block('KZT', [['Еда', 5000]])],
+        count: 4,
+        firstOn: '2026-09-01' as LocalDate,
+        lastOn: '2026-09-10' as LocalDate,
+      };
+
+      const z = encodeChartPayload(messages.tagChart(report), messages.chartFold('RSD'));
+      const payload = await decodeChartPayload(`#z=${z ?? ''}`);
+
+      expect(payload).toEqual({
+        v: 2,
+        title: '#отпуск',
+        sections: [
+          {
+            k: 'pie',
+            currency: 'RSD',
+            totalMinor: 1000000,
+            totalLabel: '10 000.00 RSD',
+            lines: [
+              ['Жильё', 600000, '6 000.00 RSD', '60%'],
+              ['Транспорт', 250000, '2 500.00 RSD', '25%'],
+              ['Еда', 150000, '1 500.00 RSD', '15%'],
+            ],
+            unconverted: ['Без курса НБС: 50.00 KZT'],
+          },
+        ],
+      });
+      const pie = payload?.v === 2 ? (payload.sections[0] as PieSection) : undefined;
+      expect(pie?.totalMinor).toBe(converted.totalMinor);
+    });
+
+    it("puts the report's converted block over the back row, the text unchanged", async () => {
+      const { calls } = await sendReport({ webappUrl });
+
+      const sent = payloadOf(calls.at(-1));
+      expect(sent.text).toBe(
+        '<b>#отпуск — «Личные расходы»</b>\n29.09 · 3 расхода\n\n' +
+          '<b>≈ 1 914.04 RSD</b>\nТранспорт: 1 464.04 RSD\nКафе и рестораны: 450.00 RSD\n\n' +
+          '<b>50.00 KZT</b>\nПродукты: 50.00 KZT\n\n' +
+          'Включая 12.50 EUR по курсу НБС на день траты.\nБез курса НБС, не пересчитано: KZT.',
+      );
+      expect(sent.reply_markup.inline_keyboard.slice(1)).toEqual([
+        [{ text: messages.backButton, callback_data: 'tag:l:1' }],
+      ]);
+      const chart = await chartOf(calls.at(-1));
+      expect(chart.base).toBe(webappUrl);
+      expect(chart.payload).toEqual({
+        v: 2,
+        title: '#отпуск',
+        sections: [
+          {
+            k: 'pie',
+            currency: 'RSD',
+            totalMinor: 191404,
+            totalLabel: '≈ 1 914.04 RSD',
+            lines: [
+              ['Транспорт', 146404, '1 464.04 RSD', '76%'],
+              ['Кафе и рестораны', 45000, '450.00 RSD', '24%'],
+            ],
+            unconverted: ['Без курса НБС: 50.00 KZT'],
+          },
+        ],
+      });
+    });
+
+    it('is absent when nothing converted, like an empty period', async () => {
+      const { calls } = await sendReport({ webappUrl, converted: false });
+
+      expect(payloadOf(calls.at(-1)).reply_markup).toEqual({
+        inline_keyboard: [[{ text: messages.backButton, callback_data: 'tag:l:1' }]],
+      });
+    });
+
+    it('is absent without WEBAPP_URL, the report byte-identical to one without the button', async () => {
+      const withUrl = payloadOf((await sendReport({ webappUrl })).calls.at(-1));
+      const { calls } = await sendReport();
+
+      expect(calls.at(-1)).toEqual({
+        method: 'editMessageText',
+        payload: {
+          chat_id: ALLOWED_ID,
+          message_id: 50,
+          text: withUrl.text,
+          reply_markup: {
+            inline_keyboard: [[{ text: messages.backButton, callback_data: 'tag:l:1' }]],
+          },
+          ...htmlParseMode,
+        },
+      });
+    });
+
+    it('is absent on a locked sealed ledger, whose tap is the locked toast', async () => {
+      const harness = createTestBot({ webappUrl });
+      const { bot, calls, db, keys } = harness;
+      await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '/start' }));
+      const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const keyDeps = { db, logger: silentLogger(), keys };
+      const ledger = await sealPersonalLedger(keyDeps, user, new Date('2026-09-29T22:10:00Z'));
+      await bot.handleUpdate(textUpdate({ updateId: 2, messageId: 2, text: '450 кофе #отпуск' }));
+      keys.lock(ledger.id);
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        callbackUpdate({ updateId: 3, data: `tag:s:${hashOf('отпуск')}`, messageId: 50 }),
+      );
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: 'cb-3', text: messages.ledgerLockedToast },
+        },
+      ]);
+    });
+
+    it('is absent from a group report with WEBAPP_URL set', async () => {
+      const { bot, calls } = createTestBot({ webappUrl });
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 1,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 2, text: '450 кофе #отпуск', messageId: 12 }),
+      );
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        callbackUpdate({
+          updateId: 3,
+          data: `tag:s:${hashOf('отпуск')}`,
+          messageId: 50,
+          chatId: GROUP_ID,
+        }),
+      );
+
+      expect(lastText(calls)).toContain('<b>#отпуск — ');
+      expect(JSON.stringify(calls)).not.toContain('web_app');
+    });
   });
 
   describe('the sticky tag', () => {

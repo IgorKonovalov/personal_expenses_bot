@@ -1,6 +1,6 @@
 # 0044: Charts for tag reports and product prices
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its `pie` section), merged on `main` first
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
@@ -144,11 +144,19 @@ interface BarsSection {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a tag report opens a donut | dev | not started | |
+| 1: Walking skeleton: a tag report opens a donut | dev | done | committed with this row |
 | 2: A product's prices by month | dev | not started | |
 | 3: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: the Жильё/Транспорт/Еда + 50.00 KZT done-when is tested at the message level
+  (`messages.tagChart` from a hand-built report, through `encodeChartPayload` and the page's
+  decoder), not through a bot tap: no preset category is named Жильё or Еда. The real-bot tests
+  tap a #отпуск report (450 RSD, 12.50 EUR, 50 KZT) and decode its button.
+- Phase 1: `src/domain/chartPayload.ts` and its test are unchanged; a `ChartInput` with no
+  pace, trend or catTrend already encodes one pie section.
+- Phase 1: the group case is a bot test of `src/bot/group/tags.ts`, which is unchanged.
 
 ### Close triggers
 

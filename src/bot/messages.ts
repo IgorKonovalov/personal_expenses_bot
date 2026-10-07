@@ -152,6 +152,9 @@ interface TagReportView {
   };
 }
 
+// A tag report's chart: the report with something converted.
+type TagChartView = TagReportView['report'] & { readonly converted: TagBlockView };
+
 interface AmbiguousView {
   readonly readings: readonly Money[];
 }
@@ -317,6 +320,25 @@ function chartCatTrend(
       return [[index, points] as const];
     }),
   };
+}
+
+// A chart's line for a currency with no rate, never drawn: «Без курса НБС: 50.00 KZT».
+function chartUnconverted(block: {
+  readonly currency: CurrencyCode;
+  readonly totalMinor: number;
+}): string {
+  return `Без курса НБС: ${formatMoney({ amountMinor: block.totalMinor, currency: block.currency })}`;
+}
+
+// A chart's pie lines from a block's categories, largest first as the block lists them, each with
+// its share of the pie in whole percents (sharesOf); no change labels.
+function chartLines(block: TagBlockView): ChartLine[] {
+  return zipShares(block.lines).map(([line, percent]) => [
+    line.name ?? UNCATEGORIZED,
+    line.amountMinor,
+    formatMoney({ amountMinor: line.amountMinor, currency: block.currency }),
+    chartShare(percent, line.amountMinor),
+  ]);
 }
 
 // A chart's change label: «↑20%», «↓25%», «±0%» or «новое».
@@ -1910,8 +1932,7 @@ export const messages = {
   // [Позиции] under /today, /week and /month: the period's receipt items by category.
   periodItemsButton: 'Позиции',
   periodItemPages,
-  // The private /week and /month screen's `web_app` button: the period as a pie chart in the
-  // Mini App (ADR-0025).
+  // A private screen's `web_app` button: the screen as a chart in the Mini App (ADR-0025).
   chartButton: '📈 Диаграмма',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
@@ -1945,15 +1966,23 @@ export const messages = {
       const change = comparison?.lines[index]?.change;
       return change === undefined ? shown : [...shown, chartChange(change)];
     }),
-    unconverted: unconverted.map(
-      (c) => `Без курса НБС: ${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}`,
-    ),
+    unconverted: unconverted.map(chartUnconverted),
     trend: trend.map((point) => [
       periodLabel(point.period),
       point.totalMinor,
       `${point.approximate ? '≈ ' : ''}${formatMoney({ amountMinor: point.totalMinor, currency: converted.currency })}`,
     ]),
     ...(trend.length === 0 ? {} : { catTrend: chartCatTrend(period, converted, trend) }),
+  }),
+  // A tag report's pie chart, plain: titled with the tag, the converted block as the pie, `≈`
+  // on its total when it holds converted spending, and each currency with no rate as a line,
+  // never drawn. A tag has no previous period, so no line carries a change.
+  tagChart: ({ name, converted, convertedFrom, unconverted }: TagChartView): ChartInput => ({
+    title: `#${name}`,
+    currency: converted.currency,
+    totalLabel: `${convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
+    lines: chartLines(converted),
+    unconverted: unconverted.map(chartUnconverted),
   }),
   // A chart's pace section: the cumulative spend by day of the shown period over the previous
   // one's, each with its caption, plain. A running period names how much by today, and the

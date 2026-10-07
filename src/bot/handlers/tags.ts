@@ -1,5 +1,6 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
-import { tagHash } from '../../domain/tags.js';
+import { encodeChartPayload } from '../../domain/chartPayload.js';
+import { tagHash, type TagReport } from '../../domain/tags.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import { clearStickyTag, currentStickyTag, setStickyTag } from '../../services/stickyTag.js';
 import {
@@ -22,7 +23,7 @@ import { ensureUser } from './start.js';
 
 // /tags (ADR-0029): the active ledger's tags with their all-time totals, PAGE_SIZE to a page,
 // each a button to its report. /tag sets the sticky tag. Every tap is stateless: it reads the
-// viewer's active ledger again.
+// viewer's active ledger again. A report's «📈 Диаграмма» opens its converted block as a pie.
 
 interface View {
   readonly text: Html;
@@ -105,6 +106,21 @@ export async function sendTag(ctx: Context, deps: HandlerDeps, arg: string): Pro
   );
 }
 
+// The chart button's URL: WEBAPP_URL with the tag's pie in the fragment's `z` (ADR-0025,
+// ADR-0045). Undefined outside a private chat (`web_app` buttons work only there), without
+// WEBAPP_URL, when nothing converted (no pie, as with an empty period), and when the payload can't
+// fit its budget. A locked sealed ledger never gets here: its tap is the locked toast.
+function chartUrlOf(ctx: Context, deps: HandlerDeps, report: TagReport): string | undefined {
+  if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
+  const { converted } = report;
+  if (converted === undefined) return undefined;
+  const payload = encodeChartPayload(
+    messages.tagChart({ ...report, converted }),
+    messages.chartFold(converted.currency),
+  );
+  return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
+}
+
 export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('tags', (ctx) => sendTags(ctx, deps));
 
@@ -143,15 +159,19 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
         await ctx.answerCallbackQuery({ text: messages.tagGone });
         await editList(ctx, result.list, 1);
         return;
-      case 'report':
+      case 'report': {
         await ctx.answerCallbackQuery();
+        const chartUrl = chartUrlOf(ctx, deps, result.report);
         await editHtml(ctx, messages.tagReport(result), {
-          reply_markup: new InlineKeyboard().text(
-            messages.backButton,
-            tagListPageData(result.page),
-          ),
+          reply_markup: InlineKeyboard.from([
+            ...(chartUrl === undefined
+              ? []
+              : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+            [InlineKeyboard.text(messages.backButton, tagListPageData(result.page))],
+          ]),
         });
         return;
+      }
     }
   });
 }

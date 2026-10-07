@@ -349,6 +349,11 @@ bars scale to the screen width. Paging to another period rebuilds the button for
   limit on the period's last day. The captions are the screen's own: «Потрачено к 7 октября: …»,
   today's leftover or overspend, and «Лимит: …». A caps-only budget, a group or a locked sealed
   ledger gets no button.
+- A tag's report from `/tags`, in a private chat, opens with its own «📈 Диаграмма» row above
+  [« Назад]. Its chart is titled with the tag, `#отпуск`, and is the report's converted block as a
+  donut by category, with the shares and folding of `/month` but no change labels: a tag has no
+  previous period. A currency with no rate is a text line under it. A tag with nothing converted,
+  a group report or a locked sealed ledger gets no button.
 - A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
   A Telegram app too old to inflate the payload (no `DecompressionStream`) says so instead, and
   the text report still has every number.
