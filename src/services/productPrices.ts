@@ -13,7 +13,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
 import { amountOf, type Unit } from '../domain/products/amount.js';
 import { CATALOG } from '../domain/products/catalog.js';
-import { matchProduct } from '../domain/products/match.js';
+import { createNameMatcher, matchProduct, type NameMatcher } from '../domain/products/match.js';
 import {
   monthLines,
   totalLines,
@@ -116,32 +116,40 @@ function productsOf(deps: ProductDeps, user: User): Map<ProductRef, Product> {
   return new Map(products.map((product) => [product.ref, product]));
 }
 
-function ruleRef(nameKey: string): ProductRef | undefined {
-  const product = matchProduct(nameKey);
-  return product === undefined ? undefined : `b:${product.key}`;
-}
+// The process's memo of plaintext item names to their key and rule product (ADR-0041). At the
+// cap it holds an estimated 5 MB. Names only: no amount, user or date, and it is never logged.
+export const NAME_MATCHER_CAPACITY = 20_000;
+export const sharedNameMatcher: NameMatcher = createNameMatcher(NAME_MATCHER_CAPACITY);
 
 interface RawItem {
   readonly nameKey: string;
+  readonly ruleRef: ProductRef | undefined;
   readonly quantity: string;
   readonly totalMinor: number;
   readonly currency: CurrencyCode;
   readonly occurredOn: LocalDate;
 }
 
+function ruleRef(nameKey: string): ProductRef | undefined {
+  const product = matchProduct(nameKey);
+  return product === undefined ? undefined : `b:${product.key}`;
+}
+
 // The viewer's items in the ledger, oldest first.
 function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean): RawItem[] {
   const items: RawItem[] = listLedgerDatedItems(deps.db, ledger.id)
     .filter((item) => item.createdBy === user.id)
-    .map((item) => ({ ...item, nameKey: normalize(item.name) }));
+    .map((item) => ({ ...item, ...sharedNameMatcher.match(item.name) }));
   if (!sealed) return items;
   for (const row of listLedgerExpenses(deps.db, { ledgerId: ledger.id, memberId: user.id })) {
     if (!isSealed(row) || row.createdBy !== user.id) continue;
     const folded = foldedReceipt(deps, row.id);
     if (folded === undefined || folded.sellerName === null) continue;
     for (const item of folded.items) {
+      const nameKey = normalize(item.name);
       items.push({
-        nameKey: normalize(item.name),
+        nameKey,
+        ruleRef: ruleRef(nameKey),
         quantity: item.quantity,
         totalMinor: item.totalMinor,
         currency: row.currency,
@@ -158,13 +166,11 @@ export function resolveItems(deps: ProductDeps, user: User, ledger: Ledger): Led
   const sealed = isSealedLedger(deps, ledger.id);
   const products = productsOf(deps, user);
   const answers = sealed ? new Map<string, string | null>() : listItemProducts(deps.db, user.id);
-  const items = ownItems(deps, user, ledger, sealed).map((item) => {
-    if (!answers.has(item.nameKey)) {
-      return { ...item, ref: ruleRef(item.nameKey), answered: false };
-    }
+  const items = ownItems(deps, user, ledger, sealed).map(({ ruleRef: rule, ...item }) => {
+    if (!answers.has(item.nameKey)) return { ...item, ref: rule, answered: false };
     // An answer naming a product that no longer exists counts as "not a product".
     const answer = answers.get(item.nameKey) ?? null;
-    const ref = [...products.keys()].find((r) => r === answer);
+    const ref = answer === null ? undefined : products.get(answer as ProductRef)?.ref;
     return { ...item, ref, answered: true };
   });
   return { ledger, sealed, items, products };
