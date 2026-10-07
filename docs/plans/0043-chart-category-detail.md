@@ -138,7 +138,7 @@ interface CatTrendSection {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: a tapped category shows its six periods | dev | done | 4c40f26 |
-| 2: Live check | human | not started | |
+| 2: Live check | human | owed | |
 
 ### Notes
 
