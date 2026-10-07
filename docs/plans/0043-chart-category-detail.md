@@ -1,6 +1,6 @@
 # 0043: Category detail in the chart: tap a category, see its last six periods
 
-> **Status:** draft
+> **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0040](0040-chart-polish.md) (tap selection) and [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2), both merged on `main` first. Run after [Plan 0042](0042-chart-pace-and-budget-burn-down.md) if it is queued, since both extend the shedding order.
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections)

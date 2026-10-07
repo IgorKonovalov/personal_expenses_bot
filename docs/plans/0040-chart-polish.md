@@ -1,6 +1,6 @@
 # 0040: Chart polish: a donut that fits the screen, tap to inspect, colours that hold in dark theme
 
-> **Status:** draft
+> **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in)
 

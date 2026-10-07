@@ -1,6 +1,6 @@
 # 0042: Spending pace in the chart, and a burn-down chart for the budget
 
-> **Status:** draft
+> **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
