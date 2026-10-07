@@ -4,13 +4,15 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0045`
+- **Next free number:** `0047`
 
 ## Active
 
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
+| [0045](0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | draft (2026-10-07) |
+| [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | draft (2026-10-07) |
 
 ## Recently closed
 

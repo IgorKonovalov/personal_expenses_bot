@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0046`
+- **Next free number:** `0048`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -52,3 +52,5 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0043](0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md) | Scheduled sends are paced and capped per tick, skip unreachable users, and find due pushes in bulk | accepted (2026-10-07) |
 | [0044](0044-compressed-backups-seven-daily-four-weekly.md) | Backups are gzip-compressed, with 7 daily and 4 weekly copies kept | accepted (2026-10-07), with an outcome |
 | [0045](0045-chart-payload-v2-deflated-sections.md) | Chart payload v2: deflated JSON in `#z=`, a list of sections the page skips when it doesn't know them | accepted (2026-10-07) |
+| [0046](0046-currency-words-thousands-suffix-and-amount-last-text.md) | Expense text accepts currency words and a thousands suffix; amount-last text records in a private chat and is asked about in a group | proposed (2026-10-07) |
+| [0047](0047-group-history-import-from-a-desktop-export.md) | A group's history from before the bot joined is imported from a Telegram Desktop JSON export, read by rules and reviewed before recording | proposed (2026-10-07) |
