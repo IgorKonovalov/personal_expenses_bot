@@ -214,7 +214,7 @@ No table, column, callback data or message changes.
 | 1: bench | dev | done: baseline at 20,000 items, 2,996 distinct names: list cold 409.2 / warm 381.3 ms, product cold 383.9 / warm 385.1 ms (plan: 369 / 375) | aed0139 |
 | 2: compiled catalog and shared memo | dev | done: 20,000 items: list cold 107.3 / warm 38.9 ms, product cold 40.7 / warm 39.2 ms | 17b2944 |
 | 3: sealed fold from rows in hand | dev | done | ab2e920 |
-| 4: live check | human | not started | |
+| 4: live check | human | owed | |
 
 ### Notes
 
