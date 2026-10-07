@@ -11,6 +11,7 @@ declare global {
       readonly WebApp?: ScanWebApp & {
         readonly ready?: () => void;
         readonly expand?: () => void;
+        readonly HapticFeedback?: { readonly selectionChanged?: () => void };
         readonly themeParams?: {
           readonly bg_color?: string;
           readonly text_color?: string;
@@ -38,6 +39,8 @@ if (modeOf(hash) === 'scan') {
   if (theme?.bg_color !== undefined) document.body.style.backgroundColor = theme.bg_color;
   if (theme?.text_color !== undefined) document.body.style.color = theme.text_color;
   const colours = { bg: theme?.bg_color, hint: theme?.hint_color };
-  showChart<HTMLElement | SVGElement>(document, document.body, hash, colours);
+  showChart<HTMLElement | SVGElement>(document, document.body, hash, colours, () =>
+    webApp?.HapticFeedback?.selectionChanged?.(),
+  );
   showTrend<HTMLElement | SVGElement>(document, document.body, hash, colours);
 }

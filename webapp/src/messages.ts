@@ -18,4 +18,6 @@ export const messages = {
   chartTitle: 'Диаграмма',
   // Under the total in the donut's hole.
   chartTotalCaption: 'Всего',
+  // One line under the donut: the chart answers taps.
+  chartTapHint: 'Нажмите на категорию, чтобы увидеть подробности',
 } as const;

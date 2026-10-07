@@ -199,8 +199,8 @@ a tap handler are a few dozen lines of SVG.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | committed with this row |
-| 2: Tap a slice or a legend row to inspect it | dev | not started | |
+| 1: Walking skeleton: a full-width donut with the total in its centre | dev | done | 647be3b |
+| 2: Tap a slice or a legend row to inspect it | dev | done | committed with this row |
 | 3: Theme-aware palettes and a trend layout that can't clip | dev | not started | |
 | 4: Live check, light and dark | human | not started | |
 
@@ -210,6 +210,12 @@ a tap handler are a few dozen lines of SVG.
   trend SVG's CSSOM `maxWidth` is `480px` (the plan names only the donut's). `ChartDocument`
   gains `title`, its `createElementNS` takes the SVG namespace literal, and `main.ts` draws with
   `N = HTMLElement | SVGElement`, whose `style` the CSSOM writes need.
+- Phase 2: `HapticFeedback.selectionChanged()` runs on every selection change, clearing
+  included. With a line selected, both centre lines use the total's font size. The hole's tap
+  target is a `circle` with `pointer-events="all"`. The no-request/no-storage done-when is
+  checked by stubbing `fetch`, `localStorage` and `sessionStorage` in the test, plus
+  `git grep -E "localStorage|sessionStorage|fetch|sendData|XMLHttpRequest"` over `pie.ts`,
+  `bars.ts` and `main.ts` (no match); `showChart` has no handle to `sendData`.
 
 ### Close triggers
 

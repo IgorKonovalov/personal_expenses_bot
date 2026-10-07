@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { showTrend } from './bars.js';
 import { messages } from './messages.js';
 import { decodeChartPayload } from './payload.js';
@@ -7,11 +7,19 @@ import { showChart, type ChartDocument, type ChartNode, type ChartStyle } from '
 // A DOM stand-in: builds a tree from createElement/createElementNS and textContent alone. It has
 // no markup parser, and assigning markup through innerHTML or outerHTML throws. Inline style goes
 // through `style` only: the CSP blocks a `style` attribute, so setting one throws.
+// `click()` is test-side: it runs the node's click listeners, as a tap would.
 class FakeNode implements ChartNode<FakeNode> {
   textContent: string | null = null;
-  readonly style: ChartStyle = { maxWidth: '', display: '', margin: '' };
+  readonly style: ChartStyle = {
+    maxWidth: '',
+    display: '',
+    margin: '',
+    minHeight: '',
+    fontWeight: '',
+  };
   readonly attributes = new Map<string, string>();
   readonly children: FakeNode[] = [];
+  readonly listeners: (() => void)[] = [];
   constructor(
     readonly tag: string,
     readonly namespace?: string,
@@ -20,8 +28,17 @@ class FakeNode implements ChartNode<FakeNode> {
     if (name === 'style') throw new Error('style attribute');
     this.attributes.set(name, value);
   }
+  removeAttribute(name: string): void {
+    this.attributes.delete(name);
+  }
   append(...nodes: FakeNode[]): void {
     this.children.push(...nodes);
+  }
+  addEventListener(_type: 'click', listener: () => void): void {
+    this.listeners.push(listener);
+  }
+  click(): void {
+    for (const listener of this.listeners) listener();
   }
   set innerHTML(_markup: string) {
     throw new Error('innerHTML');
@@ -42,13 +59,14 @@ function fakeDocument(): ChartDocument<FakeNode> {
   };
 }
 
-function page(hash: string) {
+function page(hash: string, onSelect: () => void = () => {}) {
   const doc = fakeDocument();
   const root = new FakeNode('body');
-  showChart(doc, root, hash);
+  showChart(doc, root, hash, {}, onSelect);
   const nodes = root.all().slice(1);
   return {
     doc,
+    root,
     nodes,
     tags: nodes.map((node) => node.tag),
     texts: nodes.map((node) => node.textContent).filter((text) => text !== null),
@@ -190,6 +208,7 @@ describe('the chart page', () => {
       '1 500.00 RSD',
       '1 500.00 RSD',
       'Всего',
+      messages.chartTapHint,
       ' Еда: 1 200.00 RSD',
       ' Транспорт: 300.00 RSD',
       'Без курса НБС: 12.50 EUR',
@@ -282,5 +301,127 @@ describe('the chart page', () => {
 
     expect(nodes.filter((node) => node.tag === 'img')).toEqual([]);
     expect(texts).toContain(` ${name}: 50.00 RSD`);
+  });
+});
+
+describe('inspecting a line', () => {
+  const inspectable = (payload: object = SEPTEMBER, onSelect: () => void = () => {}) => {
+    const { root, nodes } = page(`#d=${encoded(payload)}`, onSelect);
+    const donut = nodes.find((node) => node.attributes.get('role') === 'img');
+    return {
+      root,
+      nodes,
+      slices: nodes.filter((node) => node.tag === 'path'),
+      rows: nodes.filter((node) => node.tag === 'li'),
+      hole: donut?.children.find((node) => node.tag === 'circle'),
+      centre: () =>
+        donut?.children.filter((node) => node.tag === 'text').map((node) => node.textContent),
+    };
+  };
+  const opacities = (slices: FakeNode[]) => slices.map((slice) => slice.attributes.get('opacity'));
+
+  it('dims the other slices and shows the line in the centre, and a second tap clears it', () => {
+    const { slices, rows, centre } = inspectable();
+
+    rows[1]?.click();
+    expect(opacities(slices)).toEqual(['0.35', '1']);
+    expect(centre()).toEqual(['Транспорт', '300.00 RSD']);
+    expect(rows.map((row) => row.style.fontWeight)).toEqual(['', 'bold']);
+
+    rows[1]?.click();
+    expect(opacities(slices)).toEqual(['1', '1']);
+    expect(centre()).toEqual(['1 500.00 RSD', 'Всего']);
+    expect(rows.map((row) => row.style.fontWeight)).toEqual(['', '']);
+  });
+
+  it('selects the same line from its slice as from its legend row, and the hole clears it', () => {
+    const { slices, rows, hole, centre } = inspectable();
+
+    slices[1]?.click();
+    expect(opacities(slices)).toEqual(['0.35', '1']);
+    expect(centre()).toEqual(['Транспорт', '300.00 RSD']);
+    expect(rows[1]?.style.fontWeight).toBe('bold');
+
+    slices[0]?.click();
+    expect(opacities(slices)).toEqual(['1', '0.35']);
+    expect(centre()).toEqual(['Еда', '1 200.00 RSD']);
+
+    hole?.click();
+    expect(opacities(slices)).toEqual(['1', '1']);
+    expect(centre()).toEqual(['1 500.00 RSD', 'Всего']);
+  });
+
+  it('cuts a long name in the centre and keeps it whole in the legend', () => {
+    const name = 'Развлечения и подписки';
+    const { rows, centre } = inspectable({
+      ...SEPTEMBER,
+      lines: [
+        ['Еда', 120000, '1 200.00 RSD'],
+        [name, 30000, '300.00 RSD'],
+      ],
+    });
+
+    rows[1]?.click();
+    expect(centre()).toEqual(['Развлечения и…', '300.00 RSD']);
+    expect(rows[1]?.all().map((node) => node.textContent)).toContain(` ${name}: 300.00 RSD`);
+  });
+
+  it('lets a zero-amount line, which has no slice, be selected from its legend row', () => {
+    const { slices, rows, centre } = inspectable({
+      ...SEPTEMBER,
+      lines: [...SEPTEMBER.lines, ['Связь', 0, '0.00 RSD']],
+    });
+
+    rows[2]?.click();
+    expect(centre()).toEqual(['Связь', '0.00 RSD']);
+    expect(opacities(slices)).toEqual(['0.35', '0.35']);
+  });
+
+  it('shows the tap hint once, under the donut, and gives every legend row a 44px tap height', () => {
+    const { root, rows } = inspectable();
+
+    const tags = root.children.map((node) => node.tag);
+    const hint = root.children.filter((node) => node.textContent === messages.chartTapHint);
+    expect(hint).toHaveLength(1);
+    expect(hint[0]?.tag).toBe('p');
+    expect(root.children.indexOf(hint[0] ?? root)).toBe(tags.indexOf('svg') + 1);
+    expect(rows.map((row) => row.style.minHeight)).toEqual(['44px', '44px']);
+  });
+
+  it('puts a selected markup-like name in the centre as text only', () => {
+    const name = '<img src=x onerror=alert(1)>';
+    const { nodes, rows, centre } = inspectable({
+      ...SEPTEMBER,
+      lines: [
+        ['Еда', 120000, '1 200.00 RSD'],
+        [name, 30000, '300.00 RSD'],
+      ],
+    });
+
+    rows[1]?.click();
+    // 28 characters: the centre holds its first 14, as text.
+    expect(centre()).toEqual(['<img src=x one…', '300.00 RSD']);
+    expect(nodes.filter((node) => node.tag === 'img')).toEqual([]);
+  });
+
+  it('reports each selection change, and stores or sends nothing', () => {
+    const fetch = vi.fn();
+    const setItem = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', { setItem });
+    vi.stubGlobal('sessionStorage', { setItem });
+    const onSelect = vi.fn();
+    try {
+      const { rows } = inspectable(SEPTEMBER, onSelect);
+
+      rows[0]?.click();
+      rows[1]?.click();
+      rows[1]?.click();
+      expect(onSelect).toHaveBeenCalledTimes(3);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
