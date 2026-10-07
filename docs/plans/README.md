@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0037`
+- **Next free number:** `0038`
 
 ## Active
 
@@ -14,6 +14,7 @@ status and date. What a plan did lives in the plan.
 | [0032](0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | approved (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0036](0036-product-prices-across-months.md) | Product prices across months: receipt items grouped into products, with spend, amount and unit price per month | approved (2026-10-06) |
+| [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
 
 ## Recently closed
 
