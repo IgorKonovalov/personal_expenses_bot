@@ -49,6 +49,7 @@ docs/
 scripts/
 ├── check-doc-links.mjs   # every relative markdown link resolves (run at every plan close)
 ├── products-coverage.ts  # `pnpm products:coverage`: product-rule coverage on a local db copy
+├── bench-prices.ts       # `pnpm bench:prices <items>`: times the /prices views on synthetic data
 └── deploy-vps.sh         # the VPS deploy, run by the deploy key's forced command (+ its test)
 tools/
 └── conductor/       # runs queued, approved plans headless in worktree lanes (ADR-0010).
