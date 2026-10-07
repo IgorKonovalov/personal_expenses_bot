@@ -1,8 +1,8 @@
 # ADR-0041: A receipt item's product match is memoized in process, not persisted per item
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0038](../plans/0038-prices-view-cost.md)
+> **Related plan(s):** [Plan 0038](../plans/done/0038-prices-view-cost.md)
 
 ## Context
 

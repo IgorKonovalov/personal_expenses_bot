@@ -1,8 +1,8 @@
 # 0038: /prices stops re-matching every receipt item on every tap
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, one minor fixed at close, Phase 4 live check owed, v0.27.1
 > **Created:** 2026-10-07
-> **Related ADRs:** [ADR-0041](../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md)
+> **Related ADRs:** [ADR-0041](../../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0039](../../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md)
 
 ## TL;DR
 
@@ -243,5 +243,132 @@ No table, column, callback data or message changes.
 - New script: `pnpm bench:prices` (`scripts/bench-prices.ts`). No migration, message, command or
   callback data change.
 - `pnpm products:coverage` was not run: no local database copy in the lane.
+
+## Close review
+
+Round 1, fresh session, on tip e9a0d18. Closed 2026-10-07. Phase 4 (live check, `human`) stays
+owed, and so does a `pnpm products:coverage` run on a local database copy. Minor 1 was fixed at
+close in 0bfb8db. No earlier round raised a finding.
+
+**Verdict:** Clean. Phases 1-3 do what the plan asked, the named tests defend their done-whens,
+and the gate is green. One minor finding remains: the orientation map in `CLAUDE.md` does not
+list the new bench script. The close session can fix it.
+
+### Gate (run in the review session, on e9a0d18)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0. 129 files and 1798 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0. 309 relative links resolve.
+- `pnpm bench:prices 20000` (re-run here): 2,996 distinct names. List cold 92.2 ms, warm 36.2 ms.
+  Product cold 36.7 ms, warm 37.1 ms. This matches the log's tip figures (93.1 / 36.7 /
+  36.8 / 37.3). The Phase 2 bar is a warm list under 100 ms, and the result is far below it.
+
+### Lens 1: alignment
+
+- **Phases.** All three `dev` phases are done, one commit each: aed0139, 17b2944 and ab2e920.
+  Phase 4 (`human`, `Blocks merge: no`) is owed. Each phase has exactly one in-vocabulary owner
+  tag.
+- **Phase 1.** `scripts/bench-prices.ts` and the `bench:prices` script exist. The bench builds an
+  in-memory database through `runMigrations` and `provisionUser`. Its names are invented
+  BASE × BRAND × SIZE strings from a fixed seed. It prints the item count, the distinct-name
+  count, and cold and warm figures for both views. Vitest includes only `src/**/*.test.ts` and
+  `webapp/src/**/*.test.ts`, so the bench is not part of the gate.
+- **Phase 2.**
+  - `match.ts` compiles every keyword and exclusion once, at module load (`COMPILED`). The split
+    is the same `split(' ')` with the same `*` prefix rule as before.
+  - `createNameMatcher` evicts the first-inserted key before an insert at capacity. A hit does
+    not refresh an entry's age, which is the insertion-order eviction the plan specified.
+  - `productPrices.test.ts` and `match.test.ts` add cases only. No existing case changed.
+  - I read every new assertion:
+    - The 1,000-from-10 test asserts `calls` is 10, and still 10 after the second pass.
+    - The capacity-3 test asserts `size` 3, `calls` 4 after `a, b, c, d`, 4 after a hit on `d`,
+      and 5 after `a`.
+    - The two-spellings test asserts `size` 2 and equal `nameKey`s, both `b:milk`.
+  - The plan wrote `products.has(answer)`. The code uses `products.get(answer as ProductRef)?.ref`.
+    This deviation is logged with its reason, and the behavior is equivalent.
+- **Phase 3.**
+  - `foldedReceiptOf` decrypts the given row with no read. `foldedReceipt` now does a lookup and
+    then calls it.
+  - `ownItems` passes the rows from `listLedgerExpenses`, which are already filtered by
+    `isSealed`. The old by-id path checked the same thing.
+  - The sealed names go through a `createNameMatcher` created inside the call.
+  - **By-id test.** It spies on `db.prepare` and asserts 0 statements matching
+    `/WHERE e\.id = \?\s*$/`. That pattern matches `findExpenseById`'s statement
+    (`src/db/expenses.ts:188`). It also matches two statements in `receipts.ts`, which only
+    makes the test stricter. The log records a mutation check: the test failed with 3 reads
+    when `ownItems` was reverted.
+  - **Shared-matcher test.** Its names (`MLEKO ZAPECACENO 1L`, `HLEB ZAPECACENI 500G`) appear
+    nowhere else in `src/`, so the matcher has truly never seen them. The test would fail if
+    sealed names reached the shared map.
+  - `ledgerKeys.test.ts` is listed under Files touched but did not change. The log says so, and
+    the sealed `/prices` tests cover `foldedReceiptOf`.
+- **ADRs.** The code follows ADR-0041 (proposed). Nothing reverses ADR-0039 or ADR-0020.
+- **Log.** It is present, shorter than the phases section, and its deviations are recorded.
+
+### Lens 2: layering
+
+- `createNameMatcher` sits in `src/domain/products/match.ts`, which stays pure: no I/O and no
+  framework import.
+- The shared instance sits in the service layer.
+- No copy, callback data or schema changes.
+
+### Lens 3: correctness
+
+- **Money and time.** No money or time arithmetic changed.
+- **Arithmetic gate.** The ADR-0039 gate still covers `productPrices.ts` and the products
+  modules, and it passes.
+- **Privacy.**
+  - The shared map holds raw names only. `ruleRef` and `nameKey` are pure functions of the name,
+    so a map shared across users cannot leak one user's answers to another: answers are applied
+    after the lookup, per user.
+  - Nothing logs the map.
+  - Plaintext rows from a sealed ledger's `listLedgerDatedItems` go through the shared map, but
+    those names already sit in plaintext `receipt_items`. The seal is not weakened.
+- **Idempotency.** Untouched, because the views are read-only.
+
+### Lens 4: docs freshness
+
+See the minor finding below.
+
+### Findings
+
+#### blocker
+
+None.
+
+#### major
+
+None.
+
+#### minor
+
+1. **The orientation map omits the new script.** Fixed at close in 0bfb8db.
+   - **What:** `CLAUDE.md` lists each file under `scripts/`, but it does not list
+     `bench-prices.ts` or `pnpm bench:prices`.
+   - **Where:** `CLAUDE.md:51`, the `scripts/` block of "Where things live".
+   - **Why it matters:** The map is the orientation entry point, and a script missing from it is
+     drift the next session will not find.
+   - **Suggested fix:** Add this line after the `products-coverage.ts` line:
+     `├── bench-prices.ts      # \`pnpm bench:prices <items>\`: times the /prices views on synthetic data`.
+     Any session can make this edit, because it is not under `.claude/`.
+
+#### nit
+
+None.
+
+### Bookkeeping owed at close
+
+- **Plan file.** Flip the plan to `done` with the verdict and move it to `docs/plans/done/`.
+  Repair the links from ADR-0041 and `docs/plans/README.md`, then run
+  `node scripts/check-doc-links.mjs`.
+- **ADR.** Accept ADR-0041 and refresh `docs/adrs/README.md`.
+- **Plans index.** Move the 0038 row in `docs/plans/README.md` (currently `approved`) to
+  recently closed.
+- **Version.** This is a fix-only plan, so bump a patch: `package.json`, `CHANGELOG.md` and the
+  `versionAnnouncements` entry (ADR-0013).
+- **Owner, after the merge.** Phase 4 (live check) is still owed. The owner should also run
+  `pnpm products:coverage` on a local database copy and confirm its output is unchanged, as the
+  plan's correctness-drift risk asks. The lane had no copy, so this was not run.
 
 ## Followups

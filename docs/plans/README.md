@@ -12,13 +12,13 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
-| [0038](0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | approved (2026-10-07) |
 | [0039](0039-scale-hardening.md) | Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk | approved (2026-10-07) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0038](done/0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | done (2026-10-07): built as planned, one minor fixed at close, Phase 4 live check owed, v0.27.1 |
 | [0030](done/0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | done (2026-10-07): built as planned, one minor and one nit fixed at close, two nits open, Phases 2 publish and 4 live check owed, v0.27.0 |
 | [0036](done/0036-product-prices-across-months.md) | Product prices across months: receipt items grouped into products, with spend, amount and unit price per month | done (2026-10-07): built as planned, one minor and one nit fixed at close, two minors open, Phase 6 real receipts owed, v0.26.0 |
 | [0032](done/0032-live-qr-scan-mini-app.md) | A live QR scan in a Mini App records a receipt | done (2026-10-07): built as planned, three minors open, Phase 2 publish and real scan owed, v0.25.0 |

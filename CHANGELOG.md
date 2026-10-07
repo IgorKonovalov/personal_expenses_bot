@@ -2,6 +2,16 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.27.1 (2026-10-07)
+
+From Plan 0038 (the /prices view cost).
+
+- `/prices`, its pager, a product and the review open several times faster on a long receipt
+  history: each item name is matched to its product once per process, not on every tap. The
+  screens show the same products and figures as before.
+- A sealed ledger's `/prices` decrypts the receipts it already read instead of re-reading each
+  one, and its item names stay out of the shared memo.
+
 ## 0.27.0 (2026-10-07)
 
 From Plan 0030 (charts in the Mini App).
