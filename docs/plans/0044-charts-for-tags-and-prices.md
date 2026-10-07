@@ -146,7 +146,7 @@ interface BarsSection {
 |---|---|---|---|
 | 1: Walking skeleton: a tag report opens a donut | dev | done | 27d3375 |
 | 2: A product's prices by month | dev | done | 3358159 |
-| 3: Live check | human | not started | |
+| 3: Live check | human | owed | |
 
 ### Notes
 
