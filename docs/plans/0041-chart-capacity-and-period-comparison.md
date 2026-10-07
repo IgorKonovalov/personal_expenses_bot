@@ -280,7 +280,7 @@ interface TrendSection {
 | 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | 6b7d2f3 |
 | 2: Comparison with the previous period | dev | done | bfcbaed |
 | 3: The URL-limit probe | dev | done | 6f6031e |
-| 4: Measure on real clients and check v2 opens | human | not started | |
+| 4: Measure on real clients and check v2 opens | human | owed | |
 
 ### Notes
 
