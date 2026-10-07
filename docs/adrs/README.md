@@ -51,4 +51,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0042](0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md) | Receipt-photo and statement jobs run in a short-lived child process, handed off by the handler | accepted (2026-10-07), with an outcome |
 | [0043](0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md) | Scheduled sends are paced and capped per tick, skip unreachable users, and find due pushes in bulk | accepted (2026-10-07) |
 | [0044](0044-compressed-backups-seven-daily-four-weekly.md) | Backups are gzip-compressed, with 7 daily and 4 weekly copies kept | accepted (2026-10-07), with an outcome |
-| [0045](0045-chart-payload-v2-deflated-sections.md) | Chart payload v2: deflated JSON in `#z=`, a list of sections the page skips when it doesn't know them | proposed (2026-10-07) |
+| [0045](0045-chart-payload-v2-deflated-sections.md) | Chart payload v2: deflated JSON in `#z=`, a list of sections the page skips when it doesn't know them | accepted (2026-10-07) |

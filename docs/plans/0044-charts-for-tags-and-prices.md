@@ -2,7 +2,7 @@
 
 > **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2 and its `pie` section), merged on `main` first
+> **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its `pie` section), merged on `main` first
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
 > [ADR-0029](../adrs/0029-tags-on-the-expense-row.md) (tags),
 > [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md) (products)

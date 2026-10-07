@@ -1,10 +1,10 @@
 # 0041: Chart capacity and the comparison with the previous period
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, two minors and two nits fixed at close, one nit open, Phase 4 live check owed, v0.31.0
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0040](done/0040-chart-polish.md) merged on `main` first (both edit `webapp/src/pie.ts` and its tests)
-> **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
-> [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App)
+> **Depends on:** [Plan 0040](0040-chart-polish.md) merged on `main` first (both edit `webapp/src/pie.ts` and its tests)
+> **Related ADRs:** [ADR-0045](../../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
+> [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App)
 
 ## TL;DR
 
@@ -325,5 +325,150 @@ interface TrendSection {
 - New files: `src/domain/shares.ts`, `scripts/probe-webapp-url.ts` (+ tests). New bot messages:
   `chartShareTiny`, `chartChangeUp`, `chartChangeDown`, `chartChangeZero`, `chartChangeNew`. New
   page message: `chartUnsupported`; `chartBroken` reworded. New package script `probe:webapp`.
+
+## Close review
+
+Round 1 graded the tip a048f5e clean. No fix round ran, so no earlier finding was resolved by one.
+Fixed at close: minor 1 in d8b55fc, minor 2 in 31d29f2, nit 2 in 92c008d and nit 3 in fe85e72.
+Nit 1 (the comparison zipped to lines by index) stays open. Phase 4 (human) stays owed.
+
+### Plan 0041 review, round 1 (tip a048f5e)
+
+**Verdict: clean. Phases 1 to 3 do what the plan asks, and every named done-when has a test whose assertion defends it. No blockers or majors. Two minor doc-freshness findings and three nits can be fixed at close.**
+
+#### Gate (run by this review on the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 139 files and 1953 tests passed
+- `node scripts/check-doc-links.mjs`: exit 0, 335 relative links resolve
+
+#### Lens 1: alignment
+
+- Phase 1 (6b7d2f3), Phase 2 (bfcbaed) and Phase 3 (6f6031e) are all present. Phase 4 is `human`
+  with `Blocks merge: no` and is owed after the merge. Each phase has exactly one owner tag.
+- Assertions read against the done-whens:
+  - `src/domain/shares.test.ts`: the three examples are exact `toEqual`s. The 500-case property
+    test checks a sum of exactly 100 and `0 <= share - floor <= 1` against a BigInt floor, with
+    some inputs scaled near `MAX_SAFE_INTEGER`.
+  - `src/domain/chartPayload.test.ts`: the round trip decodes through the page's
+    `decodeChartPayload` and asserts the whole v2 payload `toEqual`, including `totalMinor: 155000`.
+    The 200-case fold property checks length <= budget, folded sum == original total, at most one
+    «Прочее», and no trend once any line folds, with `foldedCases > 20` so the property actually
+    reaches folding. The change-labels-first case asserts no `totalChange`, lines cut to 4
+    elements, and every trend bar kept.
+  - `src/services/periodTrend.test.ts`: covers the past October (+20 / −25 / new / total 11), the
+    running 15 October (window 09-01..09-15, +100 / new / new / 158), the March 30 clip to the whole
+    of February, the Wednesday week window 09-28..09-30, the window-only category left out, and
+    the 6/7 read count through a `vi.fn` wrapper on the real `ledgerPeriodSummary`. The suite runs
+    in UTC+14 with `NOW = 10:00Z`, which is already 16 October on the host. A host-clock bug would
+    move the window to 1–16 September, so the test probes the ledger-timezone path.
+  - `src/bot/bot.test.ts:3635-3738`: the end-to-end labels «↑11% к сентябрю», «↑158% к 1–15
+    сентября», «↑100% к февралю», «↑67% к 28–30 сентября» and «±0% к неделе 28 сентября – 4
+    октября». The first chart test (`:3486`) covers "the window had nothing → every line «новое»,
+    no `totalChange`" (August's only expense is on the 31st, outside 1–30 August). `#z=` is
+    present and `d=` absent (`:3499-3500`). The «<1%» label is checked at `:3534`.
+  - `webapp/src/payload.test.ts`: the unknown `{ k: 'nope', x: 1 }` section draws nothing between
+    pie and trend (`:212`). A pie off its total and a non-deflate `z` each show only `chartBroken`
+    (`:267`). With no `DecompressionStream`, only `chartUnsupported` shows (`:276`). The legend row
+    is « Еда: 120 000.00 RSD · 78%» (`:223`). v1 `#d=` still draws the same slices, legend and
+    trend (`:309`, `:377`).
+  - `scripts/probe-webapp-url.test.ts`: checks each target's length is in [N−64, N], that it
+    decodes through the page to «Проба N» with one `li` and one `path`, and that the log never
+    holds the token, `https:` or `#z=`, including when the request fails.
+- The log discloses its deviations: the 6/7 count is on `periodChart` only, the
+  `vitest.config.ts` include sits outside Files touched, and the one-day basis «к 1 сентября»
+  isn't named in the plan. Each is consistent with the plan's intent. The Decision's "6 per
+  render" was always the chart's reads. The log is shorter than the phases section.
+- No ADR is reversed. The shedding order matches ADR-0045 with the plan's Phase 2 addition (change
+  labels first).
+
+#### Lens 2: layering
+
+- `grammy` stays in `src/bot/`. `src/domain/chartPayload.ts` imports `node:zlib`, which is
+  pure computation and no I/O. `sharesOf` and `foldSmallest` are pure. All copy (`chartShareTiny`,
+  `chartChange*`, the basis words, `chartUnsupported`) lives in the two messages modules.
+
+#### Lens 3: correctness
+
+- Money: `sharesOf` does BigInt integer arithmetic. Changes come from `changeOf`. The page does no
+  amount arithmetic beyond geometry. `daysBetween` uses `Math.round` on a UTC day difference of
+  two local dates, which is exact.
+- Time: "today" is `localDateOf(input.now, effectiveTimezone(...))`, with no `new Date()` in
+  the domain.
+- Idempotency: the button URL is rebuilt read-only on every render, and nothing is written.
+- Privacy: the probe logs only sizes and Bot API descriptions, and swallows a fetch error's text.
+- Telegram limits: `z` is held to 2048 by construction, and no `callback_data` changed.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **README's chart section doesn't describe Phase 2.** (fixed at close in d8b55fc)
+   - **Where:** `README.md:303` and `README.md:313`.
+   - **What:** Line 303 still says the donut has "the period's total in its centre", and line 313
+     says "Each legend row reads «name: amount · share»". After Phase 2 the row is «name: amount ·
+     share · change», and the centre's second line is the total's change with its basis («↑11% к
+     сентябрю», «↑158% к 1–15 сентября»), or «Всего» when there's nothing to compare against.
+   - **Why it matters:** lens 4 requires the README to cover a user-observable change. Phase 2's
+     Files touched omitted the README, so the gap is in the plan as well as the code.
+   - **Fix:** extend the 313 bullet with the change arrow (↑/↓/±0%/«новое»). Add one bullet on
+     the centre's basis, including the running-period rule (the same first days of the previous
+     period) and that change labels are the first thing dropped when over budget.
+
+2. **CLAUDE.md's `scripts/` map omits the new probe.** (fixed at close in 31d29f2)
+   - **Where:** `CLAUDE.md:51-55`.
+   - **What:** the map lists each script with its command, and `scripts/probe-webapp-url.ts`
+     (`pnpm probe:webapp`) is missing.
+   - **Why it matters:** "Where things live" must match the tree (lens 4).
+   - **Fix:** add the line
+     `├── probe-webapp-url.ts  # \`pnpm probe:webapp\`: sends the admin web_app buttons of padded lengths (Plan 0041)`
+     after `bench-due.ts`.
+
+##### nit
+
+1. **The comparison is zipped to the lines by index across two reads.** (open)
+   - **Where:** `src/bot/messages.ts:1868`.
+   - **What:** `comparison.lines[index]` comes from `periodChart`'s own read of the shown period,
+     and `converted.lines` from the screen's read. The two are in the same order today, because
+     they come from the same `ledgerPeriodSummary` on the same synchronous db. A future change to
+     either read would silently mislabel lines.
+   - **Fix (optional):** match by `categoryId`, or build the lines from `comparison.lines`, which
+     are `CategoryDelta`s and already carry name and amount.
+
+2. **Two comment lines run past the 100-column width the rest of the file keeps.** (fixed at close in 92c008d)
+   - **Where:** `webapp/src/bars.ts:17` and `webapp/src/pie.ts:191`.
+   - **Fix:** rewrap them. Prettier doesn't wrap comments, so the gate can't catch this.
+
+3. **ADR-0045's Negative section names the wrong fallback line.** (fixed at close in fe85e72)
+   - **Where:** `docs/adrs/0045-chart-payload-v2-deflated-sections.md:63-64`.
+   - **What:** it says old clients "show the `chartBroken` line". The plan, and now the code, show
+     `chartUnsupported` instead.
+   - **Fix:** the ADR is still `proposed`, so the close session can correct the sentence before
+     accepting it.
+
+#### Bookkeeping owed at close
+
+- Plan `Status:` to `done` with the date and verdict, then `git mv` it to `docs/plans/done/` and
+  repair links both ways: ADR-0045's `../plans/0041-…` link, the plans index, and the plan's own
+  `../adrs/` links. Run `node scripts/check-doc-links.mjs`.
+- Plans index row: it currently reads `approved`, while the plan reads `in-progress`.
+- Accept ADR-0045 (`proposed` → `accepted`) after nit 3, and refresh `docs/adrs/README.md`.
+- Version bump: this is a feature plan (minor), which means a `CHANGELOG.md` entry and a
+  `versionAnnouncements` entry (ADR-0013).
+- Phase 4 (human, does not block merge) stays owed. Record per-client results in the log after
+  the Pages run. One observation for that run: the centre caption is squeezed to `textLength` 1.1
+  past 12 characters. A long basis such as «±0% к неделе 28 сентября – 4 октября» (about 38
+  characters) renders at roughly half its natural glyph width. Check it on a phone. If it's
+  unreadable, a followup can move the basis out of the hole. The plan asked for this placement,
+  so it isn't a finding here.
 
 ## Followups

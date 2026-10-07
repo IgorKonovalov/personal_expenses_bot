@@ -2,7 +2,7 @@
 
 > **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
+> **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
 > **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
 > [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods, cumulative allowance),
 > [ADR-0023](../adrs/0023-budgets-count-converted-spending.md) (budget conversion)

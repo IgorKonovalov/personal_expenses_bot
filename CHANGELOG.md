@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.31.0 (2026-10-07)
+
+From Plan 0041 (chart capacity and the comparison with the previous period).
+
+- The chart payload moves to version 2: deflated JSON in `#z=`, a list of sections the page draws
+  in order and skips when it doesn't know them (ADR-0045). Buttons sent before (`#d=`) still open.
+- Each legend row adds the category's share of the period, as whole percents that sum to 100
+  («<1%» for a tiny one), and its change against the previous period (↑/↓/±0%/«новое»).
+- The donut centre shows the total's change with its basis: «↑11% к сентябрю». A running period is
+  compared with the same first days of the previous one: «↑158% к 1–15 сентября».
+- A Telegram app without `DecompressionStream` says it can't show the chart, instead of the broken
+  chart line.
+- `pnpm probe:webapp` sends the admin padded test buttons to measure the button URL limit on real
+  clients.
+
 ## 0.30.0 (2026-10-07)
 
 From Plan 0040 (chart polish).

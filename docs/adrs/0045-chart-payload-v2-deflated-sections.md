@@ -1,8 +1,8 @@
 # ADR-0045: Chart payload v2: deflated JSON in `#z=`, a list of sections the page skips when it doesn't know them
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07)
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0041](../plans/0041-chart-capacity-and-period-comparison.md) (introduces it),
+> **Related plan(s):** [Plan 0041](../plans/done/0041-chart-capacity-and-period-comparison.md) (introduces it),
 > [Plan 0042](../plans/0042-chart-pace-and-budget-burn-down.md),
 > [Plan 0043](../plans/0043-chart-category-detail.md),
 > [Plan 0044](../plans/0044-charts-for-tags-and-prices.md) (add sections)
