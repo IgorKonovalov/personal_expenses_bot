@@ -278,8 +278,8 @@ interface TrendSection {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: v2 `#z=` with shares in the legend | dev | done | 6b7d2f3 |
-| 2: Comparison with the previous period | dev | done | committed with this row |
-| 3: The URL-limit probe | dev | not started | |
+| 2: Comparison with the previous period | dev | done | bfcbaed |
+| 3: The URL-limit probe | dev | done | committed with this row |
 | 4: Measure on real clients and check v2 opens | human | not started | |
 
 ### Notes
@@ -303,6 +303,13 @@ interface TrendSection {
   payload has no `totalChange` (`chartPayload.test.ts`), and a pie without one shows «Всего»
   (`payload.test.ts`).
 - Phase 2: a running window of one day reads «к 1 сентября»; the plan names no basis for it.
+- Phase 3, outside `Files touched`: `vitest.config.ts` gained `scripts/**/*.test.ts` in its
+  `include`. Without it `scripts/probe-webapp-url.test.ts` runs in neither `pnpm test` nor CI.
+- Phase 3: the send is `runProbe(env, log)`, exported and tested with a stubbed `fetch`; the
+  no-token/no-URL rule is asserted on its log lines, a failed request included. When the Bot API
+  refuses the one message, each size is sent alone, so accepted sizes arrive as separate messages.
+- Phase 3: `pnpm probe:webapp` runs `tsx --env-file-if-exists=.env`, like `pnpm dev`. The script
+  was not run against Telegram in this session; that is Phase 4.
 
 ### Close triggers
 

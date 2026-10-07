@@ -21,6 +21,7 @@
     "products:coverage": "tsx scripts/products-coverage.ts",
     "bench:prices": "tsx scripts/bench-prices.ts",
     "bench:due": "tsx scripts/bench-due.ts",
+    "probe:webapp": "tsx --env-file-if-exists=.env scripts/probe-webapp-url.ts",
     "prepare": "husky"
   },
   "lint-staged": {

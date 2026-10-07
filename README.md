@@ -325,6 +325,12 @@ screen width. Paging to another period rebuilds the button for that period.
 - A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
   A Telegram app too old to inflate the payload (no `DecompressionStream`) says so instead, and
   the text report still has every number.
+- The payload is capped at 2048 characters. To measure what your clients really open, run
+  `pnpm probe:webapp` with `BOT_TOKEN`, `ADMIN_TELEGRAM_ID` and `WEBAPP_URL` set (in the
+  environment or `.env`), after the page is published. It sends the admin one message with a
+  «Проба N» button per length, 2048 to 32768 characters. A button that opens showing its own
+  «Проба N» title arrived whole. A length the Bot API refuses is printed with its error; the
+  script prints only sizes and errors, never the token or a URL.
 
 ### Amount rules
 
