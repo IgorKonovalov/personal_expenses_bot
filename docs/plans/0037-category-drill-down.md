@@ -100,6 +100,8 @@ between phases. The architect reviews once at the end, in a fresh session.
     equal the matching lines of `ledgerPeriodSummary`.
   - **Paging:** 19 expenses in a category give 3 pages (8, 8, 3). Page 3 shows lines 17–19 and
     buttons `[17] [18] [19]`, and the pager reads `[◀] [3/3] [▶]`. Number buttons go in rows of 4.
+    (Over-specified at close: the shared `pagerRow` in `src/bot/nav.ts` drops `[▶]` on the last
+    page, as every pager in the bot does, so page 3 of 3 reads `[◀] [3/3]`.)
   - **Back:** the list's `[« Назад]` opens the picker page that holds its category (category 10
     of 12 → picker page 2). The picker's `[« Назад]` is the digest of the same period, and it
     clears `drill`.
