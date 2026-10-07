@@ -15,6 +15,7 @@ import { monthOf, weekOf } from '../../domain/periods.js';
 import type { CurrencyCode } from '../../domain/currencies.js';
 import type { LocalDate } from '../../domain/time.js';
 import { createLogger } from '../../logger.js';
+import { FLOW_TTL_MS } from '../../services/flowSessions.js';
 import { sealPersonalLedger } from '../../services/testing/sealLedger.js';
 import { drillExpenseData, drillListData, drillPickerData } from '../callbackData.js';
 import { messages } from '../messages.js';
@@ -871,5 +872,147 @@ describe('back from the card to the list', () => {
       [9, 8, 7, 6].map((n, i) => button(String(i + 1), `drl:e:${eid(n)}`)),
       [5, 4, 3, 2].map((n, i) => button(String(i + 5), `drl:e:${eid(n)}`)),
     ]);
+  });
+});
+
+describe('edit prompts from the drill-down card (ADR-0040)', () => {
+  // Expense 1's card from Продукты's list, turned into its `field` prompt.
+  async function promptBot(field: 'a' | 't') {
+    const bot = await cardBot();
+    await bot.openCard(1);
+    await bot.tap(`exp:edit:${eid(1)}`, bot.anchor());
+    await bot.tap(`exp:ef:${eid(1)}:${field}`, bot.anchor());
+    bot.calls.length = 0;
+    return bot;
+  }
+
+  const drillWithCard = (ledgerId: LedgerId, groceries: CategoryId) => ({
+    ledgerId,
+    drill: {
+      level: 'list',
+      period: { kind: 'month', key: '2026-09' },
+      categoryId: groceries,
+      page: 1,
+      expenseId: eid(1),
+    },
+  });
+
+  // The anchor is the summary screen again, holding expense 1's card, which ends on [« Назад].
+  function expectBackInDrill(bot: Awaited<ReturnType<typeof promptBot>>) {
+    expect(bot.screen().screen).toBe('summary');
+    expect(JSON.parse(bot.screen().screen_ctx)).toEqual(drillWithCard(bot.ledgerId, bot.groceries));
+    const card = lastEdit(bot.calls);
+    expect(card?.message_id).toBe(bot.anchor());
+    expect(card?.reply_markup.inline_keyboard.at(-1)).toEqual(BACK_ROW);
+  }
+
+  it('keeps the summary screen in the prompt’s returnTo', async () => {
+    const bot = await promptBot('a');
+
+    expect(bot.screen().screen).toBe('expense');
+    expect(JSON.parse(bot.screen().screen_ctx)).toEqual({
+      expenseId: eid(1),
+      returnTo: { name: 'summary', ...drillWithCard(bot.ledgerId, bot.groceries) },
+    });
+  });
+
+  it('returns to the drill-down after a valid amount', async () => {
+    const bot = await promptBot('a');
+
+    await bot.say('999');
+
+    expect(lastEdit(bot.calls)?.text).toContain('<b>999.00 RSD</b> — хлеб');
+    expectBackInDrill(bot);
+  });
+
+  it('returns to the drill-down after /cancel', async () => {
+    const bot = await promptBot('a');
+
+    await bot.say('/cancel');
+
+    expectBackInDrill(bot);
+  });
+
+  it('returns to the drill-down after [Отмена]', async () => {
+    const bot = await promptBot('a');
+
+    await bot.tap(`exp:show:${eid(1)}`, bot.anchor());
+
+    expectBackInDrill(bot);
+  });
+
+  it('returns to the drill-down when the expense was deleted mid-prompt', async () => {
+    const bot = await promptBot('a');
+    softDeleteExpense(bot.db, eid(1), NOW);
+
+    await bot.say('999');
+
+    expect(bot.calls.some((c) => (c.payload as { text?: string }).text === messages.editGone)).toBe(
+      true,
+    );
+    expect(lastEdit(bot.calls)?.reply_markup.inline_keyboard).toEqual([
+      [button('Вернуть', `exp:restore:${eid(1)}`)],
+      BACK_ROW,
+    ]);
+    expectBackInDrill(bot);
+  });
+
+  it('goes back to the list from a prompt left past FLOW_TTL_MS', async () => {
+    const bot = await promptBot('a');
+    bot.db
+      .prepare('UPDATE flow_sessions SET expires_at = ? WHERE user_id = ?')
+      .run(new Date(NOW.getTime() - FLOW_TTL_MS).toISOString(), bot.user.id);
+
+    await bot.tap('drl:back', bot.anchor());
+
+    expect(lastEdit(bot.calls)?.text).toBe(
+      '<b>Продукты · сентябрь 2026</b>\n«Личные расходы» · 2 траты · ≈ 2 461.94 RSD\n\n' +
+        '1. 28 сен — 10.74 EUR · сыр\n2. 15 сен — 1 200.00 RSD · хлеб',
+    );
+    const { drill } = JSON.parse(bot.screen().screen_ctx) as { drill: object };
+    expect(bot.screen().screen).toBe('summary');
+    expect(drill).toEqual({
+      level: 'list',
+      period: { kind: 'month', key: '2026-09' },
+      categoryId: bot.groceries,
+      page: 1,
+    });
+  });
+
+  it('shows the list without an expense a date edit moved out of the period', async () => {
+    const bot = await promptBot('t');
+
+    await bot.say('25.08');
+    expectBackInDrill(bot);
+    bot.calls.length = 0;
+    await bot.tap('drl:back', bot.anchor());
+
+    expect(lastEdit(bot.calls)?.text).toBe(
+      '<b>Продукты · сентябрь 2026</b>\n«Личные расходы» · 1 трата · ≈ 1 261.94 RSD\n\n' +
+        '1. 28 сен — 10.74 EUR · сыр',
+    );
+  });
+
+  it('stores no returnTo for an edit from an ordinary confirmation, whose card has no back row', async () => {
+    const { db, say, tap, calls, screen } = await drillBot();
+    await say('450 кофе');
+    // A card action works on whichever message carries it; this one stands for the confirmation.
+    const confirmation = 7;
+    const expenseId = db
+      .prepare("SELECT id FROM expenses WHERE description = 'кофе'")
+      .pluck()
+      .get() as ExpenseId;
+    await tap(`exp:ef:${expenseId}:a`, confirmation);
+
+    expect(screen()).toEqual({
+      screen: 'expense',
+      screen_ctx: JSON.stringify({ expenseId }),
+    });
+
+    calls.length = 0;
+    await say('500');
+
+    expect(lastEdit(calls)?.message_id).toBe(confirmation);
+    expect(JSON.stringify(calls)).not.toContain('drl:back');
   });
 });

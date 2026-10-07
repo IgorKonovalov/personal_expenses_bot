@@ -1,5 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
-import type { Expense } from '../../db/expenses.js';
+import type { Expense, ExpenseId } from '../../db/expenses.js';
 import { addDays } from '../../domain/dateText.js';
 import type { LocalDate } from '../../domain/time.js';
 import {
@@ -9,7 +9,13 @@ import {
   type EditAnswerRefusal,
   type EditRefusal,
 } from '../../services/editExpense.js';
-import { setAnchor, type EditFlow } from '../../services/flowSessions.js';
+import {
+  currentAnchor,
+  setAnchor,
+  type EditFlow,
+  type ScreenAnchor,
+  type SummaryScreen,
+} from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   EDIT_EXPENSE,
@@ -23,7 +29,14 @@ import {
 import { messages } from '../messages.js';
 import { editHtml, joinHtml, type Html } from '../render/html.js';
 import { backRow, type ScreenView } from '../screens.js';
-import { cardAt, cardView, expenseIdOf, recordedCard, tappedMessage } from './card.js';
+import {
+  cardAt,
+  cardView,
+  expenseIdOf,
+  recordedCard,
+  tappedMessage,
+  type MessageRef,
+} from './card.js';
 import { ensureUser } from './start.js';
 
 // Editing an expense from its card (ADR-0011): [Изменить] turns the card into a field picker, a
@@ -97,6 +110,26 @@ export function editPromptView(
   };
 }
 
+// The summary screen the anchor at `at` holds this expense's card in: the drill-down itself, or
+// the one an earlier prompt of the card kept. Undefined for a card anywhere else.
+function drillScreenAt(
+  anchor: ScreenAnchor | undefined,
+  at: MessageRef,
+  expenseId: ExpenseId,
+): SummaryScreen | undefined {
+  if (anchor === undefined || anchor.chatId !== at.chatId || anchor.messageId !== at.messageId) {
+    return undefined;
+  }
+  const { screen } = anchor;
+  if (screen.name === 'expense')
+    return screen.expenseId === expenseId ? screen.returnTo : undefined;
+  return screen.name === 'summary' &&
+    screen.drill?.level === 'list' &&
+    screen.drill.expenseId === expenseId
+    ? screen
+    : undefined;
+}
+
 export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.callbackQuery(EDIT_EXPENSE, async (ctx) => {
     const expenseId = expenseIdOf(ctx.match);
@@ -134,11 +167,17 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
       await ctx.answerCallbackQuery({ text: refusalToast[started.kind] });
       return;
     }
-    // The card becomes the anchor: the typed answer and /cancel re-render it.
+    // The card becomes the anchor: the typed answer and /cancel re-render it. A card the anchor
+    // already holds inside a summary drill-down keeps that screen as its way back (ADR-0040).
+    const at = { chatId: card.chat.id, messageId: card.message_id };
+    const returnTo = drillScreenAt(currentAnchor(deps, user), at, expenseId);
     setAnchor(deps, user, {
-      chatId: card.chat.id,
-      messageId: card.message_id,
-      screen: { name: 'expense', expenseId },
+      ...at,
+      screen: {
+        name: 'expense',
+        expenseId,
+        ...(returnTo === undefined ? {} : { returnTo }),
+      },
     });
     await ctx.answerCallbackQuery();
     const view = editPromptView(kind, started.expense, started.today);

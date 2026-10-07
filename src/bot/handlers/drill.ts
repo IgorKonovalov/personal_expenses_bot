@@ -6,7 +6,13 @@ import type { LedgerId } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { parsePeriod, periodKey, type Period } from '../../domain/periods.js';
 import { showExpense } from '../../services/changeCategory.js';
-import { setAnchor, type Drill, type ScreenAnchor } from '../../services/flowSessions.js';
+import {
+  cancelFlowIf,
+  isEditOf,
+  setAnchor,
+  type Drill,
+  type ScreenAnchor,
+} from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import {
   categoryExpenses,
@@ -214,22 +220,27 @@ export function registerDrill(bot: Composer<Context>, deps: HandlerDeps): void {
   });
 
   // The card's [« Назад]: the list it was opened from, re-read, on the same page or the last one
-  // that still exists.
+  // that still exists. The anchor may still be the card's edit prompt, an ExpenseScreen keeping
+  // the summary screen in `returnTo`, after the prompt expired (ADR-0040); its edit is cancelled.
   bot.callbackQuery(DRILL_BACK, async (ctx) => {
-    const tap = await requireSummary(ctx, deps);
+    const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
-    const { drill } = tap.screen;
-    if (drill?.level !== 'list') {
+    const { screen } = tap.anchor;
+    const summary =
+      screen.name === 'summary' ? screen : screen.name === 'expense' ? screen.returnTo : undefined;
+    const drill = summary?.drill;
+    if (summary === undefined || drill?.level !== 'list') {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
+    if (screen.name === 'expense') cancelFlowIf(deps, tap.user, isEditOf(screen.expenseId));
     const period = parsePeriod(drill.period.kind, drill.period.key);
     const listing =
       period === undefined
         ? undefined
         : categoryExpenses(deps, {
             user: tap.user,
-            ledgerId: tap.screen.ledgerId,
+            ledgerId: summary.ledgerId,
             period,
             categoryId: drill.categoryId,
             now: deps.now(),

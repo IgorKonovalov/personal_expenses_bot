@@ -59,10 +59,13 @@ export interface SummaryScreen {
   readonly drill?: Drill;
 }
 
-// An expense card holding an edit prompt: the card is the edit flow's anchor.
+// An expense card holding an edit prompt: the card is the edit flow's anchor. A prompt started
+// from a card inside a summary drill-down keeps that summary screen in `returnTo`, and the anchor
+// becomes it again when the prompt is over (ADR-0040).
 export interface ExpenseScreen {
   readonly name: 'expense';
   readonly expenseId: ExpenseId;
+  readonly returnTo?: SummaryScreen;
 }
 
 // The /settings hub; with `ledgerId`, the hub scoped to that shared ledger (its timezone and
@@ -362,13 +365,31 @@ export function cancelFlow({ db }: Deps, user: User): boolean {
 }
 
 // Cancels the pending flow only when `matches` accepts it, so a card tap clears its own card's
-// flow and leaves an unrelated one pending. Returns false when nothing was cleared.
+// flow and leaves an unrelated one pending. Returns false when nothing was cleared. A cancelled
+// edit hands the anchor back to the screen its prompt replaced (returnFromPrompt).
 export function cancelFlowIf(deps: Deps, user: User, matches: (flow: Flow) => boolean): boolean {
   const pending = findFlowSession(deps.db, user.id)?.pending ?? null;
   if (pending === null) return false;
   const flow = parseFlow(pending.kind, pending.payload);
   if (flow === undefined || !matches(flow)) return false;
-  return cancelFlow(deps, user);
+  if (!cancelFlow(deps, user)) return false;
+  if (isEditFlow(flow)) returnFromPrompt(deps, user, flow.expenseId);
+  return true;
+}
+
+// ADR-0040: once an edit prompt of this expense is over, an anchor that is its ExpenseScreen with
+// a `returnTo` becomes that summary screen again, so the card it re-renders keeps its
+// [« Назад]. Any other anchor is left as it is.
+export function returnFromPrompt(deps: Deps, user: User, expenseId: ExpenseId): void {
+  const anchor = currentAnchor(deps, user);
+  if (
+    anchor?.screen.name !== 'expense' ||
+    anchor.screen.expenseId !== expenseId ||
+    anchor.screen.returnTo === undefined
+  ) {
+    return;
+  }
+  setAnchor(deps, user, { ...anchor, screen: anchor.screen.returnTo });
 }
 
 // The pending flow while it is still answerable, for a tap that answers it.
@@ -431,14 +452,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       ? { name, ledgerId: parsed.ledgerId as LedgerId }
       : { name };
   }
-  if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
-    const drill = parseDrill(parsed.drill);
-    return {
-      name,
-      ledgerId: parsed.ledgerId as LedgerId,
-      ...(drill === undefined ? {} : { drill }),
-    };
-  }
+  if (name === 'summary' && parsed !== undefined) return parseSummary(parsed);
   if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
     const { names, position, product, newProduct } = parsed;
     const review =
@@ -453,7 +467,15 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
     };
   }
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
-    return { name, expenseId: parsed.expenseId as ExpenseId };
+    const returnTo =
+      typeof parsed.returnTo === 'object' && parsed.returnTo !== null
+        ? parseSummary(parsed.returnTo as Record<string, unknown>)
+        : undefined;
+    return {
+      name,
+      expenseId: parsed.expenseId as ExpenseId,
+      ...(returnTo === undefined ? {} : { returnTo }),
+    };
   }
   if (name === 'recurring' && parsed !== undefined) {
     return {
@@ -567,6 +589,16 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }
   return undefined;
+}
+
+function parseSummary(parsed: Record<string, unknown>): SummaryScreen | undefined {
+  if (typeof parsed.ledgerId !== 'string') return undefined;
+  const drill = parseDrill(parsed.drill);
+  return {
+    name: 'summary',
+    ledgerId: parsed.ledgerId as LedgerId,
+    ...(drill === undefined ? {} : { drill }),
+  };
 }
 
 // A damaged drill reads as none: the screen is then the digest's.

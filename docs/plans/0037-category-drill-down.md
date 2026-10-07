@@ -236,8 +236,8 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: The picker and the list, read-only | dev | done | eff64db |
-| 2: The card in the drill-down | dev | done | committed with this row |
-| 3: Edit prompts from the drill-down card | dev | not started | |
+| 2: The card in the drill-down | dev | done | be7e716 |
+| 3: Edit prompts from the drill-down card | dev | done | committed with this row |
 | 4: Live check | human | not started | |
 
 ### Notes
@@ -267,6 +267,13 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
   `src/services/flowSessions.ts` and `src/bot/callbackData.ts` needed no Phase 2 change (`drill`,
   `drl:e` and `drl:back` landed in Phase 1). `src/bot/receiptWorker.ts`'s `cardFor` is not routed:
   it edits the remembered confirmation, never the anchor.
+- Phase 3: the anchor goes back to `returnTo` through `returnFromPrompt` in
+  `src/services/flowSessions.ts`, called by `flows.ts` (valid answer, `gone`, `/cancel` via
+  `restoreScreen`) and by `cancelFlowIf` whenever it cancels an edit flow. That last call is how
+  `[Отмена]` (`exp:show` in `category.ts`) and the date quick button (`editExpense.ts`) return to the
+  drill-down without editing those files.
+- Phase 3: `drl:back` on an `ExpenseScreen` anchor also cancels a still-pending edit of that
+  expense, so a later typed text is not taken as the answer while the anchor shows the list.
 
 ### Close triggers
 

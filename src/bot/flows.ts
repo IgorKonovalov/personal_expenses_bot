@@ -9,6 +9,7 @@ import {
   isBudgetFlow,
   isEditFlow,
   isSecretFlow,
+  returnFromPrompt,
   type BudgetScreen,
   type CategoriesScreen,
   type EditFlow,
@@ -101,7 +102,9 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     return;
   }
   if (screen.name === 'expense') {
-    // The card for the expense's stored state, as it was before the prompt.
+    // The card for the expense's stored state, as it was before the prompt, back in the summary
+    // drill-down it was opened from when it has one (ADR-0040).
+    returnFromPrompt(deps, user, screen.expenseId);
     const shown = showExpense(deps, { user, expenseId: screen.expenseId });
     if (shown.kind === 'card') {
       const view = cardView(deps, user, shown);
@@ -133,7 +136,8 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
 
 // A typed answer to an edit prompt in the card (the anchor). A valid one puts the card back with
 // the new value; an invalid one re-asks there. After the expense was deleted mid-flow, the flow
-// is cleared and the card shows its deleted form.
+// is cleared and the card shows its deleted form. Either way a prompt over hands the anchor back
+// to the summary drill-down it was started from, if any (ADR-0040).
 async function answerEdit(
   ctx: Context,
   deps: HandlerDeps,
@@ -152,6 +156,7 @@ async function answerEdit(
       await show(ctx, anchor, editPromptView(flow.kind, result.expense, result.today, result));
       return;
     case 'gone': {
+      returnFromPrompt(deps, user, flow.expenseId);
       await replyHtml(ctx, messages.editGone);
       const { expense, ledger } = result;
       if (anchor !== undefined && expense !== undefined && ledger !== undefined) {
@@ -161,6 +166,7 @@ async function answerEdit(
       return;
     }
     case 'editable': {
+      returnFromPrompt(deps, user, flow.expenseId);
       const view = cardView(deps, user, result);
       await show(ctx, anchor, cardAt(deps, user, anchor, view, recordedCard(view)));
       return;
