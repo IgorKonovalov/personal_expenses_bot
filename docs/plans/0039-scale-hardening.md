@@ -271,6 +271,7 @@ the log, and a stuck download can't freeze it.
 
 ### Phase 7: live checks
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:**
   1. Deploy.
   2. Send a receipt photo, and send a text expense from a second account while it decodes.

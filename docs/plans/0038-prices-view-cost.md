@@ -153,6 +153,7 @@ to be taken on the code before the change.
 
 ### Phase 4: live check
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** After the deploy, open `/prices` on the production bot with a real receipt history.
   Page the list, open two products, and open the review.
 - **Done when:** Every screen shows the same products and figures as before the deploy, and no
