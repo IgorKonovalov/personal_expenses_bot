@@ -1,10 +1,10 @@
 # 0032: A live QR scan in a Mini App records a receipt
 
-> **Status:** in-progress
+> **Status:** done (2026-10-07): built as planned, three minors open, Phase 2 publish and real scan owed, v0.25.0
 > **Created:** 2026-10-05
-> **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
-> [ADR-0018](../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),
-> [ADR-0034](../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (QR retry on photos)
+> **Related ADRs:** [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
+> [ADR-0018](../../adrs/0018-receipts-record-offline-enrich-async.md) (receipts),
+> [ADR-0034](../../adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md) (QR retry on photos)
 
 ## TL;DR
 
@@ -189,5 +189,134 @@ flowchart LR
   `main.js`, `messages.js`, `scan.js`), `node --test "scripts/*.test.mjs"` exit 0 (7 tests),
   `node scripts/check-doc-links.mjs` exit 0.
 - **Outstanding `human` phases:** Phase 2 (publish and scan a real receipt), `Blocks merge: no`.
+
+## Close review
+
+Closed 2026-10-07 by the conductor on the round 1 review below, which graded the tip
+`87b8b0c` clean. No earlier round raised a finding, so no fix commit is named here. The three
+minors stay open: none is a prose-only repair. Phase 2 (`human`, `Blocks merge: no`) stays
+owed, and its first Pages run is the check on the `upload-pages-artifact` and `deploy-pages`
+SHAs pinned from memory. The close bumps to v0.25.0.
+
+### Plan 0032 review, round 1
+
+Tip: 87b8b0caf324d7d4df239d7bdfed17cb493ba215 on `plan-0032-live-qr-scan-mini-app`.
+
+**Verdict:** Phase 1 does what the plan asks and every done-when has a test with a real
+assertion. There are no blockers or majors. Three minors remain: a first-contact welcome without
+the button, a scan that skips the tidy chat delete, and a `/help` that doesn't mention the
+scanner. The plan is clean to close, with Phase 2 (`human`, `Blocks merge: no`) still owed.
+
+#### Gate, run in this session
+
+- `pnpm typecheck`: exit 0. It also runs `tsc -p webapp/tsconfig.json --noEmit`.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, with 117 files and 1684 tests.
+- `node scripts/check-doc-links.mjs`: exit 0, with 291 links.
+- `node --test scripts/pages-workflow.test.mjs`: exit 0, 2 tests.
+- `pnpm build:webapp`: exit 0. It emits `index.html`, `main.js`, `messages.js` and `scan.js`, and
+  no `*.test.js`. This review then deleted the gitignored `webapp/dist/` it had built.
+
+#### Alignment: each done-when against its test
+
+- **Receipt via `web_app_data`, 82912 RSD, repeat is «Уже записано.», count 1.** This is
+  `src/bot/bot.test.ts:5084`. It asserts the exact `sendMessage` payload (`RS_CARD` and the
+  receipt keyboard), the stored row (`amount_minor: 82912`, `RSD`) and the repeat reply
+  `Уже записано.\n${RS_CARD}`, with `expenseCount` equal to 1. Met.
+- **Data that isn't a receipt gets a messages reply and records nothing, 5000 bytes included.**
+  This is `bot.test.ts:5120`. The test first proves that the 5000-byte padded link *would*
+  decode as a receipt, so the length cap is what refuses it. Both inputs answer
+  `messages.scanNotReceipt` and the count is 0. Met. The cap itself is at
+  `src/bot/handlers/webAppData.ts:18`.
+- **The menu carries a `web_app` button labelled from messages, with URL `WEBAPP_URL#m=scan`,
+  and is unchanged when unset or in a group.** These are `bot.test.ts:251` and `:277`. The first
+  asserts the whole keyboard for `/start`, `/help` and `❓ Помощь`. The second asserts
+  `menuKeyboard` with `WEBAPP_URL` unset, and the group calls equal to the unset bot's calls.
+  Met.
+- **`scan.test.ts`.** One `showScanQrPopup` call. The first text is sent exactly, once, the popup
+  closes once, and a second code is dropped. Without `#m=scan`, or without `showScanQrPopup`, the
+  page calls neither and shows its fallback line. All of these are asserted in
+  `webapp/src/scan.test.ts`. Met.
+- **The CSP meta has `default-src 'none'`, a `script-src` of only `https://telegram.org 'self'`
+  and no `connect-src`.** I checked this by reading `webapp/index.html:6-9`. No test covers it,
+  and the plan didn't ask for one. Met.
+- **`pnpm build:webapp` emits `index.html` and `main.js`.** I ran it. Met.
+- **`scripts/pages-workflow.test.mjs`: SHA-pinned `uses:`, and the build runs before the upload
+  of `webapp/dist`.** I read both assertions and ran the file. Met. CI runs it through
+  `deploy.yml:36`.
+- **No handler log line contains the scanned text or `suf.purs.gov.rs`.** Both scan tests run at
+  `logLevel: 'info'` and assert this over every log line. Met.
+
+The Implementation log is present and shorter than the phases section. Its deviations are
+disclosed: the extra `typecheck` step, the action SHAs pinned from memory, and the onboarding
+welcome. No ADR is reversed. ADR-0025 (static page, fragment in, `sendData` out) holds.
+
+#### Layering, correctness, privacy
+
+grammY stays in `src/bot/`. The page shares no code with the bot, and an eslint
+`no-restricted-imports` block on `webapp/**/*.ts` enforces that. All copy comes from
+`src/bot/messages.ts` or `webapp/src/messages.ts`. Idempotency rests on the receipt's identity,
+through `answerReceipt` and `recordReceipt`, as the plan states. The scanned text is never logged.
+`WEBAPP_URL` is validated as https with no `#`. The money path is unchanged.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **A first-contact welcome carries the menu without «📷 Скан».**
+   - **Where:** `src/bot/middleware/onboarding.ts:26` calls `sendWelcome(ctx)` with no URL.
+   - **Why it matters:** a user whose first message isn't `/start` gets the persistent menu
+     without the button. Telegram keeps showing that menu until the next `/start` or `/help`.
+     The log discloses this. The plan's done-when names only `/start` and `/help`, but its TL;DR
+     puts the button "on the private-chat menu".
+   - **Fix:** `await sendWelcome(ctx, deps.webappUrl);`. Add a test with
+     `createTestBot({ onboarding: true, webappUrl })` in which a first plain-text message gets a
+     welcome whose `reply_markup` contains the scan button.
+2. **A scan skips the tidy chat delete (ADR-0038).**
+   - **Where:** `src/bot/handlers/webAppData.ts:27-35`. The pasted-link path at
+     `src/bot/handlers/text.ts:57-60` calls `tidyAfterRecording` on `recorded` or `duplicate`, and
+     this handler discards `answerReceipt`'s outcome.
+   - **Why it matters:** the plan and the README say a scan "is recorded exactly like a pasted
+     receipt link". With tidy chat on, the pasted link is deleted, but the scan's "data from
+     «📷 Скан»" service message stays. Tidy chat arrived from main after this plan was written,
+     so no test probes the case.
+   - **Fix:** keep the outcome:
+     `const outcome = await answerReceipt(...); if (outcome === 'recorded' || outcome === 'duplicate') await tidyAfterRecording(ctx, deps, user);`.
+     Add a test with tidy chat on in which a scan records and calls `deleteMessage` once. If you'd
+     rather keep the service message, say so in a code comment instead.
+3. **`/help` doesn't mention the scanner.**
+   - **Where:** `src/bot/messages.ts:1319`, the receipt line ("отправьте фото QR-кода с чека или
+     ссылку из него"), and `:1328-1333`, which describes every other menu button.
+   - **Why it matters:** this is lens 4. A new user-visible button exists, and `/help` is the
+     reply that carries it, yet `/help` doesn't describe it.
+   - **Fix:** the button depends on `WEBAPP_URL`, so either make `messages.help` take a flag and
+     add a «📷 Скан — сканировать QR-код чека камерой» line when the URL is set, or record this as
+     a followup for Plan 0030, which reworks the page. Either way, decide it explicitly.
+
+##### nit
+
+None.
+
+#### Bookkeeping owed at close
+
+- Phase 2 (`human`, `Blocks merge: no`) stays owed. Enabling Pages, a green first Pages run, and
+  a real scan are also the check on the `upload-pages-artifact` and `deploy-pages` SHAs that the
+  log says were pinned from memory. Record the clients tried and the receipts recorded in the
+  Implementation log.
+- Bump the version: this is a feature plan, so a minor bump. Add the `CHANGELOG.md` entry and a
+  `versionAnnouncements` entry for the new «📷 Скан» button.
+- `git mv` the plan to `docs/plans/done/` and repair its `../adrs/` links. Move the index row in
+  `docs/plans/README.md` and run `node scripts/check-doc-links.mjs`.
+- No ADR to accept: the plan writes none.
+- Docs freshness is otherwise met. README has "Mini App: live receipt scan", `.env.example`
+  documents `WEBAPP_URL`, and `CLAUDE.md` lists `webapp/` and `pages.yml`.
 
 ## Followups

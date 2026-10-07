@@ -2,7 +2,7 @@
 
 > **Status:** approved (2026-10-01)
 > **Created:** 2026-10-01
-> **Depends on:** [Plan 0032](0032-live-qr-scan-mini-app.md) (the `webapp/` page, Pages workflow and
+> **Depends on:** [Plan 0032](done/0032-live-qr-scan-mini-app.md) (the `webapp/` page, Pages workflow and
 > `WEBAPP_URL`), merged on `main` before this plan starts
 > **Related ADRs:** [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (static Mini App, fragment in, sendData out),
 > [ADR-0011](../adrs/0011-navigation-model.md) (screens, persistent menu),
