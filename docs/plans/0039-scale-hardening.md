@@ -458,6 +458,10 @@ New message: `heavyJobBusy`.
   plaintext RSD expenses with short Russian descriptions, spread over 730 days, fixed seed) and
   ran one `backupDatabase`: 85,983,232 bytes uncompressed, 14,520,943 bytes compressed, a
   ratio of 5.92.
+- Review round 1, finding 0 (major, PRIVACY.md backup retention): fixed in 04dad73.
+- Review round 1, finding 1 (minor, CLAUDE.md map lacks `src/jobs/` and `scripts/bench-due.ts`):
+  fixed in 7ffff91.
+- Review round 1, finding 2 (nit, scheduler test imports from the bot layer): not acted on.
 
 ### Close triggers
 
