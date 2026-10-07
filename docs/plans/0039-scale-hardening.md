@@ -369,7 +369,7 @@ New message: `heavyJobBusy`.
 | 3: paced, retried, capped scheduled sends | dev | done | 882f4e3 |
 | 4: due pushes from one bulk read | dev | done | 46dd43f |
 | 5: photos and statements in a child process | dev | done | e32d0f5 |
-| 6: compressed backups | dev | done | committed with this row |
+| 6: compressed backups | dev | done | 69afe53 |
 | 7: live checks | human | not started | |
 
 ### Notes
@@ -460,5 +460,21 @@ New message: `heavyJobBusy`.
   ratio of 5.92.
 
 ### Close triggers
+
+- Phases 1-6 (`dev`) are done in 8163c57, 5a1f804, 882f4e3, 46dd43f, e32d0f5 and 69afe53.
+  Phase 7 (`human`, does not block merge) has not started.
+- Gate on the tip (69afe53): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  134 files and 1839 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs`
+  exit 0, 309 relative links resolve.
+- `pnpm bench:due 10000`: warm 2,610.4 ms before Phase 4, warm 58.1 ms after it (Notes).
+- New migration: `0027_unreachable_users.sql` (`users.unreachable_at`).
+- New message: `heavyJobBusy`. Changed copy input: `deleteAccountPrompt` now gets 28 days with
+  the defaults instead of 14.
+- New env key: `BACKUP_KEEP_WEEKLY` (default 4). `BACKUP_KEEP` default changes from 14 to 7.
+  Backup files are now `expenses-YYYY-MM-DD.sqlite.gz`.
+- New adapter: `src/jobs/` (queue and forked child), with its own `no-restricted-imports` block
+  in `eslint.config.js`. New script: `pnpm bench:due` (`scripts/bench-due.ts`). The
+  `Dockerfile` gains a build-stage check of the `dist/` child; no image was built here.
+- No new dependency, command or callback data.
 
 ## Followups
