@@ -7,6 +7,24 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-07 14:25 to 18:37: Plans 0040 to 0044
+
+Queue `a`: 0040, 0041, 0042, 0043, 0044. Merged 0040 (v0.30.0), 0041 (v0.31.0), 0042 (v0.32.0),
+0043 (v0.33.0) and 0044 (v0.34.0), all with 0 fix rounds. 0 parks, 4 h 12 min wall including a
+71 min usage-limit wait inside 0042's implement step, $38.50. The usage wait resumed the session
+by itself. Each plan's live check is owed after the merge.
+
+### Hand interventions
+
+None.
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F38 | architect | **The 0041 close edited accepted ADR-0045** (`fe85e72`): a one-word message-key correction (`chartBroken` to `chartUnsupported`) to match the shipped code. Decide whether a close may fix such a factual slip in place or must leave it to a superseding note, and say so in the close ceremony. | open |
+| F39 | conductor (dev) | **`live.log` prints non-ASCII as `?`**: a `vitest -t` filter with a Russian test name shows as `"?????????"`, and failing test names lose their Cyrillic. Write the milestone lines as UTF-8. | open |
+
 ## 2026-10-06 20:39 to 2026-10-07 07:43: Plans 0035, 0026, 0036 and 0032
 
 Queue `a`: 0026, 0035, 0036, 0032, with 0030 queued after 0032 merged. Merged 0035 (v0.23.0),
