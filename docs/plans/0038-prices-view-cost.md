@@ -213,7 +213,7 @@ No table, column, callback data or message changes.
 |---|---|---|---|
 | 1: bench | dev | done: baseline at 20,000 items, 2,996 distinct names: list cold 409.2 / warm 381.3 ms, product cold 383.9 / warm 385.1 ms (plan: 369 / 375) | aed0139 |
 | 2: compiled catalog and shared memo | dev | done: 20,000 items: list cold 107.3 / warm 38.9 ms, product cold 40.7 / warm 39.2 ms | 17b2944 |
-| 3: sealed fold from rows in hand | dev | done | committed with this row |
+| 3: sealed fold from rows in hand | dev | done | ab2e920 |
 | 4: live check | human | not started | |
 
 ### Notes
@@ -231,5 +231,17 @@ No table, column, callback data or message changes.
 - Phase 3: the per-call sealed matcher takes the same capacity, `NAME_MATCHER_CAPACITY`.
 
 ### Close triggers
+
+- Phases 1-3 (`dev`) are done in aed0139, 17b2944 and ab2e920. Phase 4 (`human`, does not
+  block merge) has not started.
+- Gate on the tip (ab2e920): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  129 files and 1798 tests passed; `pnpm build` exit 0; `node scripts/check-doc-links.mjs`
+  exit 0, 309 relative links resolve.
+- `pnpm bench:prices 20000` on the tip: 2,996 distinct names; list cold 93.1 / warm 36.7 ms,
+  product cold 36.8 / warm 37.3 ms. Phase 1 baseline on the same machine: list warm 381.3 ms,
+  product warm 385.1 ms.
+- New script: `pnpm bench:prices` (`scripts/bench-prices.ts`). No migration, message, command or
+  callback data change.
+- `pnpm products:coverage` was not run: no local database copy in the lane.
 
 ## Followups
