@@ -295,6 +295,21 @@ bot and is recorded exactly like a pasted receipt link, duplicate check included
 - Telegram keeps showing an old menu until the next `/start` or `/help` reply, so the button
   appears after one of them. A group never gets it: `web_app` buttons work in private chats only.
 
+### Mini App: charts
+
+With `WEBAPP_URL` set, `/week` and `/month` in a private chat end with «📈 Диаграмма». It opens
+the same page in chart mode: the shown period's categories as a pie, in the ledger's currency,
+with a legend. Paging to another period rebuilds the button for that period.
+
+- The bot puts the period's totals in the button URL's fragment (`#d=…`, base64url JSON), already
+  formatted, so the page makes no request and does no money arithmetic. Only aggregates travel,
+  never an individual expense, and the static host never sees the fragment.
+- The pie holds the converted block (ADR-0022). A currency with no NBS rate is one text line under
+  the chart, never part of the pie.
+- A period with no expenses, or with nothing in or converted into the ledger's currency, has no
+  button. Neither does a group report or a locked sealed ledger.
+- A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
+
 ### Amount rules
 
 One rule for everyone, regardless of locale ([ADR-0004](docs/adrs/0004-amount-parsing-rule.md)):

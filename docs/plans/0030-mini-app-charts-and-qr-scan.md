@@ -1,6 +1,6 @@
 # 0030: Charts in the Mini App, static with no backend
 
-> **Status:** approved (2026-10-01)
+> **Status:** in-progress
 > **Created:** 2026-10-01
 > **Depends on:** [Plan 0032](done/0032-live-qr-scan-mini-app.md) (the `webapp/` page, Pages workflow and
 > `WEBAPP_URL`), merged on `main` before this plan starts
@@ -179,12 +179,30 @@ interface ChartPayloadV1 {
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: /month opens a pie chart | dev | not started | |
+| 1: Walking skeleton: /month opens a pie chart | dev | done | committed with this row |
 | 2: Publish and measure the URL limit | human | not started | |
 | 3: Payload budget and the trend chart | dev | not started | |
 | 4: Live check on a phone | human | not started | |
 
 ### Notes
+
+- Phase 1: `webapp/src/payload.ts` declares its own copy of the payload type instead of importing
+  `ChartPayloadV1` type-only: `eslint.config.js` forbids any `src/` import from the page, and
+  `webapp/tsconfig.json` (`rootDir: src`, `types: []`) can't compile one. Both files were outside
+  `Files touched`.
+- Phase 1: the encoder round trip through `decodeChartPayload` is tested in
+  `src/domain/chartPayload.test.ts` (it needs Node's `Buffer`, which the webapp tsconfig lacks).
+  `webapp/src/payload.test.ts` covers decoding and the page.
+- Phase 1: no DOM library is a dependency, so the page tests run `showChart` against a minimal
+  fake document (createElement/createElementNS, textContent; `innerHTML` throws). The
+  `<img src=x onerror=alert(1)>` check asserts no `img` node in that tree and the name in a
+  `textContent`.
+- Phase 1: a period whose first block isn't in the ledger's currency (nothing converts) gets no
+  button, like an empty one.
+- Phase 1: `webapp/src/messages.ts` `openFromBot` now names «📈 Диаграмма» next to «📷 Скан». A
+  missing `d` shows it; a `d` the page can't read shows the new `chartBroken` line.
+- Phase 1: the bot test file imports `decodeChartPayload` from `webapp/src/payload.ts` to read
+  the button URL.
 
 ### Close triggers
 

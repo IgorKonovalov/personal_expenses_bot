@@ -1,4 +1,5 @@
 import type { LedgerKind } from '../db/ledgers.js';
+import type { ChartInput } from '../domain/chartPayload.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
@@ -207,6 +208,15 @@ interface SummaryView {
   readonly people?: PeopleView | undefined;
 }
 
+// A period's pie chart (ADR-0025): the converted block, and the blocks with no rate.
+interface ChartView {
+  readonly period: PeriodRef;
+  readonly converted: SummaryView['currencies'][number];
+  // True when the converted block holds foreign spending.
+  readonly approximate: boolean;
+  readonly unconverted: SummaryView['currencies'];
+}
+
 // A summary push's report: the converted block with each change against the period before, then
 // each currency with no rate, with no change.
 interface PushReportView {
@@ -360,6 +370,13 @@ function periodLabel(period: PeriodRef): string {
   return period.kind === 'month'
     ? (MONTHS[dateParts(period.from).month] ?? '')
     : weekRange(period, SHORT_MONTHS);
+}
+
+// A summary's title: `Сентябрь 2026`, `Неделя, 28 сентября – 4 октября`.
+function periodTitle(period: PeriodRef): string {
+  return period.kind === 'month'
+    ? `${MONTHS[dateParts(period.from).month] ?? ''} ${dateParts(period.from).year}`
+    : `Неделя, ${weekRange(period, GENITIVE_MONTHS)}`;
 }
 
 // Telegram rejects a message over 4096 characters of visible text (ADR-0012): tags and
@@ -1673,6 +1690,24 @@ export const messages = {
   // [Позиции] under /today, /week and /month: the period's receipt items by category.
   periodItemsButton: 'Позиции',
   periodItemPages,
+  // The private /week and /month screen's `web_app` button: the period as a pie chart in the
+  // Mini App (ADR-0025).
+  chartButton: '📈 Диаграмма',
+  // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
+  // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
+  chart: ({ period, converted, approximate, unconverted }: ChartView): ChartInput => ({
+    title: periodTitle(period),
+    currency: converted.currency,
+    totalLabel: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
+    lines: converted.lines.map((line) => [
+      line.name ?? 'Без категории',
+      line.amountMinor,
+      formatMoney({ amountMinor: line.amountMinor, currency: converted.currency }),
+    ]),
+    unconverted: unconverted.map(
+      (c) => `Без курса НБС: ${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}`,
+    ),
+  }),
   // A photo or image file where no QR symbol was located, or whose QR isn't a receipt; also an
   // image too large to download (ADR-0019, ADR-0034).
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
@@ -2188,11 +2223,7 @@ export const messages = {
     unconverted = [],
     people,
   }: SummaryView): Html => {
-    const title =
-      period.kind === 'month'
-        ? `${MONTHS[dateParts(period.from).month] ?? ''} ${dateParts(period.from).year}`
-        : `Неделя, ${weekRange(period, GENITIVE_MONTHS)}`;
-    const header = html`<b>${title} — «${ledgerName(ledger)}»</b>`;
+    const header = html`<b>${periodTitle(period)} — «${ledgerName(ledger)}»</b>`;
     if (currencies.length === 0) return joinHtml([header, noExpenses], '\n');
     const total = (c: SummaryView['currencies'][number], index: number) =>
       html`<b>${index === 0 && convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;

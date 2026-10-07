@@ -1,4 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import { encodeChartPayload } from '../../domain/chartPayload.js';
 import { parsePeriod, type Period } from '../../domain/periods.js';
 import type { SummaryScreen } from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
@@ -20,7 +21,8 @@ import { ensureUser } from './start.js';
 // was opened on. [Позиции] under the pager turns the screen into the period's receipt items
 // (handlers/items.ts).
 
-function summaryView(summary: PeriodSummary): ScreenView {
+// The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App.
+function summaryView(summary: PeriodSummary, chartUrl: string | undefined): ScreenView {
   const row = [
     InlineKeyboard.text(messages.periodPrev(summary.previous), summaryPageData(summary.previous)),
     ...(summary.next === undefined
@@ -32,8 +34,28 @@ function summaryView(summary: PeriodSummary): ScreenView {
     markup: InlineKeyboard.from([
       row,
       [InlineKeyboard.text(messages.periodItemsButton, periodItemsData(summary.period, 1))],
+      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
     ]),
   };
+}
+
+// The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment (ADR-0025),
+// rebuilt on every render. Undefined outside a private chat (`web_app` buttons work only there),
+// without WEBAPP_URL, and when the first block isn't in the ledger's currency: then nothing
+// converted, so there's no pie, as with no expenses at all.
+function chartUrlOf(ctx: Context, deps: HandlerDeps, summary: PeriodSummary): string | undefined {
+  if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
+  const [converted, ...unconverted] = summary.currencies;
+  if (converted?.currency !== summary.ledger.defaultCurrency) return undefined;
+  const payload = encodeChartPayload(
+    messages.chart({
+      period: summary.period,
+      converted,
+      approximate: summary.convertedFrom.length > 0,
+      unconverted,
+    }),
+  );
+  return `${deps.webappUrl}#d=${payload}`;
 }
 
 // Shared by /week, /month and their menu labels.
@@ -51,7 +73,7 @@ export async function sendSummary(
     return;
   }
   const screen: SummaryScreen = { name: 'summary', ledgerId: summary.ledger.id };
-  await showScreen(ctx, deps, user, screen, summaryView(summary));
+  await showScreen(ctx, deps, user, screen, summaryView(summary, chartUrlOf(ctx, deps, summary)));
   if (kind === 'month') await offerTip(ctx, deps, user, 'monthShown');
 }
 
@@ -84,6 +106,8 @@ export function registerSummary(bot: Composer<Context>, deps: HandlerDeps): void
     }
     // A forged or future period is answered silently and edits nothing.
     await ctx.answerCallbackQuery();
-    if (summary !== undefined) await renderAnchor(ctx, tap.anchor, summaryView(summary));
+    if (summary !== undefined) {
+      await renderAnchor(ctx, tap.anchor, summaryView(summary, chartUrlOf(ctx, deps, summary)));
+    }
   });
 }

@@ -6,6 +6,7 @@ import { inflateRawSync } from 'node:zlib';
 import { Composer, type Bot, type InputFile } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { decodeChartPayload } from '../../webapp/src/payload.js';
 import { setBudgetLimit } from '../db/budgets.js';
 import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
@@ -3075,7 +3076,7 @@ describe('/week and /month', () => {
 
   // A bot whose sendMessage answers with real message ids (the anchor needs them), holding the
   // plan's fixture ledger A to H once `/start` has provisioned the user.
-  async function summaryBot(opts: { fixture?: boolean } = {}) {
+  async function summaryBot(opts: { fixture?: boolean; webappUrl?: string } = {}) {
     const db = openDatabase(':memory:');
     runMigrations(db, NOW);
     quietFirstContact(db);
@@ -3094,6 +3095,7 @@ describe('/week and /month', () => {
       defaultCurrency: 'RSD',
       keys: createLedgerKeyring(() => NOW),
       botInfo,
+      webappUrl: opts.webappUrl,
     });
     const calls: ApiCall[] = [];
     bot.api.config.use((_prev, method, payload) => {
@@ -3168,8 +3170,11 @@ describe('/week and /month', () => {
     'Без курса НБС, не пересчитано: EUR.';
 
   // 3 420.00 RSD Другое, 450.00 RSD Кафе, 107.40 EUR Связь and 6.00 USD Другое, all on the 28th.
-  async function convertedWeekBot(opts: { rates: boolean; kzt?: boolean }) {
-    const bot = await summaryBot({ fixture: false });
+  async function convertedWeekBot(opts: { rates: boolean; kzt?: boolean; webappUrl?: string }) {
+    const bot = await summaryBot({
+      fixture: false,
+      ...(opts.webappUrl === undefined ? {} : { webappUrl: opts.webappUrl }),
+    });
     if (opts.rates) storeSept28Rates(bot.db);
     bot.add('W1', '2026-09-28', 342000, 'RSD', 'other');
     bot.add('W2', '2026-09-28', 45000, 'RSD', 'cafe');
@@ -3451,6 +3456,154 @@ describe('/week and /month', () => {
     expect(sentTexts(calls)).toEqual([
       '<b>Сентябрь 2026 — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
     ]);
+  });
+
+  describe('the 📈 Диаграмма button', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    type Markup = { inline_keyboard: { text: string; web_app?: { url: string } }[][] };
+    const markupOf = (call: ApiCall | undefined) =>
+      (call?.payload as { reply_markup: Markup }).reply_markup;
+    // The chart row's URL, split at the fragment's `d`, with its payload decoded by the page.
+    const chartOf = (markup: Markup) => {
+      const row = markup.inline_keyboard.at(-1);
+      expect(row).toHaveLength(1);
+      expect(row?.[0]?.text).toBe(messages.chartButton);
+      const url = row?.[0]?.web_app?.url ?? '';
+      const at = url.indexOf('#');
+      const hash = url.slice(at);
+      return { base: url.slice(0, at), hash, payload: decodeChartPayload(hash) };
+    };
+
+    it("puts the month's converted block in a web_app URL on WEBAPP_URL, the text unchanged", async () => {
+      const { say, calls } = await summaryBot({ webappUrl });
+
+      await say('/month', 2);
+
+      expect(sentTexts(calls)).toEqual([SEPTEMBER]);
+      const markup = markupOf(calls[0]);
+      expect(markup.inline_keyboard.slice(0, -1)).toEqual([
+        [button('◀ Август', 'sum:m:2026-08')],
+        [button('Позиции', 'itm:m:2026-09:1')],
+      ]);
+      const chart = chartOf(markup);
+      expect(chart.base).toBe(webappUrl);
+      expect(chart.hash).toMatch(/^#d=[A-Za-z0-9_-]+$/);
+      expect(chart.payload).toEqual({
+        v: 1,
+        title: 'Сентябрь 2026',
+        currency: 'RSD',
+        totalMinor: 222000,
+        totalLabel: '2 220.00 RSD',
+        lines: [
+          ['Продукты', 120000, '1 200.00 RSD'],
+          ['Кафе и рестораны', 75000, '750.00 RSD'],
+          ['Транспорт', 20000, '200.00 RSD'],
+          ['Без категории', 7000, '70.00 RSD'],
+        ],
+        unconverted: ['Без курса НБС: 12.50 EUR'],
+      });
+    });
+
+    it('marks a converted total with ≈ and keeps a rateless currency out of the pie', async () => {
+      const { say, calls } = await convertedWeekBot({ rates: true, kzt: true, webappUrl });
+
+      await say('/week', 2);
+
+      expect(chartOf(markupOf(calls[0])).payload).toEqual({
+        v: 1,
+        title: 'Неделя, 28 сентября – 4 октября',
+        currency: 'RSD',
+        totalMinor: 1710849,
+        totalLabel: '≈ 17 108.49 RSD',
+        lines: [
+          ['Связь и интернет', 1261942, '12 619.42 RSD'],
+          ['Другое', 403907, '4 039.07 RSD'],
+          ['Кафе и рестораны', 45000, '450.00 RSD'],
+        ],
+        unconverted: ['Без курса НБС: 5 000.00 KZT'],
+      });
+    });
+
+    it('is absent when nothing is in the ledger currency or converts into it', async () => {
+      const { say, add, calls } = await summaryBot({ fixture: false, webappUrl });
+      add('X', '2026-09-28', 1250, 'EUR', 'transport');
+
+      await say('/month', 2);
+
+      expect(sentTexts(calls)[0]).toContain('<b>12.50 EUR</b>');
+      expect(markupOf(calls[0]).inline_keyboard).toHaveLength(2);
+    });
+
+    it("carries the paged-to period's payload after paging to August", async () => {
+      const { say, tap, calls } = await summaryBot({ webappUrl });
+      await say('/month', 2);
+      calls.length = 0;
+
+      await tap('sum:m:2026-08', 101);
+
+      const markup = markupOf(calls[1]);
+      expect(markup.inline_keyboard.slice(0, -1)).toEqual([
+        [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
+        [button('Позиции', 'itm:m:2026-08:1')],
+      ]);
+      expect(chartOf(markup).payload).toEqual({
+        v: 1,
+        title: 'Август 2026',
+        currency: 'RSD',
+        totalMinor: 10000,
+        totalLabel: '100.00 RSD',
+        lines: [['Продукты', 10000, '100.00 RSD']],
+        unconverted: [],
+      });
+    });
+
+    it('is on /week too, titled with the week', async () => {
+      const { say, calls } = await summaryBot({ webappUrl });
+
+      await say('/week', 2);
+
+      expect(chartOf(markupOf(calls[0])).payload).toMatchObject({
+        title: 'Неделя, 28 сентября – 4 октября',
+        totalMinor: 37000,
+      });
+    });
+
+    it('is absent for a period with no expenses', async () => {
+      const { say, calls } = await summaryBot({ fixture: false, webappUrl });
+
+      await say('/month', 2);
+
+      expect(markupOf(calls[0])).toEqual({
+        inline_keyboard: [
+          [button('◀ Август', 'sum:m:2026-08')],
+          [button('Позиции', 'itm:m:2026-09:1')],
+        ],
+      });
+    });
+
+    it('is absent from a group report with WEBAPP_URL set', async () => {
+      const sept28 = new Date('2026-09-28T08:00:00Z');
+      const { bot, calls } = createTestBot({ now: sept28, webappUrl });
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 1,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 2, text: '450 кофе', messageId: 12, date: sept28 }),
+      );
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 3, text: '/month', messageId: 13, date: sept28 }),
+      );
+
+      expect(sentTexts(calls)[0]).toContain('<b>450.00 RSD</b>');
+      expect(JSON.stringify(calls)).not.toContain('web_app');
+    });
   });
 
   it('counts 450 кофе sent at 00:30 on 1 September local in September, not August', async () => {
