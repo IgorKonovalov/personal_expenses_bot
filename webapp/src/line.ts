@@ -19,8 +19,8 @@ const DASH = '6 4';
 // of the last points and the limit, so no line leaves the viewBox. The previous series, or on a
 // budget chart the dashed allowance line, is in the theme's hint colour, the current one in its
 // button colour, drawn last on top. A budget chart's captions are the spend, today's leftover
-// and the limit, the last two after the allowance line's swatch. Floats here are geometry only; every
-// amount shown is the bot's caption.
+// and the limit, the last two after the allowance line's swatch. Floats here are geometry only;
+// every amount shown is the bot's caption.
 export function drawPace<N extends ChartNode<N>>(
   doc: ChartDocument<N>,
   pace: PaceSection,

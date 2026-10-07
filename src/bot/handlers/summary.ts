@@ -61,10 +61,9 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
 // The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment's `z`
 // (ADR-0025, ADR-0045), rebuilt on every render, the trend ending at the shown period and each
 // line compared with the previous period (periodChart), and the pace of both (periodPace).
-// Undefined outside a private chat
-// (`web_app` buttons work only there), without WEBAPP_URL, when the first block isn't in the
-// ledger's currency (then nothing converted, so there's no pie, as with no expenses at all), and
-// when the payload can't fit its budget.
+// Undefined outside a private chat (`web_app` buttons work only there), without WEBAPP_URL, when
+// the first block isn't in the ledger's currency (then nothing converted, so there's no pie, as
+// with no expenses at all), and when the payload can't fit its budget.
 function chartUrlOf(
   ctx: Context,
   deps: HandlerDeps,
