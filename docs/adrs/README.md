@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0048`
+- **Next free number:** `0049`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -54,3 +54,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0045](0045-chart-payload-v2-deflated-sections.md) | Chart payload v2: deflated JSON in `#z=`, a list of sections the page skips when it doesn't know them | accepted (2026-10-07) |
 | [0046](0046-currency-words-thousands-suffix-and-amount-last-text.md) | Expense text accepts currency words and a thousands suffix; amount-last text records in a private chat and is asked about in a group | proposed (2026-10-07) |
 | [0047](0047-group-history-import-from-a-desktop-export.md) | A group's history from before the bot joined is imported from a Telegram Desktop JSON export, read by rules and reviewed before recording | proposed (2026-10-07) |
+| [0048](0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md) | A Russian docs site beside the Mini App, with its chat pictures generated from the real bot | proposed (2026-10-07) |
