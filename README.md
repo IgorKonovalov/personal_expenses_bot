@@ -306,6 +306,8 @@ with a legend. Paging to another period rebuilds the button for that period.
   never an individual expense, and the static host never sees the fragment.
 - The pie holds the converted block (ADR-0022). A currency with no NBS rate is one text line under
   the chart, never part of the pie.
+- Under the pie, 6 bars show the converted totals of the shown period and the five before it,
+  oldest first. A period with nothing spent keeps its row with a zero-length bar.
 - A period with no expenses, or with nothing in or converted into the ledger's currency, has no
   button. Neither does a group report or a locked sealed ledger.
 - A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
