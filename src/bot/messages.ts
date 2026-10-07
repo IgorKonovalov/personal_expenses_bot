@@ -462,7 +462,6 @@ function capLine({ name, spentMinor, capMinor }: CapView, currency: CurrencyCode
     : line;
 }
 
-// `1 позиция`, `2 позиции`, `5 позиций`, `21 позиция`.
 // A product's spend in one currency (ADR-0039): what the sized items bought, in l, kg or pieces.
 interface PriceLineView {
   readonly currency: CurrencyCode;
@@ -488,6 +487,7 @@ function priceLine(line: PriceLineView, unit: Unit): string {
   return parts.join(' · ');
 }
 
+// `1 покупка`, `2 покупки`, `5 покупок`, `11 покупок`.
 function purchaseCount(n: number): string {
   const tens = n % 100;
   const ones = n % 10;
@@ -497,6 +497,7 @@ function purchaseCount(n: number): string {
   return `${n} покупок`;
 }
 
+// `1 позиция`, `2 позиции`, `5 позиций`, `21 позиция`.
 function itemCount(n: number): string {
   const tens = n % 100;
   const ones = n % 10;
