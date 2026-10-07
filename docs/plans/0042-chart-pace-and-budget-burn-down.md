@@ -216,7 +216,7 @@ interface PaceSection {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: the pace line on the `/month` chart | dev | done | 468f2e8 |
-| 2: The budget burn-down chart | dev | done | committed with this row |
+| 2: The budget burn-down chart | dev | done | 7279552 |
 | 3: Live check | human | not started | |
 
 ### Notes
@@ -242,7 +242,20 @@ interface PaceSection {
 - Phase 2: the limit caption sits after the allowance line's swatch, as the leftover caption does.
 - Phase 2: the group done-when is asserted on a bound group without a budget (`groupBudget`'s
   "not set" text); the group composer never builds the private screen.
+- Followup noticed, not acted on: a pace caption over converted spending has no «≈», unlike the
+  pie total and the trend bars.
 
 ### Close triggers
+
+- Phases 1-2 (`dev`) are done in 468f2e8 and 7279552. Phase 3 (`human`, does not block merge)
+  has not started.
+- Gate on the tip (7279552): `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  141 files and 1988 tests passed; `pnpm build` exit 0; `pnpm build:webapp` exit 0;
+  `node scripts/check-doc-links.mjs` exit 0, 335 relative links resolve.
+- `CHART_PAYLOAD_BUDGET` is still 2048 and `CHART_PAYLOAD_VERSION` 2. No migration, dependency
+  or `webapp/index.html` change.
+- New files: `src/domain/pace.ts`, `src/services/periodPace.ts` (+ tests), `webapp/src/line.ts`.
+  New exports: `encodePacePayload`, `PaceSection` (bot and page), `budgetPace`. New bot messages:
+  `chartPace`, `budgetChart`.
 
 ## Followups
