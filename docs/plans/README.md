@@ -13,8 +13,8 @@ status and date. What a plan did lives in the plan.
 | [0030](0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | approved (2026-10-01), scan split to 0032 (2026-10-05) |
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
-| [0038](0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | draft (2026-10-07) |
-| [0039](0039-scale-hardening.md) | Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk | draft (2026-10-07) |
+| [0038](0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | approved (2026-10-07) |
+| [0039](0039-scale-hardening.md) | Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk | approved (2026-10-07) |
 
 ## Recently closed
 

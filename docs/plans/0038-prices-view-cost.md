@@ -1,6 +1,6 @@
 # 0038: /prices stops re-matching every receipt item on every tap
 
-> **Status:** draft
+> **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0041](../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md)
 

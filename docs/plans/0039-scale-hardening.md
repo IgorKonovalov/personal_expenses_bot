@@ -1,6 +1,6 @@
 # 0039: Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk
 
-> **Status:** draft
+> **Status:** approved (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0042](../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md), [ADR-0043](../adrs/0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md), [ADR-0044](../adrs/0044-compressed-backups-seven-daily-four-weekly.md), [ADR-0036](../adrs/0036-stay-on-node-memory-work-targets-heavy-jobs.md), [ADR-0031](../adrs/0031-local-time-scheduler.md)
 
