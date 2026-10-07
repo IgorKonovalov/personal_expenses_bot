@@ -76,7 +76,8 @@ export interface AdminDeps extends HandlerDeps {
 
 export interface BotOptions extends AdminDeps {
   readonly token: string;
-  // BACKUP_KEEP: how long deleted data lingers in backups, as /delete_account says.
+  // How many days deleted data can linger in backups, as /delete_account says:
+  // backupRetentionDays of BACKUP_KEEP and BACKUP_KEEP_WEEKLY (ADR-0044).
   readonly backupKeep: number;
   // Skips the getMe call at startup; tests pass a fixed identity.
   readonly botInfo?: UserFromGetMe;

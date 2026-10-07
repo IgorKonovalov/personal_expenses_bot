@@ -19,7 +19,8 @@ describe('loadConfig', () => {
     expect(config.databasePath).toBe('./data/bot.sqlite');
     expect(config.logLevel).toBe('info');
     expect(config.backupDir).toBeUndefined();
-    expect(config.backupKeep).toBe(14);
+    expect(config.backupKeep).toBe(7);
+    expect(config.backupKeepWeekly).toBe(4);
     expect(config.donateUrl).toBeUndefined();
   });
 
@@ -40,10 +41,16 @@ describe('loadConfig', () => {
     );
   });
 
-  it('reads BACKUP_DIR and BACKUP_KEEP', () => {
-    const config = loadConfig({ ...valid, BACKUP_DIR: '/var/backups/x', BACKUP_KEEP: '7' });
+  it('reads BACKUP_DIR, BACKUP_KEEP and BACKUP_KEEP_WEEKLY', () => {
+    const config = loadConfig({
+      ...valid,
+      BACKUP_DIR: '/var/backups/x',
+      BACKUP_KEEP: '14',
+      BACKUP_KEEP_WEEKLY: '0',
+    });
     expect(config.backupDir).toBe('/var/backups/x');
-    expect(config.backupKeep).toBe(7);
+    expect(config.backupKeep).toBe(14);
+    expect(config.backupKeepWeekly).toBe(0);
   });
 
   it.each(['BOT_TOKEN', 'ADMIN_TELEGRAM_ID'])('names %s when it is unset', (name) => {
@@ -67,6 +74,8 @@ describe('loadConfig', () => {
     ['LOG_LEVEL', 'loud'],
     ['BACKUP_KEEP', '0'],
     ['BACKUP_KEEP', 'abc'],
+    ['BACKUP_KEEP_WEEKLY', '-1'],
+    ['BACKUP_KEEP_WEEKLY', 'four'],
     ['DONATE_URL', 'http://example.com'],
     ['DONATE_URL', 'ko-fi.com/example'],
   ])('names %s when it is invalid', (name, value) => {

@@ -1,11 +1,21 @@
 import Database from 'better-sqlite3';
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
-import { BACKUP_INTERVAL_MS, backupDatabase, startBackups } from './backup.js';
+import { BACKUP_INTERVAL_MS, backupDatabase, backupRetentionDays, startBackups } from './backup.js';
 import { openDatabase, type Db } from './connection.js';
 import { insertExpenseOrGetExisting, type ExpenseId } from './expenses.js';
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
@@ -16,6 +26,7 @@ import { insertUser, type UserId } from './users.js';
 const AT = new Date('2026-09-29T22:30:00Z');
 const USER = 'user-a' as UserId;
 const LEDGER = 'ledger-a' as LedgerId;
+const DEFAULTS = { keep: 7, keepWeekly: 4 };
 
 let tmp: string;
 let dir: string;
@@ -41,7 +52,7 @@ beforeEach(() => {
       id: `expense-${n}` as ExpenseId,
       ledgerId: LEDGER,
       createdBy: USER,
-      amountMinor: 45000,
+      amountMinor: 45000 * n,
       currency: 'RSD',
       description: 'coffee',
       occurredAt: AT,
@@ -58,56 +69,109 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function countExpenses(path: string): number {
-  const copy = new Database(path, { readonly: true });
+let restores = 0;
+
+// The expense rows of a compressed backup, gunzipped to a file and opened as SQLite.
+function backupExpenses(path: string): unknown[] {
+  const restored = join(tmp, `restored-${String(++restores)}.sqlite`);
+  writeFileSync(restored, gunzipSync(readFileSync(path)));
+  const copy = new Database(restored, { readonly: true });
   try {
-    return copy.prepare<[], { n: number }>('SELECT count(*) AS n FROM expenses').get()?.n ?? -1;
+    return copy.prepare('SELECT * FROM expenses ORDER BY id').all();
   } finally {
     copy.close();
   }
 }
 
 describe('backupDatabase', () => {
-  it('writes a copy named after the UTC date', async () => {
-    const result = await backupDatabase(db, dir, 14, AT);
-    const path = join(dir, 'expenses-2026-09-29.sqlite');
+  it('writes a gzip file named after the UTC date that opens to the same expense rows', async () => {
+    const result = await backupDatabase(db, dir, DEFAULTS, AT);
+
+    const path = join(dir, 'expenses-2026-09-29.sqlite.gz');
     expect(result.path).toBe(path);
     expect(result.bytes).toBe(statSync(path).size);
-    expect(countExpenses(path)).toBe(3);
+    expect(result.uncompressedBytes).toBeGreaterThan(result.bytes);
+    const source = db.prepare('SELECT * FROM expenses ORDER BY id').all();
+    expect(source).toHaveLength(3);
+    expect(backupExpenses(path)).toEqual(source);
   });
 
   it('replaces a same-day backup and leaves no temp file', async () => {
-    await backupDatabase(db, dir, 14, AT);
+    await backupDatabase(db, dir, DEFAULTS, AT);
     db.prepare('DELETE FROM expenses WHERE id = ?').run('expense-3');
-    await backupDatabase(db, dir, 14, new Date('2026-09-29T23:59:00Z'));
-    expect(readdirSync(dir)).toEqual(['expenses-2026-09-29.sqlite']);
-    expect(countExpenses(join(dir, 'expenses-2026-09-29.sqlite'))).toBe(2);
+    await backupDatabase(db, dir, DEFAULTS, new Date('2026-09-29T23:59:00Z'));
+
+    expect(readdirSync(dir)).toEqual(['expenses-2026-09-29.sqlite.gz']);
+    expect(backupExpenses(join(dir, 'expenses-2026-09-29.sqlite.gz'))).toHaveLength(2);
   });
 
-  it('keeps the newest BACKUP_KEEP dated files and ignores other names', async () => {
-    await backupDatabase(db, dir, 14, new Date('2026-09-01T00:00:00Z'));
-    rmSync(join(dir, 'expenses-2026-09-01.sqlite'));
-    const dated = Array.from({ length: 15 }, (_, i) => `expenses-2026-09-${String(14 + i)}.sqlite`);
-    for (const name of [...dated, 'notes.txt', 'expenses-manual.sqlite']) {
+  it('keeps 7 dailies and the 4 newest Sundays after daily backups from 1 August to 7 October', async () => {
+    for (
+      let day = new Date('2026-08-01T03:00:00Z');
+      day <= new Date('2026-10-07T03:00:00Z');
+      day = new Date(day.getTime() + BACKUP_INTERVAL_MS)
+    ) {
+      await backupDatabase(db, dir, DEFAULTS, day);
+    }
+
+    expect(readdirSync(dir).sort()).toEqual(
+      [
+        '2026-09-13',
+        '2026-09-20',
+        '2026-09-27',
+        '2026-10-01',
+        '2026-10-02',
+        '2026-10-03',
+        '2026-10-04',
+        '2026-10-05',
+        '2026-10-06',
+        '2026-10-07',
+      ].map((date) => `expenses-${date}.sqlite.gz`),
+    );
+  });
+
+  it('counts uncompressed files as dailies by date, and ignores other names', async () => {
+    mkdirSync(dir, { recursive: true });
+    // 16 to 28 September: 13 days, Sundays the 20th and the 27th.
+    const legacy = Array.from(
+      { length: 13 },
+      (_, i) => `expenses-2026-09-${String(16 + i)}.sqlite`,
+    );
+    for (const name of [...legacy, 'notes.txt', 'expenses-manual.sqlite']) {
       writeFileSync(join(dir, name), 'x');
     }
 
-    const result = await backupDatabase(db, dir, 14, AT);
+    const result = await backupDatabase(db, dir, { keep: 3, keepWeekly: 1 }, AT);
 
-    const kept = Array.from({ length: 14 }, (_, i) => `expenses-2026-09-${String(16 + i)}.sqlite`);
     expect(readdirSync(dir).sort()).toEqual(
-      [...kept, 'expenses-manual.sqlite', 'notes.txt'].sort(),
+      [
+        'expenses-2026-09-27.sqlite',
+        'expenses-2026-09-28.sqlite',
+        'expenses-2026-09-29.sqlite.gz',
+        'expenses-manual.sqlite',
+        'notes.txt',
+      ].sort(),
     );
-    expect(result.rotatedOut).toEqual([
-      join(dir, 'expenses-2026-09-15.sqlite'),
-      join(dir, 'expenses-2026-09-14.sqlite'),
-    ]);
+    expect(result.rotatedOut).toEqual(
+      legacy
+        .filter((name) => !name.includes('09-27') && !name.includes('09-28'))
+        .reverse()
+        .map((name) => join(dir, name)),
+    );
   });
 
   it('creates a missing directory with mode 0700', async () => {
     expect(existsSync(dir)).toBe(false);
-    await backupDatabase(db, dir, 14, AT);
+    await backupDatabase(db, dir, DEFAULTS, AT);
     expect(statSync(dir).mode & 0o777).toBe(0o700);
+  });
+});
+
+describe('backupRetentionDays', () => {
+  it('is 28 days with the defaults: four weekly Sundays outlast seven dailies', () => {
+    expect(backupRetentionDays(DEFAULTS)).toBe(28);
+    expect(backupRetentionDays({ keep: 30, keepWeekly: 4 })).toBe(30);
+    expect(backupRetentionDays({ keep: 7, keepWeekly: 0 })).toBe(7);
   });
 });
 
@@ -127,12 +191,12 @@ describe('startBackups', () => {
     // better-sqlite3 steps a backup via setImmediate, so only the interval and the clock are fake.
     vi.useFakeTimers({ now: AT, toFake: ['setInterval', 'clearInterval', 'Date'] });
     const { lines, logger } = capture();
-    const schedule = startBackups({ db, dir, keep: 14, now: () => new Date(), logger });
+    const schedule = startBackups({ db, dir, ...DEFAULTS, now: () => new Date(), logger });
 
     await vi.waitFor(() => {
       expect(lines.filter((l) => l.msg === 'backup written')).toHaveLength(1);
     });
-    expect(readdirSync(dir)).toEqual(['expenses-2026-09-29.sqlite']);
+    expect(readdirSync(dir)).toEqual(['expenses-2026-09-29.sqlite.gz']);
 
     vi.advanceTimersByTime(BACKUP_INTERVAL_MS);
     await vi.waitFor(() => {
@@ -141,11 +205,11 @@ describe('startBackups', () => {
     await schedule.stop();
 
     expect(readdirSync(dir).sort()).toEqual([
-      'expenses-2026-09-29.sqlite',
-      'expenses-2026-09-30.sqlite',
+      'expenses-2026-09-29.sqlite.gz',
+      'expenses-2026-09-30.sqlite.gz',
     ]);
-    const path = join(dir, 'expenses-2026-09-30.sqlite');
-    // Beyond pino's own keys, the line carries the path and the size only.
+    const path = join(dir, 'expenses-2026-09-30.sqlite.gz');
+    // Beyond pino's own keys, the line carries the path and the sizes only.
     const { level, time, pid, hostname, msg, ...fields } =
       lines.filter((l) => l.msg === 'backup written').at(-1) ?? {};
     expect({ level, msg, pino: [time, pid, hostname].map((v) => v !== undefined) }).toEqual({
@@ -153,7 +217,30 @@ describe('startBackups', () => {
       msg: 'backup written',
       pino: [true, true, true],
     });
-    expect(fields).toEqual({ path, bytes: statSync(path).size });
+    expect(fields).toEqual({
+      path,
+      bytes: statSync(path).size,
+      uncompressedBytes: expect.any(Number) as unknown,
+    });
+  });
+
+  it("writes nothing at boot when today's file exists", async () => {
+    mkdirSync(dir, { recursive: true });
+    const today = join(dir, 'expenses-2026-09-29.sqlite.gz');
+    writeFileSync(today, 'earlier');
+    const older = join(dir, 'expenses-2026-08-01.sqlite.gz');
+    writeFileSync(older, 'old');
+    const { lines, logger } = capture();
+
+    const schedule = startBackups({ db, dir, ...DEFAULTS, now: () => AT, logger });
+    await schedule.stop();
+
+    expect(readdirSync(dir).sort()).toEqual([
+      'expenses-2026-08-01.sqlite.gz',
+      'expenses-2026-09-29.sqlite.gz',
+    ]);
+    expect(readFileSync(today, 'utf8')).toBe('earlier');
+    expect(lines.filter((l) => l.msg === 'backup written')).toHaveLength(0);
   });
 
   it('logs one error line with the path and error name when the backup throws', async () => {
@@ -162,14 +249,14 @@ describe('startBackups', () => {
     const unwritable = join(blocker, 'backups');
     const { lines, logger } = capture();
 
-    const schedule = startBackups({ db, dir: unwritable, keep: 14, now: () => AT, logger });
+    const schedule = startBackups({ db, dir: unwritable, ...DEFAULTS, now: () => AT, logger });
     await expect(schedule.stop()).resolves.toBeUndefined();
 
     const errors = lines.filter((l) => l.level === 50);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({
       msg: 'backup failed',
-      path: join(unwritable, 'expenses-2026-09-29.sqlite'),
+      path: join(unwritable, 'expenses-2026-09-29.sqlite.gz'),
       err: 'Error',
     });
     expect(lines.filter((l) => l.msg === 'backup written')).toHaveLength(0);

@@ -9,7 +9,7 @@ import { recurringProvider } from './bot/recurringProvider.js';
 import { scheduledSender } from './bot/scheduledSender.js';
 import { summaryProvider } from './bot/summaryProvider.js';
 import { loadConfig } from './config.js';
-import { startBackups, type BackupSchedule } from './db/backup.js';
+import { backupRetentionDays, startBackups, type BackupSchedule } from './db/backup.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { createMeFetcher } from './fiscal/meFetcher.js';
@@ -58,6 +58,7 @@ const backups: BackupSchedule | undefined =
         db,
         dir: config.backupDir,
         keep: config.backupKeep,
+        keepWeekly: config.backupKeepWeekly,
         now: () => new Date(),
         logger,
       });
@@ -89,7 +90,10 @@ const jobs = createJobQueue({
 const bot = createBot({
   token: config.botToken,
   adminTelegramId: config.adminTelegramId,
-  backupKeep: config.backupKeep,
+  backupKeep: backupRetentionDays({
+    keep: config.backupKeep,
+    keepWeekly: config.backupKeepWeekly,
+  }),
   logger,
   db,
   newId: randomUUID,

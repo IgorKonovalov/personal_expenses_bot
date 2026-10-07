@@ -37,13 +37,13 @@ when an amount could be read two ways.
 | `450 кофе #отпуск #рим`              | Records the expense with tags: `#words` leave the description, up to 5 per expense. [Изменить] → [Метки] replaces them, `-` clears them. In a sealed ledger tags are sealed with the rest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `/tags`                              | The ledger's tags with their all-time totals in the ledger currency, most recently used first; a tag's button shows its total by category, its expense count and its first and last date. In a group, the group ledger's tags                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `/tag отпуск`                        | Adds `#отпуск` to every expense you record into the active ledger (in a group, the group's) until [Снять метку]; in private, `/tag` alone shows it. In a sealed ledger it lasts until the bot restarts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `/prices`                            | The products you buy («Молоко», «Хлеб», «Бананы»), built from the items of your own fetched receipts in the active ledger and ordered by spend over the last 12 months. A product shows each month's spend, the amount bought and the price per litre, kilogram or piece, plus the all-time totals. [Разобрать] walks the item names no rule recognised, [Названия] corrects which names count under a product, and [Новый продукт] adds your own. In a sealed ledger only the built-in rules apply, and the list opens only while unlocked |
+| `/prices`                            | The products you buy («Молоко», «Хлеб», «Бананы»), built from the items of your own fetched receipts in the active ledger and ordered by spend over the last 12 months. A product shows each month's spend, the amount bought and the price per litre, kilogram or piece, plus the all-time totals. [Разобрать] walks the item names no rule recognised, [Названия] corrects which names count under a product, and [Новый продукт] adds your own. In a sealed ledger only the built-in rules apply, and the list opens only while unlocked                                                                                                                                                                                                      |
 | `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `/export`                            | Asks for a period («Этот месяц», «Прошлый месяц», «Этот год», «Всё время») and a format, then sends the active ledger's expenses as a file: [CSV] (UTF-8, `;`, decimal comma; receipt items as a second file) or [Excel] (an `.xlsx` with a second sheet for receipt items). Every row has the date, time, amount and currency, the amount in the ledger's currency at the NBS rate, the category, the description, the tags, the shop and receipt link, and the expense ID. Free, any time. A sealed ledger exports only while unlocked, and the file is a plaintext copy                                                                                                                                                                       |
 | `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `/changelog`                         | What's new: the five newest versions, then a link to CHANGELOG.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/privacy`                           | A three-line summary of what is stored and who sees it, and a link to [PRIVACY.md](PRIVACY.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `/delete_account`                    | Says what goes (the personal ledger with every expense, receipt, category and budget, and your settings) and what stays (your expenses in group ledgers, shown as «удалённый участник», and backups for up to `BACKUP_KEEP` days), with [Удалить всё] / [Отмена]. After deleting, the same Telegram account needs a new invite                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `/delete_account`                    | Says what goes (the personal ledger with every expense, receipt, category and budget, and your settings) and what stays (your expenses in group ledgers, shown as «удалённый участник», and backups for up to `max(BACKUP_KEEP, 7 × BACKUP_KEEP_WEEKLY)` days, 28 by default), with [Удалить всё] / [Отмена]. After deleting, the same Telegram account needs a new invite                                                                                                                                                                                                                                                                                                                                                                       |
 | `/donate`                            | The bot is free and a donation unlocks nothing. Offers [⭐ 50] [⭐ 150] [⭐ 500], each opening Telegram's Stars payment sheet, and [Ko-fi] when `DONATE_URL` is set. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `/paysupport`                        | Says a donation unlocks nothing. `/paysupport <текст>` relays a refund request to the admin, with your internal user id and your newest donations. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
@@ -236,7 +236,8 @@ passphrase or the code is deleted as soon as it arrives.
   message records a second expense, which [Удалить] on its card undoes.
 - It protects the database file and backups taken after the switch. It does not protect against
   whoever runs the bot changing its code, or against Telegram, which sees every message. Backups
-  taken before the switch keep plaintext until `BACKUP_KEEP` rotation drops them.
+  taken before the switch keep plaintext until backup rotation (`BACKUP_KEEP`,
+  `BACKUP_KEEP_WEEKLY`) drops them.
 
 ### Currency conversion
 
@@ -388,14 +389,20 @@ docker compose stop          # SIGTERM: heartbeat, polling, then the DB close cl
 
 Backup settings (the full list is in [.env.example](.env.example)):
 
-| Variable          | Default                              | Meaning                                                                             |
-| ----------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `BACKUP_DIR`      | unset (no backups)                   | Where the bot writes `expenses-YYYY-MM-DD.sqlite` (UTC date) at boot and every 24 h |
-| `BACKUP_KEEP`     | `14`                                 | How many dated backup files to keep. Older ones are deleted                         |
-| `HOST_BACKUP_DIR` | `/var/backups/personal-expenses-bot` | Compose only: the host directory bind-mounted as the container's `BACKUP_DIR`       |
+| Variable             | Default                              | Meaning                                                                                                     |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `BACKUP_DIR`         | unset (no backups)                   | Where the bot writes `expenses-YYYY-MM-DD.sqlite.gz` (UTC date, gzip) at boot and every 24 h                |
+| `BACKUP_KEEP`        | `7`                                  | How many daily backup files to keep                                                                         |
+| `BACKUP_KEEP_WEEKLY` | `4`                                  | How many Sunday (UTC date) backup files to keep besides the dailies. A Sunday among the dailies counts once |
+| `HOST_BACKUP_DIR`    | `/var/backups/personal-expenses-bot` | Compose only: the host directory bind-mounted as the container's `BACKUP_DIR`                               |
 
-Compose sets `BACKUP_DIR` itself. A same-day backup replaces that day's file, and a failed
-backup is logged as an `error` without stopping the bot.
+Compose sets `BACKUP_DIR` itself. Each backup is an online copy, gzip-compressed, then the
+uncompressed copy is removed, so a backup briefly needs one uncompressed copy's worth of free
+disk. Files older than both windows are deleted; an uncompressed `expenses-YYYY-MM-DD.sqlite`
+from before compression counts as a daily by its date. A boot on a UTC day that already has a
+backup writes none, and a failed backup is logged as an `error` without stopping the bot.
+Deleted data can survive in a backup for `max(BACKUP_KEEP, 7 × BACKUP_KEEP_WEEKLY)` days (28 with
+the defaults), which is what `/delete_account` says.
 
 ## Deploy
 
@@ -419,7 +426,7 @@ VPS layout (the deploy user is uid 1000, in the `docker` group, with no sudo):
 ```text
 ~/bots/personal-expenses-bot/           # this repo, cloned over HTTPS (public repo, no deploy key)
 ~/bots/personal-expenses-bot/.env       # production token and ids, mode 0600, not in git
-~/backups/personal-expenses-bot/        # expenses-YYYY-MM-DD.sqlite, mode 0700
+~/backups/personal-expenses-bot/        # expenses-YYYY-MM-DD.sqlite.gz, mode 0700
 ~/bin/deploy-personal-expenses-bot      # installed copy of scripts/deploy-vps.sh
 ```
 
@@ -459,19 +466,22 @@ rather than forcing a merge.
 ### Restoring a backup
 
 1. Stop the bot: `docker compose stop bot`.
-2. Copy the backup into the volume, replacing the live file and dropping its WAL:
+2. Unpack the backup into the volume, replacing the live file and dropping its WAL:
 
    ```sh
    docker compose run --rm --no-deps --entrypoint sh bot -c \
      'rm -f /app/data/bot.sqlite-wal /app/data/bot.sqlite-shm &&
-      cp /var/backups/personal-expenses-bot/expenses-YYYY-MM-DD.sqlite /app/data/bot.sqlite'
+      gunzip -c /var/backups/personal-expenses-bot/expenses-YYYY-MM-DD.sqlite.gz > /app/data/bot.sqlite'
    ```
+
+   An uncompressed `expenses-YYYY-MM-DD.sqlite` from before compression is copied with `cp`
+   instead of `gunzip -c … >`.
 
 3. Start it: `docker compose up -d --wait`. Boot applies any newer migrations to the restored
    file.
 
-To inspect a backup without restoring it, copy the file off the VPS and open it read-only with
-any SQLite client.
+To inspect a backup without restoring it, copy the file off the VPS, `gunzip` it, and open it
+read-only with any SQLite client.
 
 ## Development
 

@@ -13,7 +13,9 @@ export interface Config {
   readonly logLevel: Level | 'silent';
   // Unset means no backups (local dev).
   readonly backupDir: string | undefined;
+  // Daily backups kept, and Sunday backups kept besides them (ADR-0044).
   readonly backupKeep: number;
+  readonly backupKeepWeekly: number;
   // An external donation page, shown as a /donate button (ADR-0027). Unset hides the button.
   readonly donateUrl: string | undefined;
   // The static Mini App page (ADR-0025), behind the private menu's «📷 Скан». Unset hides it.
@@ -76,9 +78,16 @@ export function loadConfig(env: Env): Config {
     throw new Error(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}`);
   }
 
-  const backupKeep = optional(env, 'BACKUP_KEEP') ?? '14';
+  const backupKeep = optional(env, 'BACKUP_KEEP') ?? '7';
   if (!/^[1-9]\d*$/.test(backupKeep) || !Number.isSafeInteger(Number(backupKeep))) {
     throw new Error(`BACKUP_KEEP must be a positive whole number of daily backups to keep`);
+  }
+  const backupKeepWeekly = optional(env, 'BACKUP_KEEP_WEEKLY') ?? '4';
+  if (
+    !/^(?:0|[1-9]\d*)$/.test(backupKeepWeekly) ||
+    !Number.isSafeInteger(Number(backupKeepWeekly))
+  ) {
+    throw new Error(`BACKUP_KEEP_WEEKLY must be a whole number of Sunday backups to keep`);
   }
 
   const donateUrl = optional(env, 'DONATE_URL');
@@ -104,6 +113,7 @@ export function loadConfig(env: Env): Config {
     logLevel,
     backupDir: optional(env, 'BACKUP_DIR'),
     backupKeep: Number(backupKeep),
+    backupKeepWeekly: Number(backupKeepWeekly),
     donateUrl,
     webappUrl,
   };

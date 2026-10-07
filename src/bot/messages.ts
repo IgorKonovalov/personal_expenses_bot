@@ -1311,13 +1311,14 @@ export const messages = {
       ],
       '\n',
     ),
-  // /delete_account (ADR-0024): what goes, what stays, and the two buttons.
-  deleteAccountPrompt: (backupKeep: number): Html =>
+  // /delete_account (ADR-0024): what goes, what stays, and the two buttons. `backupDays`: how
+  // long deleted data can survive in a backup (ADR-0044).
+  deleteAccountPrompt: (backupDays: number): Html =>
     joinHtml(
       [
         html`<b>Удалить аккаунт?</b>`,
         html`Удалится личный учёт: все траты, чеки, категории и бюджет, а также ваши настройки. Это нельзя отменить.`,
-        html`Останутся траты в общих учётах групп — там вы будете показаны как «${DELETED_MEMBER}», и записи о пожертвованиях: без них нельзя вернуть платёж. В резервных копиях данные хранятся ещё до ${backupKeep} дн.`,
+        html`Останутся траты в общих учётах групп — там вы будете показаны как «${DELETED_MEMBER}», и записи о пожертвованиях: без них нельзя вернуть платёж. В резервных копиях данные хранятся ещё до ${backupDays} дн.`,
         html`После удаления пользоваться ботом можно будет только по новому приглашению.`,
       ],
       '\n\n',

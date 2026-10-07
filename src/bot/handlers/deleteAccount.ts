@@ -9,8 +9,9 @@ import { editHtml, replyHtml } from '../render/html.js';
 // [Удалить всё] after the deletion comes from a Telegram id with no account, which the access
 // gate answers.
 
-export async function sendDeleteAccount(ctx: Context, backupKeep: number): Promise<void> {
-  await replyHtml(ctx, messages.deleteAccountPrompt(backupKeep), {
+// `backupDays`: how long deleted data can survive in a backup (ADR-0044).
+export async function sendDeleteAccount(ctx: Context, backupDays: number): Promise<void> {
+  await replyHtml(ctx, messages.deleteAccountPrompt(backupDays), {
     reply_markup: new InlineKeyboard()
       .text(messages.deleteAccountButton, ACCOUNT_DELETE)
       .text(messages.cancelButton, ACCOUNT_KEEP),

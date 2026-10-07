@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { loadConfig } from '../config.js';
+import { backupRetentionDays } from '../db/backup.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions, parseVersion } from '../domain/version.js';
 import { readAppVersion } from '../version.js';
@@ -15,6 +17,23 @@ describe('/help', () => {
     expect(messages.help).toContain('/cancel — отменить ввод');
     // HTML length bounds the visible length Telegram counts.
     expect(messages.help.length).toBeLessThan(4096);
+  });
+});
+
+describe('/delete_account (ADR-0044)', () => {
+  it('says deleted data stays in backups up to 28 days with the default retention', () => {
+    const config = loadConfig({
+      BOT_TOKEN: '123456:test-token',
+      ADMIN_TELEGRAM_ID: '1001',
+      DEFAULT_TIMEZONE: 'Europe/Belgrade',
+      DEFAULT_CURRENCY: 'RSD',
+    });
+    const days = backupRetentionDays({
+      keep: config.backupKeep,
+      keepWeekly: config.backupKeepWeekly,
+    });
+
+    expect(messages.deleteAccountPrompt(days)).toContain('до 28 дн.');
   });
 });
 

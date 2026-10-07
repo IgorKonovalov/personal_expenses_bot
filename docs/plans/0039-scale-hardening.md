@@ -368,8 +368,8 @@ New message: `heavyJobBusy`.
 | 2: unreachable users | dev | done | 5a1f804 |
 | 3: paced, retried, capped scheduled sends | dev | done | 882f4e3 |
 | 4: due pushes from one bulk read | dev | done | 46dd43f |
-| 5: photos and statements in a child process | dev | done | committed with this row |
-| 6: compressed backups | dev | not started | |
+| 5: photos and statements in a child process | dev | done | e32d0f5 |
+| 6: compressed backups | dev | done | committed with this row |
 | 7: live checks | human | not started | |
 
 ### Notes
@@ -441,6 +441,23 @@ New message: `heavyJobBusy`.
   the onboarding welcome before the stray reply, since the reply now comes after the
   onboarding middleware returns. `CLAUDE.md`'s map does not list `src/jobs/` or
   `scripts/bench-due.ts`.
+- Phase 6: `BotOptions.backupKeep` keeps its name and now carries the days deleted data can
+  linger, which `index.ts` computes with the new `backupRetentionDays` in `src/db/backup.ts`
+  (`max(keep, 7 x keepWeekly)`); the harness and the tests that build `createBot` still pass
+  14. `deleteAccountPrompt` and `sendDeleteAccount` name their parameter `backupDays`. The
+  "до 28 дн." done-when is a `src/bot/messages.test.ts` test that loads the default config and
+  renders the prompt; `src/bot/handlers/deleteAccount.ts` changed only its parameter name.
+- Phase 6: the boot skip also counts an uncompressed `.sqlite` file for today, so the deploy
+  that brings compression does not add a second file for that day. A skipped boot logs
+  `backup exists for today` at info and rotates nothing. `backup written` now also carries
+  `uncompressedBytes`. `BACKUP_KEEP_WEEKLY` accepts 0.
+- Phase 6: README lines on `/delete_account` and on sealed-ledger backups that named
+  `BACKUP_KEEP` alone now name both settings.
+- Phase 6 ratio: no `size.mjs` is in the repo, so a scratch script (not committed) built the
+  database through `provisionUser` (100 users) and `insertExpenseOrGetExisting` (200,000
+  plaintext RSD expenses with short Russian descriptions, spread over 730 days, fixed seed) and
+  ran one `backupDatabase`: 85,983,232 bytes uncompressed, 14,520,943 bytes compressed, a
+  ratio of 5.92.
 
 ### Close triggers
 
