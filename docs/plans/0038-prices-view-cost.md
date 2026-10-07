@@ -212,8 +212,8 @@ No table, column, callback data or message changes.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: bench | dev | done: baseline at 20,000 items, 2,996 distinct names: list cold 409.2 / warm 381.3 ms, product cold 383.9 / warm 385.1 ms (plan: 369 / 375) | aed0139 |
-| 2: compiled catalog and shared memo | dev | done: 20,000 items: list cold 107.3 / warm 38.9 ms, product cold 40.7 / warm 39.2 ms | committed with this row |
-| 3: sealed fold from rows in hand | dev | not started | |
+| 2: compiled catalog and shared memo | dev | done: 20,000 items: list cold 107.3 / warm 38.9 ms, product cold 40.7 / warm 39.2 ms | 17b2944 |
+| 3: sealed fold from rows in hand | dev | done | committed with this row |
 | 4: live check | human | not started | |
 
 ### Notes
@@ -223,6 +223,12 @@ No table, column, callback data or message changes.
   O(1) lookup.
 - Phase 2: the shared instance is exported as `sharedNameMatcher` (with `NAME_MATCHER_CAPACITY`)
   so the Phase 3 test can read its size. `productPrices.test.ts` is unchanged in Phase 2.
+- Phase 3: the by-id read is counted with `vi.spyOn(db, 'prepare')`, filtering statements that
+  end in `WHERE e.id = ?`. With `ownItems` temporarily switched back to `foldedReceipt(deps,
+  row.id)`, the test failed with 3 such reads; it passes on the committed code.
+- Phase 3: `ledgerKeys.test.ts` is unchanged; `foldedReceiptOf` is covered through the sealed
+  `/prices` tests in `productPrices.test.ts`.
+- Phase 3: the per-call sealed matcher takes the same capacity, `NAME_MATCHER_CAPACITY`.
 
 ### Close triggers
 

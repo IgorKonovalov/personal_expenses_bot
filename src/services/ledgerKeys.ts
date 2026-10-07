@@ -580,9 +580,18 @@ export function foldedReceipt(
 ): SealedReceipt | undefined {
   const stored = findExpenseById(deps.db, expenseId);
   if (stored === undefined || !isSealed(stored)) return undefined;
-  const privateKey = deps.keys.privateKey(stored.ledgerId);
+  return foldedReceiptOf(deps, stored);
+}
+
+// The receipt folded into a sealed row already read, opened with the key held: no read of its
+// own. Undefined for a row without one, or a locked ledger.
+export function foldedReceiptOf(
+  deps: Pick<KeyDeps, 'keys'>,
+  row: SealedExpense,
+): SealedReceipt | undefined {
+  const privateKey = deps.keys.privateKey(row.ledgerId);
   if (privateKey === undefined) return undefined;
-  return decodePayload(open(stored.sealed, privateKey, rowAad(stored))).receipt;
+  return decodePayload(open(row.sealed, privateKey, rowAad(row))).receipt;
 }
 
 // The row's payload with `change` applied, sealed again to the ledger's public key. The

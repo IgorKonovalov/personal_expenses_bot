@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
 import { softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
@@ -14,6 +14,7 @@ import {
   activeProductList,
   ledgerProduct,
   ledgerProductList,
+  sharedNameMatcher,
   type ProductList,
   type ProductView,
 } from './productPrices.js';
@@ -286,5 +287,38 @@ describe('a sealed ledger', () => {
     await unlockPersonalLedger(deps, user, NOW);
     const milk = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:milk' }));
     expect(spent(milk)).toEqual([['RSD', 73500]]);
+  });
+
+  it('folds the 3 receipts from the rows already read: no by-id expense read', async () => {
+    fixture();
+    await sealPersonalLedger(deps, user, NOW);
+    await unlockPersonalLedger(deps, user, NOW);
+    const prepare = vi.spyOn(db, 'prepare');
+
+    const products = list(activeProductList(deps, user, NOW));
+
+    const byId = prepare.mock.calls.filter(([sql]) => /WHERE e\.id = \?\s*$/.test(sql));
+    expect(byId).toHaveLength(0);
+    expect(ranking(products)).toEqual([
+      ['Молоко', 73500],
+      ['Бананы', 24900],
+      ['Хлеб', 6500],
+    ]);
+  });
+
+  it("keeps a sealed ledger's names out of the shared name matcher", async () => {
+    receipt(user, '2026-10-01', [['MLEKO ZAPECACENO 1L', '1', 15000]]);
+    receipt(user, '2026-10-02', [['HLEB ZAPECACENI 500G', '1', 7000]]);
+    await sealPersonalLedger(deps, user, NOW);
+    await unlockPersonalLedger(deps, user, NOW);
+    const before = sharedNameMatcher.size;
+
+    const products = list(activeProductList(deps, user, NOW));
+
+    expect(ranking(products)).toEqual([
+      ['Молоко', 15000],
+      ['Хлеб', 7000],
+    ]);
+    expect(sharedNameMatcher.size).toBe(before);
   });
 });

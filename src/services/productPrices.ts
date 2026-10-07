@@ -13,7 +13,7 @@ import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
 import { amountOf, type Unit } from '../domain/products/amount.js';
 import { CATALOG } from '../domain/products/catalog.js';
-import { createNameMatcher, matchProduct, type NameMatcher } from '../domain/products/match.js';
+import { createNameMatcher, type NameMatcher } from '../domain/products/match.js';
 import {
   monthLines,
   totalLines,
@@ -21,10 +21,9 @@ import {
   type PriceLine,
   type PricedItem,
 } from '../domain/products/monthly.js';
-import { normalize } from '../domain/products/normalize.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
-  foldedReceipt,
+  foldedReceiptOf,
   isLocked,
   isSealedLedger,
   ledgerIsLocked,
@@ -130,26 +129,21 @@ interface RawItem {
   readonly occurredOn: LocalDate;
 }
 
-function ruleRef(nameKey: string): ProductRef | undefined {
-  const product = matchProduct(nameKey);
-  return product === undefined ? undefined : `b:${product.key}`;
-}
-
-// The viewer's items in the ledger, oldest first.
+// The viewer's items in the ledger, oldest first. A sealed ledger's names go through a matcher
+// of this call's own, so they never outlive the call that decrypted them.
 function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean): RawItem[] {
   const items: RawItem[] = listLedgerDatedItems(deps.db, ledger.id)
     .filter((item) => item.createdBy === user.id)
     .map((item) => ({ ...item, ...sharedNameMatcher.match(item.name) }));
   if (!sealed) return items;
+  const matcher = createNameMatcher(NAME_MATCHER_CAPACITY);
   for (const row of listLedgerExpenses(deps.db, { ledgerId: ledger.id, memberId: user.id })) {
     if (!isSealed(row) || row.createdBy !== user.id) continue;
-    const folded = foldedReceipt(deps, row.id);
+    const folded = foldedReceiptOf(deps, row);
     if (folded === undefined || folded.sellerName === null) continue;
     for (const item of folded.items) {
-      const nameKey = normalize(item.name);
       items.push({
-        nameKey,
-        ruleRef: ruleRef(nameKey),
+        ...matcher.match(item.name),
         quantity: item.quantity,
         totalMinor: item.totalMinor,
         currency: row.currency,
