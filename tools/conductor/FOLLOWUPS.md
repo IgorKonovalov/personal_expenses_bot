@@ -21,6 +21,8 @@ including a 25 min usage-limit wait and an 8 h machine suspend, $50.06. A second
 | H7 | 0026 | `plan_wrong` at the lane's readiness | `ready` had passed 0026 against `777c23f`; the lane's check against `7b0468a` found `src/bot/bot.ts` missing from Files touched, a gap the plan had all along. Amended (`bcaca5b`), then `resume`. |
 | H8 | 0036 | `api` at review | The machine suspended during the review; the session sat on a dead stream for 8 h. Killed by hand on wake, then `resume`. |
 | H9 | 0030 | none | Added to `queue.json` mid-run after 0032 merged (`18697f1`); the run ended `until-idle` without picking it. Started by hand: `ready 0030`, a second `run`. |
+| H10 | 0030 | `human_phase` at Phase 2 | A blocking mid-plan phase needed a deploy, which needs the merge (as H3). Phase 2 made `Blocks merge: no`, Phase 3's budget fixed at 2048 (`98ff5e7`); main merged into the lane and the row marked `owed` by hand (`80188b8`), then `resume`. |
+| H11 | 0030 | `merge_failed` at the fast-forward | Another session's staged plan edits sat in the main checkout. Waited for it to commit (`9cdc923`), then `resume`. |
 
 ### Followups
 
@@ -31,6 +33,7 @@ including a 25 min usage-limit wait and an 8 h machine suspend, $50.06. A second
 | F34 | conductor (dev) | **A plan added to `queue.json` mid-run was not picked by `--until-idle`** (H9), though the README says a live run re-reads the queue. Reproduce with the fake CLI. | open |
 | F35 | conductor (dev) | **`git ls-tree` is denied** to review sessions (0036, twice). Allowlist read-only `git ls-tree`. | open |
 | F36 | architect | **A plan that must pin GitHub Actions to SHAs needs the SHAs in the plan**, since a headless session has no network. 0032's were checked by hand against their tags and are real but older (`upload-pages-artifact` v3.0.1, `deploy-pages` v4.0.5). | open |
+| F37 | architect | **A `human` phase that needs a deploy can't block the merge** (H3, H10). Readiness should park such a plan before it runs: a blocking human phase whose What says deploy, redeploy or publish. Until then, the architect marks it `Blocks merge: no` when writing the plan. | open |
 
 ## 2026-10-05 22:07 to 2026-10-06 15:16: Plans 0028, 0029, 0025, 0027, 0013 and 0012
 
