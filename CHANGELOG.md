@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.32.0 (2026-10-07)
+
+From Plan 0042 (spending pace in the chart, and a burn-down chart for the budget).
+
+- The `/week` and `/month` chart adds a pace section: the period's cumulative spending by day as a
+  line over the previous period's, day 1 against day 1, captioned «К 15 октября: …» and
+  «К 15 сентября: …» (or «За август 2026: …» for a past period).
+- `/budget` in a private chat, once the budget has a limit, gets its own «📈 Диаграмма»: the
+  budget period's spend by day against a dashed allowance line up to the limit, captioned with
+  the spend so far, today's leftover or overspend, and the limit.
+
 ## 0.31.0 (2026-10-07)
 
 From Plan 0041 (chart capacity and the comparison with the previous period).

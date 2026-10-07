@@ -1,11 +1,11 @@
 # 0042: Spending pace in the chart, and a burn-down chart for the budget
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, one minor and one nit fixed at close, one nit open, Phase 3 live check owed, v0.32.0
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0041](done/0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
-> **Related ADRs:** [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
-> [ADR-0017](../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods, cumulative allowance),
-> [ADR-0023](../adrs/0023-budgets-count-converted-spending.md) (budget conversion)
+> **Depends on:** [Plan 0041](0041-chart-capacity-and-period-comparison.md) (payload v2 and its sections), merged on `main` first
+> **Related ADRs:** [ADR-0045](../../adrs/0045-chart-payload-v2-deflated-sections.md) (payload v2: deflated sections),
+> [ADR-0017](../../adrs/0017-budgets-payday-periods-cumulative-allowance.md) (payday periods, cumulative allowance),
+> [ADR-0023](../../adrs/0023-budgets-count-converted-spending.md) (budget conversion)
 
 ## TL;DR
 
@@ -258,4 +258,145 @@ interface PaceSection {
   New exports: `encodePacePayload`, `PaceSection` (bot and page), `budgetPace`. New bot messages:
   `chartPace`, `budgetChart`.
 
+## Close review
+
+Closed 2026-10-07 on round 1, with no fix round. Fixed at close: minor 1 (the README now names the
+`/budget` chart) in b77ed4e, and nit 2 (the two comments re-wrapped) in 37b393a. Nit 1 (the group
+done-when tested on a group without a budget) stays open. Phase 3 (`human`, live check) is owed.
+The review, in full:
+
+### Plan 0042 review, round 1 (tip 45bb35648e02556d835512bf498dc84a79ec2a0e)
+
+**Verdict:** Clean. Both dev phases land as the plan states and every named done-when has an
+assertion that defends it. No blockers and no majors. One minor: the README never mentions the new
+`/budget` chart. Two nits.
+
+#### Gate (run in this session, on the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 141 files and 1988 tests passed
+- `node scripts/check-doc-links.mjs`: exit 0, 335 relative links resolve
+- `git status --short` after the runs: empty
+
+#### Lens 1: alignment
+
+- Phases 1 and 2 (`dev`) are 468f2e8 and 7279552. Phase 3 (`human`, `Blocks merge: no`) is owed.
+  Each phase has exactly one in-vocabulary owner tag.
+- Deviations from `Files touched` are disclosed in the log: `webapp/src/pie.ts` instead of
+  `main.ts`, `encodePacePayload` in `chartPayload.ts`, and the `budgetView(ctx, …)` callers in
+  `flows.ts` and `settings.ts`. Each one is needed for its phase.
+- Done-whens, with the assertion read:
+  - `cumulativeByDay` returns `[1500, 1500, 3500, 3500]` and leaves out the item after `through`:
+    `src/domain/pace.test.ts:268`.
+  - October in Belgrade has `days` 31, 15 and 30 points: `src/services/periodPace.test.ts:625`
+    and `src/bot/bot.test.ts` ("runs October through the 15th…").
+  - The 00:30-Belgrade expense lands on October day 1 and not in September: `periodPace.test.ts:639`,
+    plus the bot test via `say` at 2026-09-30T22:30Z (`pace.current[0] === 45000`).
+  - The last current point equals the pie `totalMinor`, and the last previous point equals the
+    previous trend bar, with converted EUR: `periodPace.test.ts:648` asserts both against
+    `ledgerPeriodSummary`/`periodTrend`. The bot test asserts both against the decoded payload
+    (146874 and 39127, which are the correct 117.4993 roundings).
+  - The previous caption is day min(15, 30) = 15: «К 15 сентября: 600.00 RSD» (S1 only) is
+    asserted.
+  - A past August has 31 points, and its captions are «За август 2026: …» / «За июль 2026: …»:
+    asserted in both the service and the bot test. A past week reads «За неделю 21–27 сентября».
+  - `/week` has `days` 7: `periodPace.test.ts:691` and the bot's `/week` payload test.
+  - Two polylines are drawn, previous muted and current accent. The captions are `textContent`
+    only and each swatch's `fill` equals its polyline's `stroke`. A payload with no pace section
+    draws as before: `webapp/src/payload.test.ts` "the pace section".
+  - 90000 against 45000: every point is inside 0..320 × 0..160, the previous line ends at y=0 and
+    the current one at y=80.
+  - Budget: `days` 30, 13 points. The last point equals `allowanceThrough(3000000, 30, 13) -
+    todayLeftMinor` against `budgetStatus` on the same data, with converted EUR:
+    `src/services/budget.test.ts:409`. Scope `optional` drops the essential category (`:436`).
+  - The limit caption and the leftover caption match the screen's lines in both forms
+    (overspend 500.00, leftover 3 000.00). The title is «Бюджет: 25 сен – 24 окт». The button is
+    row 0 and the remaining rows equal the screen without a URL: `src/bot/bot.test.ts:2662`.
+  - 3500000 over 3000000: the spend ends at [138.67, 0] and the allowance ends at [320, 22.86],
+    below the top.
+  - No button with caps only, with a locked sealed ledger, or without `WEBAPP_URL`, and the screen
+    then equals the screen without a URL. A group gets no button (see the nit below).
+- Shedding: the order is change labels, the previous series with its caption, the pace, then the
+  trend bars, then the fold. That matches the plan, and `chartPayload.test.ts` pins every step.
+- No ADR is reversed. ADR-0045's section list is extended the way the plan decided. The payload
+  version and budget are unchanged.
+- The log is shorter than the phases section and discloses the deviations.
+
+#### Lens 2: layering
+
+- grammY stays in `src/bot/`. `src/domain/pace.ts` imports only domain modules. The services do
+  the SQL reads through `db/` repositories.
+- All copy (`chartPace`, `budgetChart`, `limitAmount`) is in `messages.ts`, and the handlers only
+  assemble it.
+
+#### Lens 3: correctness
+
+- Money: the series are integer `safeAdd` sums of amounts that are already rounded per expense.
+  The floats in `webapp/src/line.ts` are geometry only, and the page shows no number it computed
+  itself.
+- Time: the days come from `occurred_on`, and "today" is `localDateOf(now, effectiveTimezone)` in
+  `periodPace` and `budgetStatus`'s period in `budgetPace`. Neither takes a browser clock or a
+  server-local date.
+- The page validates `pace` strictly: whole `days > 0`, safe-integer series, a limit that is a
+  positive safe integer plus a string, and 1 or 2 captions. The rejection tests cover each case.
+- Idempotency and privacy: no writes are added. Only aggregates travel, and no logs are added.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **The README never mentions the `/budget` chart.**
+   - Where: `README.md:32` (the `/budget` command row) and `README.md:301` (Mini App: charts,
+     which says only "`/week` and `/month` … end with «📈 Диаграмма»").
+   - Why it matters: Phase 2 adds a button the user sees on the budget screen, with its own chart
+     and its own conditions (a limit is required; private chat; not locked). The user-facing doc
+     says the chart button belongs to `/week` and `/month` only. Phase 2's `Files touched` didn't
+     list the README, so this is a docs-freshness gap rather than a skipped criterion.
+   - Fix: in the `/budget` row, add one sentence: «📈 Диаграмма» (private chat, with `WEBAPP_URL`
+     and a limit) opens the period's spend by day against the limit's dashed allowance line,
+     captioned with the screen's spend-by-today, today's leftover and the limit. In Mini App:
+     charts, change the opening sentence to name `/budget` as well, or add a bullet for the
+     burn-down.
+
+##### nit
+
+1. **The group done-when is tested on a group without a budget.**
+   - Where: `src/bot/bot.test.ts:2719`.
+   - Why: the done-when reads "in a group chat … there is no button", and the natural setup for
+     it has a limit. The test binds a group with no budget, so it asserts the "not set" text. The
+     button is structurally impossible there anyway: `src/bot/group/summary.ts:50` replies
+     `groupBudget` with no keyboard. So the gap is coverage only, and the log discloses it.
+   - Fix (optional): set the group ledger's limit with `setBudgetLimit` before the group
+     `/budget`.
+2. **Two comments are wrapped badly.**
+   - Where: `src/bot/handlers/summary.ts:64` breaks off at "Undefined outside a private chat",
+     and `webapp/src/line.ts:22` runs past the 100-column comment width.
+   - Fix: re-wrap both paragraphs.
+
+#### Bookkeeping owed (for the close session)
+
+- Plan 0042's `## Followups` is empty. Move into it the log's noted followup: pace captions over
+  converted spending carry no «≈», unlike the pie total and the trend bars.
+- Bump the version (minor, feature plan): `package.json`, `CHANGELOG.md`, and a
+  `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013) naming the pace line on
+  `/week`/`/month` and the `/budget` chart.
+- Phase 3 (`human`, does not block merge) stays owed: a live check of both charts on a phone
+  after the Pages run.
+- Standard close: flip the status, `git mv` to `docs/plans/done/`, repair links, run
+  `node scripts/check-doc-links.mjs`, and refresh `docs/plans/README.md`.
+
 ## Followups
+
+- A pace caption over converted spending carries no «≈», unlike the pie's total and the trend
+  bars (noted in the implementation log, Phase 1).
+- The group `/budget` done-when is asserted on a group without a budget (review nit 1); setting
+  the group ledger's limit first would test the natural case.
