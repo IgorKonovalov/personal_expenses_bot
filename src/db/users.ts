@@ -254,6 +254,46 @@ export function setPushOn(db: Db, userId: UserId, kind: PushKind, on: boolean): 
   );
 }
 
+// Marks the user behind a Telegram id unreachable: they blocked the bot (ADR-0043). Keeps the
+// first instant. Returns false when nothing was written.
+export function markUnreachable(db: Db, telegramId: number, at: Date): boolean {
+  return (
+    db
+      .prepare<[string, string]>(
+        `UPDATE users SET unreachable_at = ?
+          WHERE unreachable_at IS NULL
+            AND id = (SELECT user_id FROM auth_identities
+                       WHERE provider = 'telegram' AND external_id = ?)`,
+      )
+      .run(at.toISOString(), String(telegramId)).changes > 0
+  );
+}
+
+// Clears `unreachable_at` for the user behind a Telegram id: any private update from them says
+// the chat is open again. One conditional UPDATE, a no-op for a reachable user. Returns false
+// when nothing was written.
+export function clearUnreachable(db: Db, telegramId: number): boolean {
+  return (
+    db
+      .prepare<[string]>(
+        `UPDATE users SET unreachable_at = NULL
+          WHERE unreachable_at IS NOT NULL
+            AND id = (SELECT user_id FROM auth_identities
+                       WHERE provider = 'telegram' AND external_id = ?)`,
+      )
+      .run(String(telegramId)).changes > 0
+  );
+}
+
+export function isUnreachable(db: Db, userId: UserId): boolean {
+  return (
+    db
+      .prepare<[string], number>('SELECT unreachable_at IS NOT NULL FROM users WHERE id = ?')
+      .pluck()
+      .get(userId) === 1
+  );
+}
+
 // A user with a summary push on, and the private chat it goes to.
 export interface PushRecipient {
   readonly user: User;
@@ -262,15 +302,15 @@ export interface PushRecipient {
   readonly weekly: boolean;
 }
 
-// Every user with either push on who can still be written to: not blocked, not deleted, with a
-// Telegram identity.
+// Every user with either push on who can still be written to: not blocked, not deleted, not
+// unreachable, with a Telegram identity.
 export function listPushRecipients(db: Db): PushRecipient[] {
   return db
     .prepare<[], UserRow & { external_id: string; monthly_push: number; weekly_push: number }>(
       `SELECT u.id, u.timezone, u.active_ledger_id, i.external_id, u.monthly_push, u.weekly_push
          FROM users u JOIN auth_identities i ON i.user_id = u.id AND i.provider = 'telegram'
         WHERE (u.monthly_push = 1 OR u.weekly_push = 1)
-          AND u.blocked_at IS NULL AND u.deleted_at IS NULL
+          AND u.blocked_at IS NULL AND u.deleted_at IS NULL AND u.unreachable_at IS NULL
         ORDER BY u.id`,
     )
     .all()

@@ -7,7 +7,7 @@ import { setFxDay, storeFxList } from '../db/fxRates.js';
 import type { Ledger } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import { claimSummaryPush } from '../db/summaryPushes.js';
-import { setPushOn, type User } from '../db/users.js';
+import { clearUnreachable, markUnreachable, setPushOn, type User } from '../db/users.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { LocalDate } from '../domain/time.js';
 import { createLogger } from '../logger.js';
@@ -297,6 +297,14 @@ describe('dueSummaries and claimSummary', () => {
     if (due === undefined) throw new Error('not due');
 
     expect(claimSummary(deps, due, NOW)).toBe('empty');
+  });
+
+  it('is not due for a user who blocked the bot, and due again once they write', () => {
+    markUnreachable(db, 1001, NOW);
+    expect(dueSummaries(deps, NOW)).toEqual([]);
+
+    clearUnreachable(db, 1001);
+    expect(dueSummaries(deps, NOW)).toHaveLength(1);
   });
 
   it('turns a push off once', () => {

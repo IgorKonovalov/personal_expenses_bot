@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { findUserByIdentity, markUnreachable } from '../db/users.js';
 import { createLogger } from '../logger.js';
+import { createReminder } from '../services/recurring.js';
 import { register } from '../scheduler/types.js';
 import { runTick } from '../scheduler/worker.js';
 import type { HandlerDeps } from './bot.js';
@@ -73,6 +75,57 @@ describe('the recurring provider', () => {
     await tick('2026-11-01T08:00:00Z');
 
     expect(calls).toEqual([]);
+  });
+
+  it('records the rent for an author who blocked the bot, and sends nothing', async () => {
+    const { calls, db, tick } = await rentRule();
+    markUnreachable(db, ALLOWED_ID, new Date('2026-10-15T10:00:00Z'));
+    calls.length = 0;
+
+    await tick('2026-11-01T08:00:00Z');
+
+    expect(calls).toEqual([]);
+    expect(
+      db
+        .prepare(
+          "SELECT amount_minor, occurred_on FROM expenses WHERE source_key LIKE 'rec:%' AND deleted_at IS NULL",
+        )
+        .all(),
+    ).toEqual([{ amount_minor: 4500000, occurred_on: '2026-11-01' }]);
+  });
+
+  it('claims a due reminder for an author who blocked the bot without sending it, once', async () => {
+    const harness = await rentRule();
+    const { calls, db, tick } = harness;
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('not provisioned');
+    // Monthly on the 2nd, from 2 October: first due 2 November at 09:00 Belgrade.
+    const rule = createReminder(
+      {
+        db,
+        logger: createLogger('silent'),
+        newId: randomUUID,
+        defaultTimezone: 'Europe/Belgrade',
+        keys: harness.keys,
+      },
+      { user, text: 'оплатить интернет', choice: 'm', now: harness.clock },
+    );
+    await tick('2026-11-01T08:00:00Z');
+    markUnreachable(db, ALLOWED_ID, new Date('2026-11-01T12:00:00Z'));
+    calls.length = 0;
+
+    await tick('2026-11-02T08:00:00Z');
+    await tick('2026-11-02T08:01:00Z');
+
+    expect(calls).toEqual([]);
+    expect(
+      db
+        .prepare('SELECT due_on, outcome FROM recurring_occurrences WHERE rule_id = ?')
+        .all(rule.id),
+    ).toEqual([{ due_on: '2026-11-02', outcome: 'reminded' }]);
+    expect(
+      db.prepare('SELECT next_due_on FROM recurring_rules WHERE id = ?').pluck().get(rule.id),
+    ).toBe('2026-12-02');
   });
 
   it('[Удалить] soft-deletes the occurrence, and the rule keeps its next date', async () => {

@@ -364,8 +364,8 @@ New message: `heavyJobBusy`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: download timeouts and slow-update log | dev | done | committed with this row |
-| 2: unreachable users | dev | not started | |
+| 1: download timeouts and slow-update log | dev | done | 8163c57 |
+| 2: unreachable users | dev | done | committed with this row |
 | 3: paced, retried, capped scheduled sends | dev | not started | |
 | 4: due pushes from one bulk read | dev | not started | |
 | 5: photos and statements in a child process | dev | not started | |
@@ -377,6 +377,13 @@ New message: `heavyJobBusy`.
 - Phase 1: `telegramFileDownloader` takes an options object `{ baseUrl, timeoutMs }` so the test
   can point it at a local server; production passes neither. The downloader test is the new
   `src/bot/handlers/receipt.test.ts`, which also covers a body that never finishes.
+- Phase 2: the migration is `0027_unreachable_users.sql`. The private `my_chat_member` handler
+  and the clear-on-any-update step are one middleware, `src/bot/handlers/reachability.ts`,
+  registered first in the private composer (before the successful-payment handler as well as
+  `access`), so an admin-blocked user's own kick and unkick are recorded too. The recurring
+  provider skips every private-chat notice for an unreachable author (reminders, `auto` cards
+  and asks), not reminders only; group notices still go out. `isUnreachable` was added to
+  `src/db/users.ts` for that check.
 
 ### Close triggers
 

@@ -31,6 +31,7 @@ import { registerEdited, registerNonText, registerUnknownCommand } from './handl
 import { registerPaySupport } from './handlers/paysupport.js';
 import { registerPrices } from './handlers/prices.js';
 import { registerPrivacy } from './handlers/privacy.js';
+import { registerReachability } from './handlers/reachability.js';
 import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
 import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
@@ -125,6 +126,8 @@ export function privateComposer(options: BotOptions): Composer<Context> {
     adminTelegramId: options.adminTelegramId,
     notifyAdmin: options.notifyAdmin ?? (() => Promise.resolve()),
   };
+  // Before everything: any private update says the user can be written to again (ADR-0043).
+  registerReachability(dm, options);
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
   registerSuccessfulPayment(dm, donateDeps);
   dm.use(access(options));

@@ -11,6 +11,7 @@ import {
 } from '../services/recurring.js';
 import type { HandlerDeps } from './bot.js';
 import { listMemberNames } from '../db/ledgers.js';
+import { isUnreachable } from '../db/users.js';
 import { REMINDER_EXPENSE, groupDeleteData } from './callbackData.js';
 import { plaintext } from '../services/ledgerKeys.js';
 import { askCard, recurringRecordedCard, sealedAskCard } from './handlers/recurring.js';
@@ -20,7 +21,9 @@ import type { ScreenView } from './screens.js';
 
 // The scheduler's provider for recurring rules (ADR-0031). The service records or claims each
 // due occurrence and commits; the notices are sent afterwards. A failed send is logged and not
-// retried: an `auto` expense stays recorded and shows in /today.
+// retried: an `auto` expense stays recorded and shows in /today. An author who blocked the bot
+// (ADR-0043) has their occurrences recorded or claimed as usual, and no notice is sent to their
+// private chat; a group's notices still go to the group.
 
 export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule> {
   return {
@@ -29,6 +32,9 @@ export function recurringProvider(deps: HandlerDeps, api: Api): Provider<DueRule
     fire: async (due, now) => {
       const result = fireRule(deps, due, now);
       if (result === undefined) return;
+      if (result.groupChatId === undefined && isUnreachable(deps.db, result.author.user.id)) {
+        return;
+      }
       const skipped = result.fired.filter((f) => f.kind === 'skipped').length;
       if (skipped > 0) await send(deps, api, result, messages.recurringAskMissed(skipped));
       for (const fired of result.fired) {

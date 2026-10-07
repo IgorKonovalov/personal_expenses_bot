@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from './connection.js';
 import { runMigrations } from './migrate.js';
 import {
+  clearUnreachable,
   findOnboarding,
+  isUnreachable,
+  markUnreachable,
   findPushOn,
   findTidyChat,
   insertIdentity,
@@ -162,6 +165,52 @@ describe('summary push switches', () => {
       [USER, true, false],
       [OTHER, false, true],
     ]);
+  });
+});
+
+describe('unreachable users', () => {
+  const LATER = new Date('2026-10-01T10:00:00Z');
+
+  function unreachableAt(id: UserId): unknown {
+    return db.prepare('SELECT unreachable_at FROM users WHERE id = ?').pluck().get(id);
+  }
+
+  beforeEach(() => {
+    insertIdentity(db, { provider: 'telegram', externalId: '1001', userId: USER });
+    insertIdentity(db, { provider: 'telegram', externalId: '1002', userId: OTHER });
+  });
+
+  it('marks the user behind a Telegram id once, keeping the first instant, and clears it', () => {
+    expect(markUnreachable(db, 1001, NOW)).toBe(true);
+    expect(markUnreachable(db, 1001, LATER)).toBe(false);
+    expect(unreachableAt(USER)).toBe(NOW.toISOString());
+    expect(isUnreachable(db, USER)).toBe(true);
+    expect(isUnreachable(db, OTHER)).toBe(false);
+
+    expect(clearUnreachable(db, 1001)).toBe(true);
+    expect(clearUnreachable(db, 1001)).toBe(false);
+    expect(unreachableAt(USER)).toBeNull();
+  });
+
+  it('leaves an unreachable user out of the push recipients until cleared, pushes kept', () => {
+    markUnreachable(db, 1001, NOW);
+    expect(listPushRecipients(db).map((r) => r.user.id)).toEqual([OTHER]);
+
+    clearUnreachable(db, 1001);
+    expect(listPushRecipients(db).map((r) => [r.user.id, r.monthly])).toEqual([
+      [USER, true],
+      [OTHER, true],
+    ]);
+  });
+
+  it('never touches blocked_at', () => {
+    setUserBlocked(db, USER, NOW);
+    markUnreachable(db, 1001, LATER);
+    clearUnreachable(db, 1001);
+
+    expect(db.prepare('SELECT blocked_at FROM users WHERE id = ?').pluck().get(USER)).toBe(
+      NOW.toISOString(),
+    );
   });
 });
 
