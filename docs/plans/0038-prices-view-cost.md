@@ -1,6 +1,6 @@
 # 0038: /prices stops re-matching every receipt item on every tap
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0041](../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md)
 
@@ -211,7 +211,7 @@ No table, column, callback data or message changes.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: bench | dev | not started | |
+| 1: bench | dev | done: baseline at 20,000 items, 2,996 distinct names: list cold 409.2 / warm 381.3 ms, product cold 383.9 / warm 385.1 ms (plan: 369 / 375) | committed with this row |
 | 2: compiled catalog and shared memo | dev | not started | |
 | 3: sealed fold from rows in hand | dev | not started | |
 | 4: live check | human | not started | |
