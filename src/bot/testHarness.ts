@@ -7,7 +7,8 @@ import { createLogger } from '../logger.js';
 import { admitTelegramIds, type AdmissionDeps } from '../services/admission.js';
 import { createLedgerKeyring } from '../services/ledgerKeys.js';
 import { adminNotifier } from './adminNotifier.js';
-import { createBot } from './bot.js';
+import { createJobQueue, type JobRunner } from '../jobs/queue.js';
+import { createBot, inProcessRunner } from './bot.js';
 import { createDonationLinks, type DonationLinks } from './handlers/donate.js';
 
 export const ALLOWED_ID = 1001;
@@ -47,6 +48,12 @@ export interface TestBotOptions {
   // First contact and tips (ADR-0028), both off unless a test is about them.
   readonly onboarding?: boolean;
   readonly tips?: boolean;
+  // The heavy-job queue (ADR-0042): how a job runs (default: in this process, downloading
+  // through `fetch`), its time limit, and whether handleUpdate waits for the queue to drain
+  // before it resolves (default: it does, so a photo's reply is in `calls` once it returns).
+  readonly jobRunner?: JobRunner;
+  readonly jobTimeoutMs?: number;
+  readonly drainJobs?: boolean;
 }
 
 // The admin, as in production: the first allowed id (ADR-0013).
@@ -72,9 +79,17 @@ export function createTestBot(options: TestBotOptions = {}) {
     defaultCurrency: 'RSD',
     adminTelegramId: ADMIN_ID,
   } as const;
+  const token = '123456:test-token';
+  const jobs = createJobQueue({
+    run: options.jobRunner ?? inProcessRunner(token),
+    onError: (error) => {
+      logger.error({ err: error instanceof Error ? error.name : typeof error }, 'job failed');
+    },
+    ...(options.jobTimeoutMs === undefined ? {} : { timeoutMs: options.jobTimeoutMs }),
+  });
   const bot = createBot({
     ...deps,
-    token: '123456:test-token',
+    token,
     backupKeep: 14,
     logger,
     keys,
@@ -83,8 +98,16 @@ export function createTestBot(options: TestBotOptions = {}) {
     donateUrl: options.donateUrl,
     webappUrl: options.webappUrl,
     notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
+    jobs,
   });
   admitOnFirstDm(bot, deps, [SECOND_ALLOWED_ID]);
+  if (options.drainJobs ?? true) {
+    const handle = bot.handleUpdate.bind(bot);
+    bot.handleUpdate = async (update, envelope) => {
+      await handle(update, envelope);
+      await jobs.idle();
+    };
+  }
 
   const calls: ApiCall[] = [];
   const failing = new Set(options.failMethods ?? []);
@@ -105,7 +128,7 @@ export function createTestBot(options: TestBotOptions = {}) {
   // What index.ts does at boot, after createBot. Records the createInvoiceLink calls.
   const prepareDonations = () => createDonationLinks(bot.api, logger, donationLinks);
 
-  return { bot, db, calls, logLines, keys, prepareDonations };
+  return { bot, db, calls, logLines, keys, prepareDonations, jobsIdle: () => jobs.idle() };
 }
 
 // Keeps first contact and tips (ADR-0028) out of the replies of a test that isn't about them.

@@ -1733,6 +1733,9 @@ export const messages = {
   receiptPhotoNoQr: html`Не нашёл QR-код чека на фото. Сфотографируйте его ближе, чтобы код занимал почти весь кадр, или вставьте ссылку из QR-кода.`,
   // A photo where a QR symbol was located but no pass read it (ADR-0034).
   receiptPhotoUnreadable: html`QR-код вижу, но прочитать не смог: на чеках он часто бледный или мятый. Расправьте чек и снимите ровно сверху, в фокусе и без бликов, или вставьте ссылку из QR-кода.`,
+  // A receipt photo or a statement PDF while the queue of files being read is full (ADR-0042):
+  // nothing was read, and the same file works when sent again.
+  heavyJobBusy: html`Сейчас читаю много файлов от других пользователей. Отправьте этот ещё раз через минуту.`,
   // The private menu's `web_app` button that opens the Mini App's live QR scanner (ADR-0025).
   scanButton: '📷 Скан',
   // A scanned QR whose text isn't a receipt verification link.

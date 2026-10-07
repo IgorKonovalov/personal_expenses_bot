@@ -367,8 +367,8 @@ New message: `heavyJobBusy`.
 | 1: download timeouts and slow-update log | dev | done | 8163c57 |
 | 2: unreachable users | dev | done | 5a1f804 |
 | 3: paced, retried, capped scheduled sends | dev | done | 882f4e3 |
-| 4: due pushes from one bulk read | dev | done | committed with this row |
-| 5: photos and statements in a child process | dev | not started | |
+| 4: due pushes from one bulk read | dev | done | 46dd43f |
+| 5: photos and statements in a child process | dev | done | committed with this row |
 | 6: compressed backups | dev | not started | |
 | 7: live checks | human | not started | |
 
@@ -402,6 +402,45 @@ New message: `heavyJobBusy`.
 - Phase 4 bench, `pnpm bench:due 10000` on this dev machine (9,571 pushes due at
   2026-10-05T07:00Z): on 882f4e3 plus the bench script, cold 2,659.0 ms and warm 2,610.4 ms;
   on this phase's commit, cold 78.6 ms and warm 58.1 ms (mean of 5 warm runs).
+- Phase 5: `telegramFileDownloader` and `DOWNLOAD_TIMEOUT_MS` moved from
+  `src/bot/handlers/receipt.ts` to `src/jobs/child.ts`, which downloads in the child; it now
+  takes `{ token, baseUrl, timeoutMs }`. Phase 1's downloader tests moved with it into
+  `src/jobs/child.test.ts`, and `src/bot/handlers/receipt.test.ts` is deleted.
+- Phase 5: the queue takes a `JobRunner`. `forkRunner` (in `queue.ts`) forks `child.ts` per
+  job; `inProcessRunner` (in `bot.ts`) runs the same `runJob` in the bot process. `createBot`
+  falls back to an in-process queue when `options.jobs` is absent; `index.ts` passes the forked
+  one. The harness builds its queue with an injectable runner and time limit, and by default
+  wraps `handleUpdate` to await the queue's drain (`drainJobs: false` turns that off), so the
+  existing photo and statement tests pass unchanged except the one statement test that builds
+  `createBot` itself, which now passes a queue and awaits `jobs.idle()`.
+- Phase 5: the child is told the job and the download settings (token included) over IPC
+  after it posts `ready`; it posts the result and exits. The child's entry check compares
+  `process.argv[1]` with its own path.
+- Phase 5: a `failed` receipt job (download or decode error) throws in the continuation, so it
+  gets the error boundary's `handler failed` log and apology, as a failed download did before.
+  A `failed` or `timeout` statement job answers `statementUnreadable`. A receipt `timeout`
+  answers `receiptPhotoUnreadable` and logs `outcome: 'timeout'`. A full queue logs
+  `outcome: 'busy'`. The `ms` field of `receipt image read` now runs from the hand-off, so it
+  includes the queue wait and the child's start.
+- Phase 5: the continuation re-reads the user with `ensureUser` before recording, and the
+  statement fallthrough calls `sendStrayReply`, which is what the handlers after
+  `registerStatement` reached for a non-image document.
+- Phase 5 done-when "Timeout": the real-child kill at a 100 ms limit is tested in
+  `src/jobs/queue.test.ts` (the child's exit is `SIGKILL` and the next job runs); the reply
+  and the `timeout` log line are tested in `src/bot/bot.test.ts` with a runner that never
+  answers, since a forked child cannot read the tests' mocked `fetch`.
+- Phase 5 startup, fork to `ready`, on this dev machine: 103, 102, 102 and 106 ms from source
+  under tsx (`src/jobs/child.test.ts`); 43, 41, 41, 45 and 42 ms from `dist/` after
+  `pnpm build`, with about 148 ms per photo job end to end (fork, download from a local server,
+  wasm instantiate, decode of `rs-receipt.jpg`).
+- Phase 5: the `Dockerfile` gains a build-stage check that forks the `dist/` child and decodes
+  `rs-receipt.jpg` through a local file server. The same script was run locally against
+  `dist/`; no image was built in this session.
+- Phase 5, observed and not acted on: shutdown now waits for queued jobs (up to 9 x 20 s at
+  worst) after polling stops. A first-ever private message that is a non-statement PDF gets
+  the onboarding welcome before the stray reply, since the reply now comes after the
+  onboarding middleware returns. `CLAUDE.md`'s map does not list `src/jobs/` or
+  `scripts/bench-due.ts`.
 
 ### Close triggers
 

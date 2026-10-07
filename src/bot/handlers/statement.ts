@@ -10,7 +10,6 @@ import {
   recordStatement,
   type StatementPreview,
 } from '../../services/importStatement.js';
-import { readPdfLines, type PdfText } from '../../statements/pdf.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   STATEMENT_CANCEL,
@@ -22,12 +21,14 @@ import {
 import { messages } from '../messages.js';
 import { pageOf, pagerRow } from '../nav.js';
 import { editHtml, replyHtml } from '../render/html.js';
-import type { FileDownloader } from './receipt.js';
+import { sendStrayReply } from './help.js';
+import type { HeavyJobs } from './receipt.js';
 import { ensureUser } from './start.js';
 
-// A bank statement PDF in DM (Plan 0027): read in memory, previewed, and recorded by a tap. A
-// PDF that isn't a statement falls through to the next document handler. Register before the
-// receipt-image handler.
+// A bank statement PDF in DM (Plan 0027): read in memory, previewed, and recorded by a tap. The
+// download and the text extraction run in the heavy-job queue (ADR-0042); the handler returns
+// once the job is queued. A PDF that isn't a statement gets the stray-message reply. Register
+// before the receipt-image handler.
 
 // Rows per preview page.
 const ROWS_PER_PAGE = 10;
@@ -81,7 +82,7 @@ function previewView(preview: StatementPreview, requestedPage: number) {
 export function registerStatement(
   bot: Composer<Context>,
   deps: HandlerDeps,
-  download: FileDownloader,
+  jobs: HeavyJobs,
 ): void {
   bot.on('message:document', async (ctx, next) => {
     const { document } = ctx.message;
@@ -102,53 +103,69 @@ export function registerStatement(
       await next();
       return;
     }
-    let text: PdfText;
-    try {
-      text = await readPdfLines(await download(filePath), { maxPages: MAX_STATEMENT_PAGES });
-    } catch (error) {
+    const fromId = ctx.from.id;
+    const job = { kind: 'pdf', filePath, maxPages: MAX_STATEMENT_PAGES } as const;
+    const queued = jobs.enqueue(ctx, job, async (result) => {
+      if (result.kind === 'timeout' || result.kind === 'failed') {
+        deps.logger.info(
+          {
+            ...read,
+            outcome: result.kind === 'timeout' ? 'timeout' : 'unreadable',
+            ...(result.kind === 'failed' ? { error: result.error } : {}),
+          },
+          'statement read',
+        );
+        await replyHtml(ctx, messages.statementUnreadable);
+        return;
+      }
+      if (result.kind !== 'pdf') throw new Error(`statement job returned ${result.kind}`);
+      const text = result.result;
+      if (text.kind === 'tooManyPages') {
+        deps.logger.info({ ...read, pages: text.pages, outcome: 'tooLong' }, 'statement read');
+        await replyHtml(ctx, messages.statementTooLong);
+        return;
+      }
+      if (text.lines.length === 0) {
+        deps.logger.info({ ...read, outcome: 'noText' }, 'statement read');
+        await replyHtml(ctx, messages.statementNoText);
+        return;
+      }
+      const parsed = parseRaiffeisenRs(text.lines);
       deps.logger.info(
-        { ...read, outcome: 'unreadable', error: error instanceof Error ? error.name : 'NonError' },
+        { ...read, lines: text.lines.length, outcome: parsed.kind },
         'statement read',
       );
-      await replyHtml(ctx, messages.statementUnreadable);
-      return;
-    }
-    if (text.kind === 'tooManyPages') {
-      deps.logger.info({ ...read, pages: text.pages, outcome: 'tooLong' }, 'statement read');
-      await replyHtml(ctx, messages.statementTooLong);
-      return;
-    }
-    if (text.lines.length === 0) {
-      deps.logger.info({ ...read, outcome: 'noText' }, 'statement read');
-      await replyHtml(ctx, messages.statementNoText);
-      return;
-    }
-    const parsed = parseRaiffeisenRs(text.lines);
-    deps.logger.info({ ...read, lines: text.lines.length, outcome: parsed.kind }, 'statement read');
-    if (parsed.kind === 'notThisStatement') {
-      await next();
-      return;
-    }
+      // Another PDF gets what the handlers after this one gave it before the hand-off: no
+      // receipt-image or other document handler takes a PDF, so it is the stray-message reply.
+      if (parsed.kind === 'notThisStatement') {
+        await sendStrayReply(ctx, deps);
+        return;
+      }
 
-    const now = deps.now();
-    const user = ensureUser(deps, ctx.from.id, now);
-    const preview = previewStatement(deps, {
-      user,
-      period: parsed.period,
-      purchases: parsed.purchases,
-      now,
+      const now = deps.now();
+      const user = ensureUser(deps, fromId, now);
+      const preview = previewStatement(deps, {
+        user,
+        period: parsed.period,
+        purchases: parsed.purchases,
+        now,
+      });
+      if (preview.kind === 'tooLong') {
+        await replyHtml(ctx, messages.statementTooLong);
+        return;
+      }
+      // A sealed ledger takes a statement only while unlocked (Plan 0019): nothing is held.
+      if (preview.kind === 'locked') {
+        await replyHtml(ctx, messages.ledgerLocked);
+        return;
+      }
+      const view = previewView(preview, 1);
+      await replyHtml(ctx, view.text, { reply_markup: view.markup });
     });
-    if (preview.kind === 'tooLong') {
-      await replyHtml(ctx, messages.statementTooLong);
-      return;
+    if (queued === 'full') {
+      deps.logger.info({ ...read, outcome: 'busy' }, 'statement read');
+      await replyHtml(ctx, messages.heavyJobBusy);
     }
-    // A sealed ledger takes a statement only while unlocked (Plan 0019): nothing is held.
-    if (preview.kind === 'locked') {
-      await replyHtml(ctx, messages.ledgerLocked);
-      return;
-    }
-    const view = previewView(preview, 1);
-    await replyHtml(ctx, view.text, { reply_markup: view.markup });
   });
 
   bot.callbackQuery(STATEMENT_PAGE, async (ctx) => {

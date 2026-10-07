@@ -48,7 +48,8 @@ import { fetchDueReceipt } from '../services/fetchDueReceipt.js';
 import { recordReceipt } from '../services/recordReceipt.js';
 import { createLedgerKeyring, openExpenses } from '../services/ledgerKeys.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
-import { createBot, privateComposer, registerCommands } from './bot.js';
+import { createJobQueue, type JobResult, type JobRunner } from '../jobs/queue.js';
+import { createBot, inProcessRunner, privateComposer, registerCommands } from './bot.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MORE_BUTTONS } from './handlers/more.js';
 import { startReceiptWorker } from './receiptWorker.js';
@@ -5152,7 +5153,13 @@ describe('fiscal receipts', () => {
   const RS_CARD = 'Записано в «Личные расходы»: <b>829.12 RSD</b> — Чек · Другое';
 
   function receiptBot(
-    options: { logLevel?: 'info' | 'silent'; failMethods?: readonly string[] } = {},
+    options: {
+      logLevel?: 'info' | 'silent';
+      failMethods?: readonly string[];
+      jobRunner?: JobRunner;
+      jobTimeoutMs?: number;
+      drainJobs?: boolean;
+    } = {},
   ) {
     const harness = createTestBot({ now: RECEIPT_SENT, ...options });
     let updateId = 0;
@@ -5669,6 +5676,144 @@ describe('fiscal receipts', () => {
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
       expect(sentTexts(calls)).toEqual([messages.help]);
+    });
+
+    describe('the heavy-job hand-off (ADR-0042)', () => {
+      // The in-process runner, each job held until its latch opens.
+      function latchedRunner() {
+        const run = inProcessRunner('123456:test-token');
+        const latches: (() => void)[] = [];
+        let started = 0;
+        const runner: JobRunner = async (job, signal) => {
+          started += 1;
+          await new Promise<void>((resolve) => latches.push(resolve));
+          return run(job, signal);
+        };
+        return {
+          runner,
+          started: () => started,
+          open: () => {
+            for (const open of latches.splice(0)) open();
+          },
+        };
+      }
+
+      it("records user B's `450 coffee` and replies before a held photo's job finishes", async () => {
+        const latch = latchedRunner();
+        const { bot, sendPhoto, calls, db, jobsIdle } = receiptBot({
+          jobRunner: latch.runner,
+          drainJobs: false,
+        });
+
+        await sendPhoto('rs-receipt.jpg');
+        expect(latch.started()).toBe(1);
+        await bot.handleUpdate(
+          textUpdate({ updateId: 50, fromId: SECOND_ALLOWED_ID, text: '450 coffee' }),
+        );
+
+        expect(db.prepare('SELECT amount_minor FROM expenses').pluck().all()).toEqual([45000]);
+        const toB = calls.filter(
+          (c) =>
+            c.method === 'sendMessage' &&
+            (c.payload as { chat_id: number }).chat_id === SECOND_ALLOWED_ID,
+        );
+        expect(toB).toHaveLength(1);
+        expect(calls.some((c) => (c.payload as { chat_id?: number }).chat_id === ALLOWED_ID)).toBe(
+          false,
+        );
+
+        latch.open();
+        await jobsIdle();
+        expect(
+          db.prepare('SELECT amount_minor FROM expenses ORDER BY rowid').pluck().all(),
+        ).toEqual([45000, 82912]);
+      });
+
+      it('answers a job past the time limit with the unreadable hint, logs timeout, and runs the next', async () => {
+        let aborted = 0;
+        const run = inProcessRunner('123456:test-token');
+        // The first job never answers; the next ones run.
+        const runner: JobRunner = (job, signal) => {
+          if (aborted === 0 && !signal.aborted && job.filePath.endsWith('no-qr.jpg')) {
+            return new Promise<JobResult>(() => {
+              signal.addEventListener('abort', () => {
+                aborted += 1;
+              });
+            });
+          }
+          return run(job, signal);
+        };
+        const { sendPhoto, calls, db, logLines } = receiptBot({
+          logLevel: 'info',
+          jobRunner: runner,
+          jobTimeoutMs: 100,
+        });
+
+        await sendPhoto('no-qr.jpg');
+        expect(aborted).toBe(1);
+        expect(sentTexts(calls)).toEqual([messages.receiptPhotoUnreadable]);
+        const reads = logLines.filter((line) => line.includes('receipt image read'));
+        expect(reads).toHaveLength(1);
+        expect(JSON.parse(String(reads[0]))).toMatchObject({ outcome: 'timeout' });
+        calls.length = 0;
+
+        await sendPhoto('rs-receipt.jpg');
+
+        expect(expenseCount(db)).toEqual({ n: 1 });
+        expect(sentTexts(calls)[0]).toBe(RS_CARD);
+      });
+
+      it('answers a 10th photo with heavyJobBusy while one runs and 8 wait, starting no job', async () => {
+        const latch = latchedRunner();
+        const { sendPhoto, calls, jobsIdle } = receiptBot({
+          jobRunner: latch.runner,
+          drainJobs: false,
+        });
+
+        for (let i = 0; i < 9; i++) await sendPhoto('no-qr.jpg');
+        expect(calls.filter((c) => c.method === 'sendMessage')).toEqual([]);
+        await sendPhoto('no-qr.jpg');
+
+        expect(sentTexts(calls)).toEqual([messages.heavyJobBusy]);
+        expect(latch.started()).toBe(1);
+        for (let i = 0; i < 9; i++) {
+          latch.open();
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        await jobsIdle();
+        expect(latch.started()).toBe(9);
+      });
+
+      it('records one expense for the same photo update delivered twice', async () => {
+        const { bot, calls, db } = receiptBot();
+        const update = {
+          update_id: 77,
+          message: {
+            message_id: 77,
+            date: Math.floor(RECEIPT_SENT.getTime() / 1000),
+            chat: { id: ALLOWED_ID, type: 'private' as const, first_name: 'Test' },
+            from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+            photo: [
+              {
+                file_id: 'rs-receipt.jpg',
+                file_unique_id: 'l',
+                width: 1280,
+                height: 1280,
+                file_size: 200_000,
+              },
+            ],
+          },
+        };
+
+        await bot.handleUpdate(update);
+        await bot.handleUpdate(update);
+
+        expect(expenseCount(db)).toEqual({ n: 1 });
+        expect(sentTexts(calls.filter((c) => c.method === 'sendMessage'))).toEqual([
+          RS_CARD,
+          `Уже записано.\n${RS_CARD}`,
+        ]);
+      });
     });
 
     it('never logs the download URL, which carries the bot token', async () => {
@@ -8041,6 +8186,10 @@ describe('bank statements (Plan 0027)', () => {
         runMigrations(db, SENT);
         quietFirstContact(db);
         let n = 0;
+        const jobs = createJobQueue({
+          run: inProcessRunner('123456:test-token'),
+          onError: () => undefined,
+        });
         const bot = createBot({
           db,
           logger: silentLogger(),
@@ -8052,6 +8201,7 @@ describe('bank statements (Plan 0027)', () => {
           adminTelegramId: ALLOWED_ID,
           token: '123456:test-token',
           backupKeep: 14,
+          jobs,
           botInfo: {
             id: 42,
             is_bot: true,
@@ -8098,6 +8248,7 @@ describe('bank statements (Plan 0027)', () => {
             },
           },
         });
+        await jobs.idle();
         await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'stm:all' }));
         db.close();
 

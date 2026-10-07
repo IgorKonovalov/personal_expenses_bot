@@ -140,6 +140,13 @@ export default tseslint.config(
     },
   },
   {
+    // The heavy-job adapter (ADR-0042): its child loads only the decoders, never the bot.
+    files: ['src/jobs/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [botFramework], patterns: [botLayer] }],
+    },
+  },
+  {
     // The Mini App page (ADR-0025) is built alone by plain tsc and served statically: it shares
     // no code with the bot and has no runtime dependencies.
     files: ['webapp/**/*.ts'],

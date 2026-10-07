@@ -3,6 +3,8 @@ import type { UserFromGetMe } from 'grammy/types';
 import type { Db } from '../db/connection.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import type { DonationPreset } from '../domain/donations.js';
+import { runJob, telegramFileDownloader } from '../jobs/child.js';
+import { createJobQueue, type JobQueue, type JobRunner } from '../jobs/queue.js';
 import type { Logger } from '../logger.js';
 import type { LedgerKeyring } from '../services/ledgerKeys.js';
 import { callbackAnswered, callbackDispatcher } from './callbacks.js';
@@ -32,7 +34,7 @@ import { registerPaySupport } from './handlers/paysupport.js';
 import { registerPrices } from './handlers/prices.js';
 import { registerPrivacy } from './handlers/privacy.js';
 import { registerReachability } from './handlers/reachability.js';
-import { registerReceiptMedia, telegramFileDownloader } from './handlers/receipt.js';
+import { registerReceiptMedia, type HeavyJobs } from './handlers/receipt.js';
 import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
@@ -85,6 +87,9 @@ export interface BotOptions extends AdminDeps {
   // The notifier that messages the admin (ADR-0013). index.ts builds it from bot.api after
   // createBot, so it is called late-bound.
   readonly notifyAdmin?: (body: Html) => Promise<void>;
+  // The heavy-job queue for receipt photos and statement PDFs (ADR-0042). Absent: a queue that
+  // runs each job in this process.
+  readonly jobs?: JobQueue;
 }
 
 export function createBot(options: BotOptions): Bot {
@@ -177,9 +182,9 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerCategory(dm, options);
   registerText(dm, donateDeps);
   registerWebAppData(dm, options);
-  const download = telegramFileDownloader(options.token);
-  registerStatement(dm, options, download);
-  registerReceiptMedia(dm, options, download);
+  const heavy = heavyJobs(options);
+  registerStatement(dm, options, heavy);
+  registerReceiptMedia(dm, options, heavy);
   registerNonText(dm, options);
   registerEdited(dm, options);
   return dm;
@@ -226,20 +231,58 @@ function errorBoundary(logger: Logger): MiddlewareFn {
     try {
       await next();
     } catch (error) {
-      logger.error({ updateId: ctx.update.update_id, err: safeError(error) }, 'handler failed');
-      try {
-        if (ctx.callbackQuery !== undefined && !callbackAnswered(ctx)) {
-          await ctx.answerCallbackQuery();
-        }
-        if (ctx.chat !== undefined) await replyHtml(ctx, messages.genericError);
-      } catch (replyError) {
-        logger.error(
-          { updateId: ctx.update.update_id, err: safeError(replyError) },
-          'apology reply failed',
-        );
-      }
+      await apologize(ctx, logger, error);
     }
   };
+}
+
+// Logs a handler's error by its class, message and stack, and answers the update with the
+// generic apology. Never throws.
+async function apologize(ctx: Context, logger: Logger, error: unknown): Promise<void> {
+  logger.error({ updateId: ctx.update.update_id, err: safeError(error) }, 'handler failed');
+  try {
+    if (ctx.callbackQuery !== undefined && !callbackAnswered(ctx)) {
+      await ctx.answerCallbackQuery();
+    }
+    if (ctx.chat !== undefined) await replyHtml(ctx, messages.genericError);
+  } catch (replyError) {
+    logger.error(
+      { updateId: ctx.update.update_id, err: safeError(replyError) },
+      'apology reply failed',
+    );
+  }
+}
+
+// The handlers' side of the heavy-job queue (ADR-0042). A continuation runs after its update's
+// middleware has returned, outside the error boundary, so its errors get the boundary's
+// treatment here. Without `options.jobs`, jobs run in this process (tests): index.ts passes the
+// queue that forks a child per job.
+function heavyJobs(options: BotOptions): HeavyJobs {
+  const { logger } = options;
+  const queue =
+    options.jobs ??
+    createJobQueue({
+      run: inProcessRunner(options.token),
+      onError: (error) => {
+        logger.error({ err: safeError(error) }, 'heavy job continuation failed');
+      },
+    });
+  return {
+    enqueue: (ctx, job, then) =>
+      queue.enqueue(job, async (result) => {
+        try {
+          await then(result);
+        } catch (error) {
+          await apologize(ctx, logger, error);
+        }
+      }),
+  };
+}
+
+// Runs a job in this process: the same download and decode the child runs.
+export function inProcessRunner(token: string): JobRunner {
+  const download = telegramFileDownloader({ token });
+  return (job) => runJob(job, download);
 }
 
 // Name, message and stack only. pino's default serializer copies every enumerable property,

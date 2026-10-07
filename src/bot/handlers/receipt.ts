@@ -2,7 +2,7 @@ import type { Composer, Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import type { DecodeReceiptResult } from '../../domain/receipts/types.js';
-import { decodeQr } from '../../fiscal/qr.js';
+import type { Job, JobResult } from '../../jobs/queue.js';
 import { receiptItems, rememberReceiptCard, retryReceipt } from '../../services/fetchDueReceipt.js';
 import { RECEIPTS_PER_DAY, recordReceipt } from '../../services/recordReceipt.js';
 import { tidyChatOn } from '../../services/settings.js';
@@ -201,46 +201,27 @@ export function registerReceiptCard(bot: Composer<Context>, deps: HandlerDeps): 
 // Bots may download files of at most 20 MB through getFile.
 const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 
-// Fetches a file by the path getFile returned. The URL carries the bot token, so neither it nor
-// anything derived from it reaches an error message or a log.
-export type FileDownloader = (filePath: string) => Promise<Uint8Array>;
-
-// Updates run one at a time, so a download that never answers would hold every user's update
-// behind it: the whole download, headers and body, is bounded by this.
-export const DOWNLOAD_TIMEOUT_MS = 30_000;
-
-export function telegramFileDownloader(
-  token: string,
-  options: { readonly baseUrl?: string; readonly timeoutMs?: number } = {},
-): FileDownloader {
-  const baseUrl = options.baseUrl ?? 'https://api.telegram.org';
-  const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS;
-  return async (filePath) => {
-    // One signal for the request and the body read: it aborts both.
-    const signal = AbortSignal.timeout(timeoutMs);
-    let response: Response;
-    try {
-      response = await fetch(`${baseUrl}/file/bot${token}/${filePath}`, { signal });
-    } catch {
-      throw new Error('telegram file download failed');
-    }
-    if (!response.ok) throw new Error(`telegram file download failed: ${response.status}`);
-    try {
-      return new Uint8Array(await response.arrayBuffer());
-    } catch {
-      throw new Error('telegram file download failed');
-    }
-  };
+// The heavy-job queue as the handlers see it (ADR-0042): `then` runs with the job's result once
+// it settles, with the update's ctx, after the handler has returned. An error it throws is
+// logged and answered as the error boundary would. `full`: nothing was queued.
+export interface HeavyJobs {
+  readonly enqueue: (
+    ctx: Context,
+    job: Job,
+    then: (result: JobResult) => Promise<void>,
+  ) => 'queued' | 'full';
 }
 
 // A photo, or an image sent as a file, in DM: the first QR text that is a receipt URL runs the
 // pasted-link path (ADR-0019), and a recorded or duplicate receipt's image is then deleted. An
 // image with no such QR gets one hint and stays. A non-image document falls through to the
-// help reply. Register before the non-text handler.
+// help reply. Register before the non-text handler. The download and the decode run in the
+// heavy-job queue; the handler returns once the job is queued, and the continuation does the
+// rest. A redelivered photo queues a second job, and recording dedups it (ADR-0018).
 export function registerReceiptMedia(
   bot: Composer<Context>,
   deps: AdminDeps,
-  download: FileDownloader,
+  jobs: HeavyJobs,
 ): void {
   bot.on(['message:photo', 'message:document'], async (ctx, next) => {
     const { document, photo } = ctx.message;
@@ -267,51 +248,66 @@ export function registerReceiptMedia(
       return;
     }
 
-    const now = deps.now();
-    const user = ensureUser(deps, ctx.from.id, now);
+    ensureUser(deps, ctx.from.id, deps.now());
     const { file_path: filePath } = await ctx.api.getFile(file.file_id);
     if (filePath === undefined) {
       deps.logger.info({ ...read, outcome: 'noFilePath' }, 'receipt image read');
       await replyHtml(ctx, messages.receiptPhotoNoQr);
       return;
     }
+    const fromId = ctx.from.id;
+    const occurredAt = new Date(ctx.message.date * 1000);
+    // From the hand-off: the wait in the queue, the child's start, the download and the decode.
     const started = performance.now();
-    const qr = await decodeQr(await download(filePath));
-    const decoded =
-      qr.kind === 'none'
-        ? undefined
-        : qr.texts.map(decodeReceiptUrl).find((result) => result.kind !== 'notReceipt');
-    deps.logger.info(
-      {
-        ...read,
-        ms: Math.round(performance.now() - started),
-        outcome: decoded !== undefined ? 'receipt' : qr.kind === 'none' ? 'noQr' : 'notReceipt',
-        ...(qr.kind === 'none' && qr.detected !== undefined ? { detected: qr.detected } : {}),
-        ...(qr.kind === 'none' && qr.pixelDecode !== undefined
-          ? { pixelDecode: qr.pixelDecode }
-          : {}),
-        ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length, pass: qr.pass } : {}),
-      },
-      'receipt image read',
-    );
-    if (decoded === undefined) {
-      await replyHtml(
-        ctx,
-        qr.kind === 'none' && qr.detected !== undefined
-          ? messages.receiptPhotoUnreadable
-          : messages.receiptPhotoNoQr,
+    const queued = jobs.enqueue(ctx, { kind: 'qr', filePath }, async (job) => {
+      const ms = Math.round(performance.now() - started);
+      if (job.kind === 'timeout') {
+        deps.logger.info({ ...read, ms, outcome: 'timeout' }, 'receipt image read');
+        await replyHtml(ctx, messages.receiptPhotoUnreadable);
+        return;
+      }
+      if (job.kind !== 'qr') {
+        throw new Error(`receipt job failed: ${job.kind === 'failed' ? job.error : job.kind}`);
+      }
+      const qr = job.result;
+      const decoded =
+        qr.kind === 'none'
+          ? undefined
+          : qr.texts.map(decodeReceiptUrl).find((result) => result.kind !== 'notReceipt');
+      deps.logger.info(
+        {
+          ...read,
+          ms,
+          outcome: decoded !== undefined ? 'receipt' : qr.kind === 'none' ? 'noQr' : 'notReceipt',
+          ...(qr.kind === 'none' && qr.detected !== undefined ? { detected: qr.detected } : {}),
+          ...(qr.kind === 'none' && qr.pixelDecode !== undefined
+            ? { pixelDecode: qr.pixelDecode }
+            : {}),
+          ...(qr.kind === 'decoded' ? { qrCount: qr.texts.length, pass: qr.pass } : {}),
+        },
+        'receipt image read',
       );
-      return;
-    }
-    const outcome = await answerReceipt(ctx, deps, {
-      user,
-      decoded,
-      occurredAt: new Date(ctx.message.date * 1000),
-      now,
+      if (decoded === undefined) {
+        await replyHtml(
+          ctx,
+          qr.kind === 'none' && qr.detected !== undefined
+            ? messages.receiptPhotoUnreadable
+            : messages.receiptPhotoNoQr,
+        );
+        return;
+      }
+      // Read again: the user may have switched ledgers while the job ran.
+      const now = deps.now();
+      const user = ensureUser(deps, fromId, now);
+      const outcome = await answerReceipt(ctx, deps, { user, decoded, occurredAt, now });
+      // Recorded or already recorded: the card carries everything the photo said.
+      if (outcome === 'recorded' || outcome === 'duplicate') {
+        await deleteRecordedMessage(ctx, deps, 'receiptPhoto');
+      }
     });
-    // Recorded or already recorded: the card carries everything the photo said.
-    if (outcome === 'recorded' || outcome === 'duplicate') {
-      await deleteRecordedMessage(ctx, deps, 'receiptPhoto');
+    if (queued === 'full') {
+      deps.logger.info({ ...read, outcome: 'busy' }, 'receipt image read');
+      await replyHtml(ctx, messages.heavyJobBusy);
     }
   });
 }

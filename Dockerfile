@@ -32,6 +32,21 @@ RUN node --input-type=module -e " \
   const receipt = decodeReceiptUrl(result.texts[0] ?? ''); \
   if (receipt.kind !== 'receipt' || receipt.receipt.totalMinor !== 82912 \
     || receipt.receipt.currency !== 'RSD') process.exit(1);"
+# The heavy-job child (ADR-0042) must start from dist/ on the prod node_modules: forked the way
+# the bot forks it, it downloads the same fixture from a local stand-in for the Bot API's file
+# host and decodes its QR.
+RUN node --input-type=module -e " \
+  const { readFileSync } = await import('node:fs'); \
+  const { createServer } = await import('node:http'); \
+  const { forkRunner } = await import('./dist/jobs/queue.js'); \
+  const image = readFileSync('src/fiscal/qr.fixtures/rs-receipt.jpg'); \
+  const server = createServer((_req, res) => { res.end(image); }); \
+  await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); }); \
+  const baseUrl = 'http://127.0.0.1:' + server.address().port; \
+  const run = forkRunner({ download: { token: 'build-check', baseUrl } }); \
+  const result = await run({ kind: 'qr', filePath: 'f.jpg' }, new AbortController().signal); \
+  server.close(); \
+  if (result.kind !== 'qr' || result.result.kind !== 'decoded') process.exit(1);"
 
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 

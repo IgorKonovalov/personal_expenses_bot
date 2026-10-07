@@ -17,6 +17,7 @@ import { createRsFetcher } from './fiscal/rsFetcher.js';
 import { createNbsFetcher } from './fx/nbsFetcher.js';
 import { startRateWorker } from './fx/rateWorker.js';
 import { createHeartbeat, heartbeatPath } from './heartbeat.js';
+import { createJobQueue, forkRunner } from './jobs/queue.js';
 import { createLogger } from './logger.js';
 import { register } from './scheduler/types.js';
 import { startScheduler } from './scheduler/worker.js';
@@ -68,6 +69,23 @@ const keys = createLedgerKeyring(() => new Date());
 // Filled once the bot's API exists; /donate reads it on every call.
 const donationLinks: DonationLinks = new Map();
 
+// Receipt photos and statement PDFs (ADR-0042): one job at a time, each in a forked child, so no
+// update waits behind a decode. The token reaches the child over IPC.
+const jobs = createJobQueue({
+  run: forkRunner({
+    download: { token: config.botToken },
+    onReady: (ms) => {
+      logger.debug({ startupMs: Math.round(ms) }, 'job child ready');
+    },
+  }),
+  onError: (error) => {
+    logger.error(
+      { err: error instanceof Error ? error.name : typeof error },
+      'heavy job continuation failed',
+    );
+  },
+});
+
 const bot = createBot({
   token: config.botToken,
   adminTelegramId: config.adminTelegramId,
@@ -85,6 +103,7 @@ const bot = createBot({
   // Late-bound: the notifier needs bot.api, built just below. No update is handled before
   // polling starts.
   notifyAdmin: (body) => notifyAdmin(body),
+  jobs,
 });
 const notifyAdmin = adminNotifier(bot.api, config.adminTelegramId);
 
@@ -173,7 +192,8 @@ const heartbeat = createHeartbeat(heartbeatPath(config.databasePath), (error) =>
 
 // Shutdown order: the heartbeat and backup timers, then the receipt and rate workers and their
 // fetches in flight and the scheduler's tick in flight, then polling and any backup in flight,
-// then the DB. With nothing left on the event loop the process exits 0 on its own.
+// then the heavy jobs already queued and their continuations, then the DB. With nothing left on
+// the event loop the process exits 0 on its own.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     logger.info({ signal }, 'stopping');
@@ -183,6 +203,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     const backupSettled = backups?.stop();
     void Promise.all([receiptWorker.stop(), rateWorker.stop(), scheduler.stop()])
       .then(() => Promise.all([bot.stop(), backupSettled]))
+      .then(() => jobs.idle())
       .finally(() => {
         db.close();
         logger.info('stopped');
