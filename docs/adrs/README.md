@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0041`
+- **Next free number:** `0042`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -47,3 +47,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0038](0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md) | Long lists collapse in Telegram's expandable quote, and the user's recorded messages are deleted only when they opt in | accepted (2026-10-06) |
 | [0039](0039-products-from-keyword-rules-and-per-user-overrides.md) | Receipt items map to products through built-in keyword rules plus per-user overrides, and unit prices are computed in exact integers | accepted (2026-10-07), with an outcome |
 | [0040](0040-expense-card-inside-a-screen-anchor.md) | An expense card can be drawn inside a screen anchor, and only there does it carry a back row | proposed (2026-10-06) |
+| [0041](0041-product-matches-memoized-in-process-not-persisted.md) | A receipt item's product match is memoized in process, not persisted per item | proposed (2026-10-07) |
