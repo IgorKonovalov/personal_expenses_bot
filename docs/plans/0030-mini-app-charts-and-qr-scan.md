@@ -185,7 +185,7 @@ interface ChartPayloadV1 {
 |---|---|---|---|
 | 1: Walking skeleton: /month opens a pie chart | dev | done | 3a994ba |
 | 2: Publish and measure the URL limit | human | owed | |
-| 3: Payload budget and the trend chart | dev | done | committed with this row |
+| 3: Payload budget and the trend chart | dev | done | 0112fca |
 | 4: Live check on a phone | human | not started | |
 
 ### Notes
@@ -224,10 +224,19 @@ interface ChartPayloadV1 {
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `src/domain/chartPayload.ts` (payload v1, base64url encoder,
+  `CHART_PAYLOAD_BUDGET` 2048 with folding and trend dropping), `src/services/periodTrend.ts`,
+  the chart button in `src/bot/handlers/summary.ts`, and the page's chart mode
+  (`webapp/src/payload.ts`, `pie.ts`, `bars.ts`, `main.ts`). Commits 3a994ba, 0112fca.
+- **User-visible surface changed:** private `/week` and `/month` screens carry a «📈 Диаграмма»
+  `web_app` button when `WEBAPP_URL` is set; the Mini App page opened with `#d=` shows a pie,
+  its legend, rateless-currency lines and 6 trend bars. `webapp/src/messages.ts` `openFromBot`
+  names the chart button; new `chartBroken` line. README Mini App section covers charts.
+- **Gate at the tip (0112fca):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0,
+  129 files, 1793 tests; `pnpm build` exit 0; `pnpm build:webapp` exit 0;
+  `node scripts/check-doc-links.mjs` exit 0, 291 links.
+- **Outstanding `human` phases:** Phase 2 (publish, measure the URL limit; owed after the merge)
+  and Phase 4 (live check on a phone). Neither blocks the merge.
 
 ## Followups
 
