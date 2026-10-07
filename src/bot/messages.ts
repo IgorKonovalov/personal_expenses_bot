@@ -288,6 +288,35 @@ interface PeriodItemsView {
   readonly withoutReceipt: number;
 }
 
+// The summary's category picker (Plan 0037): the digest's blocks, unfolded.
+interface DrillPickerView {
+  readonly ledger: LedgerRef;
+  readonly period: PeriodRef;
+  readonly currencies: SummaryView['currencies'];
+  readonly convertedFrom: readonly Money[];
+}
+
+// One page of a category's expenses in a period: its totals as the digest shows them (the first
+// block `≈` when it holds converted spending), how many expenses in all, and the page's lines.
+interface DrillListView {
+  readonly ledger: LedgerRef;
+  readonly period: PeriodRef;
+  // Null: the expenses without a category.
+  readonly categoryName: string | null;
+  readonly totals: readonly Money[];
+  readonly convertedFrom: readonly Money[];
+  readonly count: number;
+  readonly lines: readonly {
+    // The line's number across all pages, 1-based.
+    readonly n: number;
+    readonly occurredOn: LocalDate;
+    readonly money: Money;
+    readonly description: string;
+    // A shared ledger's author, null when unnamed. Absent in a personal ledger.
+    readonly author?: string | null;
+  }[];
+}
+
 // A bank statement's preview (Plan 0027): the new purchases a tap would record, and one page of
 // the listed rows. Merchants are bank text and go through `html`.
 interface StatementPreviewView {
@@ -386,6 +415,13 @@ function periodTitle(period: PeriodRef): string {
     : `Неделя, ${weekRange(period, GENITIVE_MONTHS)}`;
 }
 
+// After `за`: `сентябрь 2026`, `неделю 28 сентября – 4 октября`.
+function periodAfterZa(period: PeriodRef): string {
+  return period.kind === 'month'
+    ? periodTitle(period).toLowerCase()
+    : `неделю ${weekRange(period, GENITIVE_MONTHS)}`;
+}
+
 // Telegram rejects a message over 4096 characters of visible text (ADR-0012): tags and
 // entity escapes don't count.
 const MAX_VISIBLE_CHARS = 4096;
@@ -400,6 +436,12 @@ function amountOnly(money: Money): string {
 }
 
 const noExpenses = html`Трат нет. Отправьте, например, «450 кофе».`;
+
+// The name of the expenses without a category, wherever they are one line or one button.
+const UNCATEGORIZED = 'Без категории';
+
+// A shared ledger's member with no stored name, where a line names who recorded it.
+const UNNAMED_AUTHOR = 'участник';
 
 const helpDonateLine = html`Бот бесплатный. Поддержать: /donate`;
 
@@ -576,6 +618,30 @@ function expenseCountWords(n: number): string {
   return `${n} расходов`;
 }
 
+// `1 трата`, `2 траты`, `5 трат`, `21 трата`.
+function spendCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} трат`;
+  if (ones === 1) return `${n} трата`;
+  if (ones >= 2 && ones <= 4) return `${n} траты`;
+  return `${n} трат`;
+}
+
+// A drill-down list shows at most this many code points of a description.
+const MAX_LIST_DESCRIPTION = 40;
+
+// `3. 28 сен — 450.00 RSD · кофе`, with ` · Анна` after it in a shared ledger.
+function drillLine(line: DrillListView['lines'][number]): Html {
+  const codePoints = Array.from(line.description);
+  const description =
+    codePoints.length <= MAX_LIST_DESCRIPTION
+      ? line.description
+      : `${codePoints.slice(0, MAX_LIST_DESCRIPTION).join('')}…`;
+  const author = line.author === undefined ? '' : ` · ${line.author ?? UNNAMED_AUTHOR}`;
+  return html`${line.n}. ${shortDate(line.occurredOn)} — ${formatMoney(line.money)} · ${description}${author}`;
+}
+
 // `1 категория`, `2 категории`, `5 категорий`, `21 категория`.
 function categoryCountWords(n: number): string {
   const tens = n % 100;
@@ -630,7 +696,7 @@ function pushReportBlocks(view: PushReportView): Html[] {
                 converted.lines,
                 converted.currency,
                 (line) =>
-                  html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: converted.currency })} (${changeText(line.change, converted.currency)})`,
+                  html`${line.name ?? UNCATEGORIZED}: ${formatMoney({ amountMinor: line.amountMinor, currency: converted.currency })} (${changeText(line.change, converted.currency)})`,
               ),
             ],
             '\n',
@@ -644,7 +710,7 @@ function pushReportBlocks(view: PushReportView): Html[] {
           c.lines,
           c.currency,
           (line) =>
-            html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: c.currency })}`,
+            html`${line.name ?? UNCATEGORIZED}: ${formatMoney({ amountMinor: line.amountMinor, currency: c.currency })}`,
         ),
       ],
       '\n',
@@ -794,7 +860,7 @@ function periodItemLine(item: ItemGroupView['items'][number], withDate: boolean)
 
 // `<b>Еда</b> · 613.98 RSD · 4 позиции`, with ` (продолжение)` after the name on a later page.
 function itemGroupLine(group: ItemGroupView, continued: boolean): Html {
-  return html`<b>${group.categoryName ?? 'Без категории'}</b>${continued ? ' (продолжение)' : ''} · ${group.totals.map(formatMoney).join(' + ')} · ${itemCount(group.items.length)}`;
+  return html`<b>${group.categoryName ?? UNCATEGORIZED}</b>${continued ? ' (продолжение)' : ''} · ${group.totals.map(formatMoney).join(' + ')} · ${itemCount(group.items.length)}`;
 }
 
 // The items view's pages: the header on each, then per category its line and its items in an
@@ -1620,7 +1686,7 @@ export const messages = {
           html`<b>${index < converted.length && approximate ? '≈ ' : ''}${formatMoney({ amountMinor: block.totalMinor, currency: block.currency })}</b>`,
           ...block.lines.map(
             (line) =>
-              html`${line.name ?? 'Без категории'}: ${formatMoney({ amountMinor: line.amountMinor, currency: block.currency })}`,
+              html`${line.name ?? UNCATEGORIZED}: ${formatMoney({ amountMinor: line.amountMinor, currency: block.currency })}`,
           ),
         ],
         '\n',
@@ -1712,7 +1778,7 @@ export const messages = {
     currency: converted.currency,
     totalLabel: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
     lines: converted.lines.map((line) => [
-      line.name ?? 'Без категории',
+      line.name ?? UNCATEGORIZED,
       line.amountMinor,
       formatMoney({ amountMinor: line.amountMinor, currency: converted.currency }),
     ]),
@@ -2263,7 +2329,7 @@ export const messages = {
                 expandableQuote(
                   c.lines.map(
                     (line) =>
-                      html`${line.name ?? 'Без категории'}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
+                      html`${line.name ?? UNCATEGORIZED}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
                   ),
                 ),
               ]),
@@ -2284,6 +2350,59 @@ export const messages = {
       '\n\n',
     );
   },
+  uncategorized: UNCATEGORIZED,
+  unnamedAuthor: UNNAMED_AUTHOR,
+  // The summary's drill-down (Plan 0037): [По категориям] turns the digest into a category
+  // picker, a category into its numbered expense list, a number into that expense's card.
+  drillButton: 'По категориям',
+  drillCategoryButton: (name: string | null): string => name ?? UNCATEGORIZED,
+  drillNumberButton: (n: number): string => String(n),
+  // The digest's blocks with their lines unfolded, then the prompt. Too long for one message,
+  // the totals alone.
+  drillPicker: ({ ledger, period, currencies, convertedFrom }: DrillPickerView): Html => {
+    const header = html`<b>${periodTitle(period)} — «${ledgerName(ledger)}»</b>`;
+    const prompt = html`Выберите категорию, чтобы увидеть её траты.`;
+    const total = (c: DrillPickerView['currencies'][number], index: number) =>
+      html`<b>${index === 0 && convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: c.totalMinor, currency: c.currency })}</b>`;
+    const blocks = currencies.map((c, index) =>
+      joinHtml(
+        [
+          total(c, index),
+          ...c.lines.map(
+            (line) =>
+              html`${line.name ?? UNCATEGORIZED}: ${amountOnly({ amountMinor: line.amountMinor, currency: c.currency })}`,
+          ),
+        ],
+        '\n',
+      ),
+    );
+    const full = joinHtml([header, ...blocks, prompt], '\n\n');
+    if (visibleLength(full) <= MAX_VISIBLE_CHARS) return full;
+    return joinHtml([joinHtml([header, ...currencies.map(total)], '\n'), prompt], '\n\n');
+  },
+  // `<b>Продукты · сентябрь 2026</b>` / `«Личные расходы» · 3 траты · ≈ 2 461.94 RSD, 5 000.00
+  // KZT`, a blank line, then the page's numbered lines.
+  drillList: (view: DrillListView): Html =>
+    joinHtml(
+      [
+        joinHtml(
+          [
+            html`<b>${view.categoryName ?? UNCATEGORIZED} · ${periodTitle(view.period).toLowerCase()}</b>`,
+            html`«${ledgerName(view.ledger)}» · ${spendCountWords(view.count)} · ${view.totals
+              .map(
+                (money, index) =>
+                  `${index === 0 && view.convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney(money)}`,
+              )
+              .join(', ')}`,
+          ],
+          '\n',
+        ),
+        joinHtml(view.lines.map(drillLine), '\n'),
+      ],
+      '\n\n',
+    ),
+  drillListEmpty: (view: Pick<DrillListView, 'period' | 'categoryName'>): Html =>
+    html`В категории «${view.categoryName ?? UNCATEGORIZED}» за ${periodAfterZa(view.period)} трат нет.`,
   // The summary push (ADR-0031): the closed period's report, sent at 09:00 local the day after
   // it ends. Each total and category carries its change against the period before; then the
   // budget's end, the largest expenses, the conversion notes and the /donate line.

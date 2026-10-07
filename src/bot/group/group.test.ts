@@ -836,6 +836,20 @@ describe('group reports (Phase 3)', () => {
     expect(expected).not.toContain('секрет');
   });
 
+  it('carries no drill-down button: the group report has no per-user anchor (Plan 0037)', async () => {
+    const { calls, say, tap } = await october();
+
+    await say(STRANGER_ID, '/month', 110, { date: OCT_NOW });
+    await tap(STRANGER_ID, 'sum:m:2026-10', { chatId: GROUP_ID, messageId: 120 });
+
+    expect(calls.map((c) => c.method)).toEqual([
+      'sendMessage',
+      'answerCallbackQuery',
+      'editMessageText',
+    ]);
+    expect(JSON.stringify(calls)).not.toContain('drl:');
+  });
+
   it("shows A's DM month from the personal ledger alone", async () => {
     const { bot, calls, dm } = await october();
     returnSentMessages(bot);

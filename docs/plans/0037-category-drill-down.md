@@ -1,6 +1,6 @@
 # 0037: Category drill-down: from /week or /month to a category's expenses, and on to each expense's card
 
-> **Status:** approved (2026-10-07)
+> **Status:** in-progress (2026-10-07)
 > **Created:** 2026-10-06
 > **Related ADRs:** [ADR-0040](../adrs/0040-expense-card-inside-a-screen-anchor.md) (the card
 > inside a screen anchor), [ADR-0011](../adrs/0011-navigation-model.md) (cards, screens, the
@@ -235,12 +235,27 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: The picker and the list, read-only | dev | not started | |
+| 1: The picker and the list, read-only | dev | done | committed with this row |
 | 2: The card in the drill-down | dev | not started | |
 | 3: Edit prompts from the drill-down card | dev | not started | |
 | 4: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/bot/bot.test.ts` (outside `Files touched`) had its six summary-keyboard pins
+  updated to the new `[По категориям] [Позиции]` row.
+- Phase 1: `src/bot/messages.ts` held six inline `'Без категории'` literals, not four; all six now
+  read `UNCATEGORIZED`, exposed as `messages.uncategorized`.
+- Phase 1: done-when "the pager reads `[◀] [3/3] [▶]`" not met as stated. The list uses the shared
+  `pagerRow` (`src/bot/nav.ts`), which drops `[▶]` on the last page, so page 3 of 3 reads
+  `[◀] [3/3]`; that is what `drill.test.ts` pins.
+- Phase 1: `drillListEmpty` reads `за сентябрь 2026` for a month and `за неделю 28 сентября – 4
+  октября` for a week, not the lower-cased week title (`за неделя, …`).
+- Phase 1: `messages.unnamedAuthor` did not exist at the top level (only inside `exportColumns`);
+  added as `'участник'`. `drillPicker` shows the digest's blocks unfolded without the conversion
+  notes.
+- Phase 1: the list's `[« Назад]` page comes from `CategoryExpenses.pickerIndex`, computed in the
+  service from the same rows; no `src/db/expenses.ts` change.
 
 ### Close triggers
 

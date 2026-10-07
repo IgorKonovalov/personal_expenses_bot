@@ -3256,7 +3256,7 @@ describe('/week and /month', () => {
           reply_markup: {
             inline_keyboard: [
               [button('◀ Август', 'sum:m:2026-08')],
-              [button('Позиции', 'itm:m:2026-09:1')],
+              [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
             ],
           },
           ...htmlParseMode,
@@ -3279,7 +3279,10 @@ describe('/week and /month', () => {
           reply_markup: {
             inline_keyboard: [
               [button('◀ 21–27 сен', 'sum:w:2026-09-21')],
-              [button('Позиции', 'itm:w:2026-09-28:1')],
+              [
+                button('По категориям', 'drl:p:w:2026-09-28:1'),
+                button('Позиции', 'itm:w:2026-09-28:1'),
+              ],
             ],
           },
           ...htmlParseMode,
@@ -3340,7 +3343,7 @@ describe('/week and /month', () => {
         '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\n<blockquote expandable>Продукты: 100.00</blockquote>',
         [
           [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-          [button('Позиции', 'itm:m:2026-08:1')],
+          [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции', 'itm:m:2026-08:1')],
         ],
       ),
     ]);
@@ -3362,7 +3365,10 @@ describe('/week and /month', () => {
             button('◀ 14–20 сен', 'sum:w:2026-09-14'),
             button('28 сен – 4 окт ▶', 'sum:w:2026-09-28'),
           ],
-          [button('Позиции', 'itm:w:2026-09-21:1')],
+          [
+            button('По категориям', 'drl:p:w:2026-09-21:1'),
+            button('Позиции', 'itm:w:2026-09-21:1'),
+          ],
         ],
       ),
     );
@@ -3485,7 +3491,7 @@ describe('/week and /month', () => {
       const markup = markupOf(calls[0]);
       expect(markup.inline_keyboard.slice(0, -1)).toEqual([
         [button('◀ Август', 'sum:m:2026-08')],
-        [button('Позиции', 'itm:m:2026-09:1')],
+        [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
       ]);
       const chart = chartOf(markup);
       expect(chart.base).toBe(webappUrl);
@@ -3562,7 +3568,7 @@ describe('/week and /month', () => {
       const markup = markupOf(calls[1]);
       expect(markup.inline_keyboard.slice(0, -1)).toEqual([
         [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-        [button('Позиции', 'itm:m:2026-08:1')],
+        [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции', 'itm:m:2026-08:1')],
       ]);
       expect(chartOf(markup).payload).toEqual({
         v: 1,

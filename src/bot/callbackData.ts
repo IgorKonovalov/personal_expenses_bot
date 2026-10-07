@@ -234,6 +234,32 @@ export function periodItemsData(period: Period, page: number): string {
   );
 }
 
+// The summary's drill-down (Plan 0037), on the summary screen's ledger, so only its anchor accepts
+// these. `drl:p:<m|w>:<key>:<page>` (at most 23 bytes) shows a page of the period's category
+// picker; `drl:c:<m|w>:<key>:<categoryId|n>:<page>` (at most 40 bytes) a page of one category's
+// expenses, `n` the uncategorized ones; `drl:e:<uuid>` (42 bytes) opens an expense's card in the
+// anchor, and the card's `drl:back` returns to its list (ADR-0040).
+export const DRILL_PICKER = /^drl:p:([mw]):([0-9-]{1,10}):(\d{1,4})$/;
+export const DRILL_LIST = /^drl:c:([mw]):([0-9-]{1,10}):(\d{1,16}|n):(\d{1,4})$/;
+export const DRILL_EXPENSE = /^drl:e:([0-9a-f-]{36})$/;
+export const DRILL_BACK = 'drl:back';
+
+export function drillPickerData(period: Period, page: number): string {
+  return assertCallbackData(
+    `drl:p:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}:${page}`,
+  );
+}
+
+export function drillListData(period: Period, categoryId: CategoryId | null, page: number): string {
+  return assertCallbackData(
+    `drl:c:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}:${categoryId ?? 'n'}:${page}`,
+  );
+}
+
+export function drillExpenseData(expenseId: ExpenseId): string {
+  return assertCallbackData(`drl:e:${expenseId}`);
+}
+
 // [Позиции] under /today: `itm:d:<YYYY-MM-DD>:<page>` (at most 21 bytes). It acts on the active
 // ledger at tap time, on whichever message carries it.
 export const DAY_ITEMS = /^itm:d:(\d{4}-\d{2}-\d{2}):(\d{1,4})$/;

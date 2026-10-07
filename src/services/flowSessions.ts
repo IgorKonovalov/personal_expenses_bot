@@ -32,10 +32,31 @@ export interface CategoriesScreen {
   readonly fromSettings?: true;
 }
 
-// A /week or /month summary. Paging reads this ledger, not the one active at tap time.
+// A summary's period by its pager key (periodKey()).
+export interface PeriodRef {
+  readonly kind: 'week' | 'month';
+  readonly key: string;
+}
+
+// The summary's drill-down (Plan 0037): the category picker on a page, or one category's
+// expense list on a page; `expenseId` once a number opened that expense's card in the anchor
+// (ADR-0040). `categoryId` null is the uncategorized list.
+export type Drill =
+  | { readonly level: 'picker'; readonly period: PeriodRef; readonly page: number }
+  | {
+      readonly level: 'list';
+      readonly period: PeriodRef;
+      readonly categoryId: CategoryId | null;
+      readonly page: number;
+      readonly expenseId?: ExpenseId;
+    };
+
+// A /week or /month summary. Paging reads this ledger, not the one active at tap time. Without
+// `drill`, the screen shows the digest (or its items).
 export interface SummaryScreen {
   readonly name: 'summary';
   readonly ledgerId: LedgerId;
+  readonly drill?: Drill;
 }
 
 // An expense card holding an edit prompt: the card is the edit flow's anchor.
@@ -411,7 +432,12 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       : { name };
   }
   if (name === 'summary' && typeof parsed?.ledgerId === 'string') {
-    return { name, ledgerId: parsed.ledgerId as LedgerId };
+    const drill = parseDrill(parsed.drill);
+    return {
+      name,
+      ledgerId: parsed.ledgerId as LedgerId,
+      ...(drill === undefined ? {} : { drill }),
+    };
   }
   if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
     const { names, position, product, newProduct } = parsed;
@@ -541,6 +567,35 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
     return { kind, ledgerId, categoryId: parsed.categoryId as CategoryId };
   }
   return undefined;
+}
+
+// A damaged drill reads as none: the screen is then the digest's.
+function parseDrill(value: unknown): Drill | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { level, period, page, categoryId, expenseId } = value as Record<string, unknown>;
+  const ref = period as Record<string, unknown> | undefined;
+  const kind = ref?.kind;
+  if (
+    (kind !== 'week' && kind !== 'month') ||
+    typeof ref?.key !== 'string' ||
+    !Number.isSafeInteger(page)
+  ) {
+    return undefined;
+  }
+  const at: { period: PeriodRef; page: number } = {
+    period: { kind, key: ref.key },
+    page: page as number,
+  };
+  if (level === 'picker') return { level, ...at };
+  if (level !== 'list' || (categoryId !== null && !Number.isSafeInteger(categoryId))) {
+    return undefined;
+  }
+  return {
+    level,
+    ...at,
+    categoryId: categoryId as CategoryId | null,
+    ...(typeof expenseId === 'string' ? { expenseId: expenseId as ExpenseId } : {}),
+  };
 }
 
 function parseDirection(value: unknown): DebtDirection | undefined {

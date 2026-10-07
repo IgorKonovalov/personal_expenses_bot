@@ -19,6 +19,7 @@ import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
 import { registerDebts } from './handlers/debts.js';
 import { registerDeleteAccount } from './handlers/deleteAccount.js';
+import { registerDrill } from './handlers/drill.js';
 import {
   registerDonate,
   registerPreCheckout,
@@ -156,6 +157,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerSummary(dm, options);
   registerSummaryPush(dm, options);
   registerItems(dm, options);
+  registerDrill(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);
   registerRecurring(dm, options);

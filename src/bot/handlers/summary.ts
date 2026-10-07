@@ -2,7 +2,7 @@ import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import { encodeChartPayload } from '../../domain/chartPayload.js';
 import { parsePeriod, type Period } from '../../domain/periods.js';
-import type { SummaryScreen } from '../../services/flowSessions.js';
+import { setAnchor, type SummaryScreen } from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import {
   currentPeriodSummary,
@@ -11,7 +11,12 @@ import {
 } from '../../services/periodSummary.js';
 import { periodTrend } from '../../services/periodTrend.js';
 import type { HandlerDeps } from '../bot.js';
-import { SUMMARY_PAGE, periodItemsData, summaryPageData } from '../callbackData.js';
+import {
+  SUMMARY_PAGE,
+  drillPickerData,
+  periodItemsData,
+  summaryPageData,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
 import { renderAnchor, requireScreen, showScreen, type ScreenView } from '../screens.js';
@@ -21,7 +26,7 @@ import { ensureUser } from './start.js';
 // /week and /month (ADR-0011 screens): a period's totals by currency and category, with a pager
 // that names the neighbouring periods and pages in place. Paging reads the ledger the screen
 // was opened on. [Позиции] under the pager turns the screen into the period's receipt items
-// (handlers/items.ts).
+// (handlers/items.ts), and [По категориям] into its drill-down (handlers/drill.ts).
 
 // The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with the
 // trend of its converted totals under it.
@@ -32,11 +37,20 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
       ? []
       : [InlineKeyboard.text(messages.periodNext(summary.next), summaryPageData(summary.next))]),
   ];
+  // [По категориям] opens the drill-down's category picker (handlers/drill.ts); a period with no
+  // expenses has nothing to pick.
+  const drill =
+    summary.currencies.length === 0
+      ? []
+      : [InlineKeyboard.text(messages.drillButton, drillPickerData(summary.period, 1))];
   return {
     text: messages.periodSummary(summary),
     markup: InlineKeyboard.from([
       row,
-      [InlineKeyboard.text(messages.periodItemsButton, periodItemsData(summary.period, 1))],
+      [
+        ...drill,
+        InlineKeyboard.text(messages.periodItemsButton, periodItemsData(summary.period, 1)),
+      ],
       ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
     ]),
   };
@@ -135,6 +149,13 @@ export function registerSummary(bot: Composer<Context>, deps: HandlerDeps): void
         tap.anchor,
         summaryView(summary, chartUrlOf(ctx, deps, tap.user, summary)),
       );
+      // The picker's [« Назад] lands here: the digest leaves the drill-down.
+      if (screen.drill !== undefined) {
+        setAnchor(deps, tap.user, {
+          ...tap.anchor,
+          screen: { name: 'summary', ledgerId: screen.ledgerId },
+        });
+      }
     }
   });
 }

@@ -73,6 +73,61 @@ describe('periodSummary folds its category lines (ADR-0038)', () => {
   });
 });
 
+describe('the summary drill-down (Plan 0037)', () => {
+  const week = {
+    ledger: { kind: 'personal', name: '' },
+    period: { kind: 'week', from: '2026-09-28' as LocalDate, to: '2026-10-04' as LocalDate },
+  } as const;
+
+  it('names the uncategorized line and button with messages.uncategorized', () => {
+    expect(messages.uncategorized).toBe('Без категории');
+    expect(messages.drillCategoryButton(null)).toBe(messages.uncategorized);
+    expect(
+      messages.periodSummary({
+        ...week,
+        currencies: [
+          { currency: 'RSD', totalMinor: 7000, lines: [{ name: null, amountMinor: 7000 }] },
+        ],
+      }),
+    ).toContain(`<blockquote expandable>${messages.uncategorized}: 70.00</blockquote>`);
+  });
+
+  it('marks a converted first total with ≈ in the list header and names an unnamed author', () => {
+    const text = messages.drillList({
+      ledger: { kind: 'shared', name: 'Дом' },
+      period: week.period,
+      categoryName: null,
+      totals: [
+        { currency: 'RSD', amountMinor: 246194 },
+        { currency: 'KZT', amountMinor: 500000 },
+      ],
+      convertedFrom: [{ currency: 'EUR', amountMinor: 1074 }],
+      count: 21,
+      lines: [
+        {
+          n: 9,
+          occurredOn: '2026-10-01' as LocalDate,
+          money: { currency: 'EUR', amountMinor: 1074 },
+          description: 'такси',
+          author: null,
+        },
+      ],
+    });
+
+    expect(text).toBe(
+      '<b>Без категории · неделя, 28 сентября – 4 октября</b>\n' +
+        '«Дом» · 21 трата · ≈ 2 461.94 RSD, 5 000.00 KZT\n\n' +
+        '9. 1 окт — 10.74 EUR · такси · участник',
+    );
+  });
+
+  it('says a week with nothing left in the category in the accusative', () => {
+    expect(messages.drillListEmpty({ period: week.period, categoryName: 'Кафе' })).toBe(
+      'В категории «Кафе» за неделю 28 сентября – 4 октября трат нет.',
+    );
+  });
+});
+
 describe('/prices (ADR-0039)', () => {
   it('renders a product by month, newest first, with every currency, then all time', () => {
     const line = (
