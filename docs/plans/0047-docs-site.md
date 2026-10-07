@@ -1,6 +1,6 @@
 # 0047: A Russian docs site: a user guide with chats generated from the real bot, and an architecture section
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0048](../adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)
 

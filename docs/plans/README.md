@@ -13,7 +13,7 @@ status and date. What a plan did lives in the plan.
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0045](0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | approved (2026-10-07) |
 | [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | approved (2026-10-07) |
-| [0047](0047-docs-site.md) | A Russian docs site: a user guide with chats generated from the real bot, and an architecture section | draft (2026-10-07) |
+| [0047](0047-docs-site.md) | A Russian docs site: a user guide with chats generated from the real bot, and an architecture section | approved (2026-10-07) |
 
 ## Recently closed
 
