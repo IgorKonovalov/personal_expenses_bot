@@ -145,7 +145,7 @@ interface BarsSection {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: a tag report opens a donut | dev | done | 27d3375 |
-| 2: A product's prices by month | dev | done | committed with this row |
+| 2: A product's prices by month | dev | done | 3358159 |
 | 3: Live check | human | not started | |
 
 ### Notes
@@ -166,7 +166,24 @@ interface BarsSection {
   the spend section is shed. They are never shed.
 - Phase 2: a bars row draws its label at x 0 and its text ending at the right edge, two `text`
   nodes, where a trend row is one «label · amount» node.
+- Followup, not acted on: `README.md` (Mini App: charts) names the tag chart but not the product
+  chart. Phase 2's `Files touched` holds no `README.md`.
 
 ### Close triggers
+
+- Phases 1 and 2 (`dev`) are done in 27d3375 and 3358159. Phase 3 (`human`) has not started. It
+  does not block the merge.
+- Gate on the tip (3358159):
+  - `pnpm typecheck` exited 0.
+  - `pnpm lint` exited 0.
+  - `pnpm test` exited 0, with 141 files and 2017 tests passed.
+  - `pnpm build` exited 0.
+  - `pnpm build:webapp` exited 0.
+  - `node scripts/check-doc-links.mjs` exited 0, with 335 relative links resolving.
+- `CHART_PAYLOAD_BUDGET` is still 2048 and `CHART_PAYLOAD_VERSION` is still 2.
+- No new file. No migration, dependency or `webapp/index.html` change.
+- New exports: `BarsSection` and `BarsRow` (bot and page), `BarsInput` and `encodeBarsPayload`
+  (bot), `drawBars` (page).
+- New messages: `tagChart`, `productChart`, `chartPriceUnsized`.
 
 ## Followups
