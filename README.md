@@ -300,8 +300,8 @@ bot and is recorded exactly like a pasted receipt link, duplicate check included
 
 With `WEBAPP_URL` set, `/week` and `/month` in a private chat end with «📈 Диаграмма». It opens
 the same page in chart mode: the shown period's categories as a donut, in the ledger's currency,
-with the period's total in its centre and a legend under it. The donut and the bars scale to the
-screen width. Paging to another period rebuilds the button for that period.
+with the period's total and its change in the centre and a legend under it. The donut and the
+bars scale to the screen width. Paging to another period rebuilds the button for that period.
 
 - The bot puts the period's totals in the button URL's fragment (`#z=…`, deflated JSON as
   base64url, ADR-0045), already formatted, so the page makes no request and does no money
@@ -310,8 +310,14 @@ screen width. Paging to another period rebuilds the button for that period.
 - The payload is a list of sections the page draws in order, the donut and then the trend; a
   section kind the page doesn't know is skipped. Deploy the page first: until the `Pages` run
   has finished, the old page answers a new `#z=` button with its open-from-bot line.
-- Each legend row reads «name: amount · share», the share a whole percent. The shares add up to
-  exactly 100%, and a category whose share rounds to 0 shows «<1%».
+- Each legend row reads «name: amount · share · change», the share a whole percent. The shares
+  add up to exactly 100%, and a category whose share rounds to 0 shows «<1%». The change is an
+  arrow against the previous period: «↑20%», «↓25%», «±0%», or «новое» for a category the previous
+  period didn't have.
+- The donut centre shows the total over its change and basis: «↑11% к сентябрю». A period still
+  running is compared with the same first days of the previous one, «↑158% к 1–15 сентября», so
+  the 15th doesn't read as a drop against a whole month. With nothing to compare against, the
+  centre reads «Всего». Over the size budget, the change labels are the first thing dropped.
 - The donut holds the converted block (ADR-0022). A currency with no NBS rate is one text line
   under the chart, never part of the donut.
 - Tapping a slice or a legend row shows that line's name and amount in the centre and dims the
