@@ -7,8 +7,9 @@
 
 ## TL;DR
 
-Tapping a category in the `/week` or `/month` chart (Plan 0040's selection) opens a panel under the
-donut with that category's totals over the shown period and the five before it, as bars. The data
+Tapping a category in the `/week` or `/month` chart (Plan 0040's selection) opens a panel right
+under its legend row with that category's totals over the shown period and the five before it,
+as bars. The data
 travels in a new `catTrend` section, built from the six period summaries the chart already reads,
 so a render costs no extra database work. The panel stays in the page. It doesn't jump to the
 chat, which keeps the drill-down on [По категориям]. The first thing the user sees: `/month`,
@@ -31,8 +32,14 @@ away.
   index, so names don't travel twice.
 - **Categories match by id across periods.** The uncategorized line is id `null`. A category
   renamed since keeps its history, under its current name.
-- **The page shows the panel on selection.** It reuses `bars.ts`. The fold line «Прочее» has no
-  series, so its panel shows `messages.chartNoHistory`.
+- **The page shows the panel on selection, as an accordion.** The panel opens directly under the
+  selected legend row, wherever the tap came from, so a tap near the bottom of a long legend
+  doesn't open it off-screen above. It reuses `bars.ts`.
+- **A line without a series says so.** The fold line «Прочее» and any line whose series was shed
+  show `messages.chartNoHistory`: «Истории этой категории здесь нет. Её можно посмотреть в
+  /month, листая назад.»
+- **The bot names the periods.** The page can't tell weeks from months, so `catTrend` carries the
+  panel's caption: «Последние 6 месяцев» or «Последние 6 недель».
 - **`catTrend` is shed first.** It's the heaviest and least essential section, so it goes before
   every step in Plans 0041 and 0042. Within it, the series for the smallest lines go first. It is
   always gone before any pie line is folded, so line indices never shift under it.
@@ -48,8 +55,9 @@ a visible `/start` message and leaves the page. The user chose to keep the detai
   - `periodTrend` also returns each period's converted category lines.
   - `messages.chart` builds the `catTrend` section for every pie line except the fold line. The
     encoder sheds it as described above.
-  - The page's selection handler (Plan 0040) draws the selected line's series under the donut,
-    headed by its name. It clears the panel when the selection clears.
+  - The page's selection handler (Plan 0040) inserts the panel right after the selected legend
+    row: a heading of the line's name and the section's caption, then the series as bars. It
+    removes the panel when the selection clears or moves to another line.
 - **Files touched:** `src/services/periodTrend.ts`, `src/services/periodTrend.test.ts`,
   `src/domain/chartPayload.ts`, `src/domain/chartPayload.test.ts`, `src/bot/messages.ts`,
   `src/bot/handlers/summary.ts`, `src/bot/bot.test.ts`, `webapp/src/payload.ts`,
@@ -60,8 +68,10 @@ a visible `/start` message and leaves the page. The user chose to keep the detai
     (4000) and October (5000). Кафе's series is `[0, 0, 4000, 0, 0, 5000]` for 2026-05 to 2026-10,
     oldest first.
   - Each category's last value equals its pie line's `amountMinor`, and its second-to-last value
-    equals the previous amount behind its Plan 0041 change. The test asserts both on a payload with
-    a converted EUR expense.
+    equals the category's total over the whole previous period, the one the text screen shows
+    after paging back. For a past period that is also the amount behind its Plan 0041 change. For
+    a running period it isn't, because Plan 0041 compares the same days only. The test asserts
+    both cases on a payload with a converted EUR expense.
   - Take a category renamed between September and October: its series carries September's amount
     under the October name.
   - The uncategorized line's series sums the uncategorized expenses of each period.
@@ -69,11 +79,14 @@ a visible `/start` message and leaves the page. The user chose to keep the detai
   - Over budget, the series of the smallest lines go first. Over 200 seeded random cases, the
     lines that keep a series are always the largest ones, a prefix of the lines by amount. When
     any pie line is folded, `catTrend` is absent.
-  - In the page's fake DOM, clicking the Кафе legend row appends a bars SVG of 6 rows headed
-    «Кафе». Clicking it again removes it. Clicking «Прочее» shows `messages.chartNoHistory` and no
-    bars. Every label arrives through `textContent`.
-  - A payload without `catTrend` (an old bot, or one that was shed) still selects the line and
-    shows no panel.
+  - In the page's fake DOM, clicking the Кафе legend row inserts, as the node right after that
+    `li`, a panel headed «Кафе» and «Последние 6 месяцев» with a bars SVG of 6 rows. Clicking the
+    Кафе slice inserts it in the same place. Clicking the row again removes it, and clicking
+    another row moves it under that row. Every label arrives through `textContent`.
+  - Clicking «Прочее», or a line whose series was shed while larger lines kept theirs, shows
+    `messages.chartNoHistory` in the panel and no bars.
+  - A payload without `catTrend` (an old bot, or one shed whole) still selects the line and shows
+    no panel.
 
 ### Phase 2: Live check
 - **Owner skill:** human
@@ -89,6 +102,7 @@ a visible `/start` message and leaves the page. The user chose to keep the detai
 // illustrative: a v2 section (ADR-0045)
 interface CatTrendSection {
   k: 'catTrend';
+  caption: string; // formatted: «Последние 6 месяцев», «Последние 6 недель»
   periods: string[]; // six period labels, oldest first
   // `line` indexes the pie section's lines; points are oldest first, one per period
   series: [line: number, points: [amountMinor: number, label: string][]][];

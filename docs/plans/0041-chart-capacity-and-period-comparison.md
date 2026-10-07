@@ -12,8 +12,10 @@ The chart payload moves to version 2: deflated JSON in `#z=`, made of sections t
 order (ADR-0045). On top of it, the legend gets each category's share of the period and its change
 against the previous period. The donut centre shows the total's change. A probe script then
 measures how long a button URL real clients actually open, which settles the budget Plan 0030
-guessed. The first thing the user sees: `/month`, «📈 Диаграмма», and the legend reads
-«Еда — 78% · +20%».
+guessed. A period still running is compared with the same days of the period before, so the 15th
+of October doesn't look like a drop against all of September. The first thing the user sees on
+15 October: `/month`, «📈 Диаграмма», the legend reads «Еда: 120 000.00 RSD · 78% · ↑100%», and
+the centre reads «↑158% к 1–15 сентября».
 
 ## Context & problem
 
@@ -35,6 +37,13 @@ test buttons that nothing in the repo can send.
   integer percents by the largest-remainder method, so the pie's shares sum to exactly 100. Each
   change is `changeOf` from `src/domain/deltas.ts`, the same rule as the monthly push. The page
   still does no arithmetic on amounts.
+- **A running period is compared with the same days.** While today is inside the shown period,
+  the comparison window is the previous period's first *n* days, where *n* is the number of days
+  elapsed in the shown one. It is clipped at the previous period's end. A past period is compared
+  whole with whole, as the monthly push does. The window is the one place this plan adds a summary
+  read: a running period costs 7 reads per render, a past one still 6.
+- **The comparison basis is named once, in the donut centre.** The legend rows carry only arrows
+  (`↑20%`, `↓25%`, `±0%`, `новое`), so the share and the change don't read as two bare percents.
 - **The budget stays 2048, now measured on `z`.** The probe (Phase 3) and its live run (Phase 4)
   may raise it in a followup.
 
@@ -81,6 +90,14 @@ flowchart LR
   - The page decodes `#z=` asynchronously, draws the known sections in order and skips any
     unknown `k`. It still decodes `#d=` v1 and draws it as Plan 0030 did. The mirrored type lives
     in `webapp/src/payload.ts`.
+  - A legend row reads «name: amount · share», joined by the page with « · » from the payload's
+    strings: «Еда: 120 000.00 RSD · 78%».
+  - A client without `DecompressionStream` shows a new `messages.chartUnsupported` instead of
+    `chartBroken`, because reopening the chart can't help there: «Это приложение Telegram не может
+    показать диаграмму. Обновите Telegram — а пока все цифры есть в текстовом отчёте.»
+  - `messages.chartBroken` stops naming `/week` and `/month`, since Plans 0042 and 0044 add charts
+    to other screens: «Не получилось открыть диаграмму. Откройте отчёт в боте заново и нажмите
+    «📈 Диаграмма».»
 - **Files touched:** `src/domain/chartPayload.ts`, `src/domain/chartPayload.test.ts`,
   `src/domain/shares.ts`, `src/domain/shares.test.ts`, `src/bot/messages.ts`,
   `src/bot/handlers/summary.ts`, `src/bot/bot.test.ts`, `webapp/src/payload.ts`,
@@ -104,41 +121,64 @@ flowchart LR
     pie and the trend and nothing for `nope`. A v2 payload whose `pie` section has lines not
     summing to its `totalMinor` shows `chartBroken`.
   - A v1 `#d=` payload from Plan 0030's tests still draws the same pie, legend and trend.
-  - A `z` value that isn't valid deflate, and a client without `DecompressionStream`, both show
-    `chartBroken` and draw nothing.
+  - A `z` value that isn't valid deflate shows `chartBroken` and draws nothing. A client without
+    `DecompressionStream` shows `chartUnsupported` and draws nothing.
+  - The Еда legend row's text is «Еда: 120 000.00 RSD · 78%».
   - The `/month` button URL in `bot.test.ts` has `#z=` and no `#d=`.
 
 ### Phase 2: Comparison with the previous period
 - **Owner skill:** dev
 - **What:**
-  - The pie section gains an optional change label per line, plus a total change. Both come from
-    the previous period's converted lines through `periodDeltas`, as the text monthly push
-    computes them.
-  - The legend row reads «name — share · change». The donut centre (Plan 0040) shows the total's
-    change under «Всего».
-  - The previous period's summary is the one `periodTrend` already reads, so a render costs no
-    extra summary read.
+  - The pie section gains an optional change label per line, plus a total change label. Both come
+    from `periodDeltas` (`src/domain/deltas.ts`) over the comparison window's converted lines.
+  - The comparison window: for a past period, the whole previous period, which `periodTrend`
+    already reads. For a running period (today between `from` and `to` in the ledger's timezone),
+    the previous period from its `from` through `from` + (today − shown `from`) days, clipped at
+    its `to`. A clipped window that reaches the previous `to` is the whole previous period. The
+    window is a `Period` with the previous period's `kind` and a shorter `to`, read through the
+    same `ledgerPeriodSummary`, so its conversion and rounding are the text screen's.
+  - Change labels are arrows, from `messages`: `chartChangeUp(p)` «↑20%», `chartChangeDown(p)`
+    «↓25%», `chartChangeZero` «±0%», and `chartChangeNew` «новое», the push's word.
+  - The legend row reads «name: amount · share · change»: «Еда: 120 000.00 RSD · 78% · ↑20%».
+  - The donut centre (Plan 0040) keeps its two lines. The total change goes in the second line in
+    place of «Всего», with the basis: «↑11% к сентябрю». The basis is formatted by the bot:
+    - a past month: «к сентябрю»
+    - a past week: «к неделе 28 сентября – 4 октября»
+    - a running period's window: «к 1–15 сентября», «к 28–30 сентября»
+    - a running window that covers the whole previous period: as for a past one, «к февралю»
   - Change labels are shed before trend bars: the new first step in the shedding order.
 - **Files touched:** `src/domain/chartPayload.ts`, `src/domain/chartPayload.test.ts`,
   `src/services/periodTrend.ts`, `src/services/periodTrend.test.ts`, `src/bot/messages.ts`,
   `src/bot/handlers/summary.ts`, `src/bot/bot.test.ts`, `webapp/src/payload.ts`,
   `webapp/src/payload.test.ts`, `webapp/src/pie.ts`.
 - **Done when:**
-  - Take a month ledger with October 2026 at Еда 120000, Транспорт 30000 and Кафе 5000 RSD, and
-    September at Еда 100000 and Транспорт 40000. The October chart's changes are then:
-    - Еда `{ kind: 'change', percent: 20 }`
-    - Транспорт `{ kind: 'change', percent: -25 }`
-    - Кафе `{ kind: 'new' }`
-    - the total, 155000 against 140000, `{ kind: 'change', percent: 11 }` (10.71 rounded half
-      away from zero)
-
-    The labels are `messages`' formatting of those values.
-  - A category spent on only in September isn't listed, as in the text push.
-  - The chart for a period whose previous period had nothing has `new` on every line and no total
-    change label.
-  - A test counts `ledgerPeriodSummary` calls per `/month` render: 6, as before this phase.
+  - Take a month ledger in Europe/Belgrade. September 2026 has Еда 60000 on 2026-09-10, Еда 40000
+    on 2026-09-20 and Транспорт 40000 on 2026-09-20. October has Еда 120000, Транспорт 30000 and
+    Кафе 5000 RSD, all dated on or before 2026-10-15.
+  - Viewed on 2026-11-03 and paged back to October (a past period), the changes are:
+    - Еда, 120000 against 100000: `{ kind: 'change', percent: 20 }`, «↑20%»
+    - Транспорт, 30000 against 40000: `{ kind: 'change', percent: -25 }`, «↓25%»
+    - Кафе: `{ kind: 'new' }`, «новое»
+    - the total, 155000 against 140000: `{ kind: 'change', percent: 11 }` (10.71 rounded half
+      away from zero), and the centre's second line is «↑11% к сентябрю»
+  - Viewed on 2026-10-15 (running), the window is 2026-09-01 to 2026-09-15:
+    - Еда, 120000 against 60000: `percent: 100`, «↑100%»
+    - Транспорт, against nothing by 15 September: «новое»
+    - Кафе: «новое»
+    - the total, 155000 against 60000: `percent: 158` (158.33), and the centre reads
+      «↑158% к 1–15 сентября»
+  - Viewed on 2026-03-30 on March 2026, the window is clipped to 2026-02-01 to 2026-02-28, the
+    whole of February, and the basis reads «к февралю».
+  - A week chart viewed on Wednesday 2026-10-07 (the week of 5–11 October) compares with
+    2026-09-28 to 2026-09-30, and the basis reads «к 28–30 сентября».
+  - A category spent on only in the window and not in the shown period isn't listed, as in the
+    text push.
+  - When the window had nothing, every line reads «новое», and the centre keeps «Всего» with no
+    total change.
+  - A test counts `ledgerPeriodSummary` calls per `/month` render: 6 for a past period, 7 for a
+    running one.
   - Over budget, change labels go first. A seeded case just over budget keeps every trend bar and
-    loses the change labels.
+    loses the change labels, and the centre's second line falls back to «Всего».
 
 ### Phase 3: The URL-limit probe
 - **Owner skill:** dev
@@ -187,7 +227,8 @@ interface PieSection {
   currency: string;
   totalMinor: number; // integer sum of lines
   totalLabel: string;
-  totalChange?: string; // Phase 2, formatted: «+11%»
+  totalChange?: string; // Phase 2, formatted with its basis: «↑11% к сентябрю»
+  // change, Phase 2: «↑20%»
   lines: [name: string, amountMinor: number, label: string, share: string, change?: string][];
   unconverted: string[];
 }
@@ -200,8 +241,8 @@ interface TrendSection {
 
 ## Risks & open questions
 
-- **Old webviews.** Without `DecompressionStream`, a v2 chart shows `chartBroken`. Phase 4 finds
-  out whether that hits any real client. If it does, the fallback is an ADR change (ADR-0045,
+- **Old webviews.** Without `DecompressionStream`, a v2 chart shows `chartUnsupported`. Phase 4
+  finds out whether that hits any real client. If it does, the fallback is an ADR change (ADR-0045,
   Alternative A), not a shim.
 - **Version skew.** Pages and the VPS deploy separately. Until the new page is live, a new bot
   sends `#z=` buttons that the old page reads as "no `d`" and answers with `openFromBot`. The
@@ -211,7 +252,11 @@ interface TrendSection {
   shown as money. Changes come from `changeOf`, which uses BigInt arithmetic and is already
   tested. Every amount the page shows is a bot label.
 - **Time.** The previous period comes from `previous()` in the ledger's timezone, through the same
-  `ledgerPeriodSummary` that pages the text screen.
+  `ledgerPeriodSummary` that pages the text screen. "Running" and the window's length use today
+  in the ledger's effective timezone (`deps.now()`), never the browser's clock. A running window
+  holds the previous period's expenses through its last day, recorded at any hour, while the
+  shown period counts through today. That is the same day-granular comparison the pace line in
+  Plan 0042 draws.
 - **Privacy.** Still aggregates only. The probe sends synthetic payloads to the admin and logs no
   token or URL.
 

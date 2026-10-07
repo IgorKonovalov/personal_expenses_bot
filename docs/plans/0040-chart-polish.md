@@ -56,6 +56,12 @@ a tap handler are a few dozen lines of SVG.
     «Скан чека».
   - Chart mode calls `Telegram.WebApp.expand()` when the client has it.
   - The donut SVG gets `role="img"` and an `aria-label` of the title and the total.
+  - The centre text fits the hole, which is 1.2 units wide. A centre text node longer than
+    `CENTRE_FIT` = 12 characters carries `textLength="1.1"` and
+    `lengthAdjust="spacingAndGlyphs"`, which squeezes it into the hole instead of letting it run
+    over the ring. The centre's font size is chosen so that 12 characters fill about 1.1 units,
+    because `textLength` also stretches a short text. «≈ 1 234 567.89 RSD» is the longest total
+    label to expect.
 - **Files touched:** `webapp/src/pie.ts`, `webapp/src/bars.ts`, `webapp/src/main.ts`,
   `webapp/src/messages.ts`, `webapp/src/payload.test.ts`, `README.md` (Mini App: charts).
 - **Done when:**
@@ -69,6 +75,9 @@ a tap handler are a few dozen lines of SVG.
     sector.
   - The donut's centre holds exactly two text nodes, the payload's `totalLabel` and «Всего», both
     set through `textContent`.
+  - A `totalLabel` of «≈ 1 234 567.89 RSD» (18 characters) carries `textLength="1.1"` and
+    `lengthAdjust="spacingAndGlyphs"`. «45 230.00 RSD» (13 characters) carries `textLength` too,
+    and «Всего» doesn't.
   - The donut and trend SVGs carry `width="100%"` and a viewBox, and no `style` attribute anywhere
     in the tree. The fake DOM gains `style` and `setAttribute('style')` throws in it, so a test
     catches any use of the attribute.
@@ -83,17 +92,29 @@ a tap handler are a few dozen lines of SVG.
   - Each slice and each legend row is tappable. A tap selects that line. The other slices dim to
     `DIMMED_OPACITY` = 0.35, the selected legend row is bolded through a CSSOM `fontWeight` write,
     and the centre shows the line's name and its `label` in place of the total.
+  - A name longer than `NAME_FIT` = 14 characters shows in the centre as its first 14
+    characters, trailing spaces trimmed, plus «…». The full name stays in the bolded legend row. Cutting a name is string
+    handling, not money, so the page may do it. The centre never gains a third line: Plan 0041's
+    share and change stay in the legend.
   - Tapping the selected line again, or tapping the centre, clears the selection.
+  - Under the donut, one line of `messages.chartTapHint` («Нажмите на категорию, чтобы увидеть
+    подробности») says the chart can be tapped. Small slices are hard to hit, so the legend row
+    is the main target: each `li` gets a CSSOM `minHeight` of `44px`.
   - A selection calls `Telegram.WebApp.HapticFeedback.selectionChanged()` when the client has it.
   - Zero-amount lines have no slice. Their legend row is still tappable, and the centre shows the
     line.
-- **Files touched:** `webapp/src/pie.ts`, `webapp/src/main.ts`, `webapp/src/payload.test.ts`.
+- **Files touched:** `webapp/src/pie.ts`, `webapp/src/main.ts`, `webapp/src/messages.ts`,
+  `webapp/src/payload.test.ts`.
 - **Done when:**
   - In the fake DOM (which gains `addEventListener` and a test-side `click()`), clicking the
     Транспорт legend row sets the Еда slice's `opacity` to `0.35` and the Транспорт slice's to `1`.
     The centre's two text nodes then read «Транспорт» and that line's `label`. Clicking the row
     again restores both slices to `1` and the centre to `totalLabel` and «Всего».
   - Clicking a slice selects the same line its legend row would.
+  - Selecting a line named «Развлечения и подписки» (22 characters) puts «Развлечения и…» in the
+    centre: its first 14 characters are «Развлечения и », trimmed, plus «…». The legend row still holds the full name.
+  - The page shows `chartTapHint` once, under the donut, through `textContent`. Every legend
+    `li` has `style.minHeight` `44px`.
   - A category named `<img src=x onerror=alert(1)>`, once selected, appears in the centre only
     through `textContent`, and the tree still holds no `img` node.
   - No selection state is written to `localStorage` or sent anywhere: the page still makes no
@@ -153,6 +174,10 @@ a tap handler are a few dozen lines of SVG.
 - **Theme colours are client-defined.** `#212d3b` as the worst-case dark background is a guess
   from the default themes. A custom theme can pick any colour. The `hint_color` fallback and the
   slice separators drawn in `bg_color` keep adjacent slices apart whatever the background.
+- **Several grey lines.** Lines past the eighth (Plan 0030's «Прочее» among them when it comes
+  ninth or later) and zero-amount lines all draw in `hint_color`, so a crowded month shows several
+  identical grey swatches. We accept it:
+  they are the smallest lines, and a tap names any of them.
 - **Money.** Nothing here formats or adds an amount. Angles and bar lengths are geometry. The
   centre shows the payload's labels as they are.
 - **Privacy.** Unchanged. The page reads the fragment and writes only to the DOM.

@@ -35,7 +35,10 @@ page mode.
   bar) and a formatted text. One section holds the unit price per month and another the spend per
   month, both oldest first. Only the month lines in the ledger's default currency are drawn. Lines
   in other currencies are listed as text, never on the same axis. A month with no sized item has a
-  `null` price row, labelled «без размера» by `messages`, not a zero bar.
+  `null` price row, labelled «размер не указан» by `messages`, not a zero bar.
+- **Captions use the text screen's unit abbreviations**, which need no declension: the price
+  section is «Цена за 1 л», «Цена за 1 кг» or «Цена за 1 шт.», and the spend section is «Траты по
+  месяцам».
 - **Shedding.** The encoder sheds the spend section first, then the oldest price rows.
 - **Where the button appears.** Only in a private chat with `WEBAPP_URL` set, and not on a locked
   sealed ledger. As everywhere, `web_app` buttons don't work in groups.
@@ -83,10 +86,11 @@ interpolate prices nobody paid. Bars with an explicit empty row show the gap.
     (only an unsized item, 15000) and September (1 l for 13490). The price section's rows are,
     oldest first:
     - `[«Июль 2026», 12990, …]`
-    - `[«Август 2026», null, «без размера»]`
+    - `[«Август 2026», null, «размер не указан»]`
     - `[«Сентябрь 2026», 13490, …]`
 
-    The spend rows are 25980, 15000 and 13490.
+    The spend rows are 25980, 15000 and 13490. The price section's caption is «Цена за 1 л» and
+    the spend section's is «Траты по месяцам».
   - Every price row's amount equals that month line's `unitPriceMinor`, and every spend row's
     amount equals its `spentMinor`. The test reads both from the service's `ProductView`.
   - A month line in EUR in a RSD ledger appears as a text line, not a row.
@@ -109,7 +113,7 @@ interpolate prices nobody paid. Bars with an explicit empty row show the gap.
 // illustrative: a v2 section (ADR-0045)
 interface BarsSection {
   k: 'bars';
-  caption: string; // formatted: «Цена за литр»
+  caption: string; // formatted: «Цена за 1 л», «Траты по месяцам»
   rows: [label: string, amountMinor: number | null, text: string][]; // oldest first
   notes?: string[]; // lines for other currencies, as text
 }

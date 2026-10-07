@@ -25,8 +25,8 @@ The page is a static `tsc` build with no runtime dependencies, under a CSP of `d
 (ADR-0025). Modern webviews ship `DecompressionStream('deflate')`: Chromium 80+, which covers
 Android and Telegram Desktop, and Safari 16.4+, which is iOS's `WKWebView`. Node's `zlib`
 produces the same format on the bot side. Plan 0030 also hard-wired one layout, a pie and then a
-trend. The planned views add more layouts: a pace line, a budget burn-down, a tag pie and a
-product price line.
+trend. The planned views add more layouts: a pace line, a budget burn-down, a tag pie and
+product price bars.
 
 The page is published from `pages.yml` and the bot from `deploy.yml`. Both run on a push to
 `main` but finish at different times, and old chart buttons stay in chats for months. The page
