@@ -370,7 +370,7 @@ New message: `heavyJobBusy`.
 | 4: due pushes from one bulk read | dev | done | 46dd43f |
 | 5: photos and statements in a child process | dev | done | e32d0f5 |
 | 6: compressed backups | dev | done | 69afe53 |
-| 7: live checks | human | not started | |
+| 7: live checks | human | owed | |
 
 ### Notes
 
