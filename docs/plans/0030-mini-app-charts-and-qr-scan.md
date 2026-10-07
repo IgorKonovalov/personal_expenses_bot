@@ -184,7 +184,7 @@ interface ChartPayloadV1 {
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: /month opens a pie chart | dev | done | committed with this row |
-| 2: Publish and measure the URL limit | human | not started | |
+| 2: Publish and measure the URL limit | human | owed | |
 | 3: Payload budget and the trend chart | dev | not started | |
 | 4: Live check on a phone | human | not started | |
 
