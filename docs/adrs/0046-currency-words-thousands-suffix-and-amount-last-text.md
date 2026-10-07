@@ -38,10 +38,15 @@ The amount-last form (`<description> <amount>[к] [currency] [#tags] [date]`) is
 
 - **In a private chat,** amount-last text records like any expense.
 - **In a group,** amount-last text records nothing at once. The bot replies to it with one
-  question, «Записать 3 200.00 RSD «Чайник»?», and two buttons, [Записать] and [Нет]. Only the
-  sender can answer. The question is deleted when it is answered with [Нет], or after 15 minutes
+  question, «Записать 3 200.00 RSD — Чайник?», and two buttons, [Записать] and [Не трата]. Only the
+  sender can answer. The question is deleted when it is answered with [Не трата], or after 15 minutes
   with no answer. [Записать] records the expense with the message's own date and source key, so a
   second tap records nothing.
+
+Two rules keep chatter out. Text with a `?` is never amount-last, in any chat, because it is a
+question. In a group, amount-last text gets no question when the word before the amount is a
+preposition of time or place («в, к, до, через, с, по, около, после»): «буду в 7» stays chatter.
+This is a heuristic, and it is labelled as one in code. Amount-first text is unaffected.
 
 The guards that call `parseExpenseText` keep today's meaning.
 
@@ -58,8 +63,12 @@ The guards that call `parseExpenseText` keep today's meaning.
   that sits in the chat for up to 15 minutes.
 - The group question needs storage. A small table holds the message's text until the question is
   answered or deleted.
-- A few texts change meaning. `500 р кофе` now records 500 RUB «кофе» where it recorded «р кофе»
-  in the default currency. `4k телевизор` now records 4 000 «телевизор» where it was refused.
+- A few texts change meaning. `4500 дин доставка` now records «доставка» where it recorded
+  «дин доставка». `4k телевизор` now records 4 000 «телевизор» where it was refused. A separate
+  `р` stays description: `500 р кофе` still records 500 «р кофе» in the default currency, and
+  only a glued `2500р` reads as roubles.
+- In a private chat, amount-last chatter records. «буду в 7» sent to the bot becomes 7 units,
+  removed with the card's [Удалить].
 
 ## Alternatives considered
 

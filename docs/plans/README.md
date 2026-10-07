@@ -11,8 +11,8 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0045](0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | draft (2026-10-07) |
-| [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | draft (2026-10-07) |
+| [0045](0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | approved (2026-10-07) |
+| [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | approved (2026-10-07) |
 
 ## Recently closed
 

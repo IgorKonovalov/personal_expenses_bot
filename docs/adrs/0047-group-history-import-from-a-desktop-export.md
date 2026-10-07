@@ -26,7 +26,7 @@ export to the group's bound shared ledger. It reads only the messages sent befor
 splits each one into items with rules in the domain layer (Plan 0046's reader). Then it answers
 with a preview:
 
-- **Clean messages** are those whose every line resolved to an item or a matching total. One
+- **Ready messages** are those whose every line resolved to an item or a matching total. One
   button records all of them.
 - **The rest** come one card at a time: [Записать так], [Исправить] (send corrected lines) or
   [Пропустить].
@@ -34,6 +34,16 @@ with a preview:
 Each item is recorded under the message's sender, or the person a name prefix maps to (asked once
 per distinct prefix), on the message's original date. Its source key comes from the chat and the
 message, so sending the file again records nothing new.
+
+The import's state (the read messages, each message's decision, the prefix mappings) is kept for
+24 hours after the last tap, apart from the user's pending-flow slot, so using the bot meanwhile
+doesn't end a long review. Re-sending the same export inside that window keeps the decisions.
+
+The group gets one notice naming the importer and the count, with no amounts or text, edited in
+place as the count grows. Members see why their totals changed.
+
+[Отменить импорт], after a confirm step, deletes every expense the chat's import recorded. The
+delete is permanent, and the file is the backup: sending it again records them again.
 
 ## Consequences
 
@@ -51,6 +61,9 @@ message, so sending the file again records nothing new.
   chat was.
 - Senders who never started the bot get a user row and shared-ledger membership, as they would by
   writing an expense in the group after the bot joined (ADR-0014).
+- The read messages, chatter included, are stored server-side for up to 24 hours after the last
+  tap, not only held in memory.
+- An undone import is gone from the database. It comes back only from the file.
 
 ## Alternatives considered
 
@@ -67,3 +80,8 @@ sender, and those are what make the backlog worth importing.
 This handles almost any wording. It was rejected because it sends private expense text off the
 server, adds a dependency, an API key and a per-import cost, and its results can't be pinned by
 unit tests. Review would still be needed.
+
+### Alternative D: undo an import with a soft delete
+This is the house pattern for a single expense (an [Удалить] that [Вернуть] restores). It was
+rejected for the import because a source key stays unique on a soft-deleted row, so the file could
+never be imported again after an undo, and an undo is most often followed by a corrected re-import.

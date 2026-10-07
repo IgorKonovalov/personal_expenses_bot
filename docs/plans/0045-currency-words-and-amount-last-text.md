@@ -1,6 +1,6 @@
 # 0045: Currency words, a thousands suffix, and amount-last expense text
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0046](../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the decision),
 > [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),
@@ -15,8 +15,9 @@ The bot learns to read expenses the way people actually write them:
   where today it silently records 300 dinars «€ ремонт».
 - **`к` means thousands.** `45к дин шкаф` records 45 000.00 RSD «шкаф».
 - **The amount may come last.** In a private chat, `Чайник 3200` records like `3200 чайник`. In a
-  group, it gets a quiet question from the bot, «Записать 3 200.00 RSD «Чайник»?», with
-  [Записать] [Нет], which only the sender can answer.
+  group, it gets a quiet question from the bot, «Записать 3 200.00 RSD — Чайник?», with
+  [Записать] [Не трата], which only the sender can answer. Text with a `?`, and in a group text
+  with a preposition before the amount («буду в 7»), stays chatter.
 
 The first thing the user sees: `300 € ремонт` comes back as a card in euros.
 
@@ -38,7 +39,9 @@ about it instead of recording it.
   - a symbol or alias glued to the amount, after it (`300€`, `2500р`) or before it (`€300`);
   - `к`/`k` glued to the amount.
 - `readTrailingExpense(text, currency, today)` rewrites amount-last text to amount-first and calls
-  `parseExpenseText`.
+  `parseExpenseText`. Text with a `?` is never amount-last.
+- `chatterShaped(text)` flags a preposition before the amount («буду в 7»). The group uses it to
+  skip the question, and Plan 0046 uses it to keep chatter out of the bulk record.
 - `recordExpense` gains `forms: 'leading' | 'any'`, default `'leading'`. The private-chat text and
   ambiguity handlers pass `'any'`.
 - The group text handler asks about amount-last text instead of recording it. A new table holds
@@ -108,6 +111,8 @@ flowchart LR
   - In a JPY ledger (exponent 0), `1,5к рамен` parses to 1500.
   - `500 к чаю` parses to 50000, RSD, «к чаю». `500 р кофе` parses to 50000, RSD, «р кофе»,
     because a separate `р` is not an alias.
+  - `500кг картошки` parses to the same result as before this phase: a glued `к` followed by
+    more letters is not the suffix.
   - Every case already in `expenseText.test.ts` keeps its result.
   - In the private chat, `300 € ремонт` replies with a card showing «300.00 EUR».
 
@@ -118,7 +123,11 @@ flowchart LR
     [currency] [#tags…] [date]` on one line. A trailing `:`, `—` or `-` on the last description
     word is dropped (`Краска: 2000`).
   - The description must contain a letter. A `/N` split word makes the text unreadable as
-    amount-last. Text with a line break is not amount-last.
+    amount-last. Text with a line break is not amount-last. Text with a `?` anywhere is not
+    amount-last: it is a question (ADR-0046).
+  - `chatterShaped(text)` in the same module is true when the word right before the amount is
+    one of «в, к, до, через, с, по, около, после», compared lower-cased. It is a heuristic and
+    its comment says so. Phase 3 and Plan 0046 use it; the private chat does not.
   - The result is `parseExpenseText` on the rewritten amount-first text, so ambiguity, a future
     date and too many tags behave exactly as they do there.
   - `recordExpense` takes `forms: 'leading' | 'any'`, defaulting to `'leading'`. With `'any'`, a
@@ -136,7 +145,12 @@ flowchart LR
     2026-10-06.
   - `Лампа 1.500` gets the same two-button ambiguity question as `1.500 лампа`. Tapping the
     thousands reading records 150000 RSD «Лампа».
-  - `Чайник 3200 /2` and a two-line text are not expenses: they get today's help reply.
+  - `Чайник 3200 /2`, a two-line text and `сколько ушло за 3?` are not expenses: they get
+    today's help reply.
+  - `chatterShaped('буду в 7')` and `chatterShaped('Через 10')` are true;
+    `chatterShaped('Чайник 3200')` and `chatterShaped('Краска: 2000')` are false.
+  - `буду в 7` in the private chat records 700 minor units RSD «буду в»: the private chat doesn't
+    use `chatterShaped`.
   - `parseCategoryName('Кофе 2', …)` still returns `ok`.
   - A recurring rule's description «Аренда 2» is still accepted.
   - Redelivering the `Чайник 3200` update leaves one expense.
@@ -146,22 +160,38 @@ flowchart LR
 - **What:**
   - Migration `0028_group_asks.sql` adds the `group_asks` table (Data shapes).
   - In a bound group, a text from a person that `parseExpenseText` doesn't read as an expense, but
-    `readTrailingExpense` reads as `expense`, gets a reply to that message:
-    «Записать 3 200.00 RSD «Чайник»?». The reply has two buttons, [Записать] and [Нет], and is
-    sent silently (`disable_notification`).
+    `readTrailingExpense` reads as `expense` and `chatterShaped` doesn't flag, gets a reply to that
+    message: `groupAskRecord` (copy below), with [Записать] and [Не трата] in one row. It is sent
+    silently (`disable_notification`).
   - An `ambiguous`, `futureDate`, `tooManyTags` or `invalid` amount-last read gets no question.
   - The row stores the chat, the message id, the sender's Telegram id, the text, the message's
     date and the question's message id.
   - [Записать] from the sender records through `recordGroupExpense` with `forms: 'any'`, the
     message's date and the source key `tg:<chatId>:<messageId>`. The question is then edited into
     the group card, or deleted when a reaction confirms the expense, as for amount-first text.
-  - [Нет] from the sender deletes the question and the row.
-  - A tap from anyone else gets the `groupNotAuthor` toast.
+  - [Не трата] from the sender deletes the question and the row, with a silent answer.
+  - A tap from anyone else gets the `groupAskNotSender` toast.
+  - A tap that finds no row (a second tap, a redelivered callback, a question whose cleanup
+    delete failed) answers `groupAskAlreadyRecorded` and removes the keyboard when an expense with
+    the message's source key exists, and `groupAskGone` and removes the keyboard otherwise.
   - `groupAskProvider` is registered with the scheduler in `src/index.ts`. On each tick it finds
     rows older than 15 minutes. Firing one deletes the row in a transaction and then calls
     `deleteMessage` on the question. A failed delete (already gone, older than 48 hours) is
     logged at debug and dropped.
   - `/delete_account` deletes the user's `group_asks` rows.
+  - Copy (illustrative messages-module entries):
+
+    ```ts
+    // The question to an amount-last group message (ADR-0046). `when` is set only when the
+    // expense's date differs from the message's local date: `Чайник 3200 вчера`.
+    groupAskRecord: ({ money, description, when }) =>
+      html`Записать <b>${formatMoney(money)}</b> — ${description}${when === undefined ? html`` : html` за ${when}`}?`,
+    groupAskRecordButton: 'Записать',
+    groupAskNotExpenseButton: 'Не трата',
+    groupAskNotSender: 'Ответить может только автор сообщения',
+    groupAskAlreadyRecorded: 'Уже записано',
+    groupAskGone: 'Вопрос устарел. Отправьте трату ещё раз.',
+    ```
 - **Files touched:** `src/db/migrations/0028_group_asks.sql`, `src/db/groupAsks.ts`,
   `src/db/groupAsks.test.ts`, `src/services/groupChats.ts`, `src/services/groupChats.test.ts`,
   `src/services/deleteAccount.ts`, `src/services/deleteAccount.test.ts`, `src/bot/group/text.ts`,
@@ -170,18 +200,24 @@ flowchart LR
   `src/bot/messages.ts`, `src/bot/groupAskProvider.ts`, `src/bot/groupAskProvider.test.ts`,
   `src/bot/testHarness.ts`, `src/index.ts`.
 - **Done when:**
-  - The sender A of `Чайник 3200` in a bound group gets one reply naming 3 200.00 RSD and «Чайник».
-    No expense exists yet.
+  - The sender A of `Чайник 3200` in a bound group gets one reply, «Записать <b>3 200.00 RSD</b> —
+    Чайник?». No expense exists yet.
+  - `Чайник 3200 вчера`, sent 2026-10-07T10:00Z in a Europe/Belgrade group, gets
+    «… — Чайник за 6 октября?», and [Записать] records `occurred_on` 2026-10-06.
   - A taps [Записать] at 10:05Z on a message dated 10:00Z. One expense exists: 320000 RSD,
     `created_by` A, `occurred_at` 10:00Z, source key `tg:<chatId>:<messageId>`. The row is gone.
-  - A second [Записать] tap, or a redelivery of the callback, leaves one expense.
-  - B's tap on A's question gets the `groupNotAuthor` toast and records nothing.
-  - [Нет] deletes the question and the row, and records nothing.
-  - `буду в 7` gets a question, and with no answer nothing is recorded:
+  - A second [Записать] tap, or a redelivery of the callback, leaves one expense and answers
+    «Уже записано».
+  - A tap on a question whose row the provider already removed, with no expense recorded, answers
+    «Вопрос устарел. Отправьте трату ещё раз.», removes the keyboard and records nothing.
+  - B's tap on A's question gets «Ответить может только автор сообщения» and records nothing.
+  - [Не трата] deletes the question and the row, and records nothing.
+  - `Осталось 2` gets a question, and with no answer nothing is recorded:
     - with the row created at 10:00:00Z, the provider's `due` at 10:14:59Z returns nothing;
     - at 10:15:00Z it returns the row;
     - firing it calls `deleteMessage` with the question's id and removes the row;
     - firing it twice calls `deleteMessage` once.
+  - `буду в 7`, `Через 10` and `Будешь в 7?` in the group get no question and store nothing.
   - `3200 чайник` (amount first) in the group records at once, as today, with no question.
   - `Лампа 1.500` in the group gets no question and stores nothing.
   - In an unbound group, `Чайник 3200` gets no question.
@@ -191,27 +227,36 @@ flowchart LR
 ### Phase 4: Help, README and the group help
 - **Owner skill:** dev
 - **What:**
-  - The private `/help` and the group help name the new shapes, with one example each:
-    «300 € ремонт», «45к шкаф», «Чайник 3200».
-  - The group help says amount-last text gets a question first.
-  - The README's input section gets the alias table's currencies and the `к` rule.
+  - The private `/help` and the group help name the new shapes, in this copy (illustrative):
+
+    ```ts
+    // help, replacing its first line
+    html`Чтобы записать трату, отправьте сумму и описание, например «450 кофе» или «Чайник 3200». Валюту можно указать после суммы кодом или знаком: «12,50 EUR такси», «300 € ремонт». Тысячи — буквой к: «45к шкаф».`,
+    // groupHelp, replacing its first line
+    html`Чтобы записать трату группы, напишите сумму и описание, например «450 кафе». Валюту можно указать после суммы: «12,50 EUR такси» или «300 € ремонт», тысячи — буквой к: «45к шкаф». Трата записывается на ваше имя; узнанную трату я отмечаю реакцией, остальные — карточкой с кнопкой [Удалить].`,
+    // groupHelp, a new second line
+    html`Если сумма в конце, например «Чайник 3200», я сначала спрошу, записать ли. Ответить может только автор сообщения; без ответа вопрос исчезнет через 15 минут.`,
+    ```
+  - The README's input section gets the alias table's currencies, the `к` rule, and the two
+    chatter rules.
 - **Files touched:** `src/bot/messages.ts`, `src/bot/messages.test.ts`, `README.md`.
 - **Done when:**
-  - The private help contains «300 € ремонт» and «Чайник 3200».
-  - The group help says amount-last text is recorded after the sender's [Записать].
+  - The private help contains «300 € ремонт», «45к шкаф» and «Чайник 3200».
+  - The group help says amount-last text gets a question that only the author answers, and that
+    it disappears after 15 minutes.
   - README's input section names each currency `CURRENCY_ALIASES` covers, with at least one alias
     each.
 
 ### Phase 5: Live check
 - **Owner skill:** human
 - **Blocks merge:** no
-- **What:** After deploying, write `300 € ремонт`, `Чайник 3200` and `буду в 7` in the private chat
-  and in the family group.
+- **What:** After deploying, write `300 € ремонт`, `Чайник 3200`, `Осталось 2` and `буду в 7` in
+  the private chat and in the family group.
 - **Done when:**
-  - The private chat records the first two, and answers `буду в 7` with 7 dinars «буду в». That
-    record is expected: the private chat records amount-last text at once.
-  - In the group, `Чайник 3200` records after [Записать].
-  - The question to `буду в 7` disappears by itself within about 16 minutes: 15 minutes plus one
+  - The private chat records all four. `Осталось 2` and `буду в 7` record 2 and 7 dinars; that is
+    expected, since the private chat records amount-last text at once, and [Удалить] removes them.
+  - In the group, `Чайник 3200` records after [Записать], and `буду в 7` gets no question.
+  - The question to `Осталось 2` disappears by itself within about 16 minutes: 15 minutes plus one
     scheduler tick.
 
 ## Data shapes
@@ -265,8 +310,8 @@ CREATE TABLE group_asks (
 CREATE INDEX group_asks_created ON group_asks(created_at);
 ```
 
-Callback data: `gask:ok:<messageId>` and `gask:no:<messageId>`. The chat comes from the update. The
-longest is under 30 bytes.
+Callback data: `gask:ok:<messageId>` and `gask:no:<messageId>`. The chat comes from the update. A
+message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 
 ## Risks & open questions
 
