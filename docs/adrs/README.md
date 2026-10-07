@@ -46,7 +46,7 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0037](0037-first-time-notices-and-transient-replies.md) | One-time notices are rows in `user_notices`, and transient replies are deleted by an in-process timer | accepted (2026-10-06) |
 | [0038](0038-collapse-with-expandable-quotes-opt-in-tidy-chat.md) | Long lists collapse in Telegram's expandable quote, and the user's recorded messages are deleted only when they opt in | accepted (2026-10-06) |
 | [0039](0039-products-from-keyword-rules-and-per-user-overrides.md) | Receipt items map to products through built-in keyword rules plus per-user overrides, and unit prices are computed in exact integers | accepted (2026-10-07), with an outcome |
-| [0040](0040-expense-card-inside-a-screen-anchor.md) | An expense card can be drawn inside a screen anchor, and only there does it carry a back row | proposed (2026-10-06) |
+| [0040](0040-expense-card-inside-a-screen-anchor.md) | An expense card can be drawn inside a screen anchor, and only there does it carry a back row | accepted (2026-10-07) |
 | [0041](0041-product-matches-memoized-in-process-not-persisted.md) | A receipt item's product match is memoized in process, not persisted per item | accepted (2026-10-07) |
 | [0042](0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md) | Receipt-photo and statement jobs run in a short-lived child process, handed off by the handler | accepted (2026-10-07), with an outcome |
 | [0043](0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md) | Scheduled sends are paced and capped per tick, skip unreachable users, and find due pushes in bulk | accepted (2026-10-07) |

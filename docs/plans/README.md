@@ -11,12 +11,12 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0037](0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | approved (2026-10-07) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0037](done/0037-category-drill-down.md) | Category drill-down: from /week or /month to a category's expenses, and on to each expense's card | done (2026-10-07): built as planned, one nit fixed at close, one minor open, Phase 4 live check owed, v0.29.0 |
 | [0039](done/0039-scale-hardening.md) | Scale hardening: no update waits behind a photo, pushes survive the 1st, backups fit the disk | done (2026-10-07): built as planned after one docs fix pass, one nit fixed at close, one nit open, Phase 7 live checks owed, v0.28.0 |
 | [0038](done/0038-prices-view-cost.md) | /prices stops re-matching every receipt item on every tap | done (2026-10-07): built as planned, one minor fixed at close, Phase 4 live check owed, v0.27.1 |
 | [0030](done/0030-mini-app-charts-and-qr-scan.md) | Charts in the Mini App, static with no backend | done (2026-10-07): built as planned, one minor and one nit fixed at close, two nits open, Phases 2 publish and 4 live check owed, v0.27.0 |

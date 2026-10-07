@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.29.0 (2026-10-07)
+
+From Plan 0037 (category drill-down).
+
+- Private `/week` and `/month` gain a `[По категориям]` button. It opens a picker of the period's
+  categories; a category lists that period's expenses in it, newest first, eight to a page, with a
+  header total equal to the digest's line.
+- A number opens that expense's card in the same message, with `[« Назад]` back to the list. The
+  back row survives every card action and edit prompt. Another member's expense opens read-only.
+- Group chats get no drill-down.
+
 ## 0.28.0 (2026-10-07)
 
 From Plan 0039 (scale hardening).

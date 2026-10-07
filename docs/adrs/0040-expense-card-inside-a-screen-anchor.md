@@ -1,8 +1,8 @@
 # ADR-0040: An expense card can be drawn inside a screen anchor, and only there does it carry a back row
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-07)
 > **Date:** 2026-10-06
-> **Related plan(s):** [Plan 0037](../plans/0037-category-drill-down.md)
+> **Related plan(s):** [Plan 0037](../plans/done/0037-category-drill-down.md)
 
 ## Context
 

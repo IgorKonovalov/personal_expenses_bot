@@ -1,11 +1,12 @@
 # 0037: Category drill-down: from /week or /month to a category's expenses, and on to each expense's card
 
-> **Status:** in-progress (2026-10-07)
+> **Status:** done (2026-10-07): built as planned, one nit fixed at close, one minor open, Phase 4
+> live check owed, v0.29.0
 > **Created:** 2026-10-06
-> **Related ADRs:** [ADR-0040](../adrs/0040-expense-card-inside-a-screen-anchor.md) (the card
-> inside a screen anchor), [ADR-0011](../adrs/0011-navigation-model.md) (cards, screens, the
-> anchor), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
-> [ADR-0022](../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
+> **Related ADRs:** [ADR-0040](../../adrs/0040-expense-card-inside-a-screen-anchor.md) (the card
+> inside a screen anchor), [ADR-0011](../../adrs/0011-navigation-model.md) (cards, screens, the
+> anchor), [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md) (sealed ledgers),
+> [ADR-0022](../../adrs/0022-fx-nbs-middle-rate-ledger-currency.md) (converted totals)
 
 ## TL;DR
 
@@ -298,4 +299,24 @@ Copy (messages module, polite "вы", Russian plurals through the existing helpe
   `cardAt` in `src/bot/handlers/card.ts`.
 - No new dependency, command, migration or env key.
 
+## Close review
+
+Round 1, a fresh conductor review on b20cb35. The full text is the conductor's review file
+`tools/conductor/state/reviews/0037-round-1.md` (local state, not tracked).
+
+- **Verdict:** clean. No blocker, no major. Gate green on the tip: typecheck, lint, 1891 tests,
+  doc links.
+- **Minor 1 (open):** a drill-down card loses `[« Назад]` when its edit prompt's pending flow was
+  cleared some other way and the user then taps `[Отмена]` (`src/bot/handlers/category.ts:119`).
+  Carried to the followups below.
+- **Nit 1 (fixed in 6598e57):** the Phase 1 pager done-when was over-specified; the note sits on
+  that done-when.
+- No earlier round, so no finding was resolved by a fix round.
+- Phase 4 (live check, `human`) stays **owed** after the merge.
+
 ## Followups
+
+- Review minor 1: in `SHOW_EXPENSE` (`src/bot/handlers/category.ts`), call
+  `returnFromPrompt(deps, user, expenseId)` after `cancelFlowIf` unconditionally, with a
+  `drill.test.ts` case that clears the pending flow before tapping `exp:show`.
+- Phase 4 live check owed.
