@@ -1,8 +1,8 @@
 # 0047: A Russian docs site: a user guide with chats generated from the real bot, and an architecture section
 
-> **Status:** in-progress
+> **Status:** done (2026-10-08): built as planned, five nits fixed at close, one minor open (the architect lens 4 edit under `.claude/`, for the owner), Phase 6 live check owed, v0.36.0
 > **Created:** 2026-10-07
-> **Related ADRs:** [ADR-0048](../adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)
+> **Related ADRs:** [ADR-0048](../../adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)
 
 ## TL;DR
 
@@ -378,6 +378,201 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 - **Outstanding `human` phases:** Phase 6 (live check and proofreading after the push to
   `main`; `Blocks merge: no`).
 
+## Close review
+
+Closed 2026-10-08 by the conductor after one review round. The round-1 review follows in full,
+with its headings demoted one level. No earlier round raised a finding for a fix round. At this
+close the five nits were fixed: nit 1 in 0b89b6b, nit 2 in 48f97ea, nit 3 in 154a5fe, nit 4 in
+6edeb86, nit 5 in 709a46a. Minor 1 stays open for the owner (an edit under `.claude/`). Phase 6
+(`human`, live check and proofreading) is owed.
+
+### Plan 0047 review, round 1 (tip e71f3b2)
+
+**Verdict:** Clean. All five `dev` phases meet their done-whens at the tip, and the gate is green.
+What is left is one minor bookkeeping item under `.claude/`, which a headless close can't apply,
+plus five nits in the guide's prose. Nothing goes back to `dev`.
+
+#### How it was checked
+
+- Gate, run in the lane at e71f3b2:
+  - `pnpm typecheck`: exit 0.
+  - `pnpm lint`: exit 0.
+  - `pnpm test`: exit 0, 146 files and 2168 tests, including `scripts/docs-chats/recorder.test.ts`,
+    `webapp/src/redirect.test.ts` and `src/bot/messages.test.ts`.
+  - `node scripts/check-doc-links.mjs`: exit 0, 347 links.
+- `pnpm docs:build`: exit 0. It wrote 27 transcripts, `docs:check` passed, and Astro built
+  23 pages. Afterwards `git status` is clean, because every output path is gitignored.
+- The Phase 1 done-when on the built page:
+  - `.pages/index.html` exists.
+  - `.pages/docs/guide/record/index.html` holds the bot bubble
+    `Записано в «Личные расходы»: <b>450.00 RSD</b> — кофе · Кафе и рестораны`. That is identical
+    to `record.json`'s `html`.
+- The Phase 3 chart done-when: `totals.json` records one `web_app` button.
+  `.pages/docs/guide/totals/index.html` has one iframe `data-src="/personal_expenses_bot/#z=…"`.
+  These were checked with `grep -c`, which counts lines, as plain `grep` calls; the session had no
+  Grep tool.
+- The named tests, with their assertions read:
+  - `recorder.test.ts`:
+    - It runs `450 кофе` through `createTestBot` and asserts the bubble's `html` `toBe` the
+      recorded `payload.text`.
+    - Edit, delete and toast cases compare the whole bubble list with `toEqual`. That covers
+      "replaces in place, doesn't append" and "a callback answer without text leaves no trace".
+    - The file-bubble and reply-keyboard cases also use `toEqual`.
+    - The `web_app` case asserts `fragment: '#z=abc&v=1'`.
+    - The dropped-methods case asserts that `changed` is 0.
+    - The broken tap goes through `runScenario` and asserts the exact message, which names the
+      label and the scenario.
+    - The silent step is asserted through `expectReply` on hand-built calls. The log discloses
+      this.
+  - `redirect.test.ts`: the six cases the plan names, plus `#z=abc&tgWebAppData=x`, which stays.
+  - `messages.test.ts`: `DOCS_URL` is exact. The private help contains the docs line immediately
+    before `helpDonateLine`. The group help ends with it.
+  - `scripts/pages-workflow.test.mjs` checks:
+    - the step order;
+    - the upload path `.pages`;
+    - that there is no `paths:` filter;
+    - the deploy job's `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
+- A read-only subagent compared the guide's factual claims with `src/`. It found no wrong command
+  or button label, and no wrong numeric rule. Its five softer points are the nits below, each
+  re-checked against the source.
+- Spot checks:
+  - `scripts/probe-webapp-url.ts:75` still builds `#z=` buttons, so the new redirect doesn't
+    swallow the probe.
+  - Every bot-built Mini App URL carries `#z=` or `#m=scan` (`src/bot/handlers/*.ts`,
+    `src/bot/keyboards.ts:13`).
+  - The architecture page's claim that the linter enforces layer boundaries is backed by
+    `eslint.config.js:112-148`.
+  - Every architecture page links at least one ADR on GitHub. The six pages with a diagram are
+    the six that use `<Mermaid>`.
+  - No README env var was lost: compared with main, only `CURRENCY_ALIASES` is gone, and that is
+    a code constant whose currency words now live on the guide's «Записать трату» page.
+
+#### Lens results
+
+1. **Alignment.**
+   - Every phase landed as one commit, matching the log.
+   - Owner tags are single and in vocabulary.
+   - Deviations are disclosed, including the files edited outside `Files touched` and the
+     surfaces with no picture.
+   - ADR-0048 is honoured, with no reversal.
+   - The log is shorter than the phases section.
+2. **Layering.**
+   - grammY appears only in the bot layer, the harness and the test scripts.
+   - The new copy (`helpDocsLine`, `DOCS_URL`) lives in `messages.ts`.
+   - No god module.
+3. **Correctness.**
+   - `<Chat>`'s tag allowlist keeps only Telegram's tags. It escapes stray `<`/`>`, and on `<a>`
+     it keeps only an `http(s):`/`tg:` href.
+   - Every scenario pins `now`. Inputs are invented (Анна/Борис, «PEKARA PRIMER», synthetic
+     receipt bytes, a made-up NBS list).
+   - No money or time code changed.
+4. **Docs.**
+   - README, `/help`, the group help and the CLAUDE.md tree are updated.
+   - No new env var or config key, so `.env.example` is untouched, correctly.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **The plan's close-time change to the architect skill can't be made by a headless close.**
+   - **What:** Replace the first bullet of Mode 4's "4. Docs freshness and bookkeeping" in
+     `.claude/skills/architect/SKILL.md`, which currently reads:
+
+     ```
+     - If the plan changed something the user observes (a command, a default, a message, a config key
+       or env var), was the README, `.env.example` and `/help` text updated?
+     ```
+
+     with:
+
+     ```
+     - If the plan changed something the user observes (a command, a default, a message, a config key
+       or env var), was the README, `.env.example`, `/help` text and the docs site's guide page for
+       that feature (`site/src/content/docs/guide/*.mdx`) updated? The chats regenerate; the prose
+       around them does not.
+     ```
+
+   - **Where:** `.claude/skills/architect/SKILL.md`, Mode 4 lens 4, first bullet. The commitment
+     is at `docs/plans/0047-docs-site.md:266-269` (Risks, "Prose drift") and in `## Followups`
+     (line 383).
+   - **Why it matters:**
+     - The plan names this as the only defence against prose drift on the site, because
+       `docs:check` catches only a command that no page mentions.
+     - The CLI refuses a headless session any edit under `.claude/`, so the conductor's close
+       can't apply it.
+   - **Suggested fix:** The owner applies the replacement above by hand, in a commit of its own
+     after the close (`docs(skills): architect lens 4 checks the docs site's guide pages`). Until
+     then, the close leaves the plan's `## Followups` line open.
+
+##### nit
+
+1. **Negative amounts don't get the "how to write it" hint.**
+   - **What:** The page says the bot "doesn't accept zero and negative amounts and suggests how to
+     write it". Zero gets `invalidAmount`, which carries examples. «-450 кофе» fails
+     `AMOUNT_TOKEN` (`src/domain/expenseText.ts:41,67`), so it is `notExpense` and gets
+     `notUnderstood` (`src/bot/messages.ts:1721`), which only points to «Помощь».
+   - **Where:** `site/src/content/docs/guide/record.mdx:38-39`.
+   - **Why it matters:** A small prose inaccuracy.
+   - **Suggested fix:** Split the sentence: zero gets examples, and text that starts with «-» is
+     not read as an expense.
+2. **Missed recurring days are not all caught up.**
+   - **What:** "Пропущенные дни записываются задним числом, по одному разу" holds for rules that
+     record on their own, up to 31 dates per rule per tick. A rule set to «Спрашивать перед
+     записью» asks only about its latest `ASK_CATCH_UP = 3` (`src/services/recurring.ts:268-275`).
+   - **Where:** `site/src/content/docs/guide/recurring.mdx:17`.
+   - **Why it matters:** A small prose inaccuracy.
+   - **Suggested fix:** Add one clause on the ask mode's catch-up of the last three dates.
+3. **The «Готово» label carries a counter.**
+   - **What:** The page quotes «Готово». The button reads `Готово (${chosen}/${needed})`, and the
+     tap is refused until exactly N people are chosen (`src/bot/messages.ts:3035-3037`).
+   - **Where:** `site/src/content/docs/guide/debts.mdx:33`.
+   - **Why it matters:** The plan asks prose to quote a button "the way the bot shows it".
+   - **Suggested fix:** «Готово (1/2)», and add "когда выбрано ровно столько людей".
+4. **«☰ Ещё» doesn't hold every other command.**
+   - **What:** "В «☰ Ещё» — кнопки для всех остальных команд". `moreButtons`
+     (`src/bot/messages.ts:1398-1418`) has no `/categories`, `/cancel`, `/start` or `/recover`.
+   - **Where:** `site/src/content/docs/guide/start.mdx:27-28`.
+   - **Why it matters:** A small prose inaccuracy.
+   - **Suggested fix:** "кнопки для остальных разделов".
+5. **The list of what survives deletion leaves out donation records.**
+   - **What:** The page lists group expenses and backups. The bot's own text also keeps donation
+     records (`src/bot/messages.ts:1566`).
+   - **Where:** `site/src/content/docs/guide/data.mdx:33-34`.
+   - **Why it matters:** An omission on a privacy-relevant page.
+   - **Suggested fix:** Add «и записи о пожертвованиях».
+
+#### Bookkeeping owed at close
+
+- Flip the plan's `Status:` to `done` with the date and the verdict, `git mv` it to
+  `docs/plans/done/`, and repair links with `node scripts/check-doc-links.mjs`. ADR-0048 links
+  `../plans/0047-docs-site.md`. The plans index row currently reads `approved`.
+- Phase 6 (`human`, `Blocks merge: no`) is owed after the push to `main`. Close with it recorded
+  as outstanding, not done.
+- Accept ADR-0048 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed, and the next free number stays
+  `0048` unless another plan has taken it.
+- Version: a **minor** bump. Users see a new `/help` line, the group help changes, the Mini App
+  root now redirects, and the site is new. This needs a `package.json` bump, a `CHANGELOG.md`
+  entry and its `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013).
+- The `.claude/` lens edit (minor 1) stays open for the owner.
+- Followups worth carrying, not findings:
+  - No unit test covers `scripts/docs-check-commands.ts`, or the Phase 3 recorder additions
+    (`cut`, `author`, reply target).
+  - The harness's `backupKeep: 14` keeps `/delete_account` out of the pictures.
+  - Since `pages.yml`'s `deploy` is gated on `push`, a `workflow_dispatch` run now builds but
+    never publishes. That is per the plan, but a manual republish from the Actions UI no longer
+    exists.
+  - Vite warns that the mermaid chunk is over 500 kB.
+
 ## Followups
 
 - At close: the architect's Mode 4 lens 4 names the site's guide pages beside README and `/help`.
+  Open: a headless close can't edit `.claude/`, so the owner applies it (close review, minor 1).
