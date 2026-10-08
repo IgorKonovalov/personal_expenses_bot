@@ -1,6 +1,119 @@
 import { describe, expect, it } from 'vitest';
-import { parseExpenseText } from './expenseText.js';
+import { parseCategoryName } from './categories.js';
+import { chatterShaped, parseExpenseText, readTrailingExpense } from './expenseText.js';
 import type { LocalDate } from './time.js';
+
+describe('readTrailingExpense (ADR-0046, default RSD, today 2026-10-07)', () => {
+  const TODAY = '2026-10-07' as LocalDate;
+  const read = (text: string) => readTrailingExpense(text, 'RSD', TODAY);
+
+  it.each([
+    ['Чайник 3200', 320000, 'RSD', 'Чайник'],
+    ['Шкаф 45к дин', 4500000, 'RSD', 'Шкаф'],
+    ['Ремонт 300 €', 30000, 'EUR', 'Ремонт'],
+    ['Ремонт 300€', 30000, 'EUR', 'Ремонт'],
+    ['Краска: 2000', 200000, 'RSD', 'Краска'],
+    ['Краска — 2000', 200000, 'RSD', 'Краска'],
+    ['буду в 7', 700, 'RSD', 'буду в'],
+    ['Аренда 2 этаж 500', 50000, 'RSD', 'Аренда 2 этаж'],
+  ])('%j -> %i %s %j', (text, amountMinor, currency, description) => {
+    expect(read(text)).toStrictEqual({
+      kind: 'expense',
+      amountMinor,
+      currency,
+      description,
+      tags: [],
+    });
+  });
+
+  it('dates Чайник 3200 вчера on the day before today', () => {
+    expect(read('Чайник 3200 вчера')).toStrictEqual({
+      kind: 'expense',
+      amountMinor: 320000,
+      currency: 'RSD',
+      description: 'Чайник',
+      date: '2026-10-06',
+      tags: [],
+    });
+  });
+
+  it('takes a date word after the amount, not as the amount', () => {
+    expect(read('Чайник 3200 25.09')).toMatchObject({
+      kind: 'expense',
+      amountMinor: 320000,
+      date: '2026-09-25',
+    });
+  });
+
+  it('reads tags after the amount', () => {
+    expect(read('Такси 450 дин #рим вчера')).toStrictEqual({
+      kind: 'expense',
+      amountMinor: 45000,
+      currency: 'RSD',
+      description: 'Такси',
+      date: '2026-10-06',
+      tags: ['рим'],
+    });
+  });
+
+  it('asks about Лампа 1.500 exactly like 1.500 лампа', () => {
+    expect(read('Лампа 1.500')).toStrictEqual({
+      kind: 'ambiguous',
+      readings: [
+        { interpretation: 'thousands', amountMinor: 150000 },
+        { interpretation: 'decimal', amountMinor: 150 },
+      ],
+      currency: 'RSD',
+      description: 'Лампа',
+      tags: [],
+    });
+  });
+
+  it.each([
+    'Чайник 3200 /2',
+    'Чайник\n3200',
+    'сколько ушло за 3?',
+    'Будешь в 7?',
+    'Чайник 3 200',
+    '3200 чайник',
+    '— 3200',
+    '12 3200',
+    'Чайник',
+    'Чайник 3200 потом',
+  ])('%j is not amount-last', (text) => {
+    expect(read(text)).toStrictEqual({ kind: 'notExpense' });
+  });
+
+  it('passes a future date through as futureDate', () => {
+    expect(read('Чайник 3200 25.12.2026')).toStrictEqual({
+      kind: 'futureDate',
+      date: '2026-12-25',
+    });
+  });
+});
+
+describe('chatterShaped', () => {
+  it.each([
+    ['буду в 7', true],
+    ['Через 10', true],
+    ['Встретимся около 5', true],
+    ['Чайник 3200', false],
+    ['Краска: 2000', false],
+    ['Будешь в 7?', false],
+  ])('%j -> %s', (text, expected) => {
+    expect(chatterShaped(text)).toBe(expected);
+  });
+});
+
+describe('the expense-shaped guards read amount-first text only', () => {
+  it('accepts Кофе 2 as a category name', () => {
+    expect(parseCategoryName('Кофе 2', 'RSD')).toMatchObject({ kind: 'ok', name: 'Кофе 2' });
+  });
+
+  it('leaves Аренда 2, a reminder text, not an expense', () => {
+    expect(parseExpenseText('Аренда 2', 'RSD')).toStrictEqual({ kind: 'notExpense' });
+  });
+});
 
 describe('parseExpenseText (ledger default RSD)', () => {
   it.each([

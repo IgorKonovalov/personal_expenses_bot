@@ -53,6 +53,7 @@ export function registerAmbiguous(bot: Composer<Context>, deps: HandlerDeps): vo
       occurredAt: new Date(original.date * 1000),
       now,
       reading,
+      forms: 'any',
     });
     if (result.kind !== 'recorded') {
       await ctx.answerCallbackQuery({ text: messages.ambiguousSourceUnavailable });

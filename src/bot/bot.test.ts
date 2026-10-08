@@ -1355,7 +1355,7 @@ describe('recording an expense', () => {
   it('answers non-expense text with the help hint', async () => {
     const { bot, calls } = createTestBot();
 
-    await bot.handleUpdate(textUpdate({ updateId: 1, text: 'coffee 450' }));
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: 'coffee later' }));
 
     expect(calls).toEqual([
       { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
@@ -1372,6 +1372,86 @@ describe('recording an expense', () => {
       expect(logContent(line)).not.toContain('450');
       expect(logContent(line)).not.toContain('coffee');
     }
+  });
+});
+
+describe('amount-last text in the private chat (ADR-0046)', () => {
+  function stored(db: Db): unknown {
+    return db.prepare('SELECT amount_minor, currency, description FROM expenses').all();
+  }
+
+  it('records Чайник 3200 as 320000 RSD and replies with the usual card', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: 'Чайник 3200' }));
+
+    expect(stored(db)).toEqual([{ amount_minor: 320000, currency: 'RSD', description: 'Чайник' }]);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        payload: {
+          chat_id: ALLOWED_ID,
+          text: expect.stringMatching(
+            /^Записано в «Личные расходы»: <b>3 200\.00 RSD<\/b> — Чайник · /,
+          ) as unknown,
+          reply_markup: undoKeyboard,
+          ...htmlParseMode,
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    ['Шкаф 45к дин', { amount_minor: 4500000, currency: 'RSD', description: 'Шкаф' }],
+    ['Ремонт 300 €', { amount_minor: 30000, currency: 'EUR', description: 'Ремонт' }],
+    ['Краска: 2000', { amount_minor: 200000, currency: 'RSD', description: 'Краска' }],
+    ['буду в 7', { amount_minor: 700, currency: 'RSD', description: 'буду в' }],
+  ])('records %j', async (text, row) => {
+    const { bot, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text }));
+
+    expect(stored(db)).toEqual([row]);
+  });
+
+  it('dates Чайник 3200 вчера, sent on 2026-10-07 in Belgrade, on 2026-10-06', async () => {
+    const SENT = new Date('2026-10-07T10:00:00Z');
+    const { bot, db } = createTestBot({ now: SENT });
+
+    await bot.handleUpdate(
+      textUpdate({ updateId: 1, messageId: 10, text: 'Чайник 3200 вчера', date: SENT }),
+    );
+
+    expect(db.prepare('SELECT amount_minor, occurred_on FROM expenses').all()).toEqual([
+      { amount_minor: 320000, occurred_on: '2026-10-06' },
+    ]);
+  });
+
+  it.each(['Чайник 3200 /2', 'Чайник\n3200', 'сколько ушло за 3?'])(
+    'answers %j with the help reply and records nothing',
+    async (text) => {
+      const { bot, calls, db } = createTestBot();
+
+      await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text }));
+
+      expect(calls).toEqual([
+        {
+          method: 'sendMessage',
+          payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu },
+        },
+      ]);
+      expect(expenseCount(db)).toEqual({ n: 0 });
+    },
+  );
+
+  it('records a redelivered Чайник 3200 once', async () => {
+    const { bot, db } = createTestBot();
+    const update = textUpdate({ updateId: 1, messageId: 10, text: 'Чайник 3200' });
+
+    await bot.handleUpdate(update);
+    await bot.handleUpdate(update);
+
+    expect(expenseCount(db)).toEqual({ n: 1 });
   });
 });
 
@@ -1807,6 +1887,21 @@ describe('ambiguous amounts answered with buttons', () => {
         payload: { chat_id: ALLOWED_ID, text: card, reply_markup: undoKeyboard, ...htmlParseMode },
       },
     ]);
+  });
+
+  it('asks about Лампа 1.500 like 1.500 лампа and records 150000 RSD Лампа on a tap', async () => {
+    const amountLast = await asked('Лампа 1.500');
+    const amountFirst = await asked('1.500 лампа');
+    expect(amountLast.calls).toEqual(amountFirst.calls);
+    expect(amountLast.calls).toHaveLength(1);
+    amountLast.calls.length = 0;
+
+    await amountLast.bot.handleUpdate(readingTap(2, 'amb:t', { text: 'Лампа 1.500' }));
+
+    expect(rows(amountLast.db)).toMatchObject([
+      { amount_minor: 150000, currency: 'RSD', description: 'Лампа', source_key: 'tg:1001:10' },
+    ]);
+    expect(amountLast.calls[1]).toMatchObject({ method: 'editMessageText' });
   });
 
   it('asks about the one reading of 1.234 обед and records 123400 RSD on a tap', async () => {

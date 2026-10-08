@@ -339,8 +339,8 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | committed with this row |
-| 2: Amount-last text in the private chat | dev | not started | |
+| 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | 0fd5d2b |
+| 2: Amount-last text in the private chat | dev | done | committed with this row |
 | 3: Amount-last text in a group asks first | dev | not started | |
 | 4: Help, README and the group help | dev | not started | |
 | 5: Live check | human | not started | |
@@ -350,6 +350,20 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 - Phase 1: `currencyOfWord(word, placement = 'word')` takes a second argument, `'word'` or
   `'glued'`, so a glued-only alias (`р`) is not read as a separate word. `currencies.ts` also
   exports `GLUED_ALIASES`, the glued aliases longest first, which the parser scans.
+- Phase 2: `chatterShaped(text, today?)` takes an optional `today`, so a trailing date word
+  (`буду в 7 вчера`) locates the amount the same way `readTrailingExpense` does.
+- Phase 2: amount-last text splits at the leftmost amount-shaped word that only a currency word,
+  tags and a date word follow (`Чайник 3200 25.09` is dated, not 25.09 RSD). A bare digit word
+  right before the amount makes the text unreadable (`Чайник 3 200` is not recorded as 200
+  «Чайник 3»). The plan names neither rule.
+- Phase 2: the bot test `answers non-expense text with the help hint` sent `coffee 450`, which now
+  records in the private chat. It sends `coffee later` instead.
+- Phase 2, done-when «A recurring rule's description «Аренда 2» is still accepted»: the recurring
+  service has no rule-description guard. Its one `expenseShaped` guard is the reminder text
+  (`answerReminderText`), which refuses only an `expense`/`ambiguous` parse. The test asserts
+  `parseExpenseText('Аренда 2')` is `notExpense`, in `expenseText.test.ts`, because
+  `recurring.test.ts` is not in the phase's files. `parseCategoryName('Кофе 2')` is tested there
+  too.
 
 ### Close triggers
 

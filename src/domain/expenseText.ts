@@ -143,6 +143,126 @@ export function parseExpenseText(
   }
 }
 
+// Amount-last text, `<description> <amount>[к] [CUR] [#tag…] [date]` on one line (ADR-0046):
+// `Чайник 3200`, `Шкаф 45к дин`, `Краска: 2000`. It is rewritten amount-first and parsed by
+// parseExpenseText, so ambiguity, a future date and too many tags read the same. Text with a `?`
+// is a question, never an expense; a line break or a `/N` word makes it unreadable too.
+export function readTrailingExpense(
+  text: string,
+  defaultCurrency: CurrencyCode,
+  today?: LocalDate,
+): ExpenseTextResult {
+  const parts = trailingParts(text, today);
+  if (parts === undefined) return { kind: 'notExpense' };
+  const rewritten = [
+    parts.amount,
+    ...(parts.currency === undefined ? [] : [parts.currency]),
+    ...parts.description,
+    ...parts.tags,
+    ...(parts.date === undefined ? [] : [parts.date]),
+  ].join(' ');
+  return parseExpenseText(rewritten, defaultCurrency, today);
+}
+
+// The words before the amount that make amount-last text read as chatter, not a purchase:
+// «буду в 7», «через 10». A heuristic: it misses chatter in other shapes and flags the rare
+// purchase written this way.
+const CHATTER_PREPOSITIONS = new Set(['в', 'к', 'до', 'через', 'с', 'по', 'около', 'после']);
+
+// True when the word right before the amount of amount-last text is a preposition of time or
+// place. False for text readTrailingExpense can't split at all.
+export function chatterShaped(text: string, today?: LocalDate): boolean {
+  const before = trailingParts(text, today)?.description.at(-1);
+  return before !== undefined && CHATTER_PREPOSITIONS.has(before.toLowerCase());
+}
+
+interface TrailingParts {
+  readonly description: readonly string[];
+  readonly amount: string;
+  readonly currency?: string;
+  readonly tags: readonly string[];
+  readonly date?: string;
+}
+
+// Splits amount-last text at the leftmost amount-shaped word that only a currency word, tags and
+// a date word follow, so in `Чайник 3200 25.09` the date is not the amount.
+function trailingParts(text: string, today: LocalDate | undefined): TrailingParts | undefined {
+  const trimmed = text.trim();
+  if (/[\n\r?]/.test(trimmed)) return undefined;
+  const words = trimmed.split(/\s+/).filter((word) => word !== '');
+  if (words.some((word) => SPLIT_WORD.test(word))) return undefined;
+  for (let i = 1; i < words.length; i++) {
+    const amount = words[i];
+    if (amount === undefined || !amountShaped(amount)) continue;
+    const tail = trailingTail(words.slice(i + 1), today);
+    if (tail === undefined) continue;
+    // `Чайник 3 200`: a digit group before the amount would be read as description.
+    if (/^\d+$/.test(words[i - 1] ?? '')) return undefined;
+    const description = withoutTrailingDash(words.slice(0, i));
+    if (!description.some((word) => /\p{L}/u.test(word))) return undefined;
+    return { description, amount, ...tail };
+  }
+  return undefined;
+}
+
+// What may follow the amount, in order: one currency word, `#tag` words, one date word.
+function trailingTail(
+  words: readonly string[],
+  today: LocalDate | undefined,
+): Omit<TrailingParts, 'description' | 'amount'> | undefined {
+  let next = 0;
+  const first = words[0];
+  const currency = first !== undefined && currencyOfWord(first) !== undefined ? first : undefined;
+  if (currency !== undefined) next = 1;
+  const tags: string[] = [];
+  for (let word = words[next]; word !== undefined && tagOfWord(word) !== undefined;) {
+    tags.push(word);
+    word = words[++next];
+  }
+  const last = words[next];
+  const date =
+    last !== undefined &&
+    next === words.length - 1 &&
+    today !== undefined &&
+    parseDateSuffix(last, today).kind !== 'none'
+      ? last
+      : undefined;
+  if (date !== undefined) next += 1;
+  if (next !== words.length) return undefined;
+  return {
+    ...(currency === undefined ? {} : { currency }),
+    tags,
+    ...(date === undefined ? {} : { date }),
+  };
+}
+
+// Digits, bare or glued to a `к`/`k` suffix or a currency alias: `3200`, `1.500`, `45к`, `300€`,
+// `€300`. parseExpenseText decides whether they are a valid amount.
+function amountShaped(word: string): boolean {
+  const lower = word.toLowerCase();
+  const prefix = GLUED_ALIASES.find(
+    ({ alias }) => lower.startsWith(alias) && /^\d/.test(lower.slice(alias.length)),
+  );
+  const body = prefix === undefined ? lower : lower.slice(prefix.alias.length);
+  const digits = /^\d+(?:[.,]\d+)*/.exec(body)?.[0];
+  if (digits === undefined) return false;
+  const tail = body.slice(digits.length);
+  return (
+    tail === '' ||
+    tail === 'к' ||
+    tail === 'k' ||
+    (prefix === undefined && GLUED_ALIASES.some(({ alias }) => alias === tail))
+  );
+}
+
+// `Краска: 2000`, `Краска — 2000`: the `:`, `—` or `-` ending the description goes.
+function withoutTrailingDash(words: readonly string[]): string[] {
+  const last = words.at(-1);
+  if (last === undefined) return [];
+  const stripped = last.replace(/[:—–-]+$/, '');
+  return [...words.slice(0, -1), ...(stripped === '' ? [] : [stripped])];
+}
+
 // `45` -> `45000`, `1,5` -> `1500`, `1.500` -> `1500`: whole units, as digits, for parseAmount.
 function thousandsUnits(token: string): string | undefined {
   const match = THOUSANDS_TOKEN.exec(token);

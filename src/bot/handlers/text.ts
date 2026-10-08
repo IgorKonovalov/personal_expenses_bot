@@ -75,6 +75,7 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
       sourceKey,
       occurredAt,
       now,
+      forms: 'any',
     });
 
     switch (result.kind) {

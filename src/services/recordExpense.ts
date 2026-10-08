@@ -25,7 +25,11 @@ import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { splitShares } from '../domain/debts.js';
-import { parseExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
+import {
+  parseExpenseText,
+  readTrailingExpense,
+  type ExpenseTextResult,
+} from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
 import { MAX_TAGS_PER_EXPENSE } from '../domain/tags.js';
 import { localDateOf } from '../domain/time.js';
@@ -91,6 +95,9 @@ export interface RecordExpenseInput {
   readonly now: Date;
   // The user's answer to an ambiguous amount: records that reading of the same text.
   readonly reading?: AmountReading['interpretation'];
+  // `any` also reads amount-last text (`Чайник 3200`, ADR-0046) when the text doesn't start with
+  // an amount. `leading` when omitted.
+  readonly forms?: 'leading' | 'any';
 }
 
 export interface SplitRecorded {
@@ -159,8 +166,11 @@ export function recordExpense(
 
   // "Today" is the ledger's local date when the message was sent; a date word counts back from it.
   const sentOn = localDateOf(input.occurredAt, effectiveTimezone(deps, user, ledger));
+  const leading = parseExpenseText(input.text, ledger.defaultCurrency, sentOn);
   const parsed = resolveReading(
-    parseExpenseText(input.text, ledger.defaultCurrency, sentOn),
+    leading.kind === 'notExpense' && input.forms === 'any'
+      ? readTrailingExpense(input.text, ledger.defaultCurrency, sentOn)
+      : leading,
     input.reading,
   );
   // A shared ledger splits every expense on its own (ADR-0030): a `/N` there records nothing.

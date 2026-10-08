@@ -66,6 +66,59 @@ function expenseRows(): unknown[] {
     .all();
 }
 
+describe('recordExpense forms (ADR-0046)', () => {
+  const recordForms = (text: string, forms?: 'leading' | 'any') =>
+    recordExpense(deps, {
+      user: alice,
+      text,
+      sourceKey: 'tg:1001:10',
+      occurredAt: SENT,
+      now: PROCESSED,
+      ...(forms === undefined ? {} : { forms }),
+    });
+
+  it('reads Чайник 3200 as no expense by default and with leading', () => {
+    expect(recordForms('Чайник 3200')).toStrictEqual({ kind: 'notExpense' });
+    expect(recordForms('Чайник 3200', 'leading')).toStrictEqual({ kind: 'notExpense' });
+    expect(expenseRows()).toEqual([]);
+  });
+
+  it('records Чайник 3200 as 320000 RSD with any', () => {
+    expect(recordForms('Чайник 3200', 'any')).toMatchObject({ kind: 'recorded', duplicate: false });
+    expect(expenseRows()).toEqual([
+      {
+        amount_minor: 320000,
+        currency: 'RSD',
+        description: 'Чайник',
+        occurred_at: '2026-09-29T21:50:00.000Z',
+        occurred_on: '2026-09-29',
+        source_key: 'tg:1001:10',
+        deleted_at: null,
+      },
+    ]);
+  });
+
+  it('records amount-first text the same with any', () => {
+    recordForms('3200 чайник', 'any');
+    expect(expenseRows()).toMatchObject([{ amount_minor: 320000, description: 'чайник' }]);
+  });
+
+  it('records the thousands reading of Лампа 1.500 chosen with any', () => {
+    expect(recordForms('Лампа 1.500', 'any')).toMatchObject({ kind: 'ambiguous' });
+    const chosen = recordExpense(deps, {
+      user: alice,
+      text: 'Лампа 1.500',
+      sourceKey: 'tg:1001:10',
+      occurredAt: SENT,
+      now: PROCESSED,
+      reading: 'thousands',
+      forms: 'any',
+    });
+    expect(chosen.kind).toBe('recorded');
+    expect(expenseRows()).toMatchObject([{ amount_minor: 150000, description: 'Лампа' }]);
+  });
+});
+
 describe('recordExpense', () => {
   it('stores 450 coffee as 45000 RSD in the personal ledger, dated by the message', () => {
     const result = record(alice, '450 coffee');
