@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0049`
+- **Next free number:** `0050`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -55,3 +55,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0046](0046-currency-words-thousands-suffix-and-amount-last-text.md) | Expense text accepts currency words and a thousands suffix; amount-last text records in a private chat and is asked about in a group | accepted (2026-10-08) |
 | [0047](0047-group-history-import-from-a-desktop-export.md) | A group's history from before the bot joined is imported from a Telegram Desktop JSON export, read by rules and reviewed before recording | proposed (2026-10-07) |
 | [0048](0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md) | A Russian docs site beside the Mini App, with its chat pictures generated from the real bot | accepted (2026-10-08) |
+| [0049](0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md) | A multi-line message records one expense per line, all or nothing, under one card | proposed (2026-10-08) |
