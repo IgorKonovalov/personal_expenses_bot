@@ -1,15 +1,15 @@
 # 0046: Group history import: a Telegram Desktop export brings in the expenses from before the bot joined
 
-> **Status:** in-progress
+> **Status:** done (2026-10-08): built as planned after one fix pass, one minor and one nit open, Phase 6 real export owed, v0.37.0
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0045](done/0045-currency-words-and-amount-last-text.md) (currency words, `к`, `readTrailingExpense`, `chatterShaped`)
-> **Related ADRs:** [ADR-0047](../adrs/0047-group-history-import-from-a-desktop-export.md) (the decision),
-> [ADR-0046](../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the readers),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers),
-> [ADR-0015](../adrs/0015-shared-ledgers-carry-a-timezone.md) (dates in the ledger's timezone),
-> [ADR-0009](../adrs/0009-persisted-flow-sessions.md) (the pending flow, used only by [Исправить]),
-> [ADR-0031](../adrs/0031-local-time-scheduler.md) (the sweep's tick),
-> [ADR-0008](../adrs/0008-category-suggestion-from-history.md) (categories)
+> **Depends on:** [Plan 0045](0045-currency-words-and-amount-last-text.md) (currency words, `к`, `readTrailingExpense`, `chatterShaped`)
+> **Related ADRs:** [ADR-0047](../../adrs/0047-group-history-import-from-a-desktop-export.md) (the decision),
+> [ADR-0046](../../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the readers),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers),
+> [ADR-0015](../../adrs/0015-shared-ledgers-carry-a-timezone.md) (dates in the ledger's timezone),
+> [ADR-0009](../../adrs/0009-persisted-flow-sessions.md) (the pending flow, used only by [Исправить]),
+> [ADR-0031](../../adrs/0031-local-time-scheduler.md) (the sweep's tick),
+> [ADR-0008](../../adrs/0008-category-suggestion-from-history.md) (categories)
 
 ## TL;DR
 
@@ -611,4 +611,133 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 - User-facing copy changed: `/help` gains the history import line.
 - Docs changed: README gains «History import»; CLAUDE.md's `domain/` line names chat import.
 
+## Close review
+
+Closed 2026-10-08 as v0.37.0. Phase 6 (`human`, a real export, `Blocks merge: no`) stays owed.
+
+### Plan 0046 review, round 2 (tip c2019ed)
+
+**Verdict:** The round 1 major is fixed and tested, and so is nit 3. No blocker or major is left,
+so the plan can close. Round 1's minor 2 and nit 4 are still open, and they go to the plan's
+`## Followups` at close.
+
+#### Gate (run in this session, on c2019ed)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0. 151 files and 2256 tests passed. That is round 1's 2254 plus the two new
+  tests.
+- `node scripts/check-doc-links.mjs`: exit 0. 352 relative links resolve.
+- The tree was clean before and after the run.
+
+#### Scope of this round
+
+The fix round is a36fbb5, a561c48 and c2019ed. Together they touch `src/bot/messages.ts`,
+`src/bot/messages.test.ts`, `src/bot/bot.test.ts` and the plan's log. Round 1 already graded
+Phases 1 to 5 in full, and nothing outside these files changed since e260af9.
+
+#### Round 1 findings, rechecked
+
+1. **Major 1, a review card past 4096 characters: resolved in a36fbb5.**
+   - `chatImportItemLines` (`src/bot/messages.ts:935`) sums `visibleLength` for the head (header,
+     sender, quote, reason), the payer tail and every item line. Above `MAX_VISIBLE_CHARS`, it
+     keeps lines while they fit in 4096 minus 40, then closes with `…и ещё N трат`. The 40-character
+     margin covers the closing line for any N an import can hold: a newline, `…и ещё `, up to
+     five digits and ` трат`.
+   - `chatImportItemLine` cuts each description at `MAX_LIST_DESCRIPTION` (40 code points), as the
+     ready list does.
+   - `visibleLength` counts UTF-16 units, which is how Telegram counts.
+   - Only the display is cut. The service still records every item.
+   - The test `src/bot/bot.test.ts:11486` reviews a card of 300 `a 1` lines with a `999 дин` total.
+     It asserts:
+     - `visibleLength(card) <= 4096`;
+     - the header «Проверка 1 из 2»;
+     - an `• 1.00 RSD — a` line, then `…и ещё N трат…`, then «Платит: A» at the end;
+     - after [Пропустить], nothing is imported, and the card edits to «Проверка 2 из 2» from B.
+
+     That defends the done-when the review asked for.
+2. **Minor 2, nothing probes a ledger zone or currency that differs from the defaults: still
+   open.** The log says "not acted on". See minor 1 below.
+3. **Nit 3, `chatImportFixBadLine` echoes an uncut line: resolved in a561c48.**
+   `src/bot/messages.ts:2420` cuts the line at `MAX_PREFIX_EXAMPLE` (100 code points) and adds `…`.
+   The test `src/bot/messages.test.ts:31` passes a 5000-character line and asserts the exact
+   string, with 100 code points and the ellipsis.
+4. **Nit 4, `totalsOf` re-implements `sumByCurrency`: still open.** The log says "not acted on".
+   See nit 1 below.
+
+#### Layering and correctness of the fix
+
+- The new code lives in the messages module and uses the module's own `visibleLength`,
+  `MAX_VISIBLE_CHARS` and `spendCountWords`.
+- It does no money arithmetic, and it adds no copy outside `src/bot/messages.ts`.
+- `MAX_LIST_DESCRIPTION` is declared at `src/bot/messages.ts:954`, below its first use at line 924.
+  It is only read when the function is called, after the module has loaded, so there is no
+  temporal-dead-zone risk, and lint passes.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **Nothing probes a ledger whose timezone or currency differs from the bot's defaults (carried
+   from round 1, minor 2).**
+   - **Where:** `src/services/importChat.test.ts:84-96`. There the ledger and `deps` both use
+     `Europe/Belgrade` and RSD.
+   - **What:** a regression that read `deps.timezone` or `deps.defaultCurrency` in place of the
+     ledger's would pass every test.
+   - **Why it matters:** it is the "two sources that agree in dev" case. The family's ledger is
+     the one real ledger.
+   - **Suggested fix:** add one service test with the ledger on `America/New_York` and EUR, and
+     `deps` on Belgrade and RSD. Assert that `Чайник 3200` sent 2026-07-21T02:30Z records
+     `occurred_on` 2026-07-20 in EUR.
+   - Not blocking. At close, it goes to `## Followups`.
+
+##### nit
+
+1. **`totalsOf` re-implements `sumByCurrency` (carried from round 1, nit 4).**
+   - **Where:** `src/services/importChat.ts:1251` and `src/domain/aggregate.ts:7`.
+   - **Suggested fix:**
+     `[...sumByCurrency(items)].map(([currency, amountMinor]) => ({ amountMinor, currency }))`.
+   - At close, it goes to `## Followups`, or is dropped.
+
+#### Bookkeeping owed (close session)
+
+- Flip the plan's `Status:` to `done`, with the close date and this verdict. `git mv` the plan to
+  `docs/plans/done/` and repair the links both ways. Verify with `node scripts/check-doc-links.mjs`.
+- Accept ADR-0047 (`proposed` → `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Version: a minor bump, since this adds a user-facing feature and a `/help` line. Add a
+  `CHANGELOG.md` entry and a `versionAnnouncements` entry in `src/bot/messages.ts` (ADR-0013).
+- Phase 6 (`human`, `Blocks merge: no`) stays owed after the close.
+- Fill the plan's empty `## Followups` with:
+  - the docs site (`site/`) has no history-import page;
+  - the group notice has no tap guard against a concurrent runner posting it twice;
+  - minor 1 above (a test with the ledger's zone and currency different from the defaults);
+  - nit 1 above (`totalsOf` → `sumByCurrency`).
+- README «History import» and the CLAUDE.md `domain/` line are already updated. There is no new
+  env var.
+
+### Earlier rounds
+
+- Round 1, major 1 (a review card past 4096 characters): resolved in a36fbb5.
+- Round 1, nit 3 (`chatImportFixBadLine` echoes the typed line uncut): resolved in a561c48.
+- Round 1, minor 2 and nit 4: still open, carried as round 2's minor 1 and nit 1.
+
 ## Followups
+
+- The docs site (`site/`, ADR-0048) has no page on the history import; only `/help` and the
+  README name it.
+- The group notice is posted from the handler with no tap guard. A concurrent runner could post it
+  twice.
+- No test probes a ledger whose timezone or currency differs from the bot's defaults (round 2,
+  minor 1): one service test with the ledger on `America/New_York` and EUR, `deps` on Belgrade and
+  RSD.
+- `totalsOf` in `src/services/importChat.ts` re-implements `sumByCurrency` from
+  `src/domain/aggregate.ts` (round 2, nit 1).

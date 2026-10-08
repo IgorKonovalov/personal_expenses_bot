@@ -1,8 +1,8 @@
 # ADR-0047: A group's history from before the bot joined is imported from a Telegram Desktop JSON export, read by rules and reviewed before recording
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0046](../plans/0046-group-history-import.md)
+> **Related plan(s):** [Plan 0046](../plans/done/0046-group-history-import.md)
 
 ## Context
 

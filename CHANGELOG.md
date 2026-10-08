@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.37.0 (2026-10-08)
+
+From Plan 0046 (group history import).
+
+- A group's history from before the bot joined is imported from a Telegram Desktop JSON export:
+  the owner sends `result.json` in a private chat, and the bot previews the ready expenses, the
+  messages to review and the skipped ones, with totals per currency and the date range.
+- Ready expenses record under each message's sender, on its original date in the ledger's
+  timezone. The rest come one review card at a time: [Записать так], [Исправить] or [Пропустить].
+- A message that starts with a name («Ира: …») is attributed to whoever the owner says it is.
+- The group gets one notice that history was added. [Отменить импорт] takes the import back, and
+  sending the file again records nothing twice.
+- Limits: a 10 MB file, 20 000 messages and 3 000 expenses. Migration 0029 adds the
+  `chat_imports` table. `/help` names the import.
+
 ## 0.36.0 (2026-10-08)
 
 From Plan 0047 (a Russian docs site).

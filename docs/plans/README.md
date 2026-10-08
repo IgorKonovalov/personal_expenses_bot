@@ -11,13 +11,13 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | approved (2026-10-07) |
 | [0048](0048-several-expenses-per-message-day-list-more-menu.md) | Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu | approved (2026-10-08) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0046](done/0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | done (2026-10-08): built as planned after one fix pass, one minor and one nit open, Phase 6 real export owed, v0.37.0 |
 | [0047](done/0047-docs-site.md) | A Russian docs site: a user guide with chats generated from the real bot, and an architecture section | done (2026-10-08): built as planned, five nits fixed at close, one minor open (architect lens 4 edit under .claude/), Phase 6 live check owed, v0.36.0 |
 | [0045](done/0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | done (2026-10-08): built as planned, one minor and one nit open, Phase 5 live check owed, v0.35.0 |
 | [0044](done/0044-charts-for-tags-and-prices.md) | Charts for tag reports and product prices | done (2026-10-07): built as planned, one minor fixed at close, Phase 3 live check owed, v0.34.0 |
