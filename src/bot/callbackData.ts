@@ -374,6 +374,18 @@ export function chatImportReadingData(nonce: string, index: number, reading: num
   return assertCallbackData(`imp:rd:${nonce}:${index}:${reading}`);
 }
 
+// An answer to a name prefix's question: `imp:map:<n>:<prefixIndex>:<senderIndex|a|x>`, a sender
+// of the import, [Автор сообщения] `a` or [Это не имя] `x` (at most 21 bytes).
+export const CHAT_IMPORT_PREFIX = new RegExp(`^imp:map:${NONCE}:(\\d{1,4}):(\\d{1,4}|a|x)$`);
+
+export function chatImportPrefixData(
+  nonce: string,
+  prefixIndex: number,
+  answer: number | 'a' | 'x',
+): string {
+  return assertCallbackData(`imp:map:${nonce}:${prefixIndex}:${answer}`);
+}
+
 // Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the
 // schedules from the expense's date; `rec:s:<uuid>:<m|w|y>` (44 bytes) makes the rule on one:
 // monthly, weekly or yearly.

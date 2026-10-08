@@ -8,6 +8,7 @@ import { createLogger } from '../logger.js';
 import { bindGroup } from './groupChats.js';
 import {
   answerChatImportFix,
+  answerChatImportPrefix,
   cancelChatImport,
   expiredChatImports,
   openChatImportReview,
@@ -302,6 +303,48 @@ describe('recordReadyChatImport', () => {
       kind: 'expired',
     });
     expect(count()).toBe(0);
+  });
+});
+
+describe('answerChatImportPrefix', () => {
+  it('asks about «Ира» first; as B, the message is ready and its item is B’s', () => {
+    const { nonce, question } = preview();
+    expect(question).toEqual({
+      index: 0,
+      prefix: 'Ира',
+      count: 1,
+      example: 'Ира: ремонт 300€',
+      n: 1,
+      total: 1,
+      senders: [
+        { index: 0, name: 'A' },
+        { index: 1, name: 'B' },
+      ],
+    });
+
+    const mapped = answerChatImportPrefix(deps, {
+      user: alice,
+      nonce,
+      prefixIndex: 0,
+      answer: 1,
+      now: NOW,
+    });
+    expect(mapped).toMatchObject({
+      kind: 'preview',
+      readyMessages: 5,
+      totals: [
+        { amountMinor: 1550000, currency: 'RSD' },
+        { amountMinor: 60000, currency: 'EUR' },
+      ],
+      reviewCount: 4,
+    });
+    expect(mapped.kind === 'preview' ? mapped.ready.length : 0).toBe(8);
+    expect(mapped).not.toHaveProperty('question');
+    recordReadyChatImport(deps, { user: alice, nonce, now: NOW });
+
+    expect(rows()).toContainEqual(
+      expect.objectContaining({ source_key: `tgx:${CHAT}:7:0`, sender: String(B) }),
+    );
   });
 });
 

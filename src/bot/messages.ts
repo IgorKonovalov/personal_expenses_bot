@@ -866,6 +866,8 @@ const chatImportNothingReady = html`Новых трат, готовых к за�
 
 // A review card shows at most this many code points of the message.
 const MAX_CARD_TEXT = 600;
+// A name prefix's question quotes at most this many code points of its example.
+const MAX_PREFIX_EXAMPLE = 100;
 
 // Why a message of a group history import needs a look: one line.
 const chatImportReason = {
@@ -2374,6 +2376,30 @@ export const messages = {
     readonly skipped: number;
   }): Html =>
     html`Проверка закончена: записано ${messageCountWords(recorded)}, пропущено ${skipped}.`,
+  // Asked before the preview, one name prefix at a time, above a button per sender,
+  // [Автор сообщения] [Это не имя] and [Отмена]. The example is the group's text.
+  chatImportPrefixAsk: ({
+    prefix,
+    count,
+    example,
+    n,
+    total,
+  }: {
+    readonly prefix: string;
+    readonly count: number;
+    readonly example: string;
+    readonly n: number;
+    readonly total: number;
+  }): Html => {
+    const codePoints = Array.from(example);
+    const shown =
+      codePoints.length <= MAX_PREFIX_EXAMPLE
+        ? example
+        : `${codePoints.slice(0, MAX_PREFIX_EXAMPLE).join('')}…`;
+    return html`Имя ${n} из ${total}. ${messageCountWords(count)} ${count % 10 === 1 && count % 100 !== 11 ? 'начинается' : 'начинаются'} с «${prefix}:», например: «${shown}». Кто платил?`;
+  },
+  chatImportPrefixAuthorButton: 'Автор сообщения',
+  chatImportPrefixNotNameButton: 'Это не имя',
   // A toast: a button of an earlier upload of the same user.
   chatImportStale: 'Кнопка от прошлой выгрузки. Продолжите в последнем сообщении.',
   chatImportExpired: html`Импорт устарел: прошло больше суток. Отправьте файл ещё раз — уже записанное не повторится.`,

@@ -512,8 +512,8 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: an export records its ready messages | dev | done | 0bad4f1 |
-| 2: Review cards | dev | done | committed with this row |
-| 3: Name prefixes | dev | not started | |
+| 2: Review cards | dev | done | fd8f901 |
+| 3: Name prefixes | dev | done | committed with this row |
 | 4: Undo and the group notice | dev | not started | |
 | 5: Limits, help and docs | dev | not started | |
 | 6: A real export | human | not started | |
@@ -548,6 +548,16 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
   «Проверка k из N» counts in it.
 - Phase 2: an [Исправить] answer whose upload went stale or expired ends the prompt and replies
   `chatImportStale` or `chatImportExpired`.
+- Phase 3: `src/bot/callbacks.ts` was listed but not touched.
+- Phase 3: `previewChatImport` always returns the preview, with a `question` while a prefix is
+  unanswered; the handler shows the question first. The questions are asked about the messages
+  not yet recorded or skipped; the prefixes are matched case-insensitively.
+- Phase 3: the question's verb agrees with the count: «1 сообщение начинается», «2 сообщения
+  начинаются». The example is cut at 100 code points.
+- Phase 3: a prefix answered as a sender also clears a deleted account's `deletedSender` reason,
+  since the payer is then known.
+- Phase 3: the Phase 1 and 2 bot tests upload through a helper that answers «Ира» with
+  [Это не имя]; the Phase 1 preview test reads the preview from the question's message, edited.
 
 ### Close triggers
 

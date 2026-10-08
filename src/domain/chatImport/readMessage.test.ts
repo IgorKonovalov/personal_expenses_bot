@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LocalDate } from '../time.js';
-import { readMessage } from './readMessage.js';
+import { namePrefix, readMessage } from './readMessage.js';
 
 const TODAY = '2026-07-21' as LocalDate;
 
@@ -116,11 +116,34 @@ describe('readMessage', () => {
     });
   });
 
+  it('reads a prefixed message as ready once its prefix is answered as a name', () => {
+    expect(readMessage('Ира: ремонт 300€', 'RSD', TODAY, { prefixAnswered: true })).toEqual({
+      verdict: 'ready',
+      items: [item(30000, 'EUR', 'ремонт')],
+    });
+  });
+
   it('sends a message with a line that does not read to review as unread', () => {
     expect(read('Краска 2000\nвстреча в 7:30')).toMatchObject({
       verdict: 'review',
       reason: 'unread',
       items: [item(200000, 'RSD', 'Краска')],
     });
+  });
+});
+
+describe('namePrefix', () => {
+  const prefixOf = (text: string) => namePrefix(text, 'RSD', TODAY)?.prefix;
+
+  it('finds «Ира» in Ира: ремонт 300€', () => {
+    expect(prefixOf('Ира: ремонт 300€')).toBe('Ира');
+  });
+
+  it('finds none in Шкаф: 4500, whose rest has no description', () => {
+    expect(prefixOf('Шкаф: 4500')).toBeUndefined();
+  });
+
+  it('finds none in Мойка высокого давления: 7000: more than one word', () => {
+    expect(prefixOf('Мойка высокого давления: 7000')).toBeUndefined();
   });
 });

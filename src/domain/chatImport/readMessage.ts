@@ -58,13 +58,17 @@ export type MessageRead =
 export interface MessageContext {
   readonly forwarded?: boolean;
   readonly deletedSender?: boolean;
+  // The name prefix was answered as a name: the message reads without it, and the prefix alone
+  // sends it to no review.
+  readonly prefixAnswered?: boolean;
 }
 
 // Splits the message into lines, and a line into `, `/`; `-separated pieces when every piece
 // reads as an item. A line or piece reads amount-first (parseExpenseText), then amount-last
 // (readTrailingExpense); an amount alone, or «итого»/«всего»/«итог» and an amount, is a total.
 // `today` is the message's local date in the ledger's timezone, so a date word counts back from
-// it. A `/N` split or a future date leaves the line unread.
+// it. A `/N` split or a future date leaves the line unread. The lines after a name prefix are read
+// without it.
 export function readMessage(
   text: string,
   defaultCurrency: CurrencyCode,
@@ -88,7 +92,7 @@ export function readMessage(
       ? 'deletedSender'
       : context.forwarded === true
         ? 'forwarded'
-        : prefixed !== undefined
+        : prefixed !== undefined && context.prefixAnswered !== true
           ? 'prefix'
           : items.length === 0 || reads.some((read) => read.kind === 'unread')
             ? 'unread'

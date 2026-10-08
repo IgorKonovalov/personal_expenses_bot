@@ -7,6 +7,7 @@ import type { User } from '../../db/users.js';
 import type { ChatImportFixFlow } from '../../services/flowSessions.js';
 import {
   answerChatImportFix,
+  answerChatImportPrefix,
   cancelChatImport,
   cycleChatImportPayer,
   finishChatImportReview,
@@ -28,11 +29,13 @@ import {
   CHAT_IMPORT_CANCEL,
   CHAT_IMPORT_CARD,
   CHAT_IMPORT_FINISH,
+  CHAT_IMPORT_PREFIX,
   CHAT_IMPORT_READING,
   CHAT_IMPORT_RECORD,
   CHAT_IMPORT_REVIEW,
   chatImportCardData,
   chatImportData,
+  chatImportPrefixData,
   chatImportReadingData,
   type ChatImportCardAction,
 } from '../callbackData.js';
@@ -57,7 +60,30 @@ interface View {
   readonly markup: InlineKeyboard;
 }
 
+// The question about a name prefix while one is unanswered; the preview otherwise.
 function previewView(preview: ChatImportPreview): View {
+  const { question, nonce } = preview;
+  if (question !== undefined) {
+    const senders = question.senders.map((sender) =>
+      InlineKeyboard.text(sender.name, chatImportPrefixData(nonce, question.index, sender.index)),
+    );
+    const rows = [];
+    for (let i = 0; i < senders.length; i += 2) rows.push(senders.slice(i, i + 2));
+    rows.push(
+      [
+        InlineKeyboard.text(
+          messages.chatImportPrefixAuthorButton,
+          chatImportPrefixData(nonce, question.index, 'a'),
+        ),
+        InlineKeyboard.text(
+          messages.chatImportPrefixNotNameButton,
+          chatImportPrefixData(nonce, question.index, 'x'),
+        ),
+      ],
+      [InlineKeyboard.text(messages.cancelButton, chatImportData('x', nonce))],
+    );
+    return { text: messages.chatImportPrefixAsk(question), markup: InlineKeyboard.from(rows) };
+  }
   const keyboard = new InlineKeyboard();
   if (preview.ready.length > 0) {
     keyboard
@@ -295,6 +321,27 @@ export function registerChatImport(
     }
     await ctx.answerCallbackQuery();
     await editHtml(ctx, messages.chatImportCancelled);
+  });
+
+  // An answer to a name prefix's question: the next question or the preview, in place.
+  bot.callbackQuery(CHAT_IMPORT_PREFIX, async (ctx) => {
+    const [, nonce = '', prefixIndex = '', choice = ''] = ctx.match;
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const result = answerChatImportPrefix(deps, {
+      user,
+      nonce,
+      prefixIndex: Number(prefixIndex),
+      answer: choice === 'a' ? 'author' : choice === 'x' ? 'notName' : Number(choice),
+      now,
+    });
+    if (result.kind !== 'preview') {
+      await answerGone(ctx, result.kind);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const view = previewView(result);
+    await editHtml(ctx, view.text, { reply_markup: view.markup });
   });
 
   // [Проверить (N)]: the first card, as a new message that later taps edit in place.

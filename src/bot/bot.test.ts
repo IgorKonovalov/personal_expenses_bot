@@ -11150,33 +11150,47 @@ describe('group history import (Plan 0046)', () => {
         .prepare("SELECT COUNT(*) FROM expenses WHERE source_key LIKE 'tgx:%'")
         .pluck()
         .get();
-    return { ...harness, send, sendFile, tap, nonce, imported };
+    // The latest message text the bot sent or edited in.
+    const shown = () => {
+      const payload = harness.calls
+        .filter((call) => call.method === 'sendMessage' || call.method === 'editMessageText')
+        .at(-1)?.payload as { text: string; reply_markup?: unknown } | undefined;
+      if (payload === undefined) throw new Error('the bot showed nothing');
+      return payload;
+    };
+    // Sends the file and answers each name prefix's question with `answer` (Phase 3), so the
+    // preview is what the bot shows last.
+    const upload = async (json = EXPORT, answer = 'x') => {
+      await sendFile(json);
+      for (let asked = 0; /imp:map:/.test(JSON.stringify(shown().reply_markup)); asked += 1) {
+        if (asked > 10) throw new Error('the questions never ended');
+        await tap(`imp:map:${nonce()}:${asked}:${answer}`);
+      }
+    };
+    return { ...harness, send, sendFile, upload, shown, tap, nonce, imported };
   }
 
   describe('the preview and [Записать N трат] (Phase 1)', () => {
     it('previews the export with its counts and records nothing yet', async () => {
-      const { sendFile, calls, nonce, imported } = await importBot();
+      const { upload, shown, nonce, imported } = await importBot();
 
-      await sendFile(EXPORT);
+      // «Ира:» answered [Это не имя]: the preview is Phase 1's.
+      await upload();
 
       const n = nonce();
-      expect(calls.filter((call) => call.method === 'sendMessage')).toEqual([
-        {
-          method: 'sendMessage',
-          payload: {
-            chat_id: ALLOWED_ID,
-            text: PREVIEW,
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
-                [{ text: 'Проверить (5)', callback_data: `imp:rev:${n}` }],
-                [{ text: 'Отмена', callback_data: `imp:x:${n}` }],
-              ],
-            },
-            ...htmlParseMode,
-          },
+      expect(shown()).toEqual({
+        chat_id: ALLOWED_ID,
+        message_id: 500,
+        text: PREVIEW,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
+            [{ text: 'Проверить (5)', callback_data: `imp:rev:${n}` }],
+            [{ text: 'Отмена', callback_data: `imp:x:${n}` }],
+          ],
         },
-      ]);
+        ...htmlParseMode,
+      });
       expect(imported()).toBe(0);
     });
 
@@ -11237,8 +11251,8 @@ describe('group history import (Plan 0046)', () => {
     });
 
     it('previews the same file again as already recorded, and stores nothing new', async () => {
-      const { sendFile, tap, nonce, imported, calls } = await importBot();
-      await sendFile(EXPORT);
+      const { sendFile, upload, tap, nonce, imported, calls } = await importBot();
+      await upload();
       await tap(`imp:rec:${nonce()}`);
       calls.length = 0;
 
@@ -11374,7 +11388,7 @@ describe('group history import (Plan 0046)', () => {
 
     async function reviewing() {
       const bot = await importBot();
-      await bot.sendFile(EXPORT);
+      await bot.upload();
       const n = bot.nonce();
       bot.calls.length = 0;
       await bot.tap(`imp:rev:${n}`);
@@ -11619,6 +11633,112 @@ describe('group history import (Plan 0046)', () => {
         'Нужно проверить: 4 сообщения',
         'Без сумм, пропущено: 1 сообщение',
       ]);
+    });
+  });
+
+  describe('name prefixes (Phase 3)', () => {
+    // B is the export's sender at index 1: A and B have five messages each, A first.
+    const B_INDEX = 1;
+    const ready8 = [
+      '<b>История группы</b> → «Семья», 01.07.2026–14.09.2026',
+      'Готово к записи: 8 трат из 5 сообщений, на 15 500.00 RSD, 600.00 EUR',
+      'Нужно проверить: 4 сообщения',
+      'Без сумм, пропущено: 1 сообщение',
+    ];
+    const authorOf = (db: Db, key: string) =>
+      db
+        .prepare(
+          `SELECT i.external_id FROM expenses e JOIN auth_identities i ON i.user_id = e.created_by
+            WHERE e.source_key = ?`,
+        )
+        .pluck()
+        .get(key);
+
+    it('asks who «Ира» is before the preview, with a button per sender', async () => {
+      const { sendFile, calls, nonce } = await importBot();
+
+      await sendFile(EXPORT);
+
+      const n = nonce();
+      expect(calls.filter((call) => call.method === 'sendMessage')).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: ALLOWED_ID,
+            text: 'Имя 1 из 1. 1 сообщение начинается с «Ира:», например: «Ира: ремонт 300€». Кто платил?',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'A', callback_data: `imp:map:${n}:0:0` },
+                  { text: 'B', callback_data: `imp:map:${n}:0:1` },
+                ],
+                [
+                  { text: 'Автор сообщения', callback_data: `imp:map:${n}:0:a` },
+                  { text: 'Это не имя', callback_data: `imp:map:${n}:0:x` },
+                ],
+                [{ text: 'Отмена', callback_data: `imp:x:${n}` }],
+              ],
+            },
+            ...htmlParseMode,
+          },
+        },
+      ]);
+    });
+
+    it('«Ира» as B makes the message ready: 8 items in 5 messages, B its author', async () => {
+      const { upload, shown, tap, nonce, db } = await importBot();
+
+      await upload(EXPORT, String(B_INDEX));
+      expect(shown().text.split('\n')).toEqual(ready8);
+      await tap(`imp:rec:${nonce()}`);
+
+      expect(authorOf(db, `tgx:${CHAT_ID}:7:0`)).toBe(String(B_ID));
+    });
+
+    it('«Ира» as [Автор сообщения] makes it ready under its own sender', async () => {
+      const { upload, shown, tap, nonce, db } = await importBot();
+
+      await upload(EXPORT, 'a');
+      expect(shown().text.split('\n')).toEqual(ready8);
+      await tap(`imp:rec:${nonce()}`);
+
+      expect(authorOf(db, `tgx:${CHAT_ID}:7:0`)).toBe(String(ALLOWED_ID));
+    });
+
+    it('[Это не имя] leaves the preview as it was', async () => {
+      const { upload, shown } = await importBot();
+
+      await upload(EXPORT, 'x');
+
+      expect(shown().text).toBe(PREVIEW);
+    });
+
+    it('asks once about two messages starting «Ира:»', async () => {
+      const { sendFile, shown } = await importBot();
+
+      await sendFile(
+        chatExportJson({
+          id: EXPORT_ID,
+          messages: [
+            ...MESSAGES,
+            { id: 12, at: new Date('2026-09-02T09:00:00Z'), ...from(B_ID), text: 'Ира: такси 900' },
+          ],
+        }),
+      );
+
+      expect(shown().text).toMatch(/^Имя 1 из 1\. 2 сообщения начинаются с «Ира:»/);
+    });
+
+    it('asks nothing when the file is sent again after mapping «Ира»', async () => {
+      const { upload, sendFile, calls } = await importBot();
+      await upload(EXPORT, String(B_INDEX));
+      calls.length = 0;
+
+      await sendFile(EXPORT);
+
+      expect(
+        String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]).split('\n'),
+      ).toEqual(ready8);
     });
   });
 });

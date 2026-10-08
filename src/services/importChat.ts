@@ -93,7 +93,34 @@ interface Payload {
   // Per message id, the items that replace the read ones: typed after [Исправить], or with an
   // ambiguous amount's reading picked.
   readonly fixes?: Readonly<Record<string, readonly ReadItem[]>>;
+  // The distinct name prefixes of the messages not yet recorded or skipped, as of the last
+  // upload, in order of first appearance and as first written: the questions.
+  readonly prefixOrder?: readonly string[];
+  // Per prefix, lowercased: what it was answered as.
+  readonly prefixes?: Readonly<Record<string, PrefixAnswer>>;
 }
+
+// A name prefix answered as a sender (by Telegram id), as its message's own sender (`author`),
+// or as no name (`notName`).
+export type PrefixAnswer = number | 'author' | 'notName';
+
+// The question about one name prefix, asked before the preview.
+export interface PrefixQuestion {
+  // The prefix's index in the import, which the answer buttons carry.
+  readonly index: number;
+  readonly prefix: string;
+  // The messages starting with it, and the first of them.
+  readonly count: number;
+  readonly example: string;
+  // 1-based, of `total` prefixes.
+  readonly n: number;
+  readonly total: number;
+  // The export's named senders, most messages first, at most PREFIX_SENDER_BUTTONS; `index` is
+  // the sender's in the import.
+  readonly senders: readonly { readonly index: number; readonly name: string }[];
+}
+
+const PREFIX_SENDER_BUTTONS = 8;
 
 // A ready item with what the preview's list shows of its message.
 export interface ReadyItem extends ProposedItem {
@@ -116,6 +143,8 @@ export interface ChatImportPreview {
   readonly skippedCount: number;
   readonly reviewCount: number;
   readonly noAmountCount: number;
+  // A name prefix not answered yet: asked before the preview shows.
+  readonly question?: PrefixQuestion;
 }
 
 export type PreviewResult =
@@ -126,7 +155,8 @@ export type PreviewResult =
 // Reads the export against the group's ledger, saves it in the user's row under a new nonce and
 // describes the preview. The binding's chat id is `-100<id>` for a supergroup or `-<id>` for a
 // basic group; both are tried. Only messages sent before the binding are read. A new export of
-// the chat the row already holds keeps the row's decisions; one of another chat replaces it.
+// the chat the row already holds keeps the row's decisions and prefix answers; one of another
+// chat replaces it.
 export function previewChatImport(
   deps: ChatImportDeps,
   input: {
@@ -151,12 +181,17 @@ export function previewChatImport(
   const before = input.export.messages.filter((message) => message.at < binding.boundAt);
   const earlier = findChatImport(db, user.id);
   const kept = earlier?.chatId === binding.chatId ? parsePayload(earlier.payload) : undefined;
-  const payload = withQueue(deps, ledger, binding.chatId, {
+  const fresh: Payload = {
     messages: before.filter((message) => /\d/.test(message.text)).map(storedMessage),
     noAmount: before.filter((message) => !/\d/.test(message.text)).length,
     ...range(before),
     senders: sendersOf(before),
     decisions: kept?.decisions ?? {},
+    prefixes: kept?.prefixes ?? {},
+  };
+  const payload = withQueue(deps, ledger, binding.chatId, {
+    ...fresh,
+    prefixOrder: prefixOrderOf(classify(deps, { ledger, chatId: binding.chatId, payload: fresh })),
   });
   const nonce = newNonce(deps.newId);
   saveChatImport(db, {
@@ -241,9 +276,11 @@ export function recordReadyChatImport(
     const created: ProposedItem[] = [];
     let otherCount = 0;
     const decisions: Record<string, Decision> = { ...payload.decisions };
-    for (const { message, status } of statuses) {
-      if (status.kind !== 'ready') continue;
-      const sender = senderUser(deps, ledger, message, now);
+    for (const entry of statuses) {
+      const { message, status } = entry;
+      const payer = payerOf(payload, entry);
+      if (status.kind !== 'ready' || payer === undefined) continue;
+      const sender = senderUser(deps, ledger, payer, now);
       for (const [index, item] of status.items.entries()) {
         const stored = storeItem(deps, {
           ledger,
@@ -276,6 +313,41 @@ export function recordReadyChatImport(
     );
   }
   return result;
+}
+
+// An answer to a name prefix's question: stored in the row, and the next question or the preview.
+// The prefix's messages then read without it, paid by the sender it names or by their own
+// sender, unless it was answered as no name.
+export function answerChatImportPrefix(
+  deps: ChatImportDeps,
+  input: {
+    readonly user: User;
+    readonly nonce: string;
+    readonly prefixIndex: number;
+    // A sender's index in the import, `author` or `notName`.
+    readonly answer: number | 'author' | 'notName';
+    readonly now: Date;
+  },
+): ChatImportPreview | { readonly kind: 'expired' } | { readonly kind: 'stale' } {
+  const { user, now } = input;
+  return deps.db.transaction(() => {
+    const tap = held(deps, user, input.nonce, now);
+    if (tap.kind !== 'held') return tap;
+    const { row, ledger } = tap;
+    const prefix = tap.payload.prefixOrder?.[input.prefixIndex];
+    const answer =
+      typeof input.answer === 'number'
+        ? tap.payload.senders[input.answer]?.telegramId
+        : input.answer;
+    if (prefix === undefined || answer === undefined) return { kind: 'stale' } as const;
+    const payload = withQueue(deps, ledger, row.chatId, {
+      ...tap.payload,
+      prefixes: { ...tap.payload.prefixes, [prefix.toLowerCase()]: answer },
+    });
+    renew(deps, row, payload, now);
+    deps.logger.info({ userId: user.id }, 'chat import prefix answered');
+    return describe(deps, { ledger, chatId: row.chatId, nonce: row.nonce, payload });
+  })();
 }
 
 // [Отмена] on the preview: the row goes.
@@ -392,7 +464,7 @@ export function skipChatImportCard(deps: ChatImportDeps, input: CardInput): Revi
 export function cycleChatImportPayer(deps: ChatImportDeps, input: CardInput): ReviewResult {
   return onOpenCard(deps, input, (tap, card) => {
     const named = tap.payload.senders.filter((sender) => sender.name !== null);
-    const current = payerOf(tap.payload, tap.entry.message);
+    const current = payerOf(tap.payload, tap.entry)?.sender;
     const at = named.findIndex((sender) => sender.telegramId === current);
     const next = named[(at + 1) % named.length];
     if (next === undefined) return card;
@@ -583,9 +655,9 @@ function recordCard(
   now: Date,
 ): ChatImportReviewView {
   const { message } = tap.entry;
-  const payer = payerOf(tap.payload, message);
-  if (payer === undefined || card.payer === undefined) return card;
-  const createdBy = senderUser(deps, tap.ledger, { sender: payer, name: card.payer.name }, now);
+  const payer = payerOf(tap.payload, tap.entry);
+  if (payer === undefined) return card;
+  const createdBy = senderUser(deps, tap.ledger, payer, now);
   let count = 0;
   for (const [index, item] of card.items.entries()) {
     if (isAmbiguousItem(item)) continue;
@@ -650,7 +722,7 @@ function cardOf(
   if (status.kind !== 'review') throw new Error(`message ${message.id} is not to review`);
   const { read } = status;
   const items = tap.payload.fixes?.[String(message.id)] ?? read.items;
-  const payer = payerName(tap.payload, message);
+  const payer = payerOf(tap.payload, entry);
   return {
     kind: 'card',
     nonce: tap.row.nonce,
@@ -663,24 +735,27 @@ function cardOf(
     reason: read.reason,
     ...(read.stated === undefined ? {} : { stated: read.stated }),
     items,
-    ...(payer === undefined ? {} : { payer: { name: payer } }),
+    ...(payer === undefined ? {} : { payer: { name: payer.name } }),
     recordable: items.length > 0 && !items.some(isAmbiguousItem) && payer !== undefined,
   };
 }
 
-// The Telegram id of who pays for the message: [👤]'s pick, else its sender unless the account
-// was deleted.
-function payerOf(payload: Payload, message: StoredMessage): number | undefined {
-  return (
-    payload.payers?.[String(message.id)] ?? (message.name === null ? undefined : message.sender)
-  );
-}
-
-function payerName(payload: Payload, message: StoredMessage): string | undefined {
-  const payer = payerOf(payload, message);
-  if (payer === undefined) return undefined;
-  if (payer === message.sender && message.name !== null) return message.name;
-  return payload.senders.find((sender) => sender.telegramId === payer)?.name ?? undefined;
+// Who pays for the message, by Telegram id and name: [👤]'s pick, else the sender its name prefix
+// was answered as, else its own sender. None for a deleted account's message until one is picked.
+function payerOf(
+  payload: Payload,
+  entry: Classified,
+): { readonly sender: number; readonly name: string } | undefined {
+  const { message } = entry;
+  const picked = payload.payers?.[String(message.id)] ?? entry.prefixPayer;
+  const payer = picked ?? message.sender;
+  const name =
+    payer === message.sender && message.name !== null
+      ? message.name
+      : picked === undefined
+        ? null
+        : (payload.senders.find((sender) => sender.telegramId === payer)?.name ?? null);
+  return name === null ? undefined : { sender: payer, name };
 }
 
 function decide(tap: CardTap, decision: Decision): Payload {
@@ -743,6 +818,11 @@ interface Classified {
   // The message's index in the payload.
   readonly index: number;
   readonly status: Status;
+  // The name prefix the message starts with, as written; read only for a message not yet
+  // recorded or skipped.
+  readonly prefix?: string;
+  // The sender the prefix was answered as, by Telegram id.
+  readonly prefixPayer?: number;
 }
 
 function classifyHeld(deps: ChatImportDeps, tap: HeldImport): Classified[] {
@@ -765,8 +845,43 @@ function withQueue(
   };
 }
 
+// The distinct name prefixes, by their lowercased form, in order of first appearance.
+function prefixOrderOf(statuses: readonly Classified[]): string[] {
+  const seen = new Map<string, string>();
+  for (const { prefix } of statuses) {
+    if (prefix !== undefined && !seen.has(prefix.toLowerCase())) {
+      seen.set(prefix.toLowerCase(), prefix);
+    }
+  }
+  return [...seen.values()];
+}
+
+// The first prefix of the row not answered yet, as a question.
+function prefixQuestion(
+  payload: Payload,
+  statuses: readonly Classified[],
+): PrefixQuestion | undefined {
+  const order = payload.prefixOrder ?? [];
+  const index = order.findIndex((prefix) => payload.prefixes?.[prefix.toLowerCase()] === undefined);
+  const prefix = order[index];
+  if (prefix === undefined) return undefined;
+  const messages = statuses.filter((entry) => entry.prefix?.toLowerCase() === prefix.toLowerCase());
+  return {
+    index,
+    prefix,
+    count: messages.length,
+    example: messages[0]?.message.text ?? '',
+    n: index + 1,
+    total: order.length,
+    senders: payload.senders
+      .flatMap((sender, i) => (sender.name === null ? [] : [{ index: i, name: sender.name }]))
+      .slice(0, PREFIX_SENDER_BUTTONS),
+  };
+}
+
 // Where each kept message stands: recorded (its first item's key is stored, by this import or an
-// earlier one), skipped in this row, ready or to review.
+// earlier one), skipped in this row, ready or to review. A message whose name prefix was answered
+// as a name reads without it: paid by the sender it names, or by its own sender for `author`.
 function classify(
   deps: ChatImportDeps,
   input: { readonly ledger: Ledger; readonly chatId: string; readonly payload: Payload },
@@ -784,20 +899,30 @@ function classify(
     if (payload.decisions[String(message.id)] === 'skipped') {
       return { message, index, status: { kind: 'skipped' } };
     }
-    const read = readMessage(
-      message.text,
-      ledger.defaultCurrency,
-      localDateOf(new Date(message.at), timezone),
-      { forwarded: message.forwarded, deletedSender: message.name === null },
-    );
-    // A message is kept only with a digit in it, so noAmount doesn't come back.
-    if (read.verdict === 'review') return { message, index, status: { kind: 'review', read } };
-    if (read.verdict === 'ready') {
-      return { message, index, status: { kind: 'ready', items: read.items } };
-    }
-    return {
+    const today = localDateOf(new Date(message.at), timezone);
+    const context = { forwarded: message.forwarded, deletedSender: message.name === null };
+    const first = readMessage(message.text, ledger.defaultCurrency, today, context);
+    const prefix = first.verdict === 'review' ? first.prefix : undefined;
+    const answer = prefix === undefined ? undefined : payload.prefixes?.[prefix.toLowerCase()];
+    const read =
+      answer === undefined || answer === 'notName'
+        ? first
+        : readMessage(message.text, ledger.defaultCurrency, today, {
+            ...context,
+            prefixAnswered: true,
+            ...(typeof answer === 'number' ? { deletedSender: false } : {}),
+          });
+    const named = {
       message,
       index,
+      ...(prefix === undefined ? {} : { prefix }),
+      ...(typeof answer === 'number' ? { prefixPayer: answer } : {}),
+    };
+    // A message is kept only with a digit in it, so noAmount doesn't come back.
+    if (read.verdict === 'review') return { ...named, status: { kind: 'review', read } };
+    if (read.verdict === 'ready') return { ...named, status: { kind: 'ready', items: read.items } };
+    return {
+      ...named,
       status: { kind: 'review', read: { verdict: 'review', reason: 'unread', items: [] } },
     };
   });
@@ -814,11 +939,16 @@ function describe(
 ): ChatImportPreview {
   const { ledger, payload } = input;
   const statuses = classify(deps, input);
-  const ready = statuses.flatMap(({ message, status }) =>
-    status.kind === 'ready'
-      ? status.items.map((item) => ({ ...item, messageId: message.id, senderName: message.name }))
+  const ready = statuses.flatMap((entry) =>
+    entry.status.kind === 'ready'
+      ? entry.status.items.map((item) => ({
+          ...item,
+          messageId: entry.message.id,
+          senderName: payerOf(payload, entry)?.name ?? null,
+        }))
       : [],
   );
+  const question = prefixQuestion(payload, statuses);
   const count = (kind: Status['kind']) =>
     statuses.filter(({ status }) => status.kind === kind).length;
   const timezone = ledgerZone(deps, ledger);
@@ -837,6 +967,7 @@ function describe(
     skippedCount: count('skipped'),
     reviewCount: count('review'),
     noAmountCount: payload.noAmount,
+    ...(question === undefined ? {} : { question }),
   };
 }
 
