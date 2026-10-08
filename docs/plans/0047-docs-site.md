@@ -210,6 +210,7 @@ flowchart LR
 
 ### Phase 6: Live check and proofreading
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** After the push to `main`, open the site on a phone and on a desktop. Read the guide
   for Russian that reads like a translation. Tap a chart button in a doc page and see the chart.
   Open the bare Mini App root and land on the docs. Open `/help` in Telegram and follow the link.
