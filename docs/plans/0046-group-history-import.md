@@ -2,7 +2,7 @@
 
 > **Status:** approved
 > **Created:** 2026-10-07
-> **Depends on:** [Plan 0045](0045-currency-words-and-amount-last-text.md) (currency words, `к`, `readTrailingExpense`, `chatterShaped`)
+> **Depends on:** [Plan 0045](done/0045-currency-words-and-amount-last-text.md) (currency words, `к`, `readTrailingExpense`, `chatterShaped`)
 > **Related ADRs:** [ADR-0047](../adrs/0047-group-history-import-from-a-desktop-export.md) (the decision),
 > [ADR-0046](../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the readers),
 > [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group ledgers),

@@ -1,8 +1,8 @@
 # ADR-0046: Expense text accepts currency words and a thousands suffix; amount-last text records in a private chat and is asked about in a group
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0045](../plans/0045-currency-words-and-amount-last-text.md)
+> **Related plan(s):** [Plan 0045](../plans/done/0045-currency-words-and-amount-last-text.md)
 
 ## Context
 

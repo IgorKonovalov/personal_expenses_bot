@@ -1,11 +1,11 @@
 # 0045: Currency words, a thousands suffix, and amount-last expense text
 
-> **Status:** in-progress
+> **Status:** done (2026-10-08): built as planned, one minor and one nit open, Phase 5 live check owed, v0.35.0
 > **Created:** 2026-10-07
-> **Related ADRs:** [ADR-0046](../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the decision),
-> [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),
-> [ADR-0014](../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group routing),
-> [ADR-0031](../adrs/0031-local-time-scheduler.md) (the scheduler tick)
+> **Related ADRs:** [ADR-0046](../../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the decision),
+> [ADR-0004](../../adrs/0004-amount-parsing-rule.md) (amount parsing),
+> [ADR-0014](../../adrs/0014-group-chats-bind-to-shared-ledgers.md) (group routing),
+> [ADR-0031](../../adrs/0031-local-time-scheduler.md) (the scheduler tick)
 
 ## TL;DR
 
@@ -405,4 +405,137 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
   and `groupHelp` (first line, plus a new second line).
 - No dependency change.
 
+## Close review
+
+Closed 2026-10-08 on review round 1 (tip fa7e58d). The minor and the nit are code changes, so both
+stay open as followups below. Phase 5 (`human`, the live check, `Blocks merge: no`) stays owed
+after deploy. No earlier round raised a finding.
+
+### Plan 0045 close review, round 1 (tip fa7e58d)
+
+**Verdict:** Clean. Phases 1 to 4 do what the plan and ADR-0046 say, and every named done-when
+has a test whose assertion defends it. One minor (amount-last text whose description starts with a
+currency word picks up that currency) and one nit go to followups. Neither blocks the close.
+
+#### Gate (run in this session on the lane at fa7e58d)
+
+- `pnpm typecheck`: exit 0.
+- `pnpm lint`: exit 0.
+- `pnpm test`: exit 0, 144 files and 2149 tests passed.
+- `node scripts/check-doc-links.mjs`: exit 0, 359 relative links resolve.
+
+#### Lens 1: alignment
+
+- Phases 1 to 4 (`dev`) landed in 0fd5d2b, 340c2a9, 7f3e16b and 3639052. Phase 5 (`human`,
+  `Blocks merge: no`) is owed after deploy. Each phase has exactly one in-vocabulary owner tag.
+- Assertions read:
+  - Phase 1: `expenseText.test.ts` covers every listed shape with `toStrictEqual`: amount, currency,
+    description and empty tags. That includes `1.500к` → 150000 with no ambiguity, JPY `1,5к` →
+    1500, `500 к чаю` and `500 р кофе`, and `500кг картошки` → `invalid`, which is what the old
+    parser also returned. `bot.test.ts` checks the stored row (30000 EUR) and the card's
+    «300.00 EUR».
+  - Phase 2: `bot.test.ts` covers `Чайник 3200` (row plus the exact card call), `Шкаф 45к дин`,
+    `Ремонт 300 €`, `Краска: 2000` and `буду в 7` (700 «буду в»). It also covers `вчера` →
+    `occurred_on` 2026-10-06, `/2`, the two-line text and `?` → help reply plus zero rows,
+    redelivery → one row, and `Лампа 1.500` (the same calls as `1.500 лампа`, and the tap records
+    150000 «Лампа»). `chatterShaped` is tested on all four named strings.
+  - Phase 3: `group.test.ts` matches the question call exactly: silent, a reply, both buttons and
+    their `gask:` data. It also checks the stored row, the date line «за 6 октября», the
+    created_by/occurred_at/source_key row, the second tap plus a double redelivery → «Уже записано»
+    ×3 with one expense, the expired row → «Вопрос устарел…» plus the keyboard removed, B's taps
+    → the toast with the row kept, and [Не трата] → deleteMessage with the row gone. The no-question
+    cases are covered, as are amount-first recording at once, the unbound group and the log
+    privacy check. `groupAskProvider.test.ts` covers the due boundary at 10:14:59 and 10:15:00,
+    one deleteMessage across two fires, and a refused delete swallowed under `runTick`.
+    `deleteAccount.test.ts` checks that only the sender's rows go.
+  - Phase 4: `messages.test.ts` checks the three help examples and the group-help line verbatim,
+    with the TTL derived from `GROUP_ASK_TTL_MS`. README's `### Currency words` table lists every
+    code in `CURRENCY_ALIASES` with at least one alias.
+- The implementation log records its deviations: `currencyOfWord`'s placement argument,
+  `chatterShaped`'s `today`, the leftmost-split and digit-before-amount rules, `groupAskRecord`'s
+  argument shape, the unchanged `callbacks.ts`/`card.ts`/`testHarness.ts`, and the
+  `/delete_account` and «Аренда 2» done-whens tested at the service and domain level. Each is
+  reasonable and consistent with the plan's intent. The «Аренда 2» proxy is sound because the
+  recurring guard is `parseExpenseText`, which `forms` never reaches.
+- ADR-0046 is honoured: `parseExpenseText` stays amount-first, the guards are unchanged,
+  `readTrailingExpense` is opt-in through `forms: 'any'` (the private text handler, the ambiguity
+  handler, and the group answer only), `?` is refused in every chat, and `chatterShaped` is used
+  only in the group. No ADR is silently reversed.
+
+#### Lens 2: layering
+
+- Domain (`currencies.ts`, `expenseText.ts`) imports nothing from db or grammY. SQL lives in
+  `src/db/groupAsks.ts`. grammY is imported only under `src/bot/`. Copy lives in `messages.ts`.
+- `group_asks` is keyed by chat and message, and stores the sender's Telegram id as data, not as a
+  user key. Its migration comment says why.
+
+#### Lens 3: correctness
+
+- Money: `к` is computed on digit strings (`thousandsUnits`) and goes through `parseAmount`. No
+  float, `parseFloat` or `toFixed` was added.
+- Time: the group expense is dated by `message.date` through `sentAt`. `sentOn` is the ledger's
+  local date. The TTL compares against the scheduler's injected `now`.
+- Idempotency: deleting the row claims the answer inside the transaction that records under
+  `tg:<chat>:<message>`. A redelivered text finds the row or the expense and asks no second time.
+  `expireGroupAsk` claims before `deleteMessage`.
+- Privacy: info-level log lines carry only `ledgerId`, and the group test asserts that no text or
+  amount reaches them.
+- Telegram limits: `gask:ok:<10 digits>` is at most 18 bytes, and `assertCallbackData` guards it.
+
+#### Findings
+
+**blocker:** none. **major:** none.
+
+**minor 1. Amount-last text whose description starts with a currency word records in that
+currency.** (open)
+- *What:* `readTrailingExpense` rewrites `<description> <amount>` to `<amount> <description>`
+  and hands the result to `parseExpenseText`. That parser reads the first word after the amount
+  as a currency word whenever the amount has no glued alias. So `Евро кубок 300` becomes
+  `300 Евро кубок` and parses as 300.00 EUR «кубок». `Gel лак 1500` parses as 1500.00 GEL
+  «лак», because `GEL` is an ISO code and `currencyOfWord` reads it in any case. Neither text
+  names a currency after the amount.
+- *Where:* `src/domain/expenseText.ts:734-741` (the rewrite in `readTrailingExpense`).
+- *Why it matters:* this is the same class of bug the plan exists to fix: the wrong currency
+  on a recorded expense. In a private chat it records at once. The card shows the currency, so
+  it isn't fully silent, but the user has to catch it. The group question shows it before
+  recording. The trigger is rare, so this is not a blocker.
+- *Suggested fix:* when `parts.currency` is undefined and the amount word carries no glued
+  alias, put the ledger's default ISO code into the rewrite: `[amount, defaultCurrency,
+  ...description, ...]`. The description's first word is then never read as a currency. With
+  a glued alias (`300€`), `parseExpenseText` already skips the word-currency read, so leave the
+  rewrite as is. Test: `readTrailingExpense('Евро кубок 300', 'RSD')` gives 30000 RSD
+  «Евро кубок», and `'Gel лак 1500'` gives 150000 RSD «Gel лак».
+
+**nit 1. A redelivered amount-last group message re-asks after [Не трата].** (open)
+- *What:* [Не трата] deletes the row and no expense exists. If Telegram then redelivers the
+  original text update, `groupAskFor` finds neither and sends a second question.
+- *Where:* `src/services/groupChats.ts:244-247`.
+- *Why it matters:* this needs a redelivery after a dismissal, which is rare, and the cost is
+  one extra question that expires by itself.
+- *Suggested fix:* none needed now. If it shows up, keep a dismissed row (a `dismissed_at`
+  column) until expiry instead of deleting it.
+
+#### Bookkeeping owed at close
+
+- Flip plan 0045 to `done` and `git mv` it to `docs/plans/done/`. Repair the inbound link from
+  ADR-0046 and the outbound `../adrs/` links, then run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0046 (`proposed` → `accepted`) and refresh its row in `docs/adrs/README.md`.
+- `docs/plans/README.md`: the 0045 row still reads `approved`. Move it to recently closed.
+- Version: minor bump (a feature plan: new input shapes, a group question, migration 0028), with a
+  `CHANGELOG.md` entry and a `versionAnnouncements` entry (ADR-0013).
+- Phase 5 (human live check) stays owed after deploy.
+- Followups for `## Followups`: minor 1 above, nit 1 above, and the log's harness note
+  (`sendMessage` returning `true` leaves the question's `message_id` undefined without
+  `withMessageIds`).
+- `CLAUDE.md`'s "Where things live" needs no change, because no new top-level module was added.
+  `.env.example` needs no change, because there is no new config.
+
 ## Followups
+
+- Review minor 1: `readTrailingExpense` lets a description's first word name the currency
+  (`Евро кубок 300` records 300.00 EUR «кубок»). Put the default ISO code into the rewrite when the
+  amount has no glued alias.
+- Review nit 1: a redelivered amount-last group message re-asks after [Не трата]. Keep a dismissed
+  row until expiry if it shows up.
+- The test harness's fake answers every `sendMessage` with `true`, so the question's `message_id`
+  is undefined in a test bot without `withMessageIds`.

@@ -11,7 +11,6 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0045](0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | approved (2026-10-07) |
 | [0046](0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | approved (2026-10-07) |
 | [0047](0047-docs-site.md) | A Russian docs site: a user guide with chats generated from the real bot, and an architecture section | approved (2026-10-07) |
 
@@ -19,6 +18,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
+| [0045](done/0045-currency-words-and-amount-last-text.md) | Currency words, a thousands suffix, and amount-last expense text | done (2026-10-08): built as planned, one minor and one nit open, Phase 5 live check owed, v0.35.0 |
 | [0044](done/0044-charts-for-tags-and-prices.md) | Charts for tag reports and product prices | done (2026-10-07): built as planned, one minor fixed at close, Phase 3 live check owed, v0.34.0 |
 | [0043](done/0043-chart-category-detail.md) | Category detail in the chart: tap a category, see its last six periods | done (2026-10-07): built as planned, one minor and one nit open, Phase 2 live check owed, v0.33.0 |
 | [0042](done/0042-chart-pace-and-budget-burn-down.md) | Spending pace in the chart, and a burn-down chart for the budget | done (2026-10-07): built as planned, one minor and one nit fixed at close, one nit open, Phase 3 live check owed, v0.32.0 |

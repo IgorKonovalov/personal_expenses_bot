@@ -2,6 +2,21 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.35.0 (2026-10-08)
+
+From Plan 0045 (currency words, a thousands suffix, and amount-last expense text).
+
+- A currency word or symbol after the amount, or a symbol or alias glued to it, names the
+  currency: `300 € ремонт`, `4500 дин доставка`, `2500р такси`, `€300`. The aliases are
+  `CURRENCY_ALIASES` in `src/domain/currencies.ts`.
+- A `к`/`k` glued to the amount means thousands: `45к шкаф` is 45 000, `1,5к` is 1 500, with no
+  ambiguity question.
+- The amount may come last. In a private chat `Чайник 3200` records at once. In a bound group the
+  bot asks the sender quietly, «Записать … — Чайник?», with [Записать] and [Не трата]; only the
+  sender can answer, and an unanswered question is deleted after 15 minutes. Text with a `?`, and
+  in a group a preposition before the amount («буду в 7»), stays chatter.
+- Migration 0028 adds the `group_asks` table. `/help` and the group help name the new shapes.
+
 ## 0.34.0 (2026-10-07)
 
 From Plan 0044 (charts for tag reports and product prices).
