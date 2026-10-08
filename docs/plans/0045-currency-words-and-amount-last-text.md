@@ -343,7 +343,7 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 | 2: Amount-last text in the private chat | dev | done | 340c2a9 |
 | 3: Amount-last text in a group asks first | dev | done | 7f3e16b |
 | 4: Help, README and the group help | dev | done | 3639052 |
-| 5: Live check | human | not started | |
+| 5: Live check | human | owed | |
 
 ### Notes
 
