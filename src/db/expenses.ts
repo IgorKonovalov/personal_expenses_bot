@@ -231,6 +231,51 @@ export function deleteLedgerExpenses(db: Db, ledgerId: LedgerId): number {
   return db.prepare<[string]>('DELETE FROM expenses WHERE ledger_id = ?').run(ledgerId).changes;
 }
 
+// The ledger's live expenses whose source key starts with `keyPrefix`.
+export function countLiveExpensesByKeyPrefix(
+  db: Db,
+  ledgerId: LedgerId,
+  keyPrefix: string,
+): number {
+  return (
+    db
+      .prepare<[string, string, string], number>(
+        `SELECT COUNT(*) FROM expenses
+          WHERE ledger_id = ? AND substr(source_key, 1, length(?)) = ? AND deleted_at IS NULL`,
+      )
+      .pluck()
+      .get(ledgerId, keyPrefix, keyPrefix) ?? 0
+  );
+}
+
+// Hard-deletes every expense of the ledger whose source key starts with `keyPrefix`, soft-deleted
+// ones included, with what references them: their receipts and receipt items go, and a recurring
+// occurrence or a debt operation keeps its row with no expense. Run it in a transaction. Returns
+// how many live expenses went.
+export function deleteExpensesByKeyPrefix(db: Db, ledgerId: LedgerId, keyPrefix: string): number {
+  const live = countLiveExpensesByKeyPrefix(db, ledgerId, keyPrefix);
+  const matching = `SELECT id FROM expenses
+     WHERE ledger_id = ? AND substr(source_key, 1, length(?)) = ?`;
+  const args = [ledgerId, keyPrefix, keyPrefix] as const;
+  db.prepare<[string, string, string]>(
+    `DELETE FROM receipt_items WHERE receipt_id IN
+       (SELECT id FROM receipts WHERE expense_id IN (${matching}))`,
+  ).run(...args);
+  db.prepare<[string, string, string]>(
+    `DELETE FROM receipts WHERE expense_id IN (${matching})`,
+  ).run(...args);
+  db.prepare<[string, string, string]>(
+    `UPDATE recurring_occurrences SET expense_id = NULL WHERE expense_id IN (${matching})`,
+  ).run(...args);
+  db.prepare<[string, string, string]>(
+    `UPDATE debt_ops SET expense_id = NULL WHERE expense_id IN (${matching})`,
+  ).run(...args);
+  db.prepare<[string, string, string]>(
+    `DELETE FROM expenses WHERE ledger_id = ? AND substr(source_key, 1, length(?)) = ?`,
+  ).run(...args);
+  return live;
+}
+
 // Returns false when the expense was already deleted, leaving deleted_at unchanged.
 export function softDeleteExpense(db: Db, id: ExpenseId, deletedAt: Date): boolean {
   const { changes } = db

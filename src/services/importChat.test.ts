@@ -10,6 +10,8 @@ import {
   answerChatImportFix,
   answerChatImportPrefix,
   cancelChatImport,
+  chatImportUndoCount,
+  undoChatImport,
   expiredChatImports,
   openChatImportReview,
   previewChatImport,
@@ -303,6 +305,33 @@ describe('recordReadyChatImport', () => {
       kind: 'expired',
     });
     expect(count()).toBe(0);
+  });
+});
+
+describe('undoChatImport', () => {
+  it('deletes the chat’s 7 imported expenses once, and the file then records them again', () => {
+    const { nonce } = preview();
+    recordReadyChatImport(deps, { user: alice, nonce, now: NOW });
+    expect(chatImportUndoCount(deps, { user: alice, nonce, now: NOW })).toEqual({
+      kind: 'confirm',
+      count: 7,
+    });
+
+    expect(undoChatImport(deps, { user: alice, nonce, now: NOW })).toMatchObject({
+      kind: 'undone',
+      count: 7,
+      notice: { chatId: CHAT, messageId: null, importer: 'Анна', to: '2026-09-14', count: 0 },
+    });
+    expect(undoChatImport(deps, { user: alice, nonce, now: NOW })).toMatchObject({
+      kind: 'undone',
+      count: 0,
+    });
+    expect(count()).toBe(0);
+
+    const again = preview();
+    expect(again.ready).toHaveLength(7);
+    recordReadyChatImport(deps, { user: alice, nonce: again.nonce, now: NOW });
+    expect(count()).toBe(7);
   });
 });
 

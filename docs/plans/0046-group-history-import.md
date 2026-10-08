@@ -513,8 +513,8 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 |---|---|---|---|
 | 1: Walking skeleton: an export records its ready messages | dev | done | 0bad4f1 |
 | 2: Review cards | dev | done | fd8f901 |
-| 3: Name prefixes | dev | done | committed with this row |
-| 4: Undo and the group notice | dev | not started | |
+| 3: Name prefixes | dev | done | 6f3042b |
+| 4: Undo and the group notice | dev | done | committed with this row |
 | 5: Limits, help and docs | dev | not started | |
 | 6: A real export | human | not started | |
 
@@ -558,6 +558,18 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
   since the payer is then known.
 - Phase 3: the Phase 1 and 2 bot tests upload through a helper that answers «Ира» with
   [Это не имя]; the Phase 1 preview test reads the preview from the question's message, edited.
+- Phase 4: the tables that reference `expenses`: `receipts` (and `receipt_items` through it),
+  `recurring_occurrences.expense_id` and `debt_ops.expense_id`. The undo deletes the receipts and
+  their items and sets the other two to NULL (`deleteExpensesByKeyPrefix`).
+- Phase 4: `src/bot/callbacks.ts` was listed but not touched.
+- Phase 4: the notice names the importer by their display name in the ledger. In the bot test A
+  is «Test», so the notice reads «(импорт: Test).», not «(импорт: A).».
+- Phase 4: [Нет] on the confirm step edits the message into the import's current preview, and
+  the preview carries [Отменить импорт] while any message is already recorded.
+- Phase 4: a second [Да, удалить] answers the tap and edits nothing. A failed group post or edit
+  is logged as a warning with the error message and leaves the DM flow as it is.
+- Phase 4: the «Записано» reply always carries [Отменить импорт], even when the tap recorded
+  nothing new.
 
 ### Close triggers
 

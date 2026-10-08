@@ -9,7 +9,12 @@ import {
   answerChatImportFix,
   answerChatImportPrefix,
   cancelChatImport,
+  chatImportNotice,
+  chatImportUndoCount,
+  currentChatImportPreview,
   cycleChatImportPayer,
+  saveChatImportNotice,
+  undoChatImport,
   finishChatImportReview,
   openChatImportReview,
   pickChatImportReading,
@@ -33,6 +38,9 @@ import {
   CHAT_IMPORT_READING,
   CHAT_IMPORT_RECORD,
   CHAT_IMPORT_REVIEW,
+  CHAT_IMPORT_UNDO,
+  CHAT_IMPORT_UNDO_NO,
+  CHAT_IMPORT_UNDO_YES,
   chatImportCardData,
   chatImportData,
   chatImportPrefixData,
@@ -40,7 +48,7 @@ import {
   type ChatImportCardAction,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
-import { editHtml, editHtmlAt, html, replyHtml, type Html } from '../render/html.js';
+import { editHtml, editHtmlAt, html, replyHtml, sendHtml, type Html } from '../render/html.js';
 import { ensureUser } from './start.js';
 
 // A group's history from a Telegram Desktop JSON export, sent in DM (ADR-0047): read in memory,
@@ -101,6 +109,9 @@ function previewView(preview: ChatImportPreview): View {
       )
       .row();
   }
+  if (preview.alreadyCount > 0) {
+    keyboard.text(messages.chatImportUndoButton, chatImportData('undo', preview.nonce)).row();
+  }
   keyboard.text(messages.cancelButton, chatImportData('x', preview.nonce));
   return {
     text: messages.chatImportPreview({ ...preview, readyCount: preview.ready.length }),
@@ -153,12 +164,40 @@ function reviewView(view: ChatImportReviewView): View {
   if (view.kind === 'card') return cardView(view);
   const keyboard = new InlineKeyboard();
   if (view.readyCount > 0) {
-    keyboard.text(
-      messages.chatImportRecordButton(view.readyCount),
-      chatImportData('rec', view.nonce),
+    keyboard
+      .text(messages.chatImportRecordButton(view.readyCount), chatImportData('rec', view.nonce))
+      .row();
+  }
+  keyboard.text(messages.chatImportUndoButton, chatImportData('undo', view.nonce));
+  return { text: messages.chatImportReviewDone(view), markup: keyboard };
+}
+
+// Brings the group's notice up to date after a recording: posted silently the first time
+// something was recorded, edited in place after. A failure is logged, never shown: the import in
+// the DM stands without it.
+async function syncNotice(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  nonce: string,
+): Promise<void> {
+  const notice = chatImportNotice(deps, { user, nonce, now: deps.now() });
+  if (notice === undefined) return;
+  const text = messages.chatImportNotice(notice);
+  try {
+    if (notice.messageId !== null) {
+      await editHtmlAt(ctx, { chatId: notice.chatId, messageId: notice.messageId }, text);
+      return;
+    }
+    if (notice.count === 0) return;
+    const sent = await sendHtml(ctx.api, notice.chatId, text, { disable_notification: true });
+    saveChatImportNotice(deps, { user, nonce, messageId: sent.message_id });
+  } catch (error) {
+    deps.logger.warn(
+      { userId: user.id, error: error instanceof Error ? error.message : String(error) },
+      'chat import notice failed',
     );
   }
-  return { text: messages.chatImportReviewDone(view), markup: keyboard };
 }
 
 // A tap on a button whose upload is gone: `stale` answers with a toast and leaves the message,
@@ -303,12 +342,77 @@ export function registerChatImport(
     await ctx.answerCallbackQuery();
     const keyboard = new InlineKeyboard();
     if (result.reviewCount > 0) {
-      keyboard.text(
-        messages.chatImportReviewButton(result.reviewCount),
-        chatImportData('rev', nonce),
+      keyboard
+        .text(messages.chatImportReviewButton(result.reviewCount), chatImportData('rev', nonce))
+        .row();
+    }
+    keyboard.text(messages.chatImportUndoButton, chatImportData('undo', nonce));
+    await editHtml(ctx, messages.chatImportRecorded(result), { reply_markup: keyboard });
+    await syncNotice(ctx, deps, user, nonce);
+  });
+
+  // [Отменить импорт]: the confirm step, with how many expenses would go.
+  bot.callbackQuery(CHAT_IMPORT_UNDO, async (ctx) => {
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const nonce = ctx.match[1] ?? '';
+    const result = chatImportUndoCount(deps, { user, nonce, now });
+    if (result.kind !== 'confirm') {
+      await answerGone(ctx, result.kind);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await editHtml(ctx, messages.chatImportUndoConfirm(result), {
+      reply_markup: InlineKeyboard.from([
+        [
+          InlineKeyboard.text(messages.chatImportUndoYesButton, chatImportData('undoy', nonce)),
+          InlineKeyboard.text(messages.chatImportUndoNoButton, chatImportData('undon', nonce)),
+        ],
+      ]),
+    });
+  });
+
+  // [Да, удалить]: the chat's imported expenses go, and the group's notice says so. A second tap
+  // finds nothing left and changes nothing.
+  bot.callbackQuery(CHAT_IMPORT_UNDO_YES, async (ctx) => {
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const result = undoChatImport(deps, { user, nonce: ctx.match[1] ?? '', now });
+    if (result.kind !== 'undone') {
+      await answerGone(ctx, result.kind);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    if (result.count === 0) return;
+    await editHtml(ctx, messages.chatImportUndone(result));
+    const { notice } = result;
+    if (notice === undefined || notice.messageId === null) return;
+    try {
+      await editHtmlAt(
+        ctx,
+        { chatId: notice.chatId, messageId: notice.messageId },
+        messages.chatImportNoticeUndone(notice),
+      );
+    } catch (error) {
+      deps.logger.warn(
+        { userId: user.id, error: error instanceof Error ? error.message : String(error) },
+        'chat import notice failed',
       );
     }
-    await editHtml(ctx, messages.chatImportRecorded(result), { reply_markup: keyboard });
+  });
+
+  // [Нет]: nothing is deleted; the preview of the import as it stands.
+  bot.callbackQuery(CHAT_IMPORT_UNDO_NO, async (ctx) => {
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const result = currentChatImportPreview(deps, { user, nonce: ctx.match[1] ?? '', now });
+    if (result.kind !== 'preview') {
+      await answerGone(ctx, result.kind);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const view = previewView(result);
+    await editHtml(ctx, view.text, { reply_markup: view.markup });
   });
 
   bot.callbackQuery(CHAT_IMPORT_CANCEL, async (ctx) => {
@@ -372,6 +476,7 @@ export function registerChatImport(
     const input = { user, nonce, index: Number(index), now };
     if (action !== 'fix') {
       await showReview(ctx, CARD_TAPS[action](deps, input));
+      if (action === 'ok') await syncNotice(ctx, deps, user, nonce);
       return;
     }
     const message = ctx.callbackQuery.message;
@@ -404,5 +509,6 @@ export function registerChatImport(
         now,
       }),
     );
+    await syncNotice(ctx, deps, user, nonce);
   });
 }

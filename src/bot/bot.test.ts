@@ -11090,6 +11090,8 @@ describe('group history import (Plan 0046)', () => {
 
   async function importBot(options: { logLevel?: 'info' | 'silent' } = {}) {
     const harness = createTestBot({ now: BOUND, ...options });
+    // The group notice's message id comes from its sendMessage result.
+    withMessageIds(harness.bot, 700);
     let updateId = 0;
     harness.bot.api.config.use((prev, method, payload, signal) => {
       if (method !== 'getFile') return prev(method, payload, signal);
@@ -11167,7 +11169,17 @@ describe('group history import (Plan 0046)', () => {
         await tap(`imp:map:${nonce()}:${asked}:${answer}`);
       }
     };
-    return { ...harness, send, sendFile, upload, shown, tap, nonce, imported };
+    const sendGroup = (text: string) =>
+      harness.bot.handleUpdate(
+        groupTextUpdate({
+          updateId: ++updateId,
+          messageId: updateId,
+          text,
+          chatId: CHAT_ID,
+          date: BOUND,
+        }),
+      );
+    return { ...harness, send, sendGroup, sendFile, upload, shown, tap, nonce, imported };
   }
 
   describe('the preview and [Записать N трат] (Phase 1)', () => {
@@ -11612,7 +11624,10 @@ describe('group history import (Plan 0046)', () => {
       expect(lastEdit(calls)).toMatchObject({
         text: messages.chatImportReviewDone({ recorded: 0, skipped: 1 }),
         reply_markup: {
-          inline_keyboard: [[{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }]],
+          inline_keyboard: [
+            [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
+            [{ text: 'Отменить импорт', callback_data: `imp:undo:${n}` }],
+          ],
         },
       });
     });
@@ -11739,6 +11754,155 @@ describe('group history import (Plan 0046)', () => {
       expect(
         String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]).split('\n'),
       ).toEqual(ready8);
+    });
+  });
+
+  describe('undo and the group notice (Phase 4)', () => {
+    type Call = { method: string; payload: unknown };
+    const inGroup = (calls: readonly Call[], method: string) =>
+      calls.filter(
+        (call) =>
+          call.method === method && (call.payload as { chat_id?: number }).chat_id === CHAT_ID,
+      );
+    // A's display name in the group's ledger is the harness's «Test».
+    const notice = (count: string) =>
+      `Из истории группы до 14.09.2026 добавлено ${count} (импорт: Test).`;
+    const noticeId = (db: Db) =>
+      db.prepare('SELECT notice_message_id FROM chat_imports').pluck().get();
+    const dmEdits = (calls: readonly Call[]) =>
+      sentTexts(
+        calls.filter(
+          (call) =>
+            call.method === 'editMessageText' &&
+            (call.payload as { chat_id?: number }).chat_id === ALLOWED_ID,
+        ),
+      );
+
+    async function recorded() {
+      const bot = await importBot();
+      await bot.sendGroup('450 кафе');
+      await bot.upload();
+      const n = bot.nonce();
+      await bot.tap(`imp:rec:${n}`);
+      bot.calls.length = 0;
+      return { ...bot, n };
+    }
+
+    it('posts one silent notice for [Записать 7 трат], and the 3400 card edits it to 10', async () => {
+      const { upload, tap, nonce, calls, db } = await importBot();
+      await upload();
+      const n = nonce();
+      calls.length = 0;
+
+      await tap(`imp:rec:${n}`);
+
+      expect(inGroup(calls, 'sendMessage')).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: CHAT_ID,
+            text: notice('7 трат'),
+            disable_notification: true,
+            ...htmlParseMode,
+          },
+        },
+      ]);
+      const id = noticeId(db);
+      expect(id).toEqual(expect.any(Number));
+      calls.length = 0;
+
+      await tap(`imp:rev:${n}`);
+      await tap(`imp:ok:${n}:1`);
+
+      expect(inGroup(calls, 'sendMessage')).toEqual([]);
+      expect(inGroup(calls, 'editMessageText')).toEqual([
+        {
+          method: 'editMessageText',
+          payload: { chat_id: CHAT_ID, message_id: id, text: notice('10 трат'), ...htmlParseMode },
+        },
+      ]);
+    });
+
+    it('[Отменить импорт], [Да, удалить]: the tgx: expenses go, the rest stay, the notice says so', async () => {
+      const { tap, n, calls, db, imported } = await recorded();
+      const id = noticeId(db);
+
+      await tap(`imp:undo:${n}`);
+      expect(dmEdits(calls)).toEqual([messages.chatImportUndoConfirm({ count: 7 })]);
+      await tap(`imp:undoy:${n}`);
+
+      expect(imported()).toBe(0);
+      expect(
+        db.prepare("SELECT source_key FROM expenses WHERE source_key NOT LIKE 'tgx:%'").all(),
+      ).toEqual([{ source_key: expect.stringMatching(/^tg:/) as unknown }]);
+      expect(dmEdits(calls).at(-1)).toBe(messages.chatImportUndone({ count: 7 }));
+      expect(inGroup(calls, 'editMessageText')).toEqual([
+        {
+          method: 'editMessageText',
+          payload: {
+            chat_id: CHAT_ID,
+            message_id: id,
+            text: 'Импорт истории группы отменён (Test).',
+            ...htmlParseMode,
+          },
+        },
+      ]);
+    });
+
+    it('[Отменить импорт], [Нет] deletes nothing', async () => {
+      const { tap, n, imported } = await recorded();
+
+      await tap(`imp:undo:${n}`);
+      await tap(`imp:undon:${n}`);
+
+      expect(imported()).toBe(7);
+    });
+
+    it('previews 7 ready again after the undo, and [Записать 7 трат] stores 7', async () => {
+      const { tap, n, sendFile, nonce, calls, imported } = await recorded();
+      await tap(`imp:undo:${n}`);
+      await tap(`imp:undoy:${n}`);
+      calls.length = 0;
+
+      await sendFile(EXPORT);
+      const text = String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]);
+      await tap(`imp:rec:${nonce()}`);
+
+      expect(text.split('\n')[1]).toBe(
+        'Готово к записи: 7 трат из 4 сообщений, на 15 500.00 RSD, 300.00 EUR',
+      );
+      expect(imported()).toBe(7);
+    });
+
+    it('deletes once on a double tap of [Да, удалить], answering the second quietly', async () => {
+      const { tap, n, calls, imported } = await recorded();
+      await tap(`imp:undo:${n}`);
+      await tap(`imp:undoy:${n}`);
+      calls.length = 0;
+
+      await tap(`imp:undoy:${n}`);
+
+      expect(imported()).toBe(0);
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: expect.any(String) as unknown },
+        },
+      ]);
+    });
+
+    it('carries no amount and no description in the notice', async () => {
+      const { upload, tap, nonce, calls } = await importBot();
+      await upload();
+      await tap(`imp:rec:${nonce()}`);
+
+      const [text] = sentTexts(inGroup(calls, 'sendMessage'));
+
+      expect(text).toBe(notice('7 трат'));
+      // An amount reads `3 200.00`, its two decimals ending it; the date `14.09.2026` goes on.
+      expect(text).not.toMatch(
+        /RSD|EUR|\d\.\d\d(?![\d.])|Чайник|Краска|кисти|валиков|ремонт|доставка|Шкаф/,
+      );
     });
   });
 });

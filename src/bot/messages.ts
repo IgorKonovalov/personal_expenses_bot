@@ -2400,6 +2400,27 @@ export const messages = {
   },
   chatImportPrefixAuthorButton: 'Автор сообщения',
   chatImportPrefixNotNameButton: 'Это не имя',
+  // The group's one notice of an import, sent silently and edited in place. A name and a count,
+  // never an amount or a description.
+  chatImportNotice: ({
+    importer,
+    to,
+    count,
+  }: {
+    readonly importer: string | null;
+    readonly to: LocalDate;
+    readonly count: number;
+  }): Html =>
+    html`Из истории группы до ${numericDate(to)} добавлено ${spendCountWords(count)} (импорт: ${importer ?? UNNAMED_AUTHOR}).`,
+  chatImportNoticeUndone: ({ importer }: { readonly importer: string | null }): Html =>
+    html`Импорт истории группы отменён (${importer ?? UNNAMED_AUTHOR}).`,
+  chatImportUndoButton: 'Отменить импорт',
+  chatImportUndoConfirm: ({ count }: { readonly count: number }): Html =>
+    html`Удалить ${spendCountAccusative(count)} из истории группы? Их увидят все в группе. Файл можно будет отправить снова.`,
+  chatImportUndoYesButton: 'Да, удалить',
+  chatImportUndoNoButton: 'Нет',
+  chatImportUndone: ({ count }: { readonly count: number }): Html =>
+    html`Удалено ${spendCountWords(count)}. Чтобы записать заново, отправьте файл ещё раз.`,
   // A toast: a button of an earlier upload of the same user.
   chatImportStale: 'Кнопка от прошлой выгрузки. Продолжите в последнем сообщении.',
   chatImportExpired: html`Импорт устарел: прошло больше суток. Отправьте файл ещё раз — уже записанное не повторится.`,

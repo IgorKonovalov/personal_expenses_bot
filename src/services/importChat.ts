@@ -10,9 +10,14 @@ import {
   updateChatImport,
   type ChatImportRow,
 } from '../db/chatImports.js';
-import { findTakenSourceKeys, type ExpenseId } from '../db/expenses.js';
+import {
+  countLiveExpensesByKeyPrefix,
+  deleteExpensesByKeyPrefix,
+  findTakenSourceKeys,
+  type ExpenseId,
+} from '../db/expenses.js';
 import { findFirstLedgerChat } from '../db/ledgerChats.js';
-import { findLedgerForMember, type Ledger } from '../db/ledgers.js';
+import { findLedgerForMember, listMemberNames, type Ledger } from '../db/ledgers.js';
 import type { User, UserId } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
@@ -348,6 +353,126 @@ export function answerChatImportPrefix(
     deps.logger.info({ userId: user.id }, 'chat import prefix answered');
     return describe(deps, { ledger, chatId: row.chatId, nonce: row.nonce, payload });
   })();
+}
+
+// The group's notice of an import: one silent message in the group, edited in place as the count
+// grows and when the import is undone. It names the importer and counts; never an amount or a
+// description.
+export interface ChatImportNotice {
+  readonly chatId: number;
+  // Absent until the first recording posts it.
+  readonly messageId: number | null;
+  // The importer's name in the ledger; null when it has none.
+  readonly importer: string | null;
+  // The last message before the bot joined.
+  readonly to: LocalDate;
+  // The live expenses imported from the chat into the ledger.
+  readonly count: number;
+}
+
+// The notice as it should read now; undefined once the row is gone or held no message.
+export function chatImportNotice(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): ChatImportNotice | undefined {
+  const tap = held(deps, input.user, input.nonce, input.now);
+  return tap.kind === 'held' ? noticeOf(deps, tap) : undefined;
+}
+
+// Stores the posted notice's message id in the row holding `nonce`.
+export function saveChatImportNotice(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly messageId: number },
+): void {
+  deps.db.transaction(() => {
+    const row = findChatImport(deps.db, input.user.id);
+    if (row?.nonce !== input.nonce) return;
+    saveChatImport(deps.db, { ...row, noticeMessageId: input.messageId });
+  })();
+}
+
+// [Отменить импорт]: how many expenses the undo would delete, for its confirm step.
+export function chatImportUndoCount(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): { readonly kind: 'confirm'; readonly count: number } | Gone {
+  const tap = held(deps, input.user, input.nonce, input.now);
+  if (tap.kind !== 'held') return tap;
+  renew(deps, tap.row, tap.payload, input.now);
+  return {
+    kind: 'confirm',
+    count: countLiveExpensesByKeyPrefix(deps.db, tap.ledger.id, importKeyPrefix(tap.row.chatId)),
+  };
+}
+
+export type UndoResult =
+  | {
+      readonly kind: 'undone';
+      // The live expenses this tap deleted: 0 on a second tap.
+      readonly count: number;
+      readonly notice: ChatImportNotice | undefined;
+    }
+  | Gone;
+
+// [Да, удалить]: deletes, in one transaction, every expense of the bound ledger whose source key
+// is this chat's `tgx:<chatId>:`, for good (ADR-0047), and clears the row's recorded marks. The
+// file is the backup: sent again, it records them again.
+export function undoChatImport(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): UndoResult {
+  const result = deps.db.transaction((): UndoResult => {
+    const tap = held(deps, input.user, input.nonce, input.now);
+    if (tap.kind !== 'held') return tap;
+    const count = deleteExpensesByKeyPrefix(
+      deps.db,
+      tap.ledger.id,
+      importKeyPrefix(tap.row.chatId),
+    );
+    const decisions = Object.fromEntries(
+      Object.entries(tap.payload.decisions).filter(([, decision]) => decision !== 'recorded'),
+    );
+    const payload = withQueue(deps, tap.ledger, tap.row.chatId, { ...tap.payload, decisions });
+    renew(deps, tap.row, payload, input.now);
+    return { kind: 'undone', count, notice: noticeOf(deps, { ...tap, payload }) };
+  })();
+  if (result.kind === 'undone') {
+    deps.logger.info({ userId: input.user.id, deleted: result.count }, 'chat import undone');
+  }
+  return result;
+}
+
+// The preview of the row as it stands: [Нет] on the undo's confirm step.
+export function currentChatImportPreview(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): ChatImportPreview | Gone {
+  const tap = held(deps, input.user, input.nonce, input.now);
+  if (tap.kind !== 'held') return tap;
+  renew(deps, tap.row, tap.payload, input.now);
+  return describe(deps, {
+    ledger: tap.ledger,
+    chatId: tap.row.chatId,
+    nonce: tap.row.nonce,
+    payload: tap.payload,
+  });
+}
+
+type Gone = { readonly kind: 'expired' } | { readonly kind: 'stale' };
+
+function importKeyPrefix(chatId: string): string {
+  return `tgx:${chatId}:`;
+}
+
+function noticeOf(deps: ChatImportDeps, tap: HeldImport): ChatImportNotice | undefined {
+  if (tap.payload.last === undefined) return undefined;
+  return {
+    chatId: Number(tap.row.chatId),
+    messageId: tap.row.noticeMessageId,
+    importer: listMemberNames(deps.db, tap.ledger.id).get(tap.row.userId) ?? null,
+    to: localDateOf(new Date(tap.payload.last), ledgerZone(deps, tap.ledger)),
+    count: countLiveExpensesByKeyPrefix(deps.db, tap.ledger.id, importKeyPrefix(tap.row.chatId)),
+  };
 }
 
 // [Отмена] on the preview: the row goes.

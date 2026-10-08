@@ -342,15 +342,22 @@ export const STATEMENT_CANCEL = 'stm:x';
 
 // A group history import (ADR-0047). Every button carries the user's chat_imports row's 6-char
 // base-36 nonce, so a button from an earlier upload never acts on a later one: [Записать N трат]
-// `imp:rec:<n>`, [Проверить (N)] `imp:rev:<n>`, [Закончить проверку] `imp:end:<n>` and [Отмена]
-// `imp:x:<n>` (at most 14 bytes).
+// `imp:rec:<n>`, [Проверить (N)] `imp:rev:<n>`, [Закончить проверку] `imp:end:<n>`, [Отмена]
+// `imp:x:<n>`, and [Отменить импорт] `imp:undo:<n>` with its [Да, удалить] `imp:undoy:<n>` and
+// [Нет] `imp:undon:<n>` (at most 16 bytes).
 const NONCE = '([0-9a-z]{6})';
 export const CHAT_IMPORT_RECORD = new RegExp(`^imp:rec:${NONCE}$`);
 export const CHAT_IMPORT_CANCEL = new RegExp(`^imp:x:${NONCE}$`);
 export const CHAT_IMPORT_REVIEW = new RegExp(`^imp:rev:${NONCE}$`);
 export const CHAT_IMPORT_FINISH = new RegExp(`^imp:end:${NONCE}$`);
+export const CHAT_IMPORT_UNDO = new RegExp(`^imp:undo:${NONCE}$`);
+export const CHAT_IMPORT_UNDO_YES = new RegExp(`^imp:undoy:${NONCE}$`);
+export const CHAT_IMPORT_UNDO_NO = new RegExp(`^imp:undon:${NONCE}$`);
 
-export function chatImportData(action: 'rec' | 'x' | 'rev' | 'end', nonce: string): string {
+export function chatImportData(
+  action: 'rec' | 'x' | 'rev' | 'end' | 'undo' | 'undoy' | 'undon',
+  nonce: string,
+): string {
   return assertCallbackData(`imp:${action}:${nonce}`);
 }
 

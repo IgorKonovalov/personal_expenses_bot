@@ -5,6 +5,8 @@ import { insertCategoriesOrIgnore, type CategoryId } from './categories.js';
 import { openDatabase, type Db } from './connection.js';
 import {
   countLiveExpenses,
+  countLiveExpensesByKeyPrefix,
+  deleteExpensesByKeyPrefix,
   findExpenseById,
   findFirstLiveExpenseCurrency,
   findHistoryCategory,
@@ -72,6 +74,48 @@ function addExpense(id: string, ledgerId: LedgerId, createdBy: UserId, sourceKey
     createdAt: NOW,
   });
 }
+
+describe('deleteExpensesByKeyPrefix', () => {
+  it('hard-deletes the ledger’s tgx: expenses and their receipts, keeping a debt and the rest', () => {
+    addExpense('imp-1', LEDGER_A, USER_A, 'tgx:-100:1:0');
+    addExpense('imp-2', LEDGER_A, USER_A, 'tgx:-100:2:0');
+    addExpense('live', LEDGER_A, USER_A, 'tg:1:5');
+    addExpense('other-chat', LEDGER_A, USER_A, 'tgx:-200:1:0');
+    addExpense('other-ledger', LEDGER_B, USER_B, 'tgx:-100:3:0');
+    softDeleteExpense(db, 'imp-2' as ExpenseId, NOW);
+    db.prepare(
+      `INSERT INTO receipts (id, expense_id, country, fiscal_id, merchant_key, verify_url,
+         issued_at, fetch_state, created_at)
+       VALUES ('r1', 'imp-1', 'RS', 'f', 'm', 'u', ?, 'fetched', ?)`,
+    ).run(NOW.toISOString(), NOW.toISOString());
+    db.prepare(
+      `INSERT INTO receipt_items (receipt_id, position, name, quantity, total_minor)
+       VALUES ('r1', 1, 'x', '1', 45000)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO debt_people (id, user_id, name, name_key, created_at)
+       VALUES (1, ?, 'Ира', 'ира', ?)`,
+    ).run(USER_A, NOW.toISOString());
+    db.prepare(
+      `INSERT INTO debt_ops (id, user_id, person_id, kind, amount_minor, currency, occurred_on,
+         expense_id, source_key, created_at)
+       VALUES ('d1', ?, 1, 'lend', 100, 'RSD', ?, 'imp-1', 'tg:1:9', ?)`,
+    ).run(USER_A, DAY, NOW.toISOString());
+
+    expect(countLiveExpensesByKeyPrefix(db, LEDGER_A, 'tgx:-100:')).toBe(1);
+    expect(deleteExpensesByKeyPrefix(db, LEDGER_A, 'tgx:-100:')).toBe(1);
+
+    expect(db.prepare('SELECT id FROM expenses ORDER BY id').pluck().all()).toEqual([
+      'live',
+      'other-chat',
+      'other-ledger',
+    ]);
+    expect(db.prepare('SELECT COUNT(*) FROM receipts').pluck().get()).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) FROM receipt_items').pluck().get()).toBe(0);
+    expect(db.prepare("SELECT expense_id FROM debt_ops WHERE id = 'd1'").pluck().get()).toBeNull();
+    expect(deleteExpensesByKeyPrefix(db, LEDGER_A, 'tgx:-100:')).toBe(0);
+  });
+});
 
 describe('tags (ADR-0029)', () => {
   it('stores the names space-joined and reads them back in order; none is NULL', () => {
