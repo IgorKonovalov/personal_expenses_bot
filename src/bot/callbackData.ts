@@ -340,6 +340,17 @@ export function statementPageData(page: number): string {
 }
 export const STATEMENT_CANCEL = 'stm:x';
 
+// A group history import (ADR-0047). Every button carries the user's chat_imports row's 6-char
+// base-36 nonce, so a button from an earlier upload never acts on a later one: [Записать N трат]
+// `imp:rec:<n>` and [Отмена] `imp:x:<n>` (14 bytes).
+const NONCE = '([0-9a-z]{6})';
+export const CHAT_IMPORT_RECORD = new RegExp(`^imp:rec:${NONCE}$`);
+export const CHAT_IMPORT_CANCEL = new RegExp(`^imp:x:${NONCE}$`);
+
+export function chatImportData(action: 'rec' | 'x', nonce: string): string {
+  return assertCallbackData(`imp:${action}:${nonce}`);
+}
+
 // Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the
 // schedules from the expense's date; `rec:s:<uuid>:<m|w|y>` (44 bytes) makes the rule on one:
 // monthly, weekly or yearly.

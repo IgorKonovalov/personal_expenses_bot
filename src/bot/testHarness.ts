@@ -276,6 +276,70 @@ export function textUpdate(opts: {
   };
 }
 
+// A file sent in the sender's DM. The harness answers no getFile: a test that downloads adds its
+// own.
+export function documentUpdate(opts: {
+  updateId: number;
+  fileId: string;
+  fileName: string;
+  mimeType?: string;
+  fileSize: number;
+  fromId?: number;
+  date?: Date;
+}): Update {
+  const fromId = opts.fromId ?? ALLOWED_ID;
+  return {
+    update_id: opts.updateId,
+    message: {
+      message_id: opts.updateId,
+      date: Math.floor((opts.date ?? new Date('2026-09-29T21:50:00Z')).getTime() / 1000),
+      chat: { id: fromId, type: 'private', first_name: 'Test' },
+      from: { id: fromId, is_bot: false, first_name: 'Test' },
+      document: {
+        file_id: opts.fileId,
+        file_unique_id: opts.fileId,
+        file_name: opts.fileName,
+        ...(opts.mimeType === undefined ? {} : { mime_type: opts.mimeType }),
+        file_size: opts.fileSize,
+      },
+    },
+  };
+}
+
+// A synthetic Telegram Desktop chat export (ADR-0047), as `result.json` holds it: a message's
+// `from` is null for a deleted account.
+export interface ExportMessageFixture {
+  readonly id: number;
+  readonly at: Date;
+  readonly fromId: number;
+  readonly from: string | null;
+  readonly text: string;
+  readonly forwarded?: boolean;
+}
+
+export function chatExportJson(opts: {
+  id: number;
+  type?: string;
+  name?: string;
+  messages: readonly ExportMessageFixture[];
+}): string {
+  return JSON.stringify({
+    name: opts.name ?? GROUP_TITLE,
+    type: opts.type ?? 'private_supergroup',
+    id: opts.id,
+    messages: opts.messages.map((message) => ({
+      id: message.id,
+      type: 'message',
+      date: message.at.toISOString().slice(0, 19),
+      date_unixtime: String(Math.floor(message.at.getTime() / 1000)),
+      from: message.from,
+      from_id: `user${message.fromId}`,
+      text: message.text,
+      ...(message.forwarded === true ? { forwarded_from: 'Кто-то' } : {}),
+    })),
+  });
+}
+
 // The service message a Mini App's sendData produces in the sender's DM.
 export function webAppDataUpdate(opts: {
   updateId: number;

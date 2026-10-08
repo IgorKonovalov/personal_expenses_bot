@@ -17,6 +17,7 @@ import { registerCard } from './handlers/card.js';
 import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
+import { registerChatImport } from './handlers/chatImport.js';
 import { registerDebts } from './handlers/debts.js';
 import { registerDeleteAccount } from './handlers/deleteAccount.js';
 import { registerDrill } from './handlers/drill.js';
@@ -150,7 +151,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
 
   // Commands and exact menu labels first: the text handler treats any other text as a flow
   // answer, a receipt link or an expense attempt; a Mini App scan is read as a receipt link; a
-  // PDF is read as a bank statement; photos and image files are read for a receipt QR; whatever
+  // JSON file as a group's exported history; a PDF is read as a bank statement; photos and image files are read for a receipt QR; whatever
   // else isn't text gets the help reply.
   registerStart(dm, options);
   registerToday(dm, options);
@@ -186,6 +187,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerText(dm, donateDeps);
   registerWebAppData(dm, options);
   const heavy = heavyJobs(options);
+  registerChatImport(dm, options, telegramFileDownloader({ token: options.token }));
   registerStatement(dm, options, heavy);
   registerReceiptMedia(dm, options, heavy);
   registerNonText(dm, options);

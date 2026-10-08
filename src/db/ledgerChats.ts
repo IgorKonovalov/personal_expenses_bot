@@ -54,6 +54,19 @@ export function findLedgerChat(
   return row === undefined ? undefined : toLedgerChat(row);
 }
 
+// The binding, active or not, of the first of `chatIds` that has one.
+export function findFirstLedgerChat(
+  db: Db,
+  provider: ChatProvider,
+  chatIds: readonly string[],
+): LedgerChat | undefined {
+  for (const chatId of chatIds) {
+    const binding = findLedgerChat(db, provider, chatId);
+    if (binding !== undefined) return binding;
+  }
+  return undefined;
+}
+
 // The chat a ledger is actively bound to, if any.
 export function findActiveChatOfLedger(db: Db, ledgerId: LedgerId): string | undefined {
   return db

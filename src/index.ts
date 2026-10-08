@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { adminNotifier } from './bot/adminNotifier.js';
 import { createBot, registerCommands } from './bot/bot.js';
+import { chatImportSweep } from './bot/chatImportSweep.js';
 import { groupAskProvider } from './bot/groupAskProvider.js';
 import { createDonationLinks, type DonationLinks } from './bot/handlers/donate.js';
 import { messages } from './bot/messages.js';
@@ -140,7 +141,8 @@ const rateWorker = startRateWorker({
 });
 
 // Per-ledger jobs at 09:00 local (ADR-0031): a tick now, then every minute. Recurring rules,
-// then the summary pushes, then the expiry of unanswered group questions (ADR-0046).
+// then the summary pushes, then the expiry of unanswered group questions (ADR-0046), then the
+// expiry of group history imports (ADR-0047).
 const scheduledDeps = {
   db,
   logger,
@@ -159,6 +161,7 @@ const scheduler = startScheduler({
     register(recurringProvider(scheduledDeps, sender)),
     register(summaryProvider(scheduledDeps, sender)),
     register(groupAskProvider(scheduledDeps, bot.api)),
+    register(chatImportSweep(scheduledDeps)),
   ],
 });
 

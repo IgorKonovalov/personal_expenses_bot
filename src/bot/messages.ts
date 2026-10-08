@@ -479,6 +479,21 @@ interface StatementRowView extends Money {
   readonly already: boolean;
 }
 
+// A group history import's preview (ADR-0047): counts of messages by where they stand.
+interface ChatImportPreviewView {
+  readonly ledger: LedgerRef;
+  // The first and last message before the bot joined; absent when there was none.
+  readonly from?: LocalDate | undefined;
+  readonly to?: LocalDate | undefined;
+  readonly readyCount: number;
+  readonly readyMessages: number;
+  readonly totals: readonly Money[];
+  readonly alreadyCount: number;
+  readonly skippedCount: number;
+  readonly reviewCount: number;
+  readonly noAmountCount: number;
+}
+
 const MONTHS = [
   'Январь',
   'Февраль',
@@ -794,6 +809,35 @@ function spendCountWords(n: number): string {
   if (ones >= 2 && ones <= 4) return `${n} траты`;
   return `${n} трат`;
 }
+
+// `1 трату`, `2 траты`, `5 трат`, `21 трату`: what a button records.
+function spendCountAccusative(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} трат`;
+  if (ones === 1) return `${n} трату`;
+  if (ones >= 2 && ones <= 4) return `${n} траты`;
+  return `${n} трат`;
+}
+
+// `1 сообщение`, `2 сообщения`, `5 сообщений`, `21 сообщение`.
+function messageCountWords(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (tens >= 11 && tens <= 14) return `${n} сообщений`;
+  if (ones === 1) return `${n} сообщение`;
+  if (ones >= 2 && ones <= 4) return `${n} сообщения`;
+  return `${n} сообщений`;
+}
+
+// After «из»: `1 сообщения`, `4 сообщений`, `21 сообщения`.
+function messageCountGenitive(n: number): string {
+  const tens = n % 100;
+  return n % 10 === 1 && tens !== 11 ? `${n} сообщения` : `${n} сообщений`;
+}
+
+// In a group history import's preview, and after a tap that found nothing left to record.
+const chatImportNothingReady = html`Новых трат, готовых к записи, нет.`;
 
 // A drill-down list shows at most this many code points of a description.
 const MAX_LIST_DESCRIPTION = 40;
@@ -2163,6 +2207,71 @@ export const messages = {
   statementNoText: html`В этом PDF нет текста, похоже на скан. Скачайте выписку в e-banking в формате PDF и отправьте файл.`,
   statementUnreadable: html`Не удалось прочитать этот PDF. Скачайте выписку в e-banking заново и отправьте ещё раз.`,
   statementCancelled: html`Выписка не записана.`,
+
+  // A group's history from a Telegram Desktop export (ADR-0047): where its messages stand, above
+  // [Записать N трат], [Проверить (N)] and [Отмена].
+  chatImportPreview: ({
+    ledger,
+    from,
+    to,
+    readyCount,
+    readyMessages,
+    totals,
+    alreadyCount,
+    skippedCount,
+    reviewCount,
+    noAmountCount,
+  }: ChatImportPreviewView): Html =>
+    joinHtml(
+      [
+        from === undefined || to === undefined
+          ? html`<b>История группы</b> → «${ledgerName(ledger)}»`
+          : html`<b>История группы</b> → «${ledgerName(ledger)}», ${numericDate(from)}–${numericDate(to)}`,
+        readyCount === 0
+          ? chatImportNothingReady
+          : html`Готово к записи: ${spendCountWords(readyCount)} из ${messageCountGenitive(readyMessages)}, на ${moneyTotals(totals)}`,
+        ...(alreadyCount > 0 ? [html`Уже записано: ${messageCountWords(alreadyCount)}`] : []),
+        ...(skippedCount > 0 ? [html`Пропущено вами: ${messageCountWords(skippedCount)}`] : []),
+        ...(reviewCount > 0 ? [html`Нужно проверить: ${messageCountWords(reviewCount)}`] : []),
+        ...(noAmountCount > 0
+          ? [html`Без сумм, пропущено: ${messageCountWords(noAmountCount)}`]
+          : []),
+      ],
+      '\n',
+    ),
+  chatImportNothingReady,
+  chatImportRecordButton: (n: number): string => `Записать ${spendCountAccusative(n)}`,
+  chatImportReviewButton: (n: number): string => `Проверить (${n})`,
+  chatImportRecorded: ({
+    ledger,
+    count,
+    totals,
+    otherCount,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly count: number;
+    readonly totals: readonly Money[];
+    readonly otherCount: number;
+  }): Html =>
+    count === 0
+      ? chatImportNothingReady
+      : joinHtml(
+          [
+            html`Записано в «${ledgerName(ledger)}»: ${spendCountWords(count)} на ${moneyTotals(totals)}.`,
+            ...(otherCount > 0
+              ? [html`В «Другое»: ${otherCount} — категорию можно сменить в /month.`]
+              : []),
+          ],
+          ' ',
+        ),
+  chatImportCancelled: html`Импорт отменён, ничего не записано.`,
+  // No binding for the export's chat, or one whose ledger the user isn't a member of.
+  chatImportGroupUnknown: html`Не нашёл эту группу среди ваших. Добавьте меня в группу и запишите там одну трату, например «450 кафе», потом отправьте файл ещё раз.`,
+  // A .json file that isn't an export of a group chat.
+  chatImportNotExport: html`Это не выгрузка группы. В Telegram Desktop откройте группу → ⋮ → «Экспорт истории чата», формат «Машиночитаемый JSON», и отправьте файл result.json.`,
+  // A toast: a button of an earlier upload of the same user.
+  chatImportStale: 'Кнопка от прошлой выгрузки. Продолжите в последнем сообщении.',
+  chatImportExpired: html`Импорт устарел: прошло больше суток. Отправьте файл ещё раз — уже записанное не повторится.`,
 
   // Asked with one button per reading. One reading when the other is invalid for the currency:
   // `1.234` RSD, `1.200` JPY.

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
+import { saveChatImport } from '../db/chatImports.js';
 import { insertGroupAsk } from '../db/groupAsks.js';
 import { setItemProduct } from '../db/itemProducts.js';
 import { runMigrations } from '../db/migrate.js';
@@ -162,6 +163,45 @@ describe('deleteAccount', () => {
     expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
 
     expect(db.prepare('SELECT message_id FROM group_asks').pluck().all()).toEqual([13]);
+  });
+
+  it("deletes the user's group history import and no one else's", () => {
+    const shared = '30000000-0000-4000-8000-000000000001' as LedgerId;
+    insertLedger(db, {
+      id: shared,
+      kind: 'shared',
+      name: 'Семья',
+      defaultCurrency: 'RSD',
+      timezone: 'Europe/Belgrade',
+      ownerUserId: alice.id,
+      createdAt: NOW,
+    });
+    let k = 0;
+    const bob = provisionUser(
+      { ...deps(), newId: () => `20000000-0000-4000-8000-${String(++k).padStart(12, '0')}` },
+      {
+        provider: 'telegram',
+        externalId: '1002',
+        defaultTimezone: 'Europe/Belgrade',
+        defaultCurrency: 'RSD',
+        now: NOW,
+      },
+    ).user;
+    for (const userId of [alice.id, bob.id]) {
+      saveChatImport(db, {
+        userId,
+        ledgerId: shared,
+        chatId: '-100500',
+        nonce: 'abc123',
+        payload: '{"messages":[{"text":"Синтетика 3200"}]}',
+        noticeMessageId: null,
+        expiresAt: NOW,
+      });
+    }
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT user_id FROM chat_imports').pluck().all()).toEqual([bob.id]);
   });
 
   it("deletes the personal ledger's summary push claims", () => {

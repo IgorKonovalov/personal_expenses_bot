@@ -1,6 +1,6 @@
 # 0046: Group history import: a Telegram Desktop export brings in the expenses from before the bot joined
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-07
 > **Depends on:** [Plan 0045](done/0045-currency-words-and-amount-last-text.md) (currency words, `к`, `readTrailingExpense`, `chatterShaped`)
 > **Related ADRs:** [ADR-0047](../adrs/0047-group-history-import-from-a-desktop-export.md) (the decision),
@@ -511,7 +511,7 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: an export records its ready messages | dev | not started | |
+| 1: Walking skeleton: an export records its ready messages | dev | done | committed with this row |
 | 2: Review cards | dev | not started | |
 | 3: Name prefixes | dev | not started | |
 | 4: Undo and the group notice | dev | not started | |
@@ -519,6 +519,20 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 | 6: A real export | human | not started | |
 
 ### Notes
+
+- Phase 1: `src/services/groupChats.ts` was listed but not touched. The membership insert that
+  keeps a stored display name is `joinImportedMember` in `src/db/chatImports.ts`, since
+  `src/db/ledgers.ts` is outside the phase's files.
+- Phase 1: the preview shows [Записать N трат] and [Отмена] only; [Проверить (N)] comes with
+  Phase 2's handler. With nothing ready, the [Записать] button is left out.
+- Phase 1: a message whose lines read but hold no item (a lone total line) is `review`/`unread`,
+  not `total`. A `/N` split or a future date leaves its line unread.
+- Phase 1: the JSON file is downloaded in the handler through `telegramFileDownloader`, not
+  through the heavy-job queue.
+- Phase 1: `ReadItem` adds an `AmbiguousItem` (readings instead of an amount) to the plan's
+  `ProposedItem`; a review result carries `stated` for a `total` reason.
+- Phase 1: the record button's count is in the accusative (`Записать 1 трату`); the preview line
+  after «из» is in the genitive (`из 4 сообщений`, `из 1 сообщения`).
 
 ### Close triggers
 

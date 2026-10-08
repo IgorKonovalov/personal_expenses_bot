@@ -1,5 +1,6 @@
 import { deleteLedgerBudget, deleteLedgerCaps } from '../db/budgets.js';
 import { deleteLedgerCategories } from '../db/categories.js';
+import { deleteChatImport } from '../db/chatImports.js';
 import type { Db } from '../db/connection.js';
 import { deleteUserDebts } from '../db/debts.js';
 import { deleteLedgerExpenses } from '../db/expenses.js';
@@ -21,7 +22,8 @@ import type { LedgerKeyring } from './ledgerKeys.js';
 // expense, receipt and its items, budget, cap, category, sealed key and membership, every
 // recurring rule and reminder the user made in any ledger with its occurrences, the ledger's
 // summary push claims, every debt person and operation (ADR-0030), the questions pending on
-// their group messages (ADR-0046), then the user's flow session, one-time notices (ADR-0037),
+// their group messages (ADR-0046), their group history import in progress (ADR-0047), then the
+// user's flow session, one-time notices (ADR-0037),
 // tips (ADR-0028), item name corrections and own products (ADR-0039) and identity, and leaves the users row as a tombstone: `deleted_at` set,
 // admission and the active ledger cleared, and the display name forgotten in every group. The
 // user's expenses in group ledgers stay, so the group's totals don't change; they show under a
@@ -66,6 +68,7 @@ export function deleteAccount(
       deleteLedger(db, personal.id);
     }
     deleteSenderGroupAsks(db, String(input.telegramId));
+    deleteChatImport(db, userId);
     deleteFlowSession(db, userId);
     deleteUserNotices(db, userId);
     deleteUserTips(db, userId);

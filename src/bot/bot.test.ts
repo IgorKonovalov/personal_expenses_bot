@@ -59,6 +59,7 @@ import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/se
 import { createJobQueue, type JobResult, type JobRunner } from '../jobs/queue.js';
 import { encodeChartPayload } from '../domain/chartPayload.js';
 import { createBot, inProcessRunner, privateComposer, registerCommands } from './bot.js';
+import { chatImportSweep } from './chatImportSweep.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MORE_BUTTONS } from './handlers/more.js';
 import { startReceiptWorker } from './receiptWorker.js';
@@ -112,7 +113,9 @@ import {
   SECOND_ALLOWED_ID,
   STRANGER_ID,
   callbackUpdate,
+  chatExportJson,
   createTestBot,
+  documentUpdate,
   groupTextUpdate,
   invoiceLink,
   logContent,
@@ -124,6 +127,7 @@ import {
   webAppDataUpdate,
   withMessageIds,
   type ApiCall,
+  type ExportMessageFixture,
   type TestBotOptions,
 } from './testHarness.js';
 
@@ -11014,5 +11018,336 @@ describe('onboarding (Plan 0015)', () => {
     expect(assertCallbackData(ONBOARDING_EDIT)).toBe('onb:edit');
     expect(Buffer.byteLength(ONBOARDING_OK, 'utf8')).toBe(6);
     expect(Buffer.byteLength(ONBOARDING_EDIT, 'utf8')).toBe(8);
+  });
+});
+
+describe('group history import (Plan 0046)', () => {
+  // The bot joined the family supergroup -1001234567890 at BOUND; its export's id is 1234567890.
+  const BOUND = new Date('2026-09-15T00:00:00Z');
+  const CHAT_ID = -1001234567890;
+  const EXPORT_ID = 1234567890;
+  const B_ID = 1002;
+  const LIST = 'Краска 2000\nкисти 500\nваликов на 800\n3300 дин';
+  const from = (fromId: number) => ({ fromId, from: fromId === ALLOWED_ID ? 'A' : 'B' });
+  // The nine messages of the reader's table from A and B, a forwarded copy, and one message sent
+  // after the bot joined.
+  const MESSAGES: readonly ExportMessageFixture[] = [
+    { id: 1, at: new Date('2026-07-01T09:00:00Z'), ...from(ALLOWED_ID), text: LIST },
+    {
+      id: 2,
+      at: new Date('2026-07-05T09:00:00Z'),
+      ...from(B_ID),
+      text: LIST.replace('3300 дин', '3400 дин'),
+    },
+    { id: 3, at: new Date('2026-07-20T22:30:00Z'), ...from(ALLOWED_ID), text: 'Чайник 3200' },
+    {
+      id: 4,
+      at: new Date('2026-08-01T09:00:00Z'),
+      ...from(B_ID),
+      text: 'ремонт 300€, доставка 4500 динар',
+    },
+    { id: 5, at: new Date('2026-08-10T09:00:00Z'), ...from(ALLOWED_ID), text: 'Шкаф: 4500' },
+    { id: 6, at: new Date('2026-08-15T09:00:00Z'), ...from(B_ID), text: 'буду в 7' },
+    { id: 7, at: new Date('2026-08-20T09:00:00Z'), ...from(ALLOWED_ID), text: 'Ира: ремонт 300€' },
+    { id: 8, at: new Date('2026-09-01T09:00:00Z'), ...from(B_ID), text: 'Лампа 1.500' },
+    { id: 9, at: new Date('2026-09-14T18:00:00Z'), ...from(ALLOWED_ID), text: 'привет всем' },
+    {
+      id: 10,
+      at: new Date('2026-08-25T09:00:00Z'),
+      ...from(B_ID),
+      text: 'Чайник 3200',
+      forwarded: true,
+    },
+    { id: 11, at: new Date('2026-09-16T09:00:00Z'), ...from(ALLOWED_ID), text: 'Чайник 3200' },
+  ];
+  const EXPORT = chatExportJson({ id: EXPORT_ID, messages: MESSAGES });
+  const PREVIEW = [
+    '<b>История группы</b> → «Семья», 01.07.2026–14.09.2026',
+    'Готово к записи: 7 трат из 4 сообщений, на 15 500.00 RSD, 300.00 EUR',
+    'Нужно проверить: 5 сообщений',
+    'Без сумм, пропущено: 1 сообщение',
+  ].join('\n');
+
+  // The download goes through fetch; it serves the files registered by file id.
+  const realFetch = globalThis.fetch;
+  let files: Map<string, Uint8Array>;
+  let fetched: string[];
+  beforeEach(() => {
+    files = new Map();
+    fetched = [];
+    globalThis.fetch = (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      fetched.push(url);
+      const body = files.get(url.slice(url.lastIndexOf('/') + 1));
+      return Promise.resolve(
+        body === undefined ? new Response('gone', { status: 404 }) : new Response(body),
+      );
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  async function importBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+    const harness = createTestBot({ now: BOUND, ...options });
+    let updateId = 0;
+    harness.bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'getFile') return prev(method, payload, signal);
+      const { file_id } = payload as { file_id: string };
+      return Promise.resolve({
+        ok: true,
+        result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+      });
+    });
+    await harness.bot.handleUpdate(
+      myChatMemberUpdate({
+        updateId: ++updateId,
+        fromId: ALLOWED_ID,
+        oldStatus: 'left',
+        newStatus: 'member',
+        chatId: CHAT_ID,
+      }),
+    );
+    harness.calls.length = 0;
+    const send = (text: string, fromId = ALLOWED_ID) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, fromId, date: BOUND }),
+      );
+    const sendFile = (
+      json: string,
+      document: { fileName?: string; mimeType?: string; fileSize?: number; fromId?: number } = {},
+    ) => {
+      const bytes = new TextEncoder().encode(json);
+      const fileId = `file-${++updateId}`;
+      files.set(fileId, bytes);
+      return harness.bot.handleUpdate(
+        documentUpdate({
+          updateId,
+          fileId,
+          fileName: document.fileName ?? 'result.json',
+          mimeType: document.mimeType ?? 'application/json',
+          fileSize: document.fileSize ?? bytes.length,
+          date: BOUND,
+          ...(document.fromId === undefined ? {} : { fromId: document.fromId }),
+        }),
+      );
+    };
+    const tap = (data: string, messageId = 500) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    // The nonce on the latest message the bot sent with import buttons.
+    const nonce = () => {
+      const markup = harness.calls
+        .filter((call) => call.method === 'sendMessage')
+        .map((call) => JSON.stringify((call.payload as { reply_markup?: unknown }).reply_markup))
+        .filter((json) => json.includes('imp:'))
+        .at(-1);
+      const found = /imp:[a-z]+:([0-9a-z]{6})/.exec(markup ?? '')?.[1];
+      if (found === undefined) throw new Error('no import buttons were sent');
+      return found;
+    };
+    const imported = () =>
+      harness.db
+        .prepare("SELECT COUNT(*) FROM expenses WHERE source_key LIKE 'tgx:%'")
+        .pluck()
+        .get();
+    return { ...harness, send, sendFile, tap, nonce, imported };
+  }
+
+  describe('the preview and [Записать N трат] (Phase 1)', () => {
+    it('previews the export with its counts and records nothing yet', async () => {
+      const { sendFile, calls, nonce, imported } = await importBot();
+
+      await sendFile(EXPORT);
+
+      const n = nonce();
+      expect(calls.filter((call) => call.method === 'sendMessage')).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: ALLOWED_ID,
+            text: PREVIEW,
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
+                [{ text: 'Отмена', callback_data: `imp:x:${n}` }],
+              ],
+            },
+            ...htmlParseMode,
+          },
+        },
+      ]);
+      expect(imported()).toBe(0);
+    });
+
+    it('[Записать 7 трат] stores 7 under their senders; B joins as «B», A keeps their name', async () => {
+      const { sendFile, tap, nonce, db, calls } = await importBot();
+      await sendFile(EXPORT);
+      const n = nonce();
+      calls.length = 0;
+
+      await tap(`imp:rec:${n}`);
+
+      const stored = db
+        .prepare(
+          `SELECT i.external_id AS sender, COUNT(*) AS n
+             FROM expenses e JOIN auth_identities i ON i.user_id = e.created_by
+            GROUP BY i.external_id ORDER BY i.external_id`,
+        )
+        .all();
+      expect(stored).toEqual([
+        { sender: String(ALLOWED_ID), n: 5 },
+        { sender: String(B_ID), n: 2 },
+      ]);
+      expect(
+        db
+          .prepare(
+            `SELECT i.external_id AS sender, m.display_name
+               FROM ledger_members m JOIN auth_identities i ON i.user_id = m.user_id
+               JOIN ledgers l ON l.id = m.ledger_id
+              WHERE l.kind = 'shared' ORDER BY i.external_id`,
+          )
+          .all(),
+      ).toEqual([
+        { sender: String(ALLOWED_ID), display_name: 'Test' },
+        { sender: String(B_ID), display_name: 'B' },
+      ]);
+      expect(
+        db
+          .prepare(`SELECT occurred_on FROM expenses WHERE source_key = 'tgx:${CHAT_ID}:3:0'`)
+          .pluck()
+          .get(),
+      ).toBe('2026-07-21');
+      expect(calls.find((call) => call.method === 'editMessageText')?.payload).toMatchObject({
+        text: expect.stringMatching(
+          /^Записано в «Семья»: 7 трат на 15 500\.00 RSD, 300\.00 EUR\./,
+        ) as unknown,
+      });
+    });
+
+    it('still stores 7 after /month between the preview and the tap', async () => {
+      const { sendFile, send, tap, nonce, imported } = await importBot();
+      await sendFile(EXPORT);
+      const n = nonce();
+
+      await send('/month');
+      await tap(`imp:rec:${n}`);
+
+      expect(imported()).toBe(7);
+    });
+
+    it('previews the same file again as already recorded, and stores nothing new', async () => {
+      const { sendFile, tap, nonce, imported, calls } = await importBot();
+      await sendFile(EXPORT);
+      await tap(`imp:rec:${nonce()}`);
+      calls.length = 0;
+
+      await sendFile(EXPORT);
+      const text = String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]);
+      await tap(`imp:rec:${nonce()}`);
+
+      expect(text.split('\n')).toEqual([
+        '<b>История группы</b> → «Семья», 01.07.2026–14.09.2026',
+        'Новых трат, готовых к записи, нет.',
+        'Уже записано: 4 сообщения',
+        'Нужно проверить: 5 сообщений',
+        'Без сумм, пропущено: 1 сообщение',
+      ]);
+      expect(imported()).toBe(7);
+    });
+
+    it('stores nothing new on a second tap of [Записать 7 трат]', async () => {
+      const { sendFile, tap, nonce, imported } = await importBot();
+      await sendFile(EXPORT);
+      const n = nonce();
+
+      await tap(`imp:rec:${n}`);
+      await tap(`imp:rec:${n}`);
+
+      expect(imported()).toBe(7);
+    });
+
+    it('answers the first preview’s button stale once the file is sent again', async () => {
+      const { sendFile, tap, nonce, imported, calls } = await importBot();
+      await sendFile(EXPORT);
+      const first = nonce();
+      await sendFile(EXPORT);
+      calls.length = 0;
+
+      await tap(`imp:rec:${first}`);
+
+      expect(imported()).toBe(0);
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: {
+            callback_query_id: expect.any(String) as unknown,
+            text: messages.chatImportStale,
+          },
+        },
+      ]);
+    });
+
+    it('sweeps the row once it expires, and a tap then answers chatImportExpired', async () => {
+      const { sendFile, tap, nonce, imported, db, calls } = await importBot();
+      await sendFile(EXPORT);
+      const n = nonce();
+      db.prepare("UPDATE chat_imports SET expires_at = '2026-09-14T00:00:00.000Z'").run();
+
+      await runTick(
+        {
+          logger: silentLogger(),
+          providers: [register(chatImportSweep({ db, logger: silentLogger() }))],
+        },
+        BOUND,
+      );
+      calls.length = 0;
+      await tap(`imp:rec:${n}`);
+
+      expect(db.prepare('SELECT COUNT(*) FROM chat_imports').pluck().get()).toBe(0);
+      expect(imported()).toBe(0);
+      expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+        messages.chatImportExpired,
+      ]);
+    });
+
+    it('answers an unbound chat and a group the user isn’t in with the same reply', async () => {
+      const { sendFile, send, calls } = await importBot();
+      await send('/start', SECOND_ALLOWED_ID);
+      calls.length = 0;
+
+      await sendFile(chatExportJson({ id: 777, messages: MESSAGES }));
+      await sendFile(EXPORT, { fromId: SECOND_ALLOWED_ID });
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.chatImportGroupUnknown,
+        messages.chatImportGroupUnknown,
+      ]);
+    });
+
+    it('answers a .json file that isn’t a group export, a private chat’s included', async () => {
+      const { sendFile, calls } = await importBot();
+
+      await sendFile(chatExportJson({ id: EXPORT_ID, type: 'personal_chat', messages: MESSAGES }));
+      await sendFile('{"hello": "world"}', {
+        mimeType: 'application/octet-stream',
+        fileName: 'x.JSON',
+      });
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.chatImportNotExport,
+        messages.chatImportNotExport,
+      ]);
+    });
+
+    it('/delete_account deletes the user’s import row', async () => {
+      const { sendFile, send, tap, db } = await importBot();
+      await sendFile(EXPORT);
+      expect(db.prepare('SELECT COUNT(*) FROM chat_imports').pluck().get()).toBe(1);
+
+      await send('/delete_account');
+      await tap('acct:del');
+
+      expect(db.prepare('SELECT COUNT(*) FROM chat_imports').pluck().get()).toBe(0);
+    });
   });
 });
