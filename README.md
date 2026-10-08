@@ -22,6 +22,9 @@ when an amount could be read two ways.
 | [Категория]                          | Opens a paged list of the ledger's categories in the same message. A tap moves the expense there, and the next expense with the same description follows it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | [Изменить]                           | Offers [Сумма], [Описание] and [Дата] in the same message. The card then asks for the new value as your next message (the date prompt also has [Сегодня] [Вчера] [Позавчера]). [Отмена] puts the card back unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `12,50 EUR такси`                    | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `300 € ремонт`, `2500р такси`        | Records 300.00 EUR or 2 500.00 RUB. A currency sign or word after the amount, or a sign glued to it (`300€`, `€300`), names the currency; see [Currency words](#currency-words) |
+| `45к шкаф`, `1,5к кофе`              | Records 45 000.00 or 1 500.00. A `к` or `k` glued to the amount means thousands, and a `.` or `,` before it is always a decimal point. A separate `к` stays description: `500 к чаю` is 500 «к чаю» |
+| `Чайник 3200`                        | Records 3 200.00 «Чайник»: the amount may come last, with the currency, tags and a date after it (`Шкаф 45к дин`, `Краска: 2000`, `Чайник 3200 вчера`). Text with a `?` is a question and never an expense. In a group this asks first, see [In a group](#in-a-group) |
 | `1 200 обед`                         | Records 1 200.00. Group thousands with a space                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `1.200 обед`                         | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `/today`                             | `Сегодня, 30 сентября — «Личные расходы»`, then the day's total in the ledger's currency, foreign amounts converted (`≈`, see [Currency conversion](#currency-conversion)). [Позиции], shown when the day's receipts list items, lists them by category                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -116,6 +119,7 @@ The bot can keep a group's shared books, such as a family's, next to everyone's 
 | In the group                | The bot does                                                                                                                                                                                                                                                           |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `450 кафе` from any member  | Records it in the group ledger under the sender's name, dated in the ledger's timezone. A recognised category gets a ✍ reaction; «Другое» gets a reply card with [Удалить]                                                                                            |
+| `Чайник 3200` from a member | Records nothing yet: a silent reply asks «Записать 3 200.00 RSD — Чайник?» with [Записать] and [Не трата], which only the sender can answer. [Записать] records it dated by the message; [Не трата] deletes the question; unanswered, it disappears after 15 minutes. No question for text with a `?`, or with one of «в, к, до, через, с, по, около, после» right before the amount (`буду в 7`) |
 | [Удалить], [Вернуть]        | Work for the expense's author only. [Изменить в личке] on the card opens it in the author's private chat (admitted authors only)                                                                                                                                       |
 | `/card` as a reply          | Shows the card of the expense that message recorded                                                                                                                                                                                                                    |
 | `/today`, `/week`, `/month` | The group ledger's totals, by category and by person, one total in the group ledger's currency, foreign amounts converted. The pager works for anyone in the group                                                                                                     |
@@ -384,6 +388,35 @@ One rule for everyone, regardless of locale ([ADR-0004](docs/adrs/0004-amount-pa
 
 Supported currencies and their minor units are listed in
 [`src/domain/currencies.ts`](src/domain/currencies.ts).
+
+### Currency words
+
+Besides an ISO code in any case (`12,50 eur такси`), the currency after the amount can be a sign
+or a word ([ADR-0046](docs/adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md)).
+The full list is `CURRENCY_ALIASES` in [`src/domain/currencies.ts`](src/domain/currencies.ts):
+
+| Currency | Signs and words                                                    |
+| -------- | ------------------------------------------------------------------ |
+| EUR      | `€`, `евро`                                                        |
+| USD      | `$`, `долл`, `доллар`, `доллара`, `долларов`                       |
+| GBP      | `£`                                                                |
+| JPY      | `¥`                                                                |
+| RUB      | `₽`, `руб`, `руб.`, `рубль`, `рубля`, `рублей`; glued only: `р`, `р.` |
+| RSD      | `дин`, `дин.`, `динар`, `динара`, `динаров`, `din`, `din.`, `dinara` |
+| UAH      | `₴`, `грн`                                                         |
+| KZT      | `₸`, `тенге`                                                       |
+| TRY      | `₺`                                                                |
+| GEL      | `₾`, `лари`                                                        |
+
+A sign, `руб`, `руб.`, `дин`, `дин.`, `din`, `din.`, `грн`, `р` and `р.` may also touch the amount (`300€`, `€300`,
+`2500р`); the other words stand apart. A separate `р` stays description: `500 р кофе` is 500 «р
+кофе» in the default currency. The word leaves the description, so `4500 дин доставка` records
+«доставка».
+
+Two rules keep chat out of amount-last text: a `?` anywhere makes it a question, in every chat;
+and in a group, one of «в, к, до, через, с, по, около, после» right before the amount (`буду в
+7`, `через 10`) makes it chatter that gets no question. In a private chat amount-last text
+records at once, so `буду в 7` sent to the bot records 7.00, and its card's [Удалить] removes it.
 
 ### Concepts
 

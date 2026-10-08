@@ -3,6 +3,7 @@ import { loadConfig } from '../config.js';
 import { backupRetentionDays } from '../db/backup.js';
 import type { LocalDate } from '../domain/time.js';
 import { compareVersions, parseVersion } from '../domain/version.js';
+import { GROUP_ASK_TTL_MS } from '../services/groupChats.js';
 import { readAppVersion } from '../version.js';
 import { messages } from './messages.js';
 import { html } from './render/html.js';
@@ -17,6 +18,26 @@ describe('/help', () => {
     expect(messages.help).toContain('/cancel — отменить ввод');
     // HTML length bounds the visible length Telegram counts.
     expect(messages.help.length).toBeLessThan(4096);
+  });
+
+  it('names a currency sign, the к suffix and amount-last text (ADR-0046)', () => {
+    expect(messages.help).toContain('«300 € ремонт»');
+    expect(messages.help).toContain('«45к шкаф»');
+    expect(messages.help).toContain('«Чайник 3200»');
+  });
+});
+
+describe('the group help (ADR-0046)', () => {
+  it('names a currency sign and the к suffix', () => {
+    expect(messages.groupHelp).toContain('«300 € ремонт»');
+    expect(messages.groupHelp).toContain('«45к шкаф»');
+  });
+
+  it('says amount-last text gets a question only its author answers, gone after the expiry', () => {
+    expect(messages.groupHelp).toContain(
+      'Если сумма в конце, например «Чайник 3200», я сначала спрошу, записать ли. Ответить может ' +
+        `только автор сообщения; без ответа вопрос исчезнет через ${GROUP_ASK_TTL_MS / 60_000} минут.`,
+    );
   });
 });
 

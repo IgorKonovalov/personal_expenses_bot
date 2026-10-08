@@ -341,8 +341,8 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 |---|---|---|---|
 | 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | 0fd5d2b |
 | 2: Amount-last text in the private chat | dev | done | 340c2a9 |
-| 3: Amount-last text in a group asks first | dev | done | committed with this row |
-| 4: Help, README and the group help | dev | not started | |
+| 3: Amount-last text in a group asks first | dev | done | 7f3e16b |
+| 4: Help, README and the group help | dev | done | committed with this row |
 | 5: Live check | human | not started | |
 
 ### Notes
@@ -375,6 +375,9 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
   already has an expense under its source key, gets no second question.
 - Phase 3, done-when «After A's `/delete_account`, A's pending rows are gone»: tested at the
   service level in `deleteAccount.test.ts`, not through the bot.
+- Phase 4: the README gets three rows in the private table, one in the group table, and a new
+  `### Currency words` section after `### Amount rules` with the alias table and the two chatter
+  rules. `README.md` was not prettier-clean before this phase and is left unformatted.
 
 ### Close triggers
 
