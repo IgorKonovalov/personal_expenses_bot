@@ -910,7 +910,8 @@ function chatImportReadyLine(line: ChatImportReadyLine): Html {
   return html`${day} · ${line.senderName ?? DELETED_MEMBER} · <b>${formatMoney(line)}</b> — ${description}`;
 }
 
-// `• 2 000.00 RSD — Краска`; an ambiguous amount lists its readings.
+// `• 2 000.00 RSD — Краска`; an ambiguous amount lists its readings. The description is cut
+// like a drill-down line's.
 function chatImportItemLine(item: ReadItem): Html {
   const amount = isAmbiguousItem(item)
     ? item.readings
@@ -919,7 +920,33 @@ function chatImportItemLine(item: ReadItem): Html {
         )
         .join(' или ')
     : formatMoney(item);
-  return html`• ${amount} — ${item.description}`;
+  const codePoints = Array.from(item.description);
+  const description =
+    codePoints.length <= MAX_LIST_DESCRIPTION
+      ? item.description
+      : `${codePoints.slice(0, MAX_LIST_DESCRIPTION).join('')}…`;
+  return html`• ${amount} — ${description}`;
+}
+
+// A review card's item lines that fit within Telegram's 4096 visible characters next to the
+// card's other lines, closed by `…и ещё 12 трат` when some are left out. Only the display is
+// cut: the card still records every item.
+function chatImportItemLines(items: readonly ReadItem[], otherLines: readonly Html[]): Html[] {
+  const lines = items.map(chatImportItemLine);
+  const base = visibleLength(joinHtml(otherLines, '\n'));
+  const total = lines.reduce((sum, line) => sum + 1 + visibleLength(line), base);
+  if (total <= MAX_VISIBLE_CHARS) return lines;
+  // Room for the `…и ещё N трат` line, whatever N.
+  const budget = MAX_VISIBLE_CHARS - 40;
+  let used = base;
+  let shown = 0;
+  for (const line of lines) {
+    const next = used + 1 + visibleLength(line);
+    if (next > budget) break;
+    used = next;
+    shown += 1;
+  }
+  return [...lines.slice(0, shown), html`…и ещё ${spendCountWords(lines.length - shown)}`];
 }
 
 // A drill-down list shows at most this many code points of a description.
@@ -2367,15 +2394,15 @@ export const messages = {
       codePoints.length <= MAX_CARD_TEXT
         ? card.text
         : `${codePoints.slice(0, MAX_CARD_TEXT).join('')}…`;
+    const head = [
+      html`<b>Проверка ${card.position} из ${card.total}</b>`,
+      html`${card.senderName ?? DELETED_MEMBER}, ${numericDate(card.date)}`,
+      html`<blockquote>${text}</blockquote>`,
+      chatImportReasonLine(card),
+    ];
+    const tail = card.payer === undefined ? [] : [html`Платит: ${card.payer.name}`];
     return joinHtml(
-      [
-        html`<b>Проверка ${card.position} из ${card.total}</b>`,
-        html`${card.senderName ?? DELETED_MEMBER}, ${numericDate(card.date)}`,
-        html`<blockquote>${text}</blockquote>`,
-        chatImportReasonLine(card),
-        ...card.items.map(chatImportItemLine),
-        ...(card.payer === undefined ? [] : [html`Платит: ${card.payer.name}`]),
-      ],
+      [...head, ...chatImportItemLines(card.items, [...head, ...tail]), ...tail],
       '\n',
     );
   },

@@ -105,7 +105,7 @@ import {
   undoExpenseData,
 } from './callbackData.js';
 import { CHANGELOG_RECENT, messages, visibleLength } from './messages.js';
-import { editHtml, html, htmlParseMode } from './render/html.js';
+import { editHtml, html, htmlParseMode, type Html } from './render/html.js';
 import {
   ADMIN_ID,
   ALLOWED_ID,
@@ -11481,6 +11481,34 @@ describe('group history import (Plan 0046)', () => {
       expect(lastEdit(calls)?.text).toMatch(
         /^<b>Проверка 3 из 5<\/b>\nA, 20\.08\.2026\n<blockquote>Ира: ремонт 300€<\/blockquote>/,
       );
+    });
+
+    it('cuts a 300-line list’s card within 4096 characters, and [Пропустить] moves past it', async () => {
+      const { upload, tap, nonce, calls, imported } = await importBot();
+      const long = `${'a 1\n'.repeat(300)}999 дин`;
+      await upload(
+        chatExportJson({
+          id: EXPORT_ID,
+          messages: [
+            { id: 1, at: new Date('2026-07-01T09:00:00Z'), ...from(ALLOWED_ID), text: long },
+            { id: 2, at: new Date('2026-07-02T09:00:00Z'), ...from(B_ID), text: 'Лампа 1.500' },
+          ],
+        }),
+      );
+      const n = nonce();
+      calls.length = 0;
+
+      await tap(`imp:rev:${n}`);
+      const card = sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0] as Html;
+
+      expect(visibleLength(card)).toBeLessThanOrEqual(4096);
+      expect(card).toMatch(/^<b>Проверка 1 из 2<\/b>\n/);
+      expect(card).toMatch(/\n• 1\.00 RSD — a\n…и ещё \d+ трат[аы]?\nПлатит: A$/);
+
+      await tap(`imp:skip:${n}:0`);
+
+      expect(imported()).toBe(0);
+      expect(lastEdit(calls)?.text).toMatch(/^<b>Проверка 2 из 2<\/b>\nB, 02\.07\.2026\n/);
     });
 
     it('offers no [Записать так] for «Лампа 1.500»; its reading button stores 1 500.00 RSD', async () => {
