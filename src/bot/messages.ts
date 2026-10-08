@@ -626,6 +626,10 @@ function conversionNotes(
 // The privacy policy in the public repo; /privacy links it.
 const PRIVACY_URL = 'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/PRIVACY.md';
 
+// The Russian user guide (ADR-0048), published beside the Mini App; /help links it.
+export const DOCS_URL = 'https://igorkonovalov.github.io/personal_expenses_bot/docs/';
+const helpDocsLine = html`Подробное руководство с примерами: ${DOCS_URL}`;
+
 // A group member with no stored display name: a deleted account, whose expenses stay in the
 // group's totals (ADR-0024).
 const DELETED_MEMBER = 'удалённый участник';
@@ -1674,6 +1678,7 @@ export const messages = {
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
       html``,
+      helpDocsLine,
       helpDonateLine,
     ],
     '\n',
@@ -1694,6 +1699,7 @@ export const messages = {
       html`/help — эта подсказка`,
       html``,
       html`Личные траты из переписки со мной сюда не попадают.`,
+      helpDocsLine,
     ],
     '\n',
   ),

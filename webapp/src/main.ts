@@ -1,10 +1,11 @@
 import { startChart, type ChartWebApp } from './pie.js';
+import { DOCS_PATH, redirectsToDocs } from './redirect.js';
 import { modeOf, startScan, type ScanWebApp } from './scan.js';
 
 // The page's entry, loaded after telegram-web-app.js. Opened outside Telegram, the script and
 // so `window.Telegram` may be missing: the page then draws in its default colours, or only shows
-// its fallback line. `#m=scan` is scan mode; anything else is chart mode, which reads `z` or `d`
-// and draws once it is decoded.
+// its fallback line. A fragment with no payload goes to the docs; `#m=scan` is scan mode;
+// anything else is chart mode, which reads `z` or `d` and draws once it is decoded.
 declare global {
   interface Window {
     readonly Telegram?: {
@@ -18,7 +19,9 @@ webApp?.ready?.();
 
 const hash = window.location.hash;
 const status = document.getElementById('status');
-if (modeOf(hash) === 'scan') {
+if (redirectsToDocs(hash)) {
+  window.location.replace(DOCS_PATH);
+} else if (modeOf(hash) === 'scan') {
   startScan(webApp, hash, (line) => {
     if (status !== null) status.textContent = line;
   });

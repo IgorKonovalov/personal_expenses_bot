@@ -1,0 +1,125 @@
+---
+// Draws one generated chat (ADR-0048): `pnpm docs:chats` ran the scenario named `name` through
+// the real bot and wrote its transcript. User bubbles sit right, the bot's left, with its inline
+// keyboard under the bubble. The bot's text is its own Telegram HTML, cut down to Telegram's tag
+// set with no attributes but an `<a>`'s href, so no scenario input can put markup on the page.
+import type { Transcript } from '../../../scripts/docs-chats/recorder';
+
+interface Props {
+  readonly name: string;
+}
+
+const { name } = Astro.props;
+const transcripts = import.meta.glob<Transcript>('../generated/chats/*.json', {
+  eager: true,
+  import: 'default',
+});
+const transcript = transcripts[`../generated/chats/${name}.json`];
+if (transcript === undefined) {
+  throw new Error(`<Chat name="${name}">: no transcript; run pnpm docs:chats`);
+}
+
+const ALLOWED_TAGS = new Set(['b', 'i', 'u', 's', 'code', 'pre', 'a', 'blockquote', 'tg-spoiler']);
+const SAFE_HREF = /^(?:https?:|tg:)/;
+
+function allowTags(html: string): string {
+  return html.replace(
+    /<(\/?)([a-z][a-z-]*)([^<>]*)>|[<>]/gi,
+    (match: string, close?: string, tag?: string, attrs?: string) => {
+      if (tag === undefined) return match === '<' ? '&lt;' : '&gt;';
+      const name = tag.toLowerCase();
+      if (!ALLOWED_TAGS.has(name)) return '';
+      if (close === '/') return `</${name}>`;
+      if (name !== 'a') return `<${name}>`;
+      const href = /\bhref="([^"]*)"/.exec(attrs ?? '')?.[1];
+      return href !== undefined && SAFE_HREF.test(href) ? `<a href="${href}">` : '<a>';
+    },
+  );
+}
+---
+
+<div class="tg-chat" data-chat={name}>
+  {
+    transcript.bubbles.map((bubble) =>
+      bubble.from === 'user' ? (
+        <div class="tg-row tg-row-user">
+          <div class="tg-bubble tg-user">{bubble.text}</div>
+        </div>
+      ) : bubble.from === 'bot' ? (
+        <div class="tg-row tg-row-bot">
+          <div class="tg-message">
+            <div class="tg-bubble tg-bot" set:html={allowTags(bubble.html)} />
+            {bubble.buttons !== undefined && (
+              <div class="tg-keyboard">
+                {bubble.buttons.map((row) => (
+                  <div class="tg-keyboard-row">
+                    {row.map((button) => (
+                      <span class="tg-button">{button.text}</span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null,
+    )
+  }
+</div>
+
+<style>
+  .tg-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 28rem;
+    margin-block: 1.5rem;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    background: #dfe8d6;
+  }
+  .tg-row {
+    display: flex;
+  }
+  .tg-row-user {
+    justify-content: flex-end;
+  }
+  .tg-message {
+    max-width: 85%;
+  }
+  .tg-bubble {
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.9rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    color: #000;
+  }
+  .tg-user {
+    max-width: 85%;
+    background: #effdde;
+  }
+  .tg-bot {
+    background: #fff;
+  }
+  .tg-keyboard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  .tg-keyboard-row {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .tg-button {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #fff;
+    background: rgb(0 0 0 / 0.25);
+  }
+</style>

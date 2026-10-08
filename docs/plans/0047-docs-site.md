@@ -1,6 +1,6 @@
 # 0047: A Russian docs site: a user guide with chats generated from the real bot, and an architecture section
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0048](../adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)
 
@@ -290,7 +290,7 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | not started | |
+| 1: Walking skeleton | dev | done | committed with this row |
 | 2: Chat renderer and chart embed | dev | not started | |
 | 3: User guide | dev | not started | |
 | 4: Architecture section | dev | not started | |
@@ -298,6 +298,18 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 | 6: Live check and proofreading | human | not started | |
 
 ### Notes
+
+- Phase 1: pinned `astro` 7.3.5 and `@astrojs/starlight` 0.42.4, the newest outside the 7-day
+  cooldown on 2026-10-08. `site/pnpm-workspace.yaml` sets `sharp: false` in `allowBuilds`
+  (pnpm refuses an unlisted build script; sharp's prebuilt binary needs none).
+- Phase 1: edited `scripts/pages-workflow.test.mjs`, outside `Files touched`: it asserted the
+  upload path `webapp/dist`, which this phase changes to `.pages`. It now also asserts the chat
+  and site build steps, no `paths` filter, and the deploy job's push-to-main `if`.
+- Phase 1: "on a pull request, `pages.yml` skips `deploy`" is checked by that test reading the
+  job's `if`, not by a run on GitHub. "The image's build context doesn't contain `site/`" is
+  checked by reading `.dockerignore`; no image was built.
+- Phase 1: scenarios run as the invited user `SECOND_ALLOWED_ID`, not the admin, and the recorder
+  keeps only calls to that user's chat.
 
 ### Close triggers
 

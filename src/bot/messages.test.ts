@@ -5,7 +5,7 @@ import type { LocalDate } from '../domain/time.js';
 import { compareVersions, parseVersion } from '../domain/version.js';
 import { GROUP_ASK_TTL_MS } from '../services/groupChats.js';
 import { readAppVersion } from '../version.js';
-import { messages } from './messages.js';
+import { DOCS_URL, messages } from './messages.js';
 import { html } from './render/html.js';
 
 describe('/help', () => {
@@ -37,6 +37,21 @@ describe('the group help (ADR-0046)', () => {
     expect(messages.groupHelp).toContain(
       'Если сумма в конце, например «Чайник 3200», я сначала спрошу, записать ли. Ответить может ' +
         `только автор сообщения; без ответа вопрос исчезнет через ${GROUP_ASK_TTL_MS / 60_000} минут.`,
+    );
+  });
+});
+
+describe('the docs link (ADR-0048)', () => {
+  it('is the docs path beside the Mini App', () => {
+    expect(DOCS_URL).toBe('https://igorkonovalov.github.io/personal_expenses_bot/docs/');
+  });
+
+  it('closes the private help before the donate line, and the group help', () => {
+    expect(messages.help).toContain(
+      `Подробное руководство с примерами: ${DOCS_URL}\n${messages.helpDonateLine}`,
+    );
+    expect(messages.groupHelp.endsWith(`Подробное руководство с примерами: ${DOCS_URL}`)).toBe(
+      true,
     );
   });
 });

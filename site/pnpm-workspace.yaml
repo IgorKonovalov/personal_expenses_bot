@@ -1,0 +1,8 @@
+# The docs site (ADR-0048) is its own pnpm project, under the same supply-chain policy as the
+# root (ADR-0001): a version must be public for 7 days before it can be resolved, and install
+# scripts run only for the native deps named here.
+minimumReleaseAge: 10080
+allowBuilds:
+  esbuild: true
+  # Astro's image service; its prebuilt @img/sharp-* binary needs no install script.
+  sharp: false
