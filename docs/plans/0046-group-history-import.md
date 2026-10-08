@@ -515,7 +515,7 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 | 2: Review cards | dev | done | fd8f901 |
 | 3: Name prefixes | dev | done | 6f3042b |
 | 4: Undo and the group notice | dev | done | b8d79e7 |
-| 5: Limits, help and docs | dev | done | committed with this row |
+| 5: Limits, help and docs | dev | done | 228b20c |
 | 6: A real export | human | not started | |
 
 ### Notes
@@ -580,7 +580,30 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
   Both refusals happen before the row is saved.
 - Phase 5: the preview test of Phase 1 now asserts the seven page lines under the counts; the
   other preview assertions compare the count lines only.
+- Followup, not acted on: the docs site (`site/`, ADR-0048) has no page on the history import;
+  only `/help` and the README name it.
+- Followup, not acted on: the group notice is posted after the DM reply, from the handler, with
+  no tap guard. Updates are handled one at a time today, so two record taps can't both see no
+  notice; a concurrent runner could post it twice.
 
 ### Close triggers
+
+- Phases 1 to 5 (`dev`) are done in 0bad4f1, fd8f901, 6f3042b, b8d79e7 and 228b20c. Phase 6
+  (`human`, `Blocks merge: no`) has not started.
+- Gate on the tip (228b20c):
+  - `pnpm typecheck` exited 0.
+  - `pnpm lint` exited 0.
+  - `pnpm test` exited 0, with 151 files and 2254 tests passed.
+  - `pnpm build` exited 0.
+  - `node scripts/check-doc-links.mjs` exited 0, with 348 relative links resolving.
+- New migration: `src/db/migrations/0029_chat_imports.sql` (the `chat_imports` table and its
+  `expires_at` index), from Phase 1.
+- New files: `src/domain/chatImport/telegramExport.ts`, `src/domain/chatImport/readMessage.ts`,
+  `src/db/chatImports.ts`, `src/services/importChat.ts`, `src/bot/handlers/chatImport.ts`,
+  `src/bot/chatImportSweep.ts`, and their tests.
+- New pending-flow kind: `chatImportFix` in `src/services/flowSessions.ts`.
+- New callback data scope: `imp:` in `src/bot/callbackData.ts`.
+- User-facing copy changed: `/help` gains the history import line.
+- Docs changed: README gains «History import»; CLAUDE.md's `domain/` line names chat import.
 
 ## Followups
