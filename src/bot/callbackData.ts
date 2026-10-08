@@ -342,13 +342,36 @@ export const STATEMENT_CANCEL = 'stm:x';
 
 // A group history import (ADR-0047). Every button carries the user's chat_imports row's 6-char
 // base-36 nonce, so a button from an earlier upload never acts on a later one: [Записать N трат]
-// `imp:rec:<n>` and [Отмена] `imp:x:<n>` (14 bytes).
+// `imp:rec:<n>`, [Проверить (N)] `imp:rev:<n>`, [Закончить проверку] `imp:end:<n>` and [Отмена]
+// `imp:x:<n>` (at most 14 bytes).
 const NONCE = '([0-9a-z]{6})';
 export const CHAT_IMPORT_RECORD = new RegExp(`^imp:rec:${NONCE}$`);
 export const CHAT_IMPORT_CANCEL = new RegExp(`^imp:x:${NONCE}$`);
+export const CHAT_IMPORT_REVIEW = new RegExp(`^imp:rev:${NONCE}$`);
+export const CHAT_IMPORT_FINISH = new RegExp(`^imp:end:${NONCE}$`);
 
-export function chatImportData(action: 'rec' | 'x', nonce: string): string {
+export function chatImportData(action: 'rec' | 'x' | 'rev' | 'end', nonce: string): string {
   return assertCallbackData(`imp:${action}:${nonce}`);
+}
+
+// A review card's buttons, on the message at index `<i>` of the import (at most 5 digits):
+// [Записать так] `imp:ok`, [Исправить] `imp:fix`, [« Назад к карточке] `imp:back`, [Пропустить]
+// `imp:skip` and [👤] `imp:who` (at most 21 bytes); a reading of an ambiguous amount
+// `imp:rd:<n>:<i>:<r>`.
+export type ChatImportCardAction = 'ok' | 'fix' | 'back' | 'skip' | 'who';
+export const CHAT_IMPORT_CARD = new RegExp(`^imp:(ok|fix|back|skip|who):${NONCE}:(\\d{1,5})$`);
+export const CHAT_IMPORT_READING = new RegExp(`^imp:rd:${NONCE}:(\\d{1,5}):(\\d)$`);
+
+export function chatImportCardData(
+  action: ChatImportCardAction,
+  nonce: string,
+  index: number,
+): string {
+  return assertCallbackData(`imp:${action}:${nonce}:${index}`);
+}
+
+export function chatImportReadingData(nonce: string, index: number, reading: number): string {
+  return assertCallbackData(`imp:rd:${nonce}:${index}:${reading}`);
 }
 
 // Recurring expenses (Plan 0025). [Повторять] on a card `rec:new:<uuid>` (44 bytes) offers the

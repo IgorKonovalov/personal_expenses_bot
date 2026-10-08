@@ -282,7 +282,19 @@ export interface ProductNameFlow {
   readonly ledgerId: LedgerId;
 }
 
+// [Исправить] on a group history import's review card (ADR-0047): the items of the message at
+// `index` of the import holding `nonce`, typed into the card at `chatId`/`messageId`. Ending the
+// prompt leaves the import and its card as they are.
+export interface ChatImportFixFlow {
+  readonly kind: 'chatImportFix';
+  readonly nonce: string;
+  readonly index: number;
+  readonly chatId: number;
+  readonly messageId: number;
+}
+
 export type Flow =
+  | ChatImportFixFlow
   | CommandArgFlow
   | ProductNameFlow
   | CategoryFlow
@@ -511,6 +523,23 @@ function parseFlow(kind: string, payload: string): Flow | undefined {
   const parsed = parseObject(payload);
   if (kind === 'commandArg' && isArgCommand(parsed?.command)) {
     return { kind, command: parsed.command };
+  }
+  if (kind === 'chatImportFix' && typeof parsed?.nonce === 'string') {
+    const { index, chatId, messageId } = parsed;
+    if (
+      !Number.isSafeInteger(index) ||
+      !Number.isSafeInteger(chatId) ||
+      !Number.isSafeInteger(messageId)
+    ) {
+      return undefined;
+    }
+    return {
+      kind,
+      nonce: parsed.nonce,
+      index: index as number,
+      chatId: chatId as number,
+      messageId: messageId as number,
+    };
   }
   if (kind === 'setTimezone' && parsed !== undefined) {
     return typeof parsed.ledgerId === 'string'

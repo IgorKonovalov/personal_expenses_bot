@@ -9,6 +9,11 @@ import type {
   ChartLine,
   PaceSection,
 } from '../domain/chartPayload.js';
+import {
+  isAmbiguousItem,
+  type ReadItem,
+  type ReviewReason,
+} from '../domain/chatImport/readMessage.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { addDays } from '../domain/dateText.js';
 import type { ExportRange } from '../domain/export/rows.js';
@@ -494,6 +499,22 @@ interface ChatImportPreviewView {
   readonly noAmountCount: number;
 }
 
+// One message of a group history import to review (ADR-0047). The text is the group's, so it
+// goes through `html`.
+interface ChatImportCardView {
+  readonly position: number;
+  readonly total: number;
+  // Null for a deleted account.
+  readonly senderName: string | null;
+  readonly date: LocalDate;
+  readonly text: string;
+  readonly reason: ReviewReason;
+  readonly stated?: Money | undefined;
+  readonly items: readonly ReadItem[];
+  // Absent until someone pays.
+  readonly payer?: { readonly name: string } | undefined;
+}
+
 const MONTHS = [
   'Январь',
   'Февраль',
@@ -842,6 +863,42 @@ function messageCountGenitive(n: number): string {
 
 // In a group history import's preview, and after a tap that found nothing left to record.
 const chatImportNothingReady = html`Новых трат, готовых к записи, нет.`;
+
+// A review card shows at most this many code points of the message.
+const MAX_CARD_TEXT = 600;
+
+// Why a message of a group history import needs a look: one line.
+const chatImportReason = {
+  total: ({ items, stated }: { readonly items: readonly Money[]; readonly stated: Money }): Html =>
+    html`Сумма строк ${moneyTotals(items)}, а в итоге ${formatMoney(stated)}.`,
+  bare: html`Похоже на обычное сообщение, а не трату.`,
+  unread: html`Не все строки понял.`,
+  ambiguous: html`Сумму можно понять по-разному.`,
+  prefix: html`Сообщение начинается с имени.`,
+  forwarded: html`Пересланное сообщение: платить мог другой человек.`,
+  deletedSender: html`Автор удалил аккаунт: выберите, кто платил.`,
+} as const;
+
+function chatImportReasonLine(card: ChatImportCardView): Html {
+  const definite = card.items.filter((item): item is Money & ReadItem => !isAmbiguousItem(item));
+  return card.reason === 'total' && card.stated !== undefined
+    ? chatImportReason.total({ items: definite, stated: card.stated })
+    : card.reason === 'total'
+      ? chatImportReason.unread
+      : chatImportReason[card.reason];
+}
+
+// `• 2 000.00 RSD — Краска`; an ambiguous amount lists its readings.
+function chatImportItemLine(item: ReadItem): Html {
+  const amount = isAmbiguousItem(item)
+    ? item.readings
+        .map((reading) =>
+          formatMoney({ amountMinor: reading.amountMinor, currency: item.currency }),
+        )
+        .join(' или ')
+    : formatMoney(item);
+  return html`• ${amount} — ${item.description}`;
+}
 
 // A drill-down list shows at most this many code points of a description.
 const MAX_LIST_DESCRIPTION = 40;
@@ -2276,6 +2333,47 @@ export const messages = {
   chatImportGroupUnknown: html`Не нашёл эту группу среди ваших. Добавьте меня в группу и запишите там одну трату, например «450 кафе», потом отправьте файл ещё раз.`,
   // A .json file that isn't an export of a group chat.
   chatImportNotExport: html`Это не выгрузка группы. В Telegram Desktop откройте группу → ⋮ → «Экспорт истории чата», формат «Машиночитаемый JSON», и отправьте файл result.json.`,
+  // A review card: the message as the group saw it, why it needs a look, what it proposes and
+  // who pays, above [Записать так], the readings, [Исправить] [Пропустить], [👤] and
+  // [Закончить проверку].
+  chatImportCard: (card: ChatImportCardView): Html => {
+    const codePoints = Array.from(card.text);
+    const text =
+      codePoints.length <= MAX_CARD_TEXT
+        ? card.text
+        : `${codePoints.slice(0, MAX_CARD_TEXT).join('')}…`;
+    return joinHtml(
+      [
+        html`<b>Проверка ${card.position} из ${card.total}</b>`,
+        html`${card.senderName ?? DELETED_MEMBER}, ${numericDate(card.date)}`,
+        html`<blockquote>${text}</blockquote>`,
+        chatImportReasonLine(card),
+        ...card.items.map(chatImportItemLine),
+        ...(card.payer === undefined ? [] : [html`Платит: ${card.payer.name}`]),
+      ],
+      '\n',
+    );
+  },
+  chatImportReason,
+  chatImportRecordCardButton: 'Записать так',
+  chatImportFixButton: 'Исправить',
+  chatImportSkipButton: 'Пропустить',
+  // [👤]: cycles the payer through the export's senders.
+  chatImportPayerButton: (name: string | undefined): string =>
+    name === undefined ? '👤 Кто платил?' : `👤 ${name}`,
+  chatImportFinishButton: 'Закончить проверку',
+  chatImportBackToCardButton: '« Назад к карточке',
+  chatImportFixPrompt: html`Отправьте траты из этого сообщения, по одной в строке, например:\n2000 краска\n500 кисти\nДата будет как у сообщения.`,
+  chatImportFixBadLine: ({ n, line }: { readonly n: number; readonly line: string }): Html =>
+    html`Строку ${n} («${line}») не понял. Отправьте все строки ещё раз.`,
+  chatImportReviewDone: ({
+    recorded,
+    skipped,
+  }: {
+    readonly recorded: number;
+    readonly skipped: number;
+  }): Html =>
+    html`Проверка закончена: записано ${messageCountWords(recorded)}, пропущено ${skipped}.`,
   // A toast: a button of an earlier upload of the same user.
   chatImportStale: 'Кнопка от прошлой выгрузки. Продолжите в последнем сообщении.',
   chatImportExpired: html`Импорт устарел: прошло больше суток. Отправьте файл ещё раз — уже записанное не повторится.`,

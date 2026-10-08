@@ -11169,6 +11169,7 @@ describe('group history import (Plan 0046)', () => {
             reply_markup: {
               inline_keyboard: [
                 [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
+                [{ text: 'Проверить (5)', callback_data: `imp:rev:${n}` }],
                 [{ text: 'Отмена', callback_data: `imp:x:${n}` }],
               ],
             },
@@ -11348,6 +11349,276 @@ describe('group history import (Plan 0046)', () => {
       await tap('acct:del');
 
       expect(db.prepare('SELECT COUNT(*) FROM chat_imports').pluck().get()).toBe(0);
+    });
+  });
+
+  describe('review cards (Phase 2)', () => {
+    // A message's index in the import: the messages before the bot joined with a digit, in
+    // export order (ids 1-8 and 10). The cards are ids 2, 6, 7, 8 and 10.
+    const INDEX = { list3400: 1, chatter: 5, prefix: 6, lamp: 7 } as const;
+
+    const edits = (calls: readonly { method: string; payload: unknown }[]) =>
+      calls.filter((call) => call.method === 'editMessageText');
+    const lastEdit = (calls: readonly { method: string; payload: unknown }[]) =>
+      edits(calls).at(-1)?.payload as
+        { text: string; reply_markup?: { inline_keyboard: { text: string }[][] } } | undefined;
+    const buttons = (payload: { reply_markup?: { inline_keyboard: { text: string }[][] } }) =>
+      payload.reply_markup?.inline_keyboard.flat().map((button) => button.text) ?? [];
+    const sumFor = (db: Db, messageId: number) =>
+      db
+        .prepare(
+          `SELECT SUM(amount_minor) FROM expenses WHERE source_key LIKE 'tgx:${CHAT_ID}:${messageId}:%'`,
+        )
+        .pluck()
+        .get();
+
+    async function reviewing() {
+      const bot = await importBot();
+      await bot.sendFile(EXPORT);
+      const n = bot.nonce();
+      bot.calls.length = 0;
+      await bot.tap(`imp:rev:${n}`);
+      return { ...bot, n };
+    }
+
+    it('opens the 3400 list as a card with the sums and records its three items as is', async () => {
+      const { calls, tap, n, db } = await reviewing();
+
+      expect(calls.filter((call) => call.method === 'sendMessage')).toEqual([
+        {
+          method: 'sendMessage',
+          payload: {
+            chat_id: ALLOWED_ID,
+            text: [
+              '<b>Проверка 1 из 5</b>',
+              'B, 05.07.2026',
+              '<blockquote>Краска 2000\nкисти 500\nваликов на 800\n3400 дин</blockquote>',
+              'Сумма строк 3 300.00 RSD, а в итоге 3 400.00 RSD.',
+              '• 2 000.00 RSD — Краска',
+              '• 500.00 RSD — кисти',
+              '• 800.00 RSD — валиков',
+              'Платит: B',
+            ].join('\n'),
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Записать так', callback_data: `imp:ok:${n}:1` }],
+                [
+                  { text: 'Исправить', callback_data: `imp:fix:${n}:1` },
+                  { text: 'Пропустить', callback_data: `imp:skip:${n}:1` },
+                ],
+                [{ text: '👤 B', callback_data: `imp:who:${n}:1` }],
+                [{ text: 'Закончить проверку', callback_data: `imp:end:${n}` }],
+              ],
+            },
+            ...htmlParseMode,
+          },
+        },
+      ]);
+
+      await tap(`imp:ok:${n}:${INDEX.list3400}`);
+
+      expect(sumFor(db, 2)).toBe(330000);
+      expect(lastEdit(calls)?.text).toMatch(/^<b>Проверка 2 из 5<\/b>\nB, 15\.08\.2026\n/);
+    });
+
+    it('[Пропустить] on «буду в 7» stores nothing and shows the next card', async () => {
+      const { calls, tap, n, imported } = await reviewing();
+
+      await tap(`imp:skip:${n}:${INDEX.chatter}`);
+
+      expect(imported()).toBe(0);
+      expect(lastEdit(calls)?.text).toMatch(
+        /^<b>Проверка 3 из 5<\/b>\nA, 20\.08\.2026\n<blockquote>Ира: ремонт 300€<\/blockquote>/,
+      );
+    });
+
+    it('offers no [Записать так] for «Лампа 1.500»; its reading button stores 1 500.00 RSD', async () => {
+      const { calls, tap, n, db } = await reviewing();
+      // To the lamp's card, the fourth.
+      await tap(`imp:skip:${n}:${INDEX.chatter}`);
+      await tap(`imp:skip:${n}:${INDEX.prefix}`);
+      const card = lastEdit(calls);
+
+      expect(card?.text).toContain(
+        'Сумму можно понять по-разному.\n• 1 500.00 RSD или 1.50 RSD — Лампа',
+      );
+      expect(card === undefined ? [] : buttons(card)).toEqual([
+        '1 500.00 RSD',
+        '1.50 RSD',
+        'Исправить',
+        'Пропустить',
+        '👤 B',
+        'Закончить проверку',
+      ]);
+
+      await tap(`imp:rd:${n}:${INDEX.lamp}:0`);
+
+      expect(
+        db
+          .prepare(`SELECT amount_minor, description FROM expenses WHERE source_key LIKE 'tgx:%'`)
+          .all(),
+      ).toEqual([{ amount_minor: 150000, description: 'Лампа' }]);
+    });
+
+    it('[Исправить] with «1500 лампа» stores 150000 RSD «лампа» instead', async () => {
+      const { calls, tap, send, n, db } = await reviewing();
+
+      await tap(`imp:fix:${n}:${INDEX.lamp}`);
+      expect(lastEdit(calls)).toMatchObject({
+        text: messages.chatImportFixPrompt,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '« Назад к карточке', callback_data: `imp:back:${n}:${INDEX.lamp}` }],
+          ],
+        },
+      });
+      await send('1500 лампа');
+      const card = lastEdit(calls);
+      expect(card?.text).toContain('• 1 500.00 RSD — лампа\nПлатит: B');
+      expect(card === undefined ? [] : buttons(card)[0]).toBe('Записать так');
+
+      await tap(`imp:ok:${n}:${INDEX.lamp}`);
+
+      expect(
+        db
+          .prepare(`SELECT amount_minor, description FROM expenses WHERE source_key LIKE 'tgx:%'`)
+          .all(),
+      ).toEqual([{ amount_minor: 150000, description: 'лампа' }]);
+    });
+
+    it('[Исправить] with a line it can’t read names that line and stores nothing', async () => {
+      const { calls, tap, send, n, imported } = await reviewing();
+
+      await tap(`imp:fix:${n}:${INDEX.lamp}`);
+      await send('шкаф 4500\nх');
+
+      expect(lastEdit(calls)?.text).toBe(messages.chatImportFixBadLine({ n: 2, line: 'х' }));
+      expect(imported()).toBe(0);
+    });
+
+    it('[Исправить], /today, then [Пропустить]: the card skips and the next text is an expense', async () => {
+      const { calls, tap, send, n, imported, db } = await reviewing();
+
+      await tap(`imp:fix:${n}:${INDEX.chatter}`);
+      await send('/today');
+      await tap(`imp:skip:${n}:${INDEX.chatter}`);
+      await send('450 кофе');
+
+      expect(lastEdit(calls)?.text).toMatch(/^<b>Проверка 3 из 5<\/b>/);
+      expect(imported()).toBe(0);
+      expect(
+        db
+          .prepare("SELECT amount_minor, description FROM expenses WHERE source_key LIKE 'tg:%'")
+          .all(),
+      ).toEqual([{ amount_minor: 45000, description: 'кофе' }]);
+    });
+
+    it('[👤] on A’s card makes B the payer, and B is the item’s author', async () => {
+      const { calls, tap, n, db } = await reviewing();
+
+      await tap(`imp:who:${n}:${INDEX.prefix}`);
+      expect(lastEdit(calls)?.text).toMatch(/\nПлатит: B$/);
+      await tap(`imp:ok:${n}:${INDEX.prefix}`);
+
+      expect(
+        db
+          .prepare(
+            `SELECT i.external_id FROM expenses e JOIN auth_identities i ON i.user_id = e.created_by
+              WHERE e.source_key = 'tgx:${CHAT_ID}:7:0'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe(String(B_ID));
+    });
+
+    it('asks who paid for a deleted account’s message and records it only once [👤] picks', async () => {
+      const { sendFile, tap, nonce, calls, db } = await importBot();
+      await sendFile(
+        chatExportJson({
+          id: EXPORT_ID,
+          messages: [
+            {
+              id: 1,
+              at: new Date('2026-07-01T09:00:00Z'),
+              ...from(ALLOWED_ID),
+              text: 'Чайник 3200',
+            },
+            {
+              id: 2,
+              at: new Date('2026-07-02T09:00:00Z'),
+              fromId: 1003,
+              from: null,
+              text: 'Шкаф 4500',
+            },
+          ],
+        }),
+      );
+      const n = nonce();
+      calls.length = 0;
+
+      await tap(`imp:rev:${n}`);
+      const card = calls.find((call) => call.method === 'sendMessage')?.payload as {
+        text: string;
+        reply_markup: { inline_keyboard: { text: string }[][] };
+      };
+      expect(card.text.split('\n')).toEqual([
+        '<b>Проверка 1 из 1</b>',
+        'удалённый участник, 02.07.2026',
+        '<blockquote>Шкаф 4500</blockquote>',
+        'Автор удалил аккаунт: выберите, кто платил.',
+        '• 4 500.00 RSD — Шкаф',
+      ]);
+      expect(buttons(card)).not.toContain('Записать так');
+
+      await tap(`imp:who:${n}:1`);
+      const picked = lastEdit(calls);
+      expect(picked?.text).toMatch(/\nПлатит: A$/);
+      expect(picked === undefined ? [] : buttons(picked)[0]).toBe('Записать так');
+      await tap(`imp:ok:${n}:1`);
+
+      expect(sumFor(db, 2)).toBe(450000);
+    });
+
+    it('stores a card’s items once on a double tap of [Записать так]', async () => {
+      const { tap, n, db, imported } = await reviewing();
+
+      await tap(`imp:ok:${n}:${INDEX.list3400}`);
+      await tap(`imp:ok:${n}:${INDEX.list3400}`);
+
+      expect(imported()).toBe(3);
+      expect(sumFor(db, 2)).toBe(330000);
+    });
+
+    it('[Закончить проверку] on card 2 of 5 shows the summary with [Записать 7 трат]', async () => {
+      const { calls, tap, n } = await reviewing();
+      await tap(`imp:skip:${n}:${INDEX.list3400}`);
+
+      await tap(`imp:end:${n}`);
+
+      expect(lastEdit(calls)).toMatchObject({
+        text: messages.chatImportReviewDone({ recorded: 0, skipped: 1 }),
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }]],
+        },
+      });
+    });
+
+    it('previews the file sent again with the skipped message and 4 to review', async () => {
+      const { calls, tap, n, sendFile } = await reviewing();
+      await tap(`imp:skip:${n}:${INDEX.chatter}`);
+      calls.length = 0;
+
+      await sendFile(EXPORT);
+
+      expect(
+        String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]).split('\n'),
+      ).toEqual([
+        '<b>История группы</b> → «Семья», 01.07.2026–14.09.2026',
+        'Готово к записи: 7 трат из 4 сообщений, на 15 500.00 RSD, 300.00 EUR',
+        'Пропущено вами: 1 сообщение',
+        'Нужно проверить: 4 сообщения',
+        'Без сумм, пропущено: 1 сообщение',
+      ]);
     });
   });
 });

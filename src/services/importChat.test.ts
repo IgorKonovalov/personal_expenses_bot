@@ -7,10 +7,14 @@ import type { ExportedMessage, ExportRead } from '../domain/chatImport/telegramE
 import { createLogger } from '../logger.js';
 import { bindGroup } from './groupChats.js';
 import {
+  answerChatImportFix,
   cancelChatImport,
   expiredChatImports,
+  openChatImportReview,
   previewChatImport,
+  recordChatImportCard,
   recordReadyChatImport,
+  startChatImportFix,
   sweepChatImport,
   type ChatImportDeps,
   type ChatImportPreview,
@@ -296,6 +300,94 @@ describe('recordReadyChatImport', () => {
     expect(cancelChatImport(deps, { user: alice, nonce, now: NOW })).toBe('cancelled');
     expect(recordReadyChatImport(deps, { user: alice, nonce, now: NOW })).toEqual({
       kind: 'expired',
+    });
+    expect(count()).toBe(0);
+  });
+});
+
+describe('review cards', () => {
+  // The 3400 list is the message at index 1; «Лампа 1.500» at index 7.
+  it('opens the 3400 list first, with the stated total and its three items', () => {
+    const { nonce } = preview();
+
+    expect(openChatImportReview(deps, { user: alice, nonce, now: NOW })).toEqual({
+      kind: 'card',
+      nonce,
+      index: 1,
+      position: 1,
+      total: 5,
+      senderName: 'B',
+      date: '2026-07-05',
+      text: LIST.replace('3300 дин', '3400 дин'),
+      reason: 'total',
+      stated: { amountMinor: 340000, currency: 'RSD' },
+      items: [
+        { amountMinor: 200000, currency: 'RSD', description: 'Краска', occurredOn: '2026-07-05' },
+        { amountMinor: 50000, currency: 'RSD', description: 'кисти', occurredOn: '2026-07-05' },
+        { amountMinor: 80000, currency: 'RSD', description: 'валиков', occurredOn: '2026-07-05' },
+      ],
+      payer: { name: 'B' },
+      recordable: true,
+    });
+  });
+
+  it('records a card under its sender and moves to the next', () => {
+    const { nonce } = preview();
+
+    const next = recordChatImportCard(deps, { user: alice, nonce, index: 1, now: NOW });
+
+    expect(next).toMatchObject({ kind: 'card', index: 5, position: 2 });
+    expect(rows()).toEqual([
+      expect.objectContaining({
+        amount_minor: 200000,
+        source_key: `tgx:${CHAT}:2:0`,
+        sender: '1002',
+      }),
+      expect.objectContaining({
+        amount_minor: 50000,
+        source_key: `tgx:${CHAT}:2:1`,
+        sender: '1002',
+      }),
+      expect.objectContaining({
+        amount_minor: 80000,
+        source_key: `tgx:${CHAT}:2:2`,
+        sender: '1002',
+      }),
+    ]);
+  });
+
+  it('takes typed items for a card only when every line reads', () => {
+    const { nonce } = preview();
+    const at = { chatId: A, messageId: 50 };
+    expect(startChatImportFix(deps, { user: alice, nonce, index: 7, now: NOW, ...at })).toEqual({
+      kind: 'prompt',
+    });
+    const flow = { kind: 'chatImportFix', nonce, index: 7, ...at } as const;
+
+    expect(
+      answerChatImportFix(deps, {
+        user: alice,
+        flow,
+        text: 'шкаф 4500\n\nх',
+        inputKey: 'tg:1001:60',
+        now: NOW,
+      }),
+    ).toEqual({ kind: 'badLine', n: 2, line: 'х' });
+    const card = answerChatImportFix(deps, {
+      user: alice,
+      flow,
+      text: '1500 лампа вчера',
+      inputKey: 'tg:1001:61',
+      now: NOW,
+    });
+
+    expect(card).toMatchObject({
+      kind: 'card',
+      index: 7,
+      items: [
+        { amountMinor: 150000, currency: 'RSD', description: 'лампа', occurredOn: '2026-08-31' },
+      ],
+      recordable: true,
     });
     expect(count()).toBe(0);
   });

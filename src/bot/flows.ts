@@ -24,6 +24,7 @@ import type { HandlerDeps } from './bot.js';
 import { budgetPromptView, budgetRefusal, budgetView } from './handlers/budget.js';
 import { cardAt, cardFor, cardView, recordedCard } from './handlers/card.js';
 import { categoriesScreenFor, promptView } from './handlers/categories.js';
+import { answerChatImportFixFlow } from './handlers/chatImport.js';
 import { answerDebtFlow, debtsScreenFor } from './handlers/debts.js';
 import { editPromptView } from './handlers/edit.js';
 import {
@@ -201,6 +202,11 @@ export async function answerFlow(
 
   if (flow.kind === 'productName') {
     await answerProductName(ctx, deps, anchor, { ...input, flow });
+    return;
+  }
+
+  if (flow.kind === 'chatImportFix') {
+    await answerChatImportFixFlow(ctx, deps, { ...input, flow });
     return;
   }
 

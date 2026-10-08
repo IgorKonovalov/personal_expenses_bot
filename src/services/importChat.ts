@@ -17,14 +17,23 @@ import type { User, UserId } from '../db/users.js';
 import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import {
+  isAmbiguousItem,
   readMessage,
   type MessageRead,
   type ProposedItem,
+  type ReadItem,
+  type ReviewReason,
 } from '../domain/chatImport/readMessage.js';
 import type { ExportedMessage, ExportRead } from '../domain/chatImport/telegramExport.js';
 import type { CurrencyCode } from '../domain/currencies.js';
+import {
+  parseExpenseText,
+  readTrailingExpense,
+  type ExpenseTextResult,
+} from '../domain/expenseText.js';
 import type { Money } from '../domain/money.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
+import { cancelFlowIf, completeFlow, startFlow, type ChatImportFixFlow } from './flowSessions.js';
 import { provisionUser } from './provisionUser.js';
 import {
   historyCategory,
@@ -77,6 +86,13 @@ interface Payload {
   readonly senders: readonly Sender[];
   // Per message id.
   readonly decisions: Readonly<Record<string, Decision>>;
+  // The ids of the messages to review as of the last preview, in order: the review cards.
+  readonly queue?: readonly number[];
+  // Per message id, the sender [👤] picked to pay, by Telegram id.
+  readonly payers?: Readonly<Record<string, number>>;
+  // Per message id, the items that replace the read ones: typed after [Исправить], or with an
+  // ambiguous amount's reading picked.
+  readonly fixes?: Readonly<Record<string, readonly ReadItem[]>>;
 }
 
 // A ready item with what the preview's list shows of its message.
@@ -135,13 +151,13 @@ export function previewChatImport(
   const before = input.export.messages.filter((message) => message.at < binding.boundAt);
   const earlier = findChatImport(db, user.id);
   const kept = earlier?.chatId === binding.chatId ? parsePayload(earlier.payload) : undefined;
-  const payload: Payload = {
+  const payload = withQueue(deps, ledger, binding.chatId, {
     messages: before.filter((message) => /\d/.test(message.text)).map(storedMessage),
     noAmount: before.filter((message) => !/\d/.test(message.text)).length,
     ...range(before),
     senders: sendersOf(before),
     decisions: kept?.decisions ?? {},
-  };
+  });
   const nonce = newNonce(deps.newId);
   saveChatImport(db, {
     userId: user.id,
@@ -201,6 +217,8 @@ export type RecordReadyResult =
       readonly totals: readonly Money[];
       // How many of them landed in the fallback category («Другое»).
       readonly otherCount: number;
+      // The messages still to review.
+      readonly reviewCount: number;
     }
   | { readonly kind: 'expired' }
   | { readonly kind: 'stale' };
@@ -248,6 +266,7 @@ export function recordReadyChatImport(
       count: created.length,
       totals: totalsOf(created),
       otherCount,
+      reviewCount: statuses.filter(({ status }) => status.kind === 'review').length,
     };
   })();
   if (result.kind === 'recorded') {
@@ -269,6 +288,427 @@ export function cancelChatImport(
   deleteChatImport(deps.db, input.user.id);
   deps.logger.info({ userId: input.user.id }, 'chat import cancelled');
   return 'cancelled';
+}
+
+// A review card: one message to look at, what it proposes and who pays.
+export interface ChatImportCard {
+  readonly kind: 'card';
+  readonly nonce: string;
+  // The message's index in the import, which the card's buttons carry.
+  readonly index: number;
+  // 1-based, among the messages to review as of the last preview.
+  readonly position: number;
+  readonly total: number;
+  // Null for a deleted account.
+  readonly senderName: string | null;
+  readonly date: LocalDate;
+  readonly text: string;
+  readonly reason: ReviewReason;
+  // `total`: the stated total the items don't add up to.
+  readonly stated?: Money;
+  readonly items: readonly ReadItem[];
+  // Absent for a deleted account's message until [👤] picks a payer.
+  readonly payer?: { readonly name: string };
+  // [Записать так]: there are items, none is ambiguous, and someone pays.
+  readonly recordable: boolean;
+}
+
+// After the last card, or [Закончить проверку].
+export interface ChatImportReviewDone {
+  readonly kind: 'done';
+  readonly nonce: string;
+  // Of the messages to review: how many are recorded and how many skipped.
+  readonly recorded: number;
+  readonly skipped: number;
+  // The ready items not yet recorded.
+  readonly readyCount: number;
+}
+
+export type ChatImportReviewView = ChatImportCard | ChatImportReviewDone;
+
+export type ReviewResult =
+  ChatImportReviewView | { readonly kind: 'expired' } | { readonly kind: 'stale' };
+
+type HeldImport = Omit<Extract<Held, { kind: 'held' }>, 'kind'>;
+
+// A tap on a review card's message: the row, where every message stands, and this message.
+interface CardTap extends HeldImport {
+  readonly statuses: readonly Classified[];
+  readonly entry: Classified;
+  // 0-based in the queue; -1 for a message that isn't in it.
+  readonly position: number;
+}
+
+// [Проверить (N)]: the first message still to review.
+export function openChatImportReview(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): ReviewResult {
+  return deps.db.transaction((): ReviewResult => {
+    const tap = held(deps, input.user, input.nonce, input.now);
+    if (tap.kind !== 'held') return tap;
+    endFixPrompt(deps, input.user);
+    renew(deps, tap.row, tap.payload, input.now);
+    return reviewView(deps, tap, classifyHeld(deps, tap), 0);
+  })();
+}
+
+// [« Назад к карточке], and any later tap on a card already decided: the card, or the next one
+// still to review.
+export function showChatImportCard(deps: ChatImportDeps, input: CardInput): ReviewResult {
+  return deps.db.transaction((): ReviewResult => {
+    const tap = cardTap(deps, input);
+    if (tap.kind !== 'card') return tap;
+    endFixPrompt(deps, input.user);
+    renew(deps, tap.row, tap.payload, input.now);
+    return reviewView(deps, tap, tap.statuses, Math.max(tap.position, 0));
+  })();
+}
+
+// [Записать так]: the card's items under its payer, keyed by the message, and the next card. A
+// card that can't be recorded as it stands comes back unchanged.
+export function recordChatImportCard(deps: ChatImportDeps, input: CardInput): ReviewResult {
+  return onOpenCard(deps, input, (tap, card) =>
+    card.recordable ? recordCard(deps, tap, card, input.now) : card,
+  );
+}
+
+// [Пропустить]: the message is marked skipped in the row, and the next card shows.
+export function skipChatImportCard(deps: ChatImportDeps, input: CardInput): ReviewResult {
+  return onOpenCard(deps, input, (tap) => {
+    const payload = decide(tap, 'skipped');
+    renew(deps, tap.row, payload, input.now);
+    deps.logger.info({ userId: input.user.id }, 'chat import card skipped');
+    return reviewView(
+      deps,
+      { ...tap, payload },
+      classifyHeld(deps, { ...tap, payload }),
+      tap.position + 1,
+    );
+  });
+}
+
+// [👤]: the payer moves to the next of the export's named senders, most messages first.
+export function cycleChatImportPayer(deps: ChatImportDeps, input: CardInput): ReviewResult {
+  return onOpenCard(deps, input, (tap, card) => {
+    const named = tap.payload.senders.filter((sender) => sender.name !== null);
+    const current = payerOf(tap.payload, tap.entry.message);
+    const at = named.findIndex((sender) => sender.telegramId === current);
+    const next = named[(at + 1) % named.length];
+    if (next === undefined) return card;
+    const payload: Payload = {
+      ...tap.payload,
+      payers: { ...tap.payload.payers, [String(tap.entry.message.id)]: next.telegramId },
+    };
+    renew(deps, tap.row, payload, input.now);
+    return cardOf(deps, { ...tap, payload }, tap.entry, tap.position);
+  });
+}
+
+// A reading button: the card's first ambiguous item takes reading `reading` (ADR-0004). With no
+// ambiguous item left and a payer, the card records; otherwise it shows again.
+export function pickChatImportReading(
+  deps: ChatImportDeps,
+  input: CardInput & { readonly reading: number },
+): ReviewResult {
+  return onOpenCard(deps, input, (tap, card) => {
+    const at = card.items.findIndex(isAmbiguousItem);
+    const ambiguous = card.items[at];
+    if (ambiguous === undefined || !isAmbiguousItem(ambiguous)) return card;
+    const reading = ambiguous.readings[input.reading];
+    if (reading === undefined) return card;
+    const items = card.items.map((item, i): ReadItem =>
+      i === at
+        ? {
+            amountMinor: reading.amountMinor,
+            currency: ambiguous.currency,
+            description: ambiguous.description,
+            occurredOn: ambiguous.occurredOn,
+          }
+        : item,
+    );
+    const payload = fixed(tap, items);
+    renew(deps, tap.row, payload, input.now);
+    const next = cardOf(deps, { ...tap, payload }, tap.entry, tap.position);
+    return next.recordable ? recordCard(deps, { ...tap, payload }, next, input.now) : next;
+  });
+}
+
+export type FixStartResult = { readonly kind: 'prompt' } | ReviewResult;
+
+// [Исправить]: the next text is claimed as the card's items, through the pending-flow slot
+// (ADR-0009). The card at `chatId`/`messageId` shows the prompt meanwhile.
+export function startChatImportFix(
+  deps: ChatImportDeps,
+  input: CardInput & { readonly chatId: number; readonly messageId: number },
+): FixStartResult {
+  return onOpenCard(deps, input, (tap): FixStartResult => {
+    renew(deps, tap.row, tap.payload, input.now);
+    startFlow(
+      deps,
+      input.user,
+      {
+        kind: 'chatImportFix',
+        nonce: input.nonce,
+        index: input.index,
+        chatId: input.chatId,
+        messageId: input.messageId,
+      },
+      input.now,
+    );
+    return { kind: 'prompt' };
+  });
+}
+
+export type FixAnswerResult =
+  | ReviewResult
+  // Line `n` (1-based, empty lines not counted) didn't read; the prompt stays.
+  | { readonly kind: 'badLine'; readonly n: number; readonly line: string };
+
+// The typed answer to [Исправить]: each non-empty line reads amount-first (parseExpenseText),
+// then amount-last (readTrailingExpense), dated from the message's day. Every line must read, or
+// nothing changes and the prompt stays. Read, the items replace the card's and the card shows
+// again.
+export function answerChatImportFix(
+  deps: ChatImportDeps,
+  input: {
+    readonly user: User;
+    readonly flow: ChatImportFixFlow;
+    readonly text: string;
+    readonly inputKey: string;
+    readonly now: Date;
+  },
+): FixAnswerResult {
+  const { user, flow, now } = input;
+  return deps.db.transaction((): FixAnswerResult => {
+    const tap = cardTap(deps, { user, nonce: flow.nonce, index: flow.index, now });
+    if (tap.kind !== 'card') {
+      endFixPrompt(deps, user);
+      return tap;
+    }
+    if (tap.entry.status.kind !== 'review') {
+      completeFlow(deps, user, input.inputKey);
+      return reviewView(deps, tap, tap.statuses, Math.max(tap.position, 0));
+    }
+    const today = localDateOf(new Date(tap.entry.message.at), ledgerZone(deps, tap.ledger));
+    const lines = input.text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+    const items: ProposedItem[] = [];
+    for (const [i, line] of lines.entries()) {
+      const item = readFixLine(line, tap.ledger.defaultCurrency, today);
+      if (item === undefined) return { kind: 'badLine', n: i + 1, line };
+      items.push(item);
+    }
+    const payload = fixed(tap, items);
+    renew(deps, tap.row, payload, now);
+    completeFlow(deps, user, input.inputKey);
+    return cardOf(deps, { ...tap, payload }, tap.entry, tap.position);
+  })();
+}
+
+// [Закончить проверку]: the summary, whatever is left to review.
+export function finishChatImportReview(
+  deps: ChatImportDeps,
+  input: { readonly user: User; readonly nonce: string; readonly now: Date },
+): ReviewResult {
+  return deps.db.transaction((): ReviewResult => {
+    const tap = held(deps, input.user, input.nonce, input.now);
+    if (tap.kind !== 'held') return tap;
+    endFixPrompt(deps, input.user);
+    renew(deps, tap.row, tap.payload, input.now);
+    return reviewDone(tap, classifyHeld(deps, tap));
+  })();
+}
+
+interface CardInput {
+  readonly user: User;
+  readonly nonce: string;
+  readonly index: number;
+  readonly now: Date;
+}
+
+function cardTap(
+  deps: ChatImportDeps,
+  input: CardInput,
+):
+  | (CardTap & { readonly kind: 'card' })
+  | { readonly kind: 'expired' }
+  | { readonly kind: 'stale' } {
+  const tap = held(deps, input.user, input.nonce, input.now);
+  if (tap.kind !== 'held') return tap;
+  const statuses = classifyHeld(deps, tap);
+  const entry = statuses[input.index];
+  if (entry === undefined) return { kind: 'stale' };
+  const position = (tap.payload.queue ?? []).indexOf(entry.message.id);
+  return {
+    kind: 'card',
+    row: tap.row,
+    ledger: tap.ledger,
+    payload: tap.payload,
+    statuses,
+    entry,
+    position,
+  };
+}
+
+// Runs `act` on a card still to review, ending any [Исправить] prompt first, in one transaction.
+// A card already recorded or skipped answers with itself or the next card still to review, so a
+// double tap does nothing twice.
+function onOpenCard<T>(
+  deps: ChatImportDeps,
+  input: CardInput,
+  act: (tap: CardTap, card: ChatImportCard) => T | ReviewResult,
+): T | ReviewResult {
+  return deps.db.transaction((): T | ReviewResult => {
+    const tap = cardTap(deps, input);
+    if (tap.kind !== 'card') return tap;
+    endFixPrompt(deps, input.user);
+    if (tap.entry.status.kind !== 'review') {
+      return reviewView(deps, tap, tap.statuses, Math.max(tap.position, 0));
+    }
+    return act(tap, cardOf(deps, tap, tap.entry, tap.position));
+  })();
+}
+
+function endFixPrompt(deps: ChatImportDeps, user: User): void {
+  cancelFlowIf(deps, user, (flow) => flow.kind === 'chatImportFix');
+}
+
+function recordCard(
+  deps: ChatImportDeps,
+  tap: CardTap,
+  card: ChatImportCard,
+  now: Date,
+): ChatImportReviewView {
+  const { message } = tap.entry;
+  const payer = payerOf(tap.payload, message);
+  if (payer === undefined || card.payer === undefined) return card;
+  const createdBy = senderUser(deps, tap.ledger, { sender: payer, name: card.payer.name }, now);
+  let count = 0;
+  for (const [index, item] of card.items.entries()) {
+    if (isAmbiguousItem(item)) continue;
+    const stored = storeItem(deps, {
+      ledger: tap.ledger,
+      createdBy,
+      item,
+      at: new Date(message.at),
+      sourceKey: importSourceKey(tap.row.chatId, message.id, index),
+      now,
+    });
+    if (stored !== undefined) count += 1;
+  }
+  const payload = decide(tap, 'recorded');
+  renew(deps, tap.row, payload, now);
+  deps.logger.info(
+    { userId: tap.row.userId, ledgerId: tap.ledger.id, recorded: count },
+    'chat import card recorded',
+  );
+  const after = { ...tap, payload };
+  return reviewView(deps, after, classifyHeld(deps, after), tap.position + 1);
+}
+
+// The first message still to review from queue position `from` on, or the summary.
+function reviewView(
+  deps: ChatImportDeps,
+  tap: HeldImport,
+  statuses: readonly Classified[],
+  from: number,
+): ChatImportReviewView {
+  const queue = tap.payload.queue ?? [];
+  const byId = new Map(statuses.map((entry) => [entry.message.id, entry]));
+  for (let position = from; position < queue.length; position += 1) {
+    const entry = byId.get(queue[position] ?? -1);
+    if (entry?.status.kind === 'review') return cardOf(deps, tap, entry, position);
+  }
+  return reviewDone(tap, statuses);
+}
+
+function reviewDone(tap: HeldImport, statuses: readonly Classified[]): ChatImportReviewDone {
+  const queued = new Set(tap.payload.queue ?? []);
+  const inQueue = statuses.filter((entry) => queued.has(entry.message.id));
+  return {
+    kind: 'done',
+    nonce: tap.row.nonce,
+    recorded: inQueue.filter(({ status }) => status.kind === 'already').length,
+    skipped: inQueue.filter(({ status }) => status.kind === 'skipped').length,
+    readyCount: statuses.reduce(
+      (sum, { status }) => sum + (status.kind === 'ready' ? status.items.length : 0),
+      0,
+    ),
+  };
+}
+
+function cardOf(
+  deps: ChatImportDeps,
+  tap: HeldImport,
+  entry: Classified,
+  position: number,
+): ChatImportCard {
+  const { message, status } = entry;
+  if (status.kind !== 'review') throw new Error(`message ${message.id} is not to review`);
+  const { read } = status;
+  const items = tap.payload.fixes?.[String(message.id)] ?? read.items;
+  const payer = payerName(tap.payload, message);
+  return {
+    kind: 'card',
+    nonce: tap.row.nonce,
+    index: entry.index,
+    position: position + 1,
+    total: tap.payload.queue?.length ?? 0,
+    senderName: message.name,
+    date: localDateOf(new Date(message.at), ledgerZone(deps, tap.ledger)),
+    text: message.text,
+    reason: read.reason,
+    ...(read.stated === undefined ? {} : { stated: read.stated }),
+    items,
+    ...(payer === undefined ? {} : { payer: { name: payer } }),
+    recordable: items.length > 0 && !items.some(isAmbiguousItem) && payer !== undefined,
+  };
+}
+
+// The Telegram id of who pays for the message: [👤]'s pick, else its sender unless the account
+// was deleted.
+function payerOf(payload: Payload, message: StoredMessage): number | undefined {
+  return (
+    payload.payers?.[String(message.id)] ?? (message.name === null ? undefined : message.sender)
+  );
+}
+
+function payerName(payload: Payload, message: StoredMessage): string | undefined {
+  const payer = payerOf(payload, message);
+  if (payer === undefined) return undefined;
+  if (payer === message.sender && message.name !== null) return message.name;
+  return payload.senders.find((sender) => sender.telegramId === payer)?.name ?? undefined;
+}
+
+function decide(tap: CardTap, decision: Decision): Payload {
+  return {
+    ...tap.payload,
+    decisions: { ...tap.payload.decisions, [String(tap.entry.message.id)]: decision },
+  };
+}
+
+function fixed(tap: CardTap, items: readonly ReadItem[]): Payload {
+  return { ...tap.payload, fixes: { ...tap.payload.fixes, [String(tap.entry.message.id)]: items } };
+}
+
+function readFixLine(
+  line: string,
+  currency: CurrencyCode,
+  today: LocalDate,
+): ProposedItem | undefined {
+  const leading = parseExpenseText(line, currency, today);
+  const parsed: ExpenseTextResult =
+    leading.kind === 'notExpense' ? readTrailingExpense(line, currency, today) : leading;
+  if (parsed.kind !== 'expense' || parsed.split !== undefined) return undefined;
+  return {
+    amountMinor: parsed.amountMinor,
+    currency: parsed.currency,
+    description: parsed.description,
+    occurredOn: parsed.date ?? today,
+  };
 }
 
 // The rows whose time ran out by `now`.
@@ -300,7 +740,29 @@ type Status =
 
 interface Classified {
   readonly message: StoredMessage;
+  // The message's index in the payload.
+  readonly index: number;
   readonly status: Status;
+}
+
+function classifyHeld(deps: ChatImportDeps, tap: HeldImport): Classified[] {
+  return classify(deps, { ledger: tap.ledger, chatId: tap.row.chatId, payload: tap.payload });
+}
+
+// The payload with its queue: the messages to review now, in order.
+function withQueue(
+  deps: ChatImportDeps,
+  ledger: Ledger,
+  chatId: string,
+  payload: Payload,
+): Payload {
+  const statuses = classify(deps, { ledger, chatId, payload });
+  return {
+    ...payload,
+    queue: statuses
+      .filter(({ status }) => status.kind === 'review')
+      .map(({ message }) => message.id),
+  };
 }
 
 // Where each kept message stands: recorded (its first item's key is stored, by this import or an
@@ -315,12 +777,12 @@ function classify(
     deps.db,
     payload.messages.map((message) => importSourceKey(chatId, message.id, 0)),
   );
-  return payload.messages.map((message): Classified => {
+  return payload.messages.map((message, index): Classified => {
     if (taken.has(importSourceKey(chatId, message.id, 0))) {
-      return { message, status: { kind: 'already' } };
+      return { message, index, status: { kind: 'already' } };
     }
     if (payload.decisions[String(message.id)] === 'skipped') {
-      return { message, status: { kind: 'skipped' } };
+      return { message, index, status: { kind: 'skipped' } };
     }
     const read = readMessage(
       message.text,
@@ -329,10 +791,13 @@ function classify(
       { forwarded: message.forwarded, deletedSender: message.name === null },
     );
     // A message is kept only with a digit in it, so noAmount doesn't come back.
-    if (read.verdict === 'review') return { message, status: { kind: 'review', read } };
-    if (read.verdict === 'ready') return { message, status: { kind: 'ready', items: read.items } };
+    if (read.verdict === 'review') return { message, index, status: { kind: 'review', read } };
+    if (read.verdict === 'ready') {
+      return { message, index, status: { kind: 'ready', items: read.items } };
+    }
     return {
       message,
+      index,
       status: { kind: 'review', read: { verdict: 'review', reason: 'unread', items: [] } },
     };
   });

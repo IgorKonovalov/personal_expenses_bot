@@ -511,8 +511,8 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: an export records its ready messages | dev | done | committed with this row |
-| 2: Review cards | dev | not started | |
+| 1: Walking skeleton: an export records its ready messages | dev | done | 0bad4f1 |
+| 2: Review cards | dev | done | committed with this row |
 | 3: Name prefixes | dev | not started | |
 | 4: Undo and the group notice | dev | not started | |
 | 5: Limits, help and docs | dev | not started | |
@@ -533,6 +533,21 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
   `ProposedItem`; a review result carries `stated` for a `total` reason.
 - Phase 1: the record button's count is in the accusative (`Записать 1 трату`); the preview line
   after «из» is in the genitive (`из 4 сообщений`, `из 1 сообщения`).
+- Phase 2: `src/bot/callbacks.ts` was listed but not touched.
+- Phase 2: `Лампа 1.500` in RSD reads two ways, so its card has two reading buttons,
+  [1 500.00 RSD] and [1.50 RSD]. The test taps the first. A reading button resolves the card's
+  first ambiguous item; the card records once no ambiguous item is left and someone pays.
+- Phase 2: in an [Исправить] answer, a line that reads as an ambiguous amount or carries a `/N`
+  split counts as unread. A trailing «на»/«за» is kept in a typed description.
+- Phase 2: the «Записано» reply carries [Проверить (N)] while messages remain to review.
+- Phase 2: with no payer, [👤] reads «👤 Кто платил?». The cycle skips senders with no name
+  (deleted accounts).
+- Phase 2: the card shows the message in a `<blockquote>` and each item as `• <amount> — <text>`.
+  An ambiguous item lists its readings joined by «или».
+- Phase 2: the queue of cards is the review messages as of the last preview, stored in the row;
+  «Проверка k из N» counts in it.
+- Phase 2: an [Исправить] answer whose upload went stale or expired ends the prompt and replies
+  `chatImportStale` or `chatImportExpired`.
 
 ### Close triggers
 
