@@ -308,6 +308,22 @@ describe('recordReadyChatImport', () => {
   });
 });
 
+describe('the caps', () => {
+  const kettles = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      message(i + 1, new Date(Date.UTC(2026, 6, 1, 9, 0, i)).toISOString(), A, 'Чайник 3200'),
+    );
+
+  it('refuses an export of more than 20 000 messages, and one proposing more than 3 000 items', () => {
+    const read = (messages: readonly ExportedMessage[]) =>
+      previewChatImport(deps, { user: alice, export: exportOf(messages), now: NOW });
+
+    expect(read(kettles(20001))).toEqual({ kind: 'tooManyMessages' });
+    expect(read(kettles(3001))).toEqual({ kind: 'tooManyItems' });
+    expect(read(kettles(3000))).toMatchObject({ kind: 'preview', readyMessages: 3000 });
+  });
+});
+
 describe('undoChatImport', () => {
   it('deletes the chat’s 7 imported expenses once, and the file then records them again', () => {
     const { nonce } = preview();

@@ -136,6 +136,33 @@ Disabled, so the bot reads ordinary group messages. A privacy change applies onl
 bot joins afterwards, so remove the bot from a group and add it again after changing it. Only an
 admitted user can add the bot; added by anyone else, it leaves.
 
+### History import
+
+The bot only sees a group's messages from the moment it joined. The expenses written in the chat
+before then come in from a Telegram Desktop export
+([ADR-0047](docs/adrs/0047-group-history-import-from-a-desktop-export.md)):
+
+1. In Telegram Desktop, open the group → ⋮ → «Экспорт истории чата», pick «Машиночитаемый JSON»
+   and no media.
+2. Send the `result.json` it writes to the bot in a private chat. The sender must be a member of
+   the group's ledger. A file over 10 MB, over 20 000 messages or over 3 000 expenses is refused:
+   export a shorter period.
+3. The bot reads only the messages sent before it joined the group, and previews them: the
+   expenses ready to record, the messages to check, and those with no amount.
+
+A ready expense is recorded under the member who sent its message, on the message's date in the
+group's timezone. A sender who never started the bot joins the ledger under their export name. A
+message that starts with a name («Ира: …») is asked about first: the name maps to one of the
+export's senders, to the message's own sender, or to no one. The rest come one card at a time
+(a total that doesn't add up, chatter, an amount that reads two ways, a forward, a deleted
+account), to record as proposed, correct, give another payer or skip. Sending the file again
+records nothing twice.
+
+The first recording posts one silent notice in the group with the importer's name and the count,
+edited in place as the count grows; it never names an amount or a description. [Отменить импорт]
+deletes every imported expense of that chat for good, after a confirm step, and edits the notice.
+The file is the backup: send it again to record them again.
+
 ### Donations
 
 The bot is free for everyone, with no paid tier

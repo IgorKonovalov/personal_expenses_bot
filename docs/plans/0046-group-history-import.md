@@ -514,8 +514,8 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 | 1: Walking skeleton: an export records its ready messages | dev | done | 0bad4f1 |
 | 2: Review cards | dev | done | fd8f901 |
 | 3: Name prefixes | dev | done | 6f3042b |
-| 4: Undo and the group notice | dev | done | committed with this row |
-| 5: Limits, help and docs | dev | not started | |
+| 4: Undo and the group notice | dev | done | b8d79e7 |
+| 5: Limits, help and docs | dev | done | committed with this row |
 | 6: A real export | human | not started | |
 
 ### Notes
@@ -570,6 +570,16 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
   is logged as a warning with the error message and leaves the DM flow as it is.
 - Phase 4: the «Записано» reply always carries [Отменить импорт], even when the tap recorded
   nothing new.
+- Phase 5: `src/bot/callbackData.ts` was edited though not listed: it gained `CHAT_IMPORT_PAGE`
+  and `chatImportPageData` for the Data shapes' `imp:pg:<n>:<page>`, since ADR-0011 builds all
+  callback data there.
+- Phase 5: the pager is the shared `pagerRow` of ADR-0011, `[◀] [1/3] [▶]` without [◀] on the
+  first page and [▶] on the last, not `[⬅ Назад] [1/3] [Вперёд ➡]`.
+- Phase 5: a page line's description is cut at 40 code points, as a drill-down line's is.
+- Phase 5: the 3 000 cap counts the items of the ready messages and of the messages to review.
+  Both refusals happen before the row is saved.
+- Phase 5: the preview test of Phase 1 now asserts the seven page lines under the counts; the
+  other preview assertions compare the count lines only.
 
 ### Close triggers
 

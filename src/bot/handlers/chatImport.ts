@@ -34,6 +34,7 @@ import {
   CHAT_IMPORT_CANCEL,
   CHAT_IMPORT_CARD,
   CHAT_IMPORT_FINISH,
+  CHAT_IMPORT_PAGE,
   CHAT_IMPORT_PREFIX,
   CHAT_IMPORT_READING,
   CHAT_IMPORT_RECORD,
@@ -43,11 +44,13 @@ import {
   CHAT_IMPORT_UNDO_YES,
   chatImportCardData,
   chatImportData,
+  chatImportPageData,
   chatImportPrefixData,
   chatImportReadingData,
   type ChatImportCardAction,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
+import { pageOf, pagerRow } from '../nav.js';
 import { editHtml, editHtmlAt, html, replyHtml, sendHtml, type Html } from '../render/html.js';
 import { ensureUser } from './start.js';
 
@@ -68,8 +71,14 @@ interface View {
   readonly markup: InlineKeyboard;
 }
 
-// The question about a name prefix while one is unanswered; the preview otherwise.
-function previewView(preview: ChatImportPreview): View {
+// A file over this many bytes is refused before it is downloaded.
+const MAX_EXPORT_BYTES = 10 * 1024 * 1024;
+// The preview lists the ready items this many to a page.
+const READY_PER_PAGE = 10;
+
+// The question about a name prefix while one is unanswered; the preview otherwise, with page
+// `page` (1-based) of the ready items.
+function previewView(preview: ChatImportPreview, page = 1): View {
   const { question, nonce } = preview;
   if (question !== undefined) {
     const senders = question.senders.map((sender) =>
@@ -112,9 +121,16 @@ function previewView(preview: ChatImportPreview): View {
   if (preview.alreadyCount > 0) {
     keyboard.text(messages.chatImportUndoButton, chatImportData('undo', preview.nonce)).row();
   }
+  const shown = pageOf(preview.ready, page, READY_PER_PAGE);
+  const pager = pagerRow(shown, (p) => chatImportPageData(preview.nonce, p));
+  if (pager.length > 0) keyboard.add(...pager).row();
   keyboard.text(messages.cancelButton, chatImportData('x', preview.nonce));
   return {
-    text: messages.chatImportPreview({ ...preview, readyCount: preview.ready.length }),
+    text: messages.chatImportPreview({
+      ...preview,
+      readyCount: preview.ready.length,
+      lines: shown.items,
+    }),
     markup: keyboard,
   };
 }
@@ -302,6 +318,11 @@ export function registerChatImport(
       await next();
       return;
     }
+    if ((document.file_size ?? 0) > MAX_EXPORT_BYTES) {
+      deps.logger.info({ bytes: document.file_size, outcome: 'tooLarge' }, 'chat export read');
+      await replyHtml(ctx, messages.chatImportTooLarge);
+      return;
+    }
     const { file_path: filePath } = await ctx.api.getFile(document.file_id);
     if (filePath === undefined) {
       await next();
@@ -322,12 +343,34 @@ export function registerChatImport(
     const now = deps.now();
     const user = ensureUser(deps, ctx.from.id, now);
     const preview = previewChatImport(deps, { user, export: parsed, now });
-    if (preview.kind === 'groupUnknown') {
-      await replyHtml(ctx, messages.chatImportGroupUnknown);
+    if (preview.kind !== 'preview') {
+      await replyHtml(
+        ctx,
+        preview.kind === 'groupUnknown'
+          ? messages.chatImportGroupUnknown
+          : preview.kind === 'tooManyMessages'
+            ? messages.chatImportTooManyMessages
+            : messages.chatImportTooManyItems,
+      );
       return;
     }
     const view = previewView(preview);
     await replyHtml(ctx, view.text, { reply_markup: view.markup });
+  });
+
+  // The preview's ready list pager.
+  bot.callbackQuery(CHAT_IMPORT_PAGE, async (ctx) => {
+    const [, nonce = '', page = ''] = ctx.match;
+    const now = deps.now();
+    const user = ensureUser(deps, ctx.from.id, now);
+    const result = currentChatImportPreview(deps, { user, nonce, now });
+    if (result.kind !== 'preview') {
+      await answerGone(ctx, result.kind);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const view = previewView(result, Number(page));
+    await editHtml(ctx, view.text, { reply_markup: view.markup });
   });
 
   bot.callbackQuery(CHAT_IMPORT_RECORD, async (ctx) => {

@@ -11067,6 +11067,8 @@ describe('group history import (Plan 0046)', () => {
     'Нужно проверить: 5 сообщений',
     'Без сумм, пропущено: 1 сообщение',
   ].join('\n');
+  // A preview's count lines: what comes before the ready list's blank line.
+  const counts = (text: string) => String(text.split('\n\n')[0]).split('\n');
 
   // The download goes through fetch; it serves the files registered by file id.
   const realFetch = globalThis.fetch;
@@ -11093,8 +11095,10 @@ describe('group history import (Plan 0046)', () => {
     // The group notice's message id comes from its sendMessage result.
     withMessageIds(harness.bot, 700);
     let updateId = 0;
+    let getFiles = 0;
     harness.bot.api.config.use((prev, method, payload, signal) => {
       if (method !== 'getFile') return prev(method, payload, signal);
+      getFiles += 1;
       const { file_id } = payload as { file_id: string };
       return Promise.resolve({
         ok: true,
@@ -11179,7 +11183,18 @@ describe('group history import (Plan 0046)', () => {
           date: BOUND,
         }),
       );
-    return { ...harness, send, sendGroup, sendFile, upload, shown, tap, nonce, imported };
+    return {
+      ...harness,
+      send,
+      sendGroup,
+      sendFile,
+      upload,
+      shown,
+      tap,
+      nonce,
+      imported,
+      getFiles: () => getFiles,
+    };
   }
 
   describe('the preview and [Записать N трат] (Phase 1)', () => {
@@ -11193,7 +11208,17 @@ describe('group history import (Plan 0046)', () => {
       expect(shown()).toEqual({
         chat_id: ALLOWED_ID,
         message_id: 500,
-        text: PREVIEW,
+        text: [
+          PREVIEW,
+          '',
+          '01.07 · A · <b>2 000.00 RSD</b> — Краска',
+          '01.07 · A · <b>500.00 RSD</b> — кисти',
+          '01.07 · A · <b>800.00 RSD</b> — валиков',
+          '21.07 · A · <b>3 200.00 RSD</b> — Чайник',
+          '01.08 · B · <b>300.00 EUR</b> — ремонт',
+          '01.08 · B · <b>4 500.00 RSD</b> — доставка',
+          '10.08 · A · <b>4 500.00 RSD</b> — Шкаф',
+        ].join('\n'),
         reply_markup: {
           inline_keyboard: [
             [{ text: 'Записать 7 трат', callback_data: `imp:rec:${n}` }],
@@ -11640,7 +11665,7 @@ describe('group history import (Plan 0046)', () => {
       await sendFile(EXPORT);
 
       expect(
-        String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]).split('\n'),
+        counts(String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0])),
       ).toEqual([
         '<b>История группы</b> → «Семья», 01.07.2026–14.09.2026',
         'Готово к записи: 7 трат из 4 сообщений, на 15 500.00 RSD, 300.00 EUR',
@@ -11704,7 +11729,7 @@ describe('group history import (Plan 0046)', () => {
       const { upload, shown, tap, nonce, db } = await importBot();
 
       await upload(EXPORT, String(B_INDEX));
-      expect(shown().text.split('\n')).toEqual(ready8);
+      expect(counts(shown().text)).toEqual(ready8);
       await tap(`imp:rec:${nonce()}`);
 
       expect(authorOf(db, `tgx:${CHAT_ID}:7:0`)).toBe(String(B_ID));
@@ -11714,7 +11739,7 @@ describe('group history import (Plan 0046)', () => {
       const { upload, shown, tap, nonce, db } = await importBot();
 
       await upload(EXPORT, 'a');
-      expect(shown().text.split('\n')).toEqual(ready8);
+      expect(counts(shown().text)).toEqual(ready8);
       await tap(`imp:rec:${nonce()}`);
 
       expect(authorOf(db, `tgx:${CHAT_ID}:7:0`)).toBe(String(ALLOWED_ID));
@@ -11725,7 +11750,7 @@ describe('group history import (Plan 0046)', () => {
 
       await upload(EXPORT, 'x');
 
-      expect(shown().text).toBe(PREVIEW);
+      expect(counts(shown().text)).toEqual(PREVIEW.split('\n'));
     });
 
     it('asks once about two messages starting «Ира:»', async () => {
@@ -11752,7 +11777,7 @@ describe('group history import (Plan 0046)', () => {
       await sendFile(EXPORT);
 
       expect(
-        String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0]).split('\n'),
+        counts(String(sentTexts(calls.filter((call) => call.method === 'sendMessage'))[0])),
       ).toEqual(ready8);
     });
   });
@@ -11903,6 +11928,112 @@ describe('group history import (Plan 0046)', () => {
       expect(text).not.toMatch(
         /RSD|EUR|\d\.\d\d(?![\d.])|Чайник|Краска|кисти|валиков|ремонт|доставка|Шкаф/,
       );
+    });
+  });
+
+  describe('limits, the ready list and logs (Phase 5)', () => {
+    type Payload = { text: string; reply_markup?: { inline_keyboard: { text: string }[][] } };
+    const kettles = (count: number) =>
+      chatExportJson({
+        id: EXPORT_ID,
+        messages: Array.from({ length: count }, (_, i) => ({
+          id: i + 1,
+          at: new Date(Date.UTC(2026, 6, 1, 9, i)),
+          ...from(ALLOWED_ID),
+          text: 'Чайник 3200',
+        })),
+      });
+    const listLines = (payload: Payload) => payload.text.split('\n\n')[1]?.split('\n') ?? [];
+    const pager = (payload: Payload) =>
+      payload.reply_markup?.inline_keyboard
+        .find((row) => row.some((button) => /^\d+\/\d+$/.test(button.text)))
+        ?.map((button) => button.text);
+
+    it('refuses a file over 10 MB without fetching it', async () => {
+      const { sendFile, calls, getFiles } = await importBot();
+
+      await sendFile(EXPORT, { fileSize: 10485761 });
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.chatImportTooLarge,
+      ]);
+      expect(getFiles()).toBe(0);
+      expect(fetched).toEqual([]);
+    });
+
+    it('refuses an export of 20 001 messages', async () => {
+      const { sendFile, calls, db } = await importBot();
+
+      await sendFile(
+        chatExportJson({
+          id: EXPORT_ID,
+          messages: Array.from({ length: 20001 }, (_, i) => ({
+            id: i + 1,
+            at: new Date('2026-07-01T09:00:00Z'),
+            ...from(ALLOWED_ID),
+            text: 'привет',
+          })),
+        }),
+      );
+
+      expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
+        messages.chatImportTooManyMessages,
+      ]);
+      expect(db.prepare('SELECT COUNT(*) FROM chat_imports').pluck().get()).toBe(0);
+    });
+
+    it('pages 23 ready items 10, 10 and 3, the pager reading «1/3»', async () => {
+      const { upload, shown, tap, nonce } = await importBot();
+      await upload(kettles(23));
+      const n = nonce();
+
+      const first = shown() as Payload;
+      expect(listLines(first)).toHaveLength(10);
+      expect(pager(first)).toEqual(['1/3', '▶']);
+      await tap(`imp:pg:${n}:2`);
+      expect(listLines(shown() as Payload)).toHaveLength(10);
+      await tap(`imp:pg:${n}:3`);
+      const last = shown() as Payload;
+      expect(listLines(last)).toHaveLength(3);
+      expect(pager(last)).toEqual(['◀', '3/3']);
+    });
+
+    it('reads a page line as «21.07 · A · 3 200.00 RSD — Чайник»', async () => {
+      const { upload, shown } = await importBot();
+
+      await upload();
+
+      const line = listLines(shown() as Payload).find((text) => text.includes('Чайник'));
+      expect(line?.replace(/<\/?b>/g, '')).toBe('21.07 · A · 3 200.00 RSD — Чайник');
+    });
+
+    it('logs no message text, description or amount above debug through import, review and undo', async () => {
+      const { upload, tap, send, nonce, logLines, imported } = await importBot({
+        logLevel: 'info',
+      });
+
+      await upload();
+      const n = nonce();
+      await tap(`imp:rec:${n}`);
+      await tap(`imp:rev:${n}`);
+      await tap(`imp:ok:${n}:1`);
+      await tap(`imp:fix:${n}:7`);
+      await send('1500 лампа');
+      await tap(`imp:ok:${n}:7`);
+      await tap(`imp:skip:${n}:5`);
+      await tap(`imp:who:${n}:8`);
+      await tap(`imp:end:${n}`);
+      expect(imported()).toBe(11);
+      await tap(`imp:undo:${n}`);
+      await tap(`imp:undoy:${n}`);
+      expect(imported()).toBe(0);
+
+      expect(logLines.some((line) => line.includes('chat import undone'))).toBe(true);
+      for (const line of logLines) {
+        expect(logContent(line)).not.toMatch(
+          /Краска|кисти|валиков|Чайник|ремонт|доставка|Шкаф|буду|Ира|Лампа|лампа|привет|\b(?:2000|200000|50000|80000|3300|330000|3400|340000|3200|320000|30000|4500|450000|1500|150000)\b/,
+        );
+      }
     });
   });
 });

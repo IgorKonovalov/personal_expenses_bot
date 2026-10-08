@@ -56,6 +56,11 @@ import {
 
 export const CHAT_IMPORT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// An export with more messages, or a preview proposing more items, is refused: the row and the
+// review stay bounded. The file's own size cap is checked before download, in the handler.
+export const CHAT_IMPORT_MAX_MESSAGES = 20_000;
+export const CHAT_IMPORT_MAX_ITEMS = 3_000;
+
 export interface ChatImportDeps extends RecordDeps {
   // A sender's new personal ledger's currency.
   readonly defaultCurrency: CurrencyCode;
@@ -155,7 +160,10 @@ export interface ChatImportPreview {
 export type PreviewResult =
   | ChatImportPreview
   // No binding for the export's chat, or one the user isn't a member of: the same answer.
-  | { readonly kind: 'groupUnknown' };
+  | { readonly kind: 'groupUnknown' }
+  // Over CHAT_IMPORT_MAX_MESSAGES or CHAT_IMPORT_MAX_ITEMS: nothing is saved.
+  | { readonly kind: 'tooManyMessages' }
+  | { readonly kind: 'tooManyItems' };
 
 // Reads the export against the group's ledger, saves it in the user's row under a new nonce and
 // describes the preview. The binding's chat id is `-100<id>` for a supergroup or `-<id>` for a
@@ -172,6 +180,13 @@ export function previewChatImport(
 ): PreviewResult {
   const { db, logger } = deps;
   const { user, now } = input;
+  if (input.export.messages.length > CHAT_IMPORT_MAX_MESSAGES) {
+    logger.info(
+      { userId: user.id, messages: input.export.messages.length },
+      'chat import too many messages',
+    );
+    return { kind: 'tooManyMessages' };
+  }
   const binding = findFirstLedgerChat(db, 'telegram', [
     `-100${input.export.chatId}`,
     `-${input.export.chatId}`,
@@ -194,9 +209,24 @@ export function previewChatImport(
     decisions: kept?.decisions ?? {},
     prefixes: kept?.prefixes ?? {},
   };
+  const statuses = classify(deps, { ledger, chatId: binding.chatId, payload: fresh });
+  const items = statuses.reduce(
+    (sum, { status }) =>
+      sum +
+      (status.kind === 'ready'
+        ? status.items.length
+        : status.kind === 'review'
+          ? status.read.items.length
+          : 0),
+    0,
+  );
+  if (items > CHAT_IMPORT_MAX_ITEMS) {
+    logger.info({ userId: user.id, items }, 'chat import too many items');
+    return { kind: 'tooManyItems' };
+  }
   const payload = withQueue(deps, ledger, binding.chatId, {
     ...fresh,
-    prefixOrder: prefixOrderOf(classify(deps, { ledger, chatId: binding.chatId, payload: fresh })),
+    prefixOrder: prefixOrderOf(statuses),
   });
   const nonce = newNonce(deps.newId);
   saveChatImport(db, {

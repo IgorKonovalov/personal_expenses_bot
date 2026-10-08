@@ -497,6 +497,15 @@ interface ChatImportPreviewView {
   readonly skippedCount: number;
   readonly reviewCount: number;
   readonly noAmountCount: number;
+  // One page of the ready items, under the counts.
+  readonly lines?: readonly ChatImportReadyLine[];
+}
+
+// A ready item in the preview's list. The name and the description are the group's text.
+interface ChatImportReadyLine extends Money {
+  readonly occurredOn: LocalDate;
+  readonly senderName: string | null;
+  readonly description: string;
 }
 
 // One message of a group history import to review (ADR-0047). The text is the group's, so it
@@ -888,6 +897,17 @@ function chatImportReasonLine(card: ChatImportCardView): Html {
     : card.reason === 'total'
       ? chatImportReason.unread
       : chatImportReason[card.reason];
+}
+
+// `20.07 · Ира · <b>3 200.00 RSD</b> — Чайник`, the description cut like a drill-down line's.
+function chatImportReadyLine(line: ChatImportReadyLine): Html {
+  const codePoints = Array.from(line.description);
+  const description =
+    codePoints.length <= MAX_LIST_DESCRIPTION
+      ? line.description
+      : `${codePoints.slice(0, MAX_LIST_DESCRIPTION).join('')}…`;
+  const day = `${line.occurredOn.slice(8, 10)}.${line.occurredOn.slice(5, 7)}`;
+  return html`${day} · ${line.senderName ?? DELETED_MEMBER} · <b>${formatMoney(line)}</b> — ${description}`;
 }
 
 // `• 2 000.00 RSD — Краска`; an ambiguous amount lists its readings.
@@ -1781,6 +1801,7 @@ export const messages = {
       html`/delete_account — удалить аккаунт и личный учёт`,
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
+      html`История группы до того, как меня добавили: в Telegram Desktop откройте группу → ⋮ → «Экспорт истории чата», формат «Машиночитаемый JSON», без медиа, и отправьте мне файл result.json.`,
       html``,
       helpDocsLine,
       helpDonateLine,
@@ -2287,6 +2308,7 @@ export const messages = {
     skippedCount,
     reviewCount,
     noAmountCount,
+    lines = [],
   }: ChatImportPreviewView): Html =>
     joinHtml(
       [
@@ -2302,6 +2324,7 @@ export const messages = {
         ...(noAmountCount > 0
           ? [html`Без сумм, пропущено: ${messageCountWords(noAmountCount)}`]
           : []),
+        ...(lines.length > 0 ? [html``, ...lines.map(chatImportReadyLine)] : []),
       ],
       '\n',
     ),
@@ -2400,6 +2423,11 @@ export const messages = {
   },
   chatImportPrefixAuthorButton: 'Автор сообщения',
   chatImportPrefixNotNameButton: 'Это не имя',
+  // Refusals: a file over the size cap before it is downloaded, then an export or a preview over
+  // the count caps.
+  chatImportTooLarge: html`Файл больше 10 МБ. Выгрузите историю по частям: в окне экспорта Telegram Desktop можно выбрать период.`,
+  chatImportTooManyMessages: html`В выгрузке больше 20 000 сообщений. Выгрузите историю по частям, выбрав период.`,
+  chatImportTooManyItems: html`В выгрузке больше 3 000 трат. Выгрузите историю по частям, выбрав период.`,
   // The group's one notice of an import, sent silently and edited in place. A name and a count,
   // never an amount or a description.
   chatImportNotice: ({

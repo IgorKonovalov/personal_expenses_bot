@@ -14,7 +14,7 @@ not explain how the code works. Decisions live in `docs/adrs/`, work in flight i
 
 ```
 src/
-├── domain/          # pure: money, expense text, time windows, aggregation, sealing. No I/O, no framework
+├── domain/          # pure: money, expense text, time windows, aggregation, sealing, chat import. No I/O, no framework
 ├── db/              # connection, migrations, repositories: the only place with SQL
 ├── services/        # use-cases orchestrating domain + db
 ├── bot/             # the Telegram adapter (grammY): handlers, middleware, messages module

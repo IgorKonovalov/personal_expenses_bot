@@ -361,6 +361,13 @@ export function chatImportData(
   return assertCallbackData(`imp:${action}:${nonce}`);
 }
 
+// The preview's ready list pager: `imp:pg:<n>:<page>`, 1-based (at most 18 bytes).
+export const CHAT_IMPORT_PAGE = new RegExp(`^imp:pg:${NONCE}:(\\d{1,4})$`);
+
+export function chatImportPageData(nonce: string, page: number): string {
+  return assertCallbackData(`imp:pg:${nonce}:${page}`);
+}
+
 // A review card's buttons, on the message at index `<i>` of the import (at most 5 digits):
 // [Записать так] `imp:ok`, [Исправить] `imp:fix`, [« Назад к карточке] `imp:back`, [Пропустить]
 // `imp:skip` and [👤] `imp:who` (at most 21 bytes); a reading of an ambiguous amount
