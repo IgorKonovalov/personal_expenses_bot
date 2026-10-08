@@ -1,4 +1,4 @@
-import { toCurrencyCode, type CurrencyCode } from './currencies.js';
+import { currencyOfWord, GLUED_ALIASES, type CurrencyCode } from './currencies.js';
 import { parseDateSuffix } from './dateText.js';
 import { parseAmount, type AmountReading } from './money.js';
 import { MAX_TAGS_PER_EXPENSE, tagOfWord, uniqueTags, type TagName } from './tags.js';
@@ -35,7 +35,8 @@ export type ExpenseTextResult =
   // Does not start with an amount at all.
   | { readonly kind: 'notExpense' };
 
-// `<amount> [CUR] <description> [#tag…] [date]`. The amount token runs over every digit, grouping space
+// `<amount>[к] [CUR] <description> [#tag…] [date]`, where CUR is an ISO code or a currency alias
+// (ADR-0046), as a word or glued to the amount. The amount token runs over every digit, grouping space
 // and `.`/`,` at the start, so `1 20 coffee` fails as an amount instead of recording 1 "20 coffee".
 const AMOUNT_TOKEN = /^\d+(?:[ \u00A0\u2009\u202F]\d+)*(?:[.,]\d+)*/;
 
@@ -46,30 +47,50 @@ export const MAX_SPLIT = 20;
 
 // With `today` (the user's local date), the last word may name the expense's date
 // (parseDateSuffix); it is then not part of the description. Without it, no word is a date.
+// The amount with a `к`/`k` suffix (ADR-0046): whole units and an optional decimal fraction of
+// a thousand, `1,5к` and `1.500к` both 1 500.
+const THOUSANDS_TOKEN = /^(\d+)(?:[.,](\d{1,3}))?$/;
+
 export function parseExpenseText(
   text: string,
   defaultCurrency: CurrencyCode,
   today?: LocalDate,
 ): ExpenseTextResult {
   const trimmed = text.trim();
-  const amountToken = AMOUNT_TOKEN.exec(trimmed)?.[0];
+  // A currency symbol or alias glued before the amount: `€300`.
+  const prefix = GLUED_ALIASES.find(
+    ({ alias }) =>
+      trimmed.toLowerCase().startsWith(alias) && /^\d/.test(trimmed.slice(alias.length)),
+  );
+  const body = prefix === undefined ? trimmed : trimmed.slice(prefix.alias.length);
+  const amountToken = AMOUNT_TOKEN.exec(body)?.[0];
   if (amountToken === undefined) return { kind: 'notExpense' };
 
-  const rest = trimmed.slice(amountToken.length);
+  // Glued after the amount: the `к` suffix, or else a currency alias (`300€`, `2500р`). Either
+  // must end at a space or the end of the text, so `500кг` stays invalid.
+  let rest = body.slice(amountToken.length);
+  const thousands = /^[кk](?=\s|$)/i.test(rest);
+  const suffix = thousands
+    ? undefined
+    : GLUED_ALIASES.find(
+        ({ alias }) =>
+          rest.toLowerCase().startsWith(alias) && /^(?:\s|$)/.test(rest.slice(alias.length)),
+      );
+  if (thousands) rest = rest.slice(1);
+  else if (suffix !== undefined && prefix === undefined) rest = rest.slice(suffix.alias.length);
   if (rest !== '' && !/^\s/.test(rest)) return { kind: 'invalid' };
+  const gluedCurrency = prefix?.code ?? suffix?.code;
 
   const words = rest
     .trim()
     .split(/\s+/)
     .filter((word) => word !== '');
   const [firstWord] = words;
-  const namedCurrency =
-    firstWord !== undefined && /^[A-Za-z]{3}$/.test(firstWord)
-      ? toCurrencyCode(firstWord)
-      : undefined;
-  const currency = namedCurrency ?? defaultCurrency;
+  const wordCurrency =
+    gluedCurrency === undefined && firstWord !== undefined ? currencyOfWord(firstWord) : undefined;
+  const currency = gluedCurrency ?? wordCurrency ?? defaultCurrency;
   // A standalone `/N` word anywhere in the rest splits the amount; it isn't description.
-  const afterCurrency = namedCurrency === undefined ? words : words.slice(1);
+  const afterCurrency = wordCurrency === undefined ? words : words.slice(1);
   const splitWords = afterCurrency.filter((word) => SPLIT_WORD.test(word));
   if (splitWords.length > 1) return { kind: 'invalid' };
   const split = splitWords[0] === undefined ? undefined : Number(splitWords[0].slice(1));
@@ -81,19 +102,21 @@ export function parseExpenseText(
   const descriptionWords = restWords.filter((word) => tagOfWord(word) === undefined);
 
   const lastWord = descriptionWords.at(-1);
-  const suffix =
+  const dateSuffix =
     today === undefined || lastWord === undefined
       ? ({ kind: 'none' } as const)
       : parseDateSuffix(lastWord, today);
   const description = (
-    suffix.kind === 'none' ? descriptionWords : descriptionWords.slice(0, -1)
+    dateSuffix.kind === 'none' ? descriptionWords : descriptionWords.slice(0, -1)
   ).join(' ');
   if (description === '') return { kind: 'invalid' };
   if (tags.length > MAX_TAGS_PER_EXPENSE) return { kind: 'tooManyTags' };
-  if (suffix.kind === 'future') return { kind: 'futureDate', date: suffix.date };
-  const dated = suffix.kind === 'date' ? { date: suffix.date } : {};
+  if (dateSuffix.kind === 'future') return { kind: 'futureDate', date: dateSuffix.date };
+  const dated = dateSuffix.kind === 'date' ? { date: dateSuffix.date } : {};
 
-  const amount = parseAmount(amountToken, currency);
+  const amountUnits = thousands ? thousandsUnits(amountToken) : amountToken;
+  if (amountUnits === undefined) return { kind: 'invalid' };
+  const amount = parseAmount(amountUnits, currency);
   switch (amount.kind) {
     case 'ok':
       return {
@@ -118,4 +141,12 @@ export function parseExpenseText(
     case 'invalid':
       return { kind: 'invalid' };
   }
+}
+
+// `45` -> `45000`, `1,5` -> `1500`, `1.500` -> `1500`: whole units, as digits, for parseAmount.
+function thousandsUnits(token: string): string | undefined {
+  const match = THOUSANDS_TOKEN.exec(token);
+  if (match === null) return undefined;
+  const [, whole = '', fraction = ''] = match;
+  return whole + fraction.padEnd(3, '0');
 }

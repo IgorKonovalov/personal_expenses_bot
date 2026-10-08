@@ -1,6 +1,6 @@
 # 0045: Currency words, a thousands suffix, and amount-last expense text
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-07
 > **Related ADRs:** [ADR-0046](../adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md) (the decision),
 > [ADR-0004](../adrs/0004-amount-parsing-rule.md) (amount parsing),
@@ -339,13 +339,17 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton: `300 € ремонт` records in euros | dev | not started | |
+| 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | committed with this row |
 | 2: Amount-last text in the private chat | dev | not started | |
 | 3: Amount-last text in a group asks first | dev | not started | |
 | 4: Help, README and the group help | dev | not started | |
 | 5: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: `currencyOfWord(word, placement = 'word')` takes a second argument, `'word'` or
+  `'glued'`, so a glued-only alias (`р`) is not read as a separate word. `currencies.ts` also
+  exports `GLUED_ALIASES`, the glued aliases longest first, which the parser scans.
 
 ### Close triggers
 

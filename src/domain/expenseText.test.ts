@@ -42,6 +42,64 @@ describe('parseExpenseText (ledger default RSD)', () => {
   );
 });
 
+describe('parseExpenseText: currency words and the к suffix (ADR-0046, default RSD)', () => {
+  it.each([
+    ['300 € ремонт', 30000, 'EUR', 'ремонт'],
+    ['300€ ремонт', 30000, 'EUR', 'ремонт'],
+    ['€300 ремонт', 30000, 'EUR', 'ремонт'],
+    ['4500 динар доставка', 450000, 'RSD', 'доставка'],
+    ['4500 дин доставка', 450000, 'RSD', 'доставка'],
+    ['4500 din доставка', 450000, 'RSD', 'доставка'],
+    ['2500р такси', 250000, 'RUB', 'такси'],
+    ['2500р. такси', 250000, 'RUB', 'такси'],
+    ['20 $ кофе', 2000, 'USD', 'кофе'],
+    ['45к дин шкаф', 4500000, 'RSD', 'шкаф'],
+    ['45k шкаф', 4500000, 'RSD', 'шкаф'],
+    ['45К евро шкаф', 4500000, 'EUR', 'шкаф'],
+    ['1,5к кофе', 150000, 'RSD', 'кофе'],
+    ['1.5к кофе', 150000, 'RSD', 'кофе'],
+    ['1.500к кофе', 150000, 'RSD', 'кофе'],
+    ['500 к чаю', 50000, 'RSD', 'к чаю'],
+    ['500 р кофе', 50000, 'RSD', 'р кофе'],
+  ])('%j -> %i %s %j', (text, amountMinor, currency, description) => {
+    expect(parseExpenseText(text, 'RSD')).toStrictEqual({
+      kind: 'expense',
+      amountMinor,
+      currency,
+      description,
+      tags: [],
+    });
+  });
+
+  it('reads 1,5к as 1500 yen in a JPY ledger', () => {
+    expect(parseExpenseText('1,5к рамен', 'JPY')).toStrictEqual({
+      kind: 'expense',
+      amountMinor: 1500,
+      currency: 'JPY',
+      description: 'рамен',
+      tags: [],
+    });
+  });
+
+  it.each(['500кг картошки', '45кдин шкаф', '1,5000к кофе', '45к', '€300€ ремонт'])(
+    '%j is an invalid expense',
+    (text) => {
+      expect(parseExpenseText(text, 'RSD')).toStrictEqual({ kind: 'invalid' });
+    },
+  );
+
+  it('takes the date word after a currency word', () => {
+    expect(parseExpenseText('300 € ремонт вчера', 'RSD', '2026-10-07' as LocalDate)).toStrictEqual({
+      kind: 'expense',
+      amountMinor: 30000,
+      currency: 'EUR',
+      description: 'ремонт',
+      date: '2026-10-06',
+      tags: [],
+    });
+  });
+});
+
 describe('parseExpenseText with a date suffix (today 2026-09-29, default RSD)', () => {
   const TODAY = '2026-09-29' as LocalDate;
   const parse = (text: string) => parseExpenseText(text, 'RSD', TODAY);

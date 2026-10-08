@@ -1337,6 +1337,21 @@ describe('recording an expense', () => {
     expect(calls[1]).toEqual(calls[0]);
   });
 
+  it('records 300 € ремонт in euros and shows 300.00 EUR on the card', async () => {
+    const { bot, calls, db } = createTestBot();
+
+    await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 10, text: '300 € ремонт' }));
+
+    expect(db.prepare('SELECT amount_minor, currency, description FROM expenses').get()).toEqual({
+      amount_minor: 30000,
+      currency: 'EUR',
+      description: 'ремонт',
+    });
+    expect(sentTexts(calls)[0]).toMatch(
+      /^Записано в «Личные расходы»: <b>300\.00 EUR<\/b> — ремонт · /,
+    );
+  });
+
   it('answers non-expense text with the help hint', async () => {
     const { bot, calls } = createTestBot();
 
