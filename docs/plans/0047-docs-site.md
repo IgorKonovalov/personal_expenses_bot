@@ -291,8 +291,8 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | 8f30d78 |
-| 2: Chat renderer and chart embed | dev | done | committed with this row |
-| 3: User guide | dev | not started | |
+| 2: Chat renderer and chart embed | dev | done | 65335b5 |
+| 3: User guide | dev | done | committed with this row |
 | 4: Architecture section | dev | not started | |
 | 5: README hands off | dev | not started | |
 | 6: Live check and proofreading | human | not started | |
@@ -321,6 +321,24 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
   `/personal_expenses_bot/#z=…`, set on the first click), not in a browser. The Mini App's
   meta CSP has no `frame-ancestors`; behaviour of `telegram-web-app.js` in an iframe is left to
   Phase 6.
+- Phase 3: edited files outside `Files touched`: `scripts/docs-chats/scenario.ts` (group chats
+  with invented members, a `setup(db)` hook, `onboarding`, `say(text, { shown })` for a long
+  link, a `cut()` step that clears the picture drawn so far, and a tap's `reply_to_message`),
+  `scripts/docs-chats/recorder.ts` (`cut`, a user bubble's `author` in a group, a message's
+  reply target), `site/src/components/Chat.astro` and `site/src/styles/chat.css` (the author
+  line).
+- Phase 3: the user bubble gained an optional `author`, beyond the plan's `Bubble` shape.
+- Phase 3: no chat, prose only: the receipt's shop and items (the receipt worker runs outside
+  `handleUpdate` and fetches the tax site), a receipt photo and the live scan, the bank statement
+  PDF, the summary pushes (scheduler), and `/delete_account` (the harness's `backupKeep: 14`
+  makes it name 14 days where production names 28). «Чеки и цены» shows the receipt link's
+  offline record and `/prices` in its empty state. «Валюты» stores a made-up NBS list through
+  `setup`; the receipt and SMS come from the existing test builders `buildRsUrl` and
+  `buildKoriscenjeSms`.
+- Phase 3: a group expense the bot answers with a reaction only shows no reply in its picture
+  (reactions are dropped); the page says so in prose.
+- Phase 3: `docs-check-commands.ts` was checked by hand: with `/settle` renamed on its page it
+  exited 1 naming `/settle`, and 0 on the finished guide. No test file covers it.
 
 ### Close triggers
 

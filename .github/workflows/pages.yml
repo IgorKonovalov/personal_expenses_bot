@@ -36,6 +36,8 @@ jobs:
       - run: pnpm --dir site install --frozen-lockfile
       - run: pnpm build:webapp
       - run: pnpm docs:chats
+      # Every command in the bot's menus is on some guide page.
+      - run: pnpm docs:check
       - run: pnpm --dir site build
       - name: Assemble the Mini App at the root and the docs under docs/
         run: |

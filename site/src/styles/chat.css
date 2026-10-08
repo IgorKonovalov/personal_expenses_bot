@@ -77,6 +77,12 @@
   background: var(--tg-bot-bg);
 }
 
+.tg-author {
+  color: var(--tg-link);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .tg-bubble a {
   color: var(--tg-link);
 }

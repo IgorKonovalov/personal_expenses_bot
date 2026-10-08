@@ -12,7 +12,8 @@ export interface Button {
 }
 
 export type Bubble =
-  | { readonly from: 'user'; readonly text: string }
+  // `author` names a group member; a private chat has one user and no name.
+  | { readonly from: 'user'; readonly text: string; readonly author?: string }
   | {
       readonly from: 'bot';
       readonly html: string;
@@ -28,10 +29,12 @@ export interface Transcript {
   readonly replyKeyboard?: readonly (readonly string[])[];
 }
 
-// Where a tap goes: the button's callback data and the message that carries it.
+// Where a tap goes: the button's callback data, the message that carries it, and the message
+// that one replies to, if any.
 export interface TapTarget {
   readonly data: string;
   readonly messageId: number;
+  readonly replyTo?: number;
 }
 
 interface RawButton {
@@ -55,6 +58,7 @@ interface Payload {
   readonly message_id?: number;
   readonly text?: string;
   readonly reply_markup?: Markup;
+  readonly reply_parameters?: { readonly message_id: number };
   readonly document?: unknown;
   readonly photo?: unknown;
   readonly media?: readonly { readonly media: unknown }[];
@@ -64,6 +68,7 @@ interface Entry {
   bubble: Bubble;
   // The message id: a user's from the scenario, a bot text's as `withMessageIds` hands them out.
   readonly messageId?: number;
+  readonly replyTo?: number;
   raw?: readonly (readonly RawButton[])[];
 }
 
@@ -140,6 +145,7 @@ export function createRecorder(chatId: number) {
         entries.push({
           bubble: botBubble(p.text ?? '', raw),
           messageId: lastMessageId,
+          ...(p.reply_parameters === undefined ? {} : { replyTo: p.reply_parameters.message_id }),
           ...(raw === undefined || raw.length === 0 ? {} : { raw }),
         });
         return true;
@@ -181,11 +187,15 @@ export function createRecorder(chatId: number) {
   }
 
   return {
-    user(text: string, messageId?: number): void {
+    user(text: string, messageId?: number, author?: string): void {
       entries.push({
-        bubble: { from: 'user', text },
+        bubble: { from: 'user', text, ...(author === undefined ? {} : { author }) },
         ...(messageId === undefined ? {} : { messageId }),
       });
+    },
+    // Forgets every bubble so far; the bottom keyboard stays, as it does in the chat.
+    cut(): void {
+      entries.length = 0;
     },
     // Applies the calls one step produced, and returns how many changed the chat.
     apply(calls: readonly ApiCall[], tapped?: number): number {
@@ -197,7 +207,11 @@ export function createRecorder(chatId: number) {
       if (latest?.messageId === undefined) return undefined;
       const button = latest.raw?.flat().find((b) => b.text === label);
       if (button?.callback_data === undefined) return undefined;
-      return { data: button.callback_data, messageId: latest.messageId };
+      return {
+        data: button.callback_data,
+        messageId: latest.messageId,
+        ...(latest.replyTo === undefined ? {} : { replyTo: latest.replyTo }),
+      };
     },
     transcript(name: string): Transcript {
       return {

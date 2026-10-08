@@ -22,7 +22,7 @@ export default defineConfig({
       sidebar: [
         {
           label: 'Руководство',
-          items: [{ label: 'Записать трату', slug: 'guide/record' }],
+          items: [{ autogenerate: { directory: 'guide' } }],
         },
       ],
     }),

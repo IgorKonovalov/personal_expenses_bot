@@ -63,7 +63,8 @@ function chartId(button: Button): string | undefined {
           case 'user':
             return (
               <div class="tg-row tg-row-user">
-                <div class="tg-bubble tg-user">{bubble.text}</div>
+                {/* One line: the bubble keeps its whitespace (pre-wrap). */}
+                <div class="tg-bubble tg-user">{bubble.author !== undefined && <div class="tg-author">{bubble.author}</div>}{bubble.text}</div>
               </div>
             );
           case 'bot':
