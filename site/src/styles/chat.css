@@ -1,0 +1,198 @@
+/* Telegram-style bubbles for the generated chats (ADR-0048). Colours follow Starlight's light and
+   dark themes through `data-theme` on <html>. */
+.tg-chat {
+  --tg-wallpaper: #d5e3c3;
+  --tg-bot-bg: #ffffff;
+  --tg-user-bg: #e2fcc8;
+  --tg-text: #111111;
+  --tg-link: #2a7ab0;
+  --tg-button-bg: rgb(0 0 0 / 0.22);
+  --tg-button-text: #ffffff;
+  --tg-toast-bg: rgb(0 0 0 / 0.55);
+  --tg-quote: #3a9d4b;
+  --tg-code-bg: rgb(0 0 0 / 0.06);
+  --tg-reply-bg: #f1f1f1;
+  --tg-reply-button: #ffffff;
+
+  max-width: 30rem;
+  margin-block: 1.5rem;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--tg-wallpaper);
+  color: var(--tg-text);
+}
+
+:root[data-theme='dark'] .tg-chat {
+  --tg-wallpaper: #0e1621;
+  --tg-bot-bg: #182533;
+  --tg-user-bg: #2b5278;
+  --tg-text: #f5f5f5;
+  --tg-link: #6ab3f3;
+  --tg-button-bg: rgb(255 255 255 / 0.12);
+  --tg-button-text: #f5f5f5;
+  --tg-toast-bg: rgb(255 255 255 / 0.18);
+  --tg-quote: #6ab3f3;
+  --tg-code-bg: rgb(255 255 255 / 0.08);
+  --tg-reply-bg: #17212b;
+  --tg-reply-button: #232e3c;
+}
+
+.tg-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.tg-row {
+  display: flex;
+}
+
+.tg-row-user {
+  justify-content: flex-end;
+}
+
+.tg-message {
+  max-width: 85%;
+}
+
+.tg-bubble {
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.9rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--tg-text);
+}
+
+.tg-user {
+  max-width: 85%;
+  border-bottom-right-radius: 0.25rem;
+  background: var(--tg-user-bg);
+}
+
+.tg-bot {
+  border-bottom-left-radius: 0.25rem;
+  background: var(--tg-bot-bg);
+}
+
+.tg-author {
+  color: var(--tg-link);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tg-bubble a {
+  color: var(--tg-link);
+}
+
+.tg-bubble blockquote {
+  margin: 0.25rem 0;
+  padding: 0.1rem 0.5rem;
+  border-left: 3px solid var(--tg-quote);
+  border-radius: 0.25rem;
+  background: var(--tg-code-bg);
+}
+
+.tg-bubble code,
+.tg-bubble pre {
+  padding: 0 0.2rem;
+  border-radius: 0.25rem;
+  background: var(--tg-code-bg);
+  font-size: 0.875em;
+}
+
+.tg-bubble pre {
+  margin: 0.25rem 0;
+  padding: 0.3rem 0.5rem;
+  white-space: pre-wrap;
+}
+
+.tg-bubble tg-spoiler {
+  border-radius: 0.2rem;
+  background: var(--tg-text);
+  color: transparent;
+}
+
+.tg-file::before {
+  content: '📎 ';
+}
+
+.tg-keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.tg-keyboard-row {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.tg-button {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--tg-button-bg);
+  color: var(--tg-button-text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.tg-button-url::after {
+  content: ' ↗';
+}
+
+.tg-button-web_app {
+  cursor: pointer;
+}
+
+.tg-button-web_app[aria-expanded='true'] {
+  outline: 2px solid var(--tg-link);
+}
+
+.tg-toast {
+  align-self: center;
+  max-width: 80%;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.6rem;
+  background: var(--tg-toast-bg);
+  color: #ffffff;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.tg-reply-keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  background: var(--tg-reply-bg);
+}
+
+.tg-reply-button {
+  flex: 1;
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+  background: var(--tg-reply-button);
+  color: var(--tg-text);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.tg-embed {
+  max-width: 30rem;
+  margin-block: -0.75rem 1.5rem;
+}
+
+.tg-embed iframe {
+  width: 100%;
+  height: 32rem;
+  border: 1px solid var(--sl-color-gray-5, #cccccc);
+  border-radius: 0.75rem;
+  background: #ffffff;
+}

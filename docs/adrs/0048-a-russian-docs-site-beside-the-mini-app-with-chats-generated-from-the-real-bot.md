@@ -1,8 +1,8 @@
 # ADR-0048: A Russian docs site beside the Mini App, with its chat pictures generated from the real bot
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-08)
 > **Date:** 2026-10-07
-> **Related plan(s):** [Plan 0047](../plans/0047-docs-site.md)
+> **Related plan(s):** [Plan 0047](../plans/done/0047-docs-site.md)
 
 ## Context
 

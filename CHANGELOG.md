@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.36.0 (2026-10-08)
+
+From Plan 0047 (a Russian docs site).
+
+- A Russian docs site at `https://igorkonovalov.github.io/personal_expenses_bot/docs/`: a user
+  guide by task, each chat picture generated from the real bot, and a «Как это устроено» section
+  on the architecture. It is built in `site/` and published beside the Mini App by `pages.yml`.
+- The private `/help` links to the guide before the donate line, and the group help ends with the
+  link.
+- The Mini App root opened with no `z`, `d` or `m` in its fragment now goes to the docs.
+- `README.md`'s `## Using the bot` hands the user reference to the site.
+
 ## 0.35.0 (2026-10-08)
 
 From Plan 0045 (currency words, a thousands suffix, and amount-last expense text).

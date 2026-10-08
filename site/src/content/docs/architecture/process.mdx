@@ -1,0 +1,50 @@
+---
+title: Как ведётся работа
+description: Архитектор и разработчик, планы и ADR, и дирижёр, который выполняет одобренные планы.
+sidebar:
+  order: 8
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Код пишут агенты по планам, а решения записываются до кода. Рабочие документы — на английском в
+папке `docs/` репозитория: [планы](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/plans/README.md)
+и [ADR](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/README.md).
+
+<Mermaid
+  code={`flowchart LR
+  I[интервью] --> ADR[ADR, если есть выбор]
+  ADR --> P[план по фазам]
+  I --> P
+  P --> GO[«go» владельца]
+  GO --> DEV[dev: все фазы, коммит на фазу]
+  DEV --> R[проверка в новой сессии]
+  R --> CLOSE[закрытие плана и версия]`}
+/>
+
+## Роли
+
+- **architect** проектирует: расспрашивает, записывает решения и планы, проверяет готовый план.
+  Кода не пишет.
+- **dev** реализует план фаза за фазой: каждая фаза — отдельный коммит с проверками «готово,
+  когда». В план он пишет только статус и журнал реализации.
+- **ux-telegram** проверяет сценарии и тексты в чате и ничего не пишет сам
+  ([ADR-0005](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0005-ux-telegram-lane.md)).
+
+Проверка готового плана идёт в новой сессии: проверка изнутри сессии, которая писала код,
+ничего не стоит.
+
+## Планы и ADR
+
+ADR пишется, когда есть отвергнутая альтернатива: решение, вариант, который не выбран, и почему.
+Принятый ADR не переписывается. План делится на фазы, у каждой — один владелец (`dev` или
+`human`) и проверяемое условие «готово, когда».
+
+## Дирижёр
+
+Одобренный план из очереди может выполняться без человека: дирижёр запускает каждую сессию сам,
+в отдельной ветке-дорожке, и проверяет каждое её утверждение по git
+([ADR-0010](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0010-approved-plans-run-under-a-forked-conductor-on-trial.md)).
+Перед постановкой в очередь план проходит проверку готовности
+([ADR-0016](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0016-readiness-runs-before-a-plan-is-queued.md)).
+Отправку в репозиторий и слияние делает владелец.

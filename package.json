@@ -1,6 +1,6 @@
 {
   "name": "personal-expenses-bot",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,10 @@
     "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"fs.cpSync('src/db/migrations','dist/db/migrations',{recursive:true,filter:(p)=>!p.includes('.')||p.endsWith('.sql')})\"",
     "start": "node --enable-source-maps dist/index.js",
     "build:webapp": "node -e \"fs.rmSync('webapp/dist',{recursive:true,force:true})\" && tsc -p webapp/tsconfig.json && node -e \"fs.copyFileSync('webapp/index.html','webapp/dist/index.html');for(const f of fs.readdirSync('webapp/dist'))if(f.endsWith('.test.js'))fs.rmSync('webapp/dist/'+f)\"",
+    "docs:chats": "tsx scripts/docs-chats/run.ts",
+    "docs:check": "tsx scripts/docs-check-commands.ts",
+    "docs:dev": "pnpm docs:chats && pnpm --dir site install --frozen-lockfile && pnpm --dir site dev",
+    "docs:build": "pnpm build:webapp && pnpm docs:chats && pnpm docs:check && pnpm --dir site install --frozen-lockfile && pnpm --dir site build && node -e \"fs.rmSync('.pages',{recursive:true,force:true});fs.cpSync('webapp/dist','.pages',{recursive:true});fs.cpSync('site/dist','.pages/docs',{recursive:true})\"",
     "typecheck": "tsc --noEmit && tsc -p webapp/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

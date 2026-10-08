@@ -1,0 +1,18 @@
+---
+// The real Mini App in an iframe, opened by a chart button in a generated chat (ADR-0048). The
+// docs live under the Mini App's root at docs/, so the root is the site base without its trailing
+// `docs/`, and the fragment is the one the bot put on the button. Given a payload, the page draws
+// the chart and doesn't redirect. The iframe loads only once the button is clicked.
+interface Props {
+  readonly id: string;
+  readonly fragment: string;
+  readonly title: string;
+}
+
+const { id, fragment, title } = Astro.props;
+const miniAppRoot = import.meta.env.BASE_URL.replace(/docs\/?$/, '');
+---
+
+<div class="tg-embed not-content" id={id} hidden>
+  <iframe data-src={`${miniAppRoot}${fragment}`} title={title} loading="lazy"></iframe>
+</div>

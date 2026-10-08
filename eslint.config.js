@@ -37,6 +37,8 @@ export default tseslint.config(
       'scripts/**/*.mjs',
       'tools/',
       'docs/',
+      'site/',
+      '.pages/',
     ],
   },
   js.configs.recommended,

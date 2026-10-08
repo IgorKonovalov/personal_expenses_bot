@@ -17,6 +17,7 @@ data
 coverage
 docs
 scripts
+site
 tools
 **/*.test.ts
 *.md

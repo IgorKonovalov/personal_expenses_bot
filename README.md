@@ -4,6 +4,9 @@ A Telegram bot for recording and summarising personal and family expenses. You s
 `450 кофе` and it's recorded in your active ledger, in the ledger's currency and on your local
 date. `/today` shows today's totals. The bot speaks Russian.
 
+**User guide (in Russian, with chats generated from the real bot):
+<https://igorkonovalov.github.io/personal_expenses_bot/docs/>**
+
 It's built for one household spread across countries and currencies (RSD, EUR, RUB, KZT, …). So
 money is exact integer minor units, every user has their own timezone, and nothing is guessed
 when an amount could be read two ways.
@@ -14,422 +17,25 @@ when an amount could be read two ways.
 
 ## Using the bot
 
-| You send                             | The bot does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/start`                             | Creates your account and a personal ledger («Личные расходы»), then sends the welcome and a setup check: your timezone with your local time, and the default currency, with [Да, всё верно] and [Изменить] (the `/settings` hub). If your first message is something else, it's handled as usual and the welcome and the check follow. Sent again, `/start` replays the welcome and the check, and starts the tips over with tips switched on                                                                                                                                                                                                                                                                                                    |
-| `450 кофе`                           | Records 450.00 in the ledger's default currency, in a category picked from how this ledger filed `кофе` before, else by keyword, else «Другое». Replies `Записано в «Личные расходы»: 450.00 RSD — кофе · Кафе и рестораны` with [Категория], [Изменить] and [Удалить]                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `450 такси вчера`, `450 такси 25.09` | Records the expense on a past date. Only the last word is read as a date: `вчера`, `позавчера`, `dd.mm` (the most recent such date, today included) or `dd.mm.yyyy`. A future `dd.mm.yyyy` records nothing. The confirmation names the date when it isn't today                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| [Категория]                          | Opens a paged list of the ledger's categories in the same message. A tap moves the expense there, and the next expense with the same description follows it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| [Изменить]                           | Offers [Сумма], [Описание] and [Дата] in the same message. The card then asks for the new value as your next message (the date prompt also has [Сегодня] [Вчера] [Позавчера]). [Отмена] puts the card back unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `12,50 EUR такси`                    | Records 12.50 EUR. A currency code after the amount overrides the default (case-insensitive)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `300 € ремонт`, `2500р такси`        | Records 300.00 EUR or 2 500.00 RUB. A currency sign or word after the amount, or a sign glued to it (`300€`, `€300`), names the currency; see [Currency words](#currency-words) |
-| `45к шкаф`, `1,5к кофе`              | Records 45 000.00 or 1 500.00. A `к` or `k` glued to the amount means thousands, and a `.` or `,` before it is always a decimal point. A separate `к` stays description: `500 к чаю` is 500 «к чаю» |
-| `Чайник 3200`                        | Records 3 200.00 «Чайник»: the amount may come last, with the currency, tags and a date after it (`Шкаф 45к дин`, `Краска: 2000`, `Чайник 3200 вчера`). Text with a `?` is a question and never an expense. In a group this asks first, see [In a group](#in-a-group) |
-| `1 200 обед`                         | Records 1 200.00. Group thousands with a space                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `1.200 обед`                         | Records **nothing** and replies to your message with one button per reading ([1 200.00 RSD] [1.20 RSD]). A tap records that reading. A second tap records nothing more                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `/today`                             | `Сегодня, 30 сентября — «Личные расходы»`, then the day's total in the ledger's currency, foreign amounts converted (`≈`, see [Currency conversion](#currency-conversion)). [Позиции], shown when the day's receipts list items, lists them by category                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `/week`, `/month`                    | This week (Monday to Sunday) or calendar month: one total in the ledger's currency, then its categories by amount folded under it (a tap opens them), foreign amounts converted. [◀ Август] [Октябрь ▶] page to the neighbouring period in the same message. [Позиции] lists the period's receipt items by category, sorted by name, with a pager and [« Назад]                                                                                                                                                                                                                                                                                                                                                                                  |
-| [Удалить]                            | Soft-deletes that expense and turns the confirmation into a deleted card with [Вернуть]. A second tap says it's already deleted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| [Вернуть]                            | Restores the expense, and `/today` counts it again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `/categories`                        | Lists the ledger's categories, with [Добавить], [Переименовать] and [Скрыть]. Adding and renaming ask for the name as your next message. Adding a hidden category's name brings it back. [Обязательные] marks which categories are essential (rent, groceries)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `/budget`                            | The ledger's budget: the limit, the period with its day number, what's left for today and for the period, with spending in other currencies converted into the budget's currency, and any spending with no rate listed as not counted. [Задать лимит] sets the limit for a period, [День начала периода] moves the period start to your payday (1 to 31), [Считать все] / [Только необязательные] picks whether essential categories count, and [Лимиты по категориям] caps single categories. Once set, every expense card gains `Осталось на сегодня: 517.74 RSD · до 31 окт: 29 550.00 RSD`, and a capped category's line `Кафе и рестораны: 450.00 из 5 000.00 RSD`. Yesterday's leftover or overspend carries into today. In a private chat with `WEBAPP_URL` and a limit, «📈 Диаграмма» opens the period's spend by day against the limit's dashed allowance line (see Mini App: charts) |
-| `/settings`                          | Shows your timezone and the ledger's default currency, with [Часовой пояс], [Валюта], [Категории], [Шифрование] (see [Encrypted ledger](#encrypted-ledger)), [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл] (see [Summary pushes](#summary-pushes)), [Подсказки: вкл/выкл] and [Убирать мои сообщения: вкл/выкл], which deletes your message once it has recorded an expense. The timezone comes from a list of cities or, via [Другой…], any IANA name you type (`Europe/Istanbul`). Past expenses keep their date                                                                                                                                                                                                                       |
-| [Повторять], `/recurring`            | [Повторять] on your expense's card offers «Каждый месяц, 15-го», «Каждую неделю, по средам» and «Каждый год, 15.10», from the expense's date. On each due day at 09:00 in the ledger's timezone the bot records the same expense and posts it with [Удалить]; missed days after downtime are recorded on their own dates, once. `/recurring` lists the rules: [Спрашивать перед записью] makes one ask first with [Записать] / [Другая сумма] / [Пропустить], [Удалить правило] stops it (recorded expenses stay), and [Добавить напоминание] sends a text on its day. A group expense repeats into its group. In a sealed ledger the rule is sealed too, and its notice names neither amount nor description; a reminder's text stays plaintext |
-| `/debts`                             | Who owes you and whom you owe, one line per person and currency: `Петя — должен вам 5 000.00 RSD`. [Я дал в долг] / [Я взял в долг] ask for the amount, then the person (a button per known person, or a typed name; «петя» reuses Петя). A person's button opens their card with the last 10 operations and [Мне вернули] / [Я вернул]; a repayment is in the debt's own currency, at most the balance, or [Весь долг]. [Удалить] under a confirmation removes that operation. Nothing is converted, and debts never count as spending. In a sealed ledger names and amounts are sealed too, and `/debts` opens only while unlocked                                                                                                             |
-| `1000 кафе /3`                       | Records your share (333.34 RSD, the remainder is yours) and asks which two people owe you 333.33 RSD each: toggle known people or type a name, then [Готово], or [Пропустить] to record no debts. `/N` takes 2 to 20. In a sealed ledger that is locked the share is recorded and the bot asks you to add the debts from `/debts` after `/unlock`                                                                                                                                                                                                                                                                                                                                                                                                |
-| `450 кофе #отпуск #рим`              | Records the expense with tags: `#words` leave the description, up to 5 per expense. [Изменить] → [Метки] replaces them, `-` clears them. In a sealed ledger tags are sealed with the rest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `/tags`                              | The ledger's tags with their all-time totals in the ledger currency, most recently used first; a tag's button shows its total by category, its expense count and its first and last date. In a group, the group ledger's tags                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `/tag отпуск`                        | Adds `#отпуск` to every expense you record into the active ledger (in a group, the group's) until [Снять метку]; in private, `/tag` alone shows it. In a sealed ledger it lasts until the bot restarts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `/prices`                            | The products you buy («Молоко», «Хлеб», «Бананы»), built from the items of your own fetched receipts in the active ledger and ordered by spend over the last 12 months. A product shows each month's spend, the amount bought and the price per litre, kilogram or piece, plus the all-time totals. [Разобрать] walks the item names no rule recognised, [Названия] corrects which names count under a product, and [Новый продукт] adds your own. In a sealed ledger only the built-in rules apply, and the list opens only while unlocked. In a private chat with `WEBAPP_URL`, a product's «📈 Диаграмма» opens its price per unit by month (see Mini App: charts)                                                                                                                                                                                                      |
-| `/cancel`                            | Drops a pending question (like the new category's name) and puts the list or the expense card back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `/export`                            | Asks for a period («Этот месяц», «Прошлый месяц», «Этот год», «Всё время») and a format, then sends the active ledger's expenses as a file: [CSV] (UTF-8, `;`, decimal comma; receipt items as a second file) or [Excel] (an `.xlsx` with a second sheet for receipt items). Every row has the date, time, amount and currency, the amount in the ledger's currency at the NBS rate, the category, the description, the tags, the shop and receipt link, and the expense ID. Free, any time. A sealed ledger exports only while unlocked, and the file is a plaintext copy                                                                                                                                                                       |
-| `/help`                              | How to record an expense, and what the menu buttons do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `/changelog`                         | What's new: the five newest versions, then a link to CHANGELOG.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `/privacy`                           | A three-line summary of what is stored and who sees it, and a link to [PRIVACY.md](PRIVACY.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `/delete_account`                    | Says what goes (the personal ledger with every expense, receipt, category and budget, and your settings) and what stays (your expenses in group ledgers, shown as «удалённый участник», and backups for up to `max(BACKUP_KEEP, 7 × BACKUP_KEEP_WEEKLY)` days, 28 by default), with [Удалить всё] / [Отмена]. After deleting, the same Telegram account needs a new invite                                                                                                                                                                                                                                                                                                                                                                       |
-| `/donate`                            | The bot is free and a donation unlocks nothing. Offers [⭐ 50] [⭐ 150] [⭐ 500], each opening Telegram's Stars payment sheet, and [Ko-fi] when `DONATE_URL` is set. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `/paysupport`                        | Says a donation unlocks nothing. `/paysupport <текст>` relays a refund request to the admin, with your internal user id and your newest donations. See [Donations](#donations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+Users join by invitation and talk to the bot in a private chat, or add it to a group for shared
+books. Every reply, button and flow is described, with pictures of the real chat, in the
+[user guide](https://igorkonovalov.github.io/personal_expenses_bot/docs/), which `/help` links
+too. In short, the bot:
 
-`/start` and `/help` show a persistent menu bar under the input field: [📊 Сегодня] answers like
-`/today`, [📅 Неделя] like `/week`, [🗓 Месяц] like `/month`, [💰 Бюджет] like `/budget`, [⚙️ Настройки] like `/settings`, and [❓ Помощь] like `/help`. [☰ Ещё] opens one button for every other command: [Регулярные], [Долги], [Метки], [Включить метку], [Цены], [Экспорт], [Что нового], [Поддержать], [Возврат пожертвования], [Приватность] and [Удалить аккаунт], plus [Открыть учёт] or [Закрыть учёт] for a sealed ledger. Each answers exactly like its command. [Включить метку] and [Возврат пожертвования] first ask for the tag or the request, with [Отмена], and then answer like `/tag <ответ>` or `/paysupport <ответ>`. The admin also gets [Пригласить], [Приглашения], [Статистика], [Заблокировать], [Разблокировать] and [Вернуть Stars]; the last three ask for the Telegram id or the charge id the same way. The `/` menu in a private chat lists every command, and the admin's chat adds the admin commands. Only the exact label is a menu tap. A menu tap or any
-command also drops a pending question, which otherwise expires after 10 minutes. Unknown commands,
-text that isn't an expense, stickers, voice messages and files that aren't images get the full
-help the first time, and afterwards one line pointing to [❓ Помощь] that deletes itself after a
-minute ([ADR-0037](docs/adrs/0037-first-time-notices-and-transient-replies.md)). Photos are read
-for a receipt QR code (see Receipts below). Editing a sent expense doesn't change the record, and
-the bot says so the first time. A sealed ledger's warnings (the export file is a plaintext copy,
-a reminder's text is stored plaintext) are likewise shown on the first prompt only.
+- records `450 кофе`, with currency codes, signs and words, a `к` thousands suffix, amount-last
+  text, past dates and tags, and asks instead of guessing an ambiguous amount;
+- shows `/today`, `/week` and `/month` by category, with charts in a Mini App, and sends a
+  monthly (optionally weekly) summary;
+- keeps a budget with payday periods and category caps, recurring expenses, debts and split
+  bills, and tags for trips and projects;
+- reads Serbian and Montenegrin fiscal receipts (QR photo, link or live scan) with their items
+  and product prices, Serbian bank SMS, and Raiffeisen banka Srbija PDF statements;
+- converts reports between currencies at the NBS middle rate of the expense's day;
+- keeps a group's shared ledger with totals per member and an equal-split settle-up;
+- can seal a personal ledger with a passphrase, and exports everything as CSV or Excel.
 
-Once you're onboarded, a reply is sometimes followed by a tip about a feature you haven't used
-yet: at most one a day, each tip once, in a private chat only. [Отключить подсказки] under any tip
-switches them off, and [Подсказки: вкл/выкл] in `/settings` switches them back on.
-
-### Summary pushes
-
-The morning after a period closes, at 09:00 in your timezone, the bot sends the personal
-ledger's report without being asked: «Итоги сентября» on 1 October. With a budget whose period
-starts on your payday, it is the budget period instead, «Итоги периода 15.09–14.10», sent on the
-day after it ends. The report has the total and each category with its change against the period
-before («Кафе и рестораны: 12 400.00 RSD (+3 100.00, +33%)», or «новое»), the top 10 categories
-with the rest on one line, how the budget's limit ended («осталось» or «перерасход»), the three
-largest expenses, and a `/donate` line. Currencies with no rate stay on their own lines, with no
-change shown.
-
-It is on by default. [Отключить] under a push, or [Итоги месяца: вкл/выкл] in `/settings`,
-switches it off. [Итоги недели: вкл/выкл] adds a Monday push for last week, with the total and
-the categories only. Each push goes out once. A period with no expenses sends nothing, and a
-push more than 7 days late (after downtime) is skipped. Groups get no push. For a sealed ledger
-that is locked, the push says only «Итоги сентября готовы», and [Показать] shows the report in
-place after `/unlock`.
-
-### Joining
-
-The bot works by invitation ([ADR-0024](docs/adrs/0024-admission-lives-in-the-database-via-invite-codes.md)).
-The admin (`ADMIN_TELEGRAM_ID`) sends `/invite` and gets a link `https://t.me/<bot>?start=<code>`
-that admits up to 10 people within 14 days; `/invite 30 7` makes one for 30 people and 7 days
-(each number from 1 to 1000). Opening the link starts the bot as a normal `/start`. A link that is
-used up, expired or switched off answers «Ссылка недействительна или истекла». Anyone else gets
-one «Бот работает по приглашениям» reply and then silence. `ADMIT_TELEGRAM_IDS` admits the listed
-ids at boot, without a link.
-
-Admin-only commands (anyone else gets the `/help` answer):
-
-| Admin sends            | The bot does                                                                                       |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| `/invite [uses days]`  | Makes an invite link                                                                               |
-| `/invites`             | Lists the live links with `used/max` and the expiry date, each with [Отключить] to switch it off   |
-| `/block <telegram id>` | Drops every update from that account, in private and in groups; `/unblock <telegram id>` undoes it |
-| `/stats`               | Admitted users, users and expenses of the last 7 days, live links. Counts only, no amounts         |
-
-Limits for everyone but the admin: at most 30 updates per minute (the rest are dropped silently),
-and 20 receipts per local day («Лимит чеков на сегодня исчерпан, попробуйте завтра»). On a boot
-with a new version, the bot sends the admin a short «🆕 Версия X.Y.Z» note (ADR-0013).
-
-### In a group
-
-The bot can keep a group's shared books, such as a family's, next to everyone's private ones
-([ADR-0014](docs/adrs/0014-group-chats-bind-to-shared-ledgers.md)).
-
-1. In [@BotFather](https://t.me/BotFather), set `/setjoingroups` to Enabled and `/setprivacy` to
-   Disabled, so the bot reads ordinary group messages. A privacy change applies only to groups
-   the bot joins afterwards, so remove the bot from a group and add it again after changing it.
-2. An admitted user adds the bot to the group. The group gets its own shared ledger, named
-   after the group, in that user's currency and timezone. Added by anyone else, the bot leaves.
-
-| In the group                | The bot does                                                                                                                                                                                                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `450 кафе` from any member  | Records it in the group ledger under the sender's name, dated in the ledger's timezone. A recognised category gets a ✍ reaction; «Другое» gets a reply card with [Удалить]                                                                                            |
-| `Чайник 3200` from a member | Records nothing yet: a silent reply asks «Записать 3 200.00 RSD — Чайник?» with [Записать] and [Не трата], which only the sender can answer. [Записать] records it dated by the message; [Не трата] deletes the question; unanswered, it disappears after 15 minutes. No question for text with a `?`, or with one of «в, к, до, через, с, по, около, после» right before the amount (`буду в 7`) |
-| [Удалить], [Вернуть]        | Work for the expense's author only. [Изменить в личке] on the card opens it in the author's private chat (admitted authors only)                                                                                                                                       |
-| `/card` as a reply          | Shows the card of the expense that message recorded                                                                                                                                                                                                                    |
-| `/today`, `/week`, `/month` | The group ledger's totals, by category and by person, one total in the group ledger's currency, foreign amounts converted. The pager works for anyone in the group                                                                                                     |
-| `/settings`                 | For the person who added the bot: a link to the group ledger's timezone and currency in the private chat, where [Бюджет] sets the group ledger's budget. Your own timezone doesn't change. Anyone else gets a one-line refusal                                         |
-| `/budget`                   | The group ledger's budget, read-only: what's left for today and for the period, in the ledger's timezone. Expense reactions carry no budget line                                                                                                                       |
-| `/export`                   | Any member: the group ledger's expenses as a CSV or Excel file sent to the group, like `/export` in private, with an «Автор» column naming who recorded each one                                                                                                       |
-| `/settle`                   | Splits every group expense equally among the members who had joined by its date, per currency, and lists the fewest transfers that square it. [Перевёл] (payer or receiver only) records a transfer; [Я тоже участвую] joins a member who hasn't recorded anything yet |
-| `/tags`                     | The group ledger's tags with their totals, and a tag's report by category, like `/tags` in private                                                                                                                                                                     |
-| `/tag отпуск`               | Tags every expense you record in the group until [Снять метку]; the sticky tag is yours alone, other members' expenses don't get it. `/tag` with no argument answers the usage                                                                                         |
-| `/help`                     | The group's help text                                                                                                                                                                                                                                                  |
-
-Other chatter, stickers and other bots' commands get no reply. Expenses you send the bot in
-private stay in your personal ledger and never appear in the group. Removing the bot keeps the
-ledger; adding it back (an admitted user) picks the same ledger up again.
-
-### Receipts
-
-In a private chat, a Serbian or Montenegrin fiscal receipt becomes one expense
-([ADR-0018](docs/adrs/0018-receipts-record-offline-enrich-async.md)). Send a photo of its QR
-code, the photo as a file, or the link the QR code holds (`https://suf.purs.gov.rs/v/?vl=…` or
-`https://mapr.tax.gov.me/ic/#/verify?…`).
-
-- The bot reads the total, the date and the receipt's fiscal id from the QR code alone, offline,
-  and records the total in RSD or EUR, dated the receipt's day in your timezone. The card reads
-  `… — Чек` at first.
-- Within a few seconds the bot fetches the shop and the line items from the tax authority's
-  site. The card then names the shop and shows its items folded under `Магазин · 12 позиций`
-  (a tap opens them). A list too long for one message stays behind [Позиции], which lists the
-  items in the same message. If the site stays unreachable (6 attempts over about
-  14.5 hours), the card says so and offers [Повторить]. The expense keeps the QR total either way.
-- The same receipt sent again, as a photo or as a link, records nothing and answers «Уже
-  записано» with the existing card. Refunds, copies, pro-forma and advance invoices are refused.
-- Once its card is sent, a recorded or already recorded receipt's photo (or image file) is
-  deleted from the chat: the card carries everything it said. A photo the bot couldn't read, or
-  whose receipt it refused, stays. A pasted link is never deleted.
-- QR codes are decoded with [zxing-wasm](https://github.com/Sec-ant/zxing-wasm), loaded from
-  `node_modules` ([ADR-0019](docs/adrs/0019-qr-decoding-zxing-wasm.md)). A JPEG that doesn't
-  decode is retried on preprocessed pixels
-  ([ADR-0034](docs/adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md)). If that fails too, the
-  bot says whether it found the code at all and how to retake the photo, or to paste the link.
-
-Besides Telegram, these are the only hosts the bot connects to, and only to fetch a receipt's
-shop and items:
-
-- `suf.purs.gov.rs` (Serbia): the verify URL as JSON and as HTML, and `POST /specifications`
-- `mapr.tax.gov.me` (Montenegro): `POST /ic/api/verifyInvoice`
-
-Groups ignore photos and receipt links.
-
-### Bank SMS
-
-In a private chat, paste or forward a card-purchase SMS from your bank and it becomes one expense
-([ADR-0021](docs/adrs/0021-bank-sms-template-parsers-plain-expense.md)). One template is read so
-far: the Serbian `Koriscenje kartice` / `Korišćenje kartice` SMS, with its `Datum:`, `Iznos:` and
-`Mesto:` lines. Other banks' SMS still get the `/help` answer.
-
-- The amount comes from `Iznos:` only, never the balance line, and is stored in the charged
-  currency: a USD charge on an RSD card is recorded in USD.
-- `Datum:` is read as Belgrade time, and the expense is dated that moment's day in your timezone.
-  An SMS dated after the day you send it is refused.
-- The description is the `Mesto:` merchant, without its trailing country code and phone number.
-- The same SMS pasted again, however its lines are wrapped, records nothing and answers «Уже
-  записано» with the existing card.
-- An SMS whose header matches but whose body can't be read, or whose currency the bot doesn't
-  know, is refused, and nothing is recorded.
-
-Groups ignore bank SMS.
-
-### Bank statements
-
-In a private chat, send a Raiffeisen banka Srbija account statement («Izvod po tekućem računu»),
-downloaded from e-banking as a PDF, and its card purchases become expenses
-([ADR-0032](docs/adrs/0032-statement-rows-match-recorded-expenses.md),
-[ADR-0033](docs/adrs/0033-pdf-statements-via-pdfjs-dist.md)). Other banks, and the bank's XLSX
-and CSV exports, aren't read yet. A PDF that isn't such a statement gets the `/help` answer.
-
-- The bot answers with a preview: the period, how many card purchases it found, how many are
-  new and how many are already recorded, the new ones' totals per currency, and the rows ten per
-  page. [Записать все (N)] records the new ones, [Записать и уже записанные] records the rest as
-  well, and [Отмена] drops the statement. The buttons work for 10 minutes.
-- Only card purchases are read. Cash withdrawals, bank fees, transfers, income and reversals are
-  skipped. A foreign purchase's conversion charge, a second small row in EUR, is its own expense.
-- Each expense is in the purchase's original amount and currency, dated the transaction date, in
-  the category the bot suggests for the merchant, which learns from your corrections.
-- A purchase counts as already recorded when an expense of the same amount and currency is
-  dated within a day of it, however it was recorded: by hand, from a receipt or from an SMS.
-  Sending the same statement again records nothing.
-- Files over 5 MB, over 30 pages or with more than 1000 purchases are refused, and so is a
-  scanned PDF without a text layer.
-- A sealed ledger takes a statement only while unlocked, and the purchases are sealed like any
-  expense.
-- **Privacy:** the file is read in memory and never stored. Only the card purchases are kept:
-  as expenses, and until you tap, in the pending preview. The statement's name, address,
-  account number, balance and other rows are discarded. Logs carry counts only.
-
-Groups ignore statement files.
-
-### Encrypted ledger
-
-Your personal ledger can be sealed so that only you can read it
-([ADR-0020](docs/adrs/0020-sealed-ledgers-write-open-read-locked.md)). `/settings` →
-[Шифрование] asks for a passphrase of at least 10 characters and shows a one-time recovery code
-(8 groups of 4 characters) with [Сохранил], which deletes it. Every message carrying the
-passphrase or the code is deleted as soon as it arrives.
-
-- Amounts, descriptions and categories are sealed to the ledger's public key, so `450 кофе`
-  records as before without the passphrase. Expenses recorded before the switch are sealed then,
-  receipts with their items included.
-- `/today`, `/week`, `/month`, `/budget` and taps on an expense card answer «Учёт зашифрован и
-  закрыт» until `/unlock` and the passphrase. The ledger closes again after 30 minutes without a
-  read, on `/lock`, and on every restart of the bot. A summary push to a locked ledger carries
-  no figures, only [Показать].
-- `/recover` takes the recovery code and then a new passphrase. While unlocked, [Шифрование] →
-  [Сменить пароль] changes it. Losing both the passphrase and the code loses the data.
-- A sealed ledger doesn't take receipt QR codes or links, and suggests categories from keywords
-  only. The date, the currency and the number of expenses stay readable.
-- A sealed ledger can't recognise a bank SMS by its content: the same SMS pasted again in a new
-  message records a second expense, which [Удалить] on its card undoes.
-- It protects the database file and backups taken after the switch. It does not protect against
-  whoever runs the bot changing its code, or against Telegram, which sees every message. Backups
-  taken before the switch keep plaintext until backup rotation (`BACKUP_KEEP`,
-  `BACKUP_KEEP_WEEKLY`) drops them.
-
-### Currency conversion
-
-/today, /week, /month and the budget show one total in one currency
-([ADR-0022](docs/adrs/0022-fx-nbs-middle-rate-ledger-currency.md),
-[ADR-0023](docs/adrs/0023-budgets-count-converted-spending.md)):
-
-- Reports convert into the ledger's default currency. A budget converts into its own currency,
-  which can differ from the ledger's after a currency change.
-- Each expense converts at the National Bank of Serbia middle rate list in force on its day. A day
-  with no stored list uses the latest one up to 4 days earlier. An expense already in the target
-  currency isn't converted.
-- Each expense is converted in one exact step and rounded half-up to the target's minor units.
-  A total is the sum of the rounded parts.
-- A total with anything converted is marked `≈` and followed by
-  `Включая 107.40 EUR, 6.00 USD по курсу НБС на день траты.`
-- A currency NBS doesn't list (AMD, GEL, KZT, UAH, UZS), or a day with no rate yet, stays in its
-  own block, named in `Без курса НБС, не пересчитано: KZT.` The budget lists it as
-  `Не учтено, нет курса`.
-
-A worker fetches the rate lists at boot and then hourly, so the bot needs outbound HTTPS to
-`webappcenter.nbs.rs`. If NBS can't be reached, reports fall back to per-currency blocks.
-
-### Donations
-
-The bot is free for everyone, with no paid tier
-([ADR-0027](docs/adrs/0027-donations-only-funding.md)). `/donate` works in a private chat only.
-
-- At boot the bot creates one Telegram Stars invoice link per preset amount. A preset whose link
-  can't be created is left out. With no link and no `DONATE_URL`, `/donate` says donations are
-  unavailable.
-- A payment is checked before Telegram takes it: the currency must be Stars and the amount must
-  match the button's preset.
-- A completed payment is stored once per Telegram charge id: the Stars amount, the donor's
-  internal user id and the time. The donor gets one thank-you, and the admin one notice with the
-  amount, the internal user id and the charge id, never a name.
-- The private `/help` ends with a line pointing to `/donate`.
-- The admin's `/refund <charge id>` returns the Stars through Telegram and marks the donation
-  refunded. A second `/refund` of the same charge id doesn't call Telegram.
-
-### Mini App: live receipt scan
-
-With `WEBAPP_URL` set, the private-chat menu gains «📷 Скан»
-([ADR-0025](docs/adrs/0025-static-mini-app-fragment-in-senddata-out.md)). It opens a static page
-in scan mode, which opens Telegram's own live QR scanner. The first code read goes back to the
-bot and is recorded exactly like a pasted receipt link, duplicate check included.
-
-- The page lives in `webapp/`: `index.html` plus TypeScript built by `pnpm build:webapp` (plain
-  `tsc`, no bundler, no runtime dependencies) into `webapp/dist/`. The `Pages` workflow
-  publishes it to GitHub Pages on a push to `main` that touches it. Enable Pages with the source
-  "GitHub Actions", then set `WEBAPP_URL` to the published URL, without a `#fragment`.
-- The page makes no network request: its CSP allows scripts from `telegram.org` and itself only.
-  The scanned text leaves the page only by `sendData`, and the bot never logs it.
-- The live scanner exists on Telegram's mobile apps. Elsewhere (Desktop, web) the page says so,
-  and a photo or the pasted link still works.
-- Telegram keeps showing an old menu until the next `/start` or `/help` reply, so the button
-  appears after one of them. A group never gets it: `web_app` buttons work in private chats only.
-
-### Mini App: charts
-
-With `WEBAPP_URL` set, `/week` and `/month` in a private chat end with «📈 Диаграмма» (and
-`/budget` opens with one, see below). It opens
-the same page in chart mode: the shown period's categories as a donut, in the ledger's currency,
-with the period's total and its change in the centre and a legend under it. The donut and the
-bars scale to the screen width. Paging to another period rebuilds the button for that period.
-
-- The bot puts the period's totals in the button URL's fragment (`#z=…`, deflated JSON as
-  base64url, ADR-0045), already formatted, so the page makes no request and does no money
-  arithmetic. Only aggregates travel, never an individual expense, and the static host never sees
-  the fragment. Buttons sent before it (`#d=…`) still open.
-- The payload is a list of sections the page draws in order, the donut, the pace and then the
-  trend; a section kind the page doesn't know is skipped. Deploy the page first: until the `Pages` run
-  has finished, the old page answers a new `#z=` button with its open-from-bot line.
-- Each legend row reads «name: amount · share · change», the share a whole percent. The shares
-  add up to exactly 100%, and a category whose share rounds to 0 shows «<1%». The change is an
-  arrow against the previous period: «↑20%», «↓25%», «±0%», or «новое» for a category the previous
-  period didn't have.
-- The donut centre shows the total over its change and basis: «↑11% к сентябрю». A period still
-  running is compared with the same first days of the previous one, «↑158% к 1–15 сентября», so
-  the 15th doesn't read as a drop against a whole month. With nothing to compare against, the
-  centre reads «Всего». Over the size budget, the change labels go right after the categories'
-  histories.
-- The donut holds the converted block (ADR-0022). A currency with no NBS rate is one text line
-  under the chart, never part of the donut.
-- Tapping a slice or a legend row shows that line's name and amount in the centre and dims the
-  other slices. A second tap on it, or a tap in the centre, goes back to the total.
-- The tap also opens a panel right under that legend row: the category's name, «Последние 6
-  месяцев» (or «недель»), and its converted totals over the shown period and the five before it,
-  as bars. A category matches across periods by id, so a renamed one keeps its history under its
-  current name. «Прочее», and a category whose history didn't fit the payload, say so instead and
-  point to paging back in `/month`. The histories are the first thing dropped over the size
-  budget, the smallest categories' first, and always before any category folds into «Прочее».
-- The slice colours follow the Telegram theme, a light or a dark palette, and the chart redraws
-  when the theme changes. Lines past the eighth are drawn in the theme's hint colour.
-- Under the donut, the pace: the shown period's cumulative spending by day as a line in the
-  theme's button colour, over the previous period's in its hint colour, day 1 against day 1. Above
-  it, a caption per line after a swatch of its colour. A running period reads «К 15 октября: …»
-  and the previous one by the same day, «К 15 сентября: …»; a past one names each period whole,
-  «За август 2026: …». The line runs through today, so an expense dated later is in the total
-  but not yet on the line. Over the size budget, the previous period's line goes right after the
-  change labels, then the pace itself, before any trend bar.
-- Under the pace, 6 bars show the converted totals of the shown period and the five before it,
-  oldest first. A period with nothing spent keeps its row with a zero-length bar.
-- A period with no expenses, or with nothing in or converted into the ledger's currency, has no
-  button. Neither does a group report or a locked sealed ledger.
-- `/budget` in a private chat, once the budget has a limit, opens with its own «📈 Диаграмма» row
-  above the settings buttons. Its chart is the budget period's spend by day in the budget's
-  currency, counted the way the screen counts it, against a dashed allowance line from zero to the
-  limit on the period's last day. The captions are the screen's own: «Потрачено к 7 октября: …»,
-  today's leftover or overspend, and «Лимит: …». A caps-only budget, a group or a locked sealed
-  ledger gets no button.
-- A tag's report from `/tags`, in a private chat, opens with its own «📈 Диаграмма» row above
-  [« Назад]. Its chart is titled with the tag, `#отпуск`, and is the report's converted block as a
-  donut by category, with the shares and folding of `/month` but no change labels: a tag has no
-  previous period. A currency with no rate is a text line under it. A tag with nothing converted,
-  a group report or a locked sealed ledger gets no button.
-- A product's view in `/prices`, in a private chat, opens with its own «📈 Диаграмма» row. Its
-  chart is titled with the product and shows the price per unit by month («Цена за 1 л») as bars,
-  oldest first, then «Траты по месяцам». A month with no sized item shows «размер не указан» and
-  no bar. Only months in the ledger's currency are drawn; other currencies are text lines under
-  the prices. Long histories shed the spend bars first, then the oldest months. A product with no
-  month in the ledger's currency, or a locked sealed ledger, gets no button.
-- A damaged link, or one from a newer payload version, shows a line asking to reopen the report.
-  A Telegram app too old to inflate the payload (no `DecompressionStream`) says so instead, and
-  the text report still has every number.
-- The payload is capped at 2048 characters. To measure what your clients really open, run
-  `pnpm probe:webapp` with `BOT_TOKEN`, `ADMIN_TELEGRAM_ID` and `WEBAPP_URL` set (in the
-  environment or `.env`), after the page is published. It sends the admin one message with a
-  «Проба N» button per length, 2048 to 32768 characters. A button that opens showing its own
-  «Проба N» title arrived whole. A length the Bot API refuses is printed with its error; the
-  script prints only sizes and errors, never the token or a URL.
-
-### Amount rules
-
-One rule for everyone, regardless of locale ([ADR-0004](docs/adrs/0004-amount-parsing-rule.md)):
-
-- `.` or `,` followed by 1–2 digits is a decimal separator: `12,5`, `12.50`.
-- A space groups thousands in groups of three: `1 200`, `12 345 678`.
-- A single `.` or `,` followed by exactly three digits (`1.200`, `1,200`) is ambiguous. The bot
-  asks and never guesses, because a thousand-fold misread is the worst bug this product can
-  have.
-- Two separators (`1.200,50`), too many decimals for the currency, zero and negative amounts are
-  rejected with a hint.
-
-Supported currencies and their minor units are listed in
-[`src/domain/currencies.ts`](src/domain/currencies.ts).
-
-### Currency words
-
-Besides an ISO code in any case (`12,50 eur такси`), the currency after the amount can be a sign
-or a word ([ADR-0046](docs/adrs/0046-currency-words-thousands-suffix-and-amount-last-text.md)).
-The full list is `CURRENCY_ALIASES` in [`src/domain/currencies.ts`](src/domain/currencies.ts):
-
-| Currency | Signs and words                                                    |
-| -------- | ------------------------------------------------------------------ |
-| EUR      | `€`, `евро`                                                        |
-| USD      | `$`, `долл`, `доллар`, `доллара`, `долларов`                       |
-| GBP      | `£`                                                                |
-| JPY      | `¥`                                                                |
-| RUB      | `₽`, `руб`, `руб.`, `рубль`, `рубля`, `рублей`; glued only: `р`, `р.` |
-| RSD      | `дин`, `дин.`, `динар`, `динара`, `динаров`, `din`, `din.`, `dinara` |
-| UAH      | `₴`, `грн`                                                         |
-| KZT      | `₸`, `тенге`                                                       |
-| TRY      | `₺`                                                                |
-| GEL      | `₾`, `лари`                                                        |
-
-A sign, `руб`, `руб.`, `дин`, `дин.`, `din`, `din.`, `грн`, `р` and `р.` may also touch the amount (`300€`, `€300`,
-`2500р`); the other words stand apart. A separate `р` stays description: `500 р кофе` is 500 «р
-кофе» in the default currency. The word leaves the description, so `4500 дин доставка` records
-«доставка».
-
-Two rules keep chat out of amount-last text: a `?` anywhere makes it a question, in every chat;
-and in a group, one of «в, к, до, через, с, по, около, после» right before the amount (`буду в
-7`, `через 10`) makes it chatter that gets no question. In a private chat amount-last text
-records at once, so `буду в 7` sent to the bot records 7.00, and its card's [Удалить] removes it.
-
-### Concepts
-
-- **Ledger.** Every expense belongs to a ledger, never directly to a person. Each user starts
-  with a personal ledger, and a group chat gets a shared one (see [In a group](#in-a-group)).
-  Every confirmation names the ledger it wrote to
-  ([ADR-0002](docs/adrs/0002-ledgers-and-identity.md)).
-- **Local date.** An expense is filed under the date in _your_ timezone when you sent it, so an
-  expense sent at 00:30 counts for the new day.
-- **Original currency.** Amounts are stored as sent. Reports and budgets convert them at read
-  time, never at record time
-  ([ADR-0003](docs/adrs/0003-currency-conversion-at-report-time.md)).
-- **Idempotent.** A message Telegram redelivers is never recorded twice.
+The site's architecture section («Как это устроено») explains the design for a technical
+reader; the decisions themselves are in [docs/adrs/](docs/adrs/README.md).
 
 ## Running locally
 
@@ -492,7 +98,70 @@ disk. Files older than both windows are deleted; an uncompressed `expenses-YYYY-
 from before compression counts as a daily by its date. A boot on a UTC day that already has a
 backup writes none, and a failed backup is logged as an `error` without stopping the bot.
 Deleted data can survive in a backup for `max(BACKUP_KEEP, 7 × BACKUP_KEEP_WEEKLY)` days (28 with
-the defaults), which is what `/delete_account` says.
+the defaults), which is what `/delete_account` says. A ledger sealed with a passphrase
+([ADR-0020](docs/adrs/0020-sealed-ledgers-write-open-read-locked.md)) is plaintext in backups
+taken before the switch until rotation (`BACKUP_KEEP`, `BACKUP_KEEP_WEEKLY`) drops them.
+
+### Admission and the admin
+
+The bot works by invitation
+([ADR-0024](docs/adrs/0024-admission-lives-in-the-database-via-invite-codes.md)). The admin
+(`ADMIN_TELEGRAM_ID`) sends `/invite` and gets a link `https://t.me/<bot>?start=<code>` that
+admits up to 10 people within 14 days; `/invite 30 7` makes one for 30 people and 7 days (each
+number from 1 to 1000). Opening the link starts the bot as a normal `/start`. A link that is used
+up, expired or switched off answers «Ссылка недействительна или истекла». Anyone else gets one
+«Бот работает по приглашениям» reply and then silence. `ADMIT_TELEGRAM_IDS` admits the listed ids
+at boot, without a link.
+
+Admin-only commands (anyone else gets the `/help` answer; the admin's [☰ Ещё] has a button for
+each):
+
+| Admin sends            | The bot does                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `/invite [uses days]`  | Makes an invite link                                                                               |
+| `/invites`             | Lists the live links with `used/max` and the expiry date, each with [Отключить] to switch it off   |
+| `/block <telegram id>` | Drops every update from that account, in private and in groups; `/unblock <telegram id>` undoes it |
+| `/stats`               | Admitted users, users and expenses of the last 7 days, live links. Counts only, no amounts         |
+| `/refund <charge id>`  | Returns a donation's Stars through Telegram and marks it refunded; a second call doesn't call Telegram |
+
+Limits for everyone but the admin: at most 30 updates per minute (the rest are dropped silently),
+and 20 receipts per local day («Лимит чеков на сегодня исчерпан, попробуйте завтра»). On a boot
+with a new version, the bot sends the admin a short «🆕 Версия X.Y.Z» note (ADR-0013).
+
+### Groups
+
+For a group's shared ledger ([ADR-0014](docs/adrs/0014-group-chats-bind-to-shared-ledgers.md)),
+in [@BotFather](https://t.me/BotFather) set `/setjoingroups` to Enabled and `/setprivacy` to
+Disabled, so the bot reads ordinary group messages. A privacy change applies only to groups the
+bot joins afterwards, so remove the bot from a group and add it again after changing it. Only an
+admitted user can add the bot; added by anyone else, it leaves.
+
+### Donations
+
+The bot is free for everyone, with no paid tier
+([ADR-0027](docs/adrs/0027-donations-only-funding.md)). At boot it creates one Telegram Stars
+invoice link per preset amount; a preset whose link can't be created is left out. `DONATE_URL`
+adds an external «Ko-fi» button to `/donate`. With no link and no `DONATE_URL`, `/donate` says
+donations are unavailable. A payment is checked before Telegram takes it (the currency must be
+Stars and the amount a preset) and stored once per Telegram charge id. The admin gets one notice
+per donation with the amount, the internal user id and the charge id, never a name.
+`/paysupport <текст>` relays a user's refund request to the admin.
+
+### Receipts
+
+A receipt is recorded offline from its QR code, then its shop and items are fetched from the tax
+authority's site ([ADR-0018](docs/adrs/0018-receipts-record-offline-enrich-async.md)). Besides
+Telegram and the NBS below, these are the only hosts the bot connects to, and only for that:
+
+- `suf.purs.gov.rs` (Serbia): the verify URL as JSON and as HTML, and `POST /specifications`
+- `mapr.tax.gov.me` (Montenegro): `POST /ic/api/verifyInvoice`
+
+### Currency conversion
+
+Reports convert at the NBS middle rate
+([ADR-0022](docs/adrs/0022-fx-nbs-middle-rate-ledger-currency.md)). A worker fetches the rate
+lists at boot and then hourly, so the bot needs outbound HTTPS to `webappcenter.nbs.rs`. If NBS
+can't be reached, reports fall back to per-currency blocks.
 
 ## Deploy
 
@@ -553,6 +222,37 @@ Manual redeploy, on the VPS: `~/bin/deploy-personal-expenses-bot`.
 If `git pull --ff-only` fails, someone edited the checkout on the VPS. Reset it to `origin/main`
 rather than forcing a merge.
 
+### GitHub Pages: the Mini App and the docs site
+
+One Pages artifact holds the Mini App
+([ADR-0025](docs/adrs/0025-static-mini-app-fragment-in-senddata-out.md)) at the root and the
+docs site ([ADR-0048](docs/adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md))
+under `docs/`. `.github/workflows/pages.yml` builds both on every push and pull request and
+deploys only a push to `main`, so a broken docs build also holds back a Mini App change.
+
+- The Mini App lives in `webapp/`: `index.html` plus TypeScript built by `pnpm build:webapp`
+  (plain `tsc`, no bundler, no runtime dependencies) into `webapp/dist/`. It makes no network
+  request: its CSP allows scripts from `telegram.org` and itself only. A visit whose fragment
+  carries no payload is sent on to `./docs/`.
+- The docs site lives in `site/`, a standalone Starlight project with its own lockfile under the
+  same release-age cooldown. `pnpm docs:chats` runs the scenarios in `scripts/docs-chats/`
+  through the bot in memory and writes the chat transcripts the pages draw; `pnpm docs:check`
+  fails when a menu command is on no guide page or an architecture page links a missing ADR.
+  `pnpm docs:build` does the whole build into `.pages/`, and `pnpm docs:dev` serves the site
+  locally.
+- Enable Pages with the source "GitHub Actions", then set `WEBAPP_URL` to the published root URL
+  (`https://igorkonovalov.github.io/personal_expenses_bot/`), without a `#fragment`. With
+  `WEBAPP_URL` set, the private menu gains «📷 Скан» and reports gain «📈 Диаграмма». Telegram
+  keeps showing an old menu until the next `/start` or `/help` reply.
+- Deploy the page before the bot when a change touches the chart payload: until the Pages run
+  has finished, the old page answers a new `#z=` button with its open-from-bot line.
+- The chart payload is capped at 2048 characters. To measure what your clients really open, run
+  `pnpm probe:webapp` with `BOT_TOKEN`, `ADMIN_TELEGRAM_ID` and `WEBAPP_URL` set (in the
+  environment or `.env`), after the page is published. It sends the admin one message with a
+  «Проба N» button per length, 2048 to 32768 characters. A button that opens showing its own
+  «Проба N» title arrived whole. A length the Bot API refuses is printed with its error; the
+  script prints only sizes and errors, never the token or a URL.
+
 ### Restoring a backup
 
 1. Stop the bot: `docker compose stop bot`.
@@ -575,15 +275,17 @@ read-only with any SQLite client.
 
 ## Development
 
-| Command          | What it does                                             |
-| ---------------- | -------------------------------------------------------- |
-| `pnpm dev`       | Runs the bot with `tsx watch`, loading `.env` if present |
-| `pnpm build`     | Compiles `src/` to `dist/` and copies the SQL migrations |
-| `pnpm start`     | Runs the compiled bot, `node dist/index.js`              |
-| `pnpm typecheck` | `tsc --noEmit`, strict                                   |
-| `pnpm lint`      | ESLint (type-aware), including the layer-boundary rules  |
-| `pnpm test`      | Vitest, against real in-memory SQLite (no DB mocks)      |
-| `pnpm format`    | Prettier                                                 |
+| Command           | What it does                                                    |
+| ----------------- | --------------------------------------------------------------- |
+| `pnpm dev`        | Runs the bot with `tsx watch`, loading `.env` if present        |
+| `pnpm build`      | Compiles `src/` to `dist/` and copies the SQL migrations        |
+| `pnpm start`      | Runs the compiled bot, `node dist/index.js`                     |
+| `pnpm typecheck`  | `tsc --noEmit`, strict                                          |
+| `pnpm lint`       | ESLint (type-aware), including the layer-boundary rules         |
+| `pnpm test`       | Vitest, against real in-memory SQLite (no DB mocks)             |
+| `pnpm format`     | Prettier                                                        |
+| `pnpm docs:build` | Builds the Mini App and the docs site into `.pages/`            |
+| `pnpm docs:dev`   | Generates the chats and serves the docs site locally            |
 
 The pre-commit hook runs Prettier on staged files, then typecheck, lint and tests.
 

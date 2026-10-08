@@ -1,0 +1,48 @@
+---
+title: Развёртывание и резервные копии
+description: Как бот собирается, выкатывается на сервер и сохраняет резервные копии.
+sidebar:
+  order: 7
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+<Mermaid
+  code={`flowchart LR
+  PR[pull request] --> CHECK[check: типы, линтер, сборка, тесты]
+  MAIN[push в main] --> CHECK
+  CHECK -->|только main| SSH[SSH-ключ с одной командой]
+  SSH --> SCRIPT[deploy-vps.sh]
+  SCRIPT --> PULL[git pull --ff-only]
+  PULL --> UP[docker compose up --build --wait]
+  MAIN --> PAGES[Pages: Mini App + этот сайт]`}
+/>
+
+## Образ
+
+В продакшене работает скомпилированный JavaScript из `dist/` в многоступенчатом Docker-образе
+([ADR-0006](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0006-production-runs-compiled-js.md)).
+Последний этап содержит только рабочие зависимости и запускается от uid 1000. Один файл Compose
+используется и локально, и на сервере. Состояние здоровья — файл-пульс рядом с базой, который
+бот обновляет каждые 30 секунд; устаревший файл делает контейнер «unhealthy».
+
+## Выкатка
+
+Каждый pull request и каждый push в `main` проходят проверку: типы, линтер, сборку и тесты. Push в
+`main` после проверки подключается к серверу по SSH ключом, которому разрешена ровно одна
+команда — скрипт выкатки. Он забирает код, пересобирает и поднимает контейнер и ждёт, пока тот
+станет здоровым. Выкатки идут по очереди, без наложения. О новой версии бот при запуске сообщает
+администратору
+([ADR-0013](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0013-version-announcements-at-boot.md)).
+
+Mini App и этот сайт собираются отдельным процессом в один артефакт GitHub Pages и
+публикуются только из `main`
+([ADR-0048](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)).
+
+## Резервные копии
+
+Бот делает копию базы при запуске и раз в сутки: онлайн-копию SQLite, сжатую gzip. Хранятся
+семь ежедневных и четыре воскресных копии
+([ADR-0044](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0044-compressed-backups-seven-daily-four-weekly.md)).
+Копии лежат в каталоге хоста вне контейнера. Восстановление — остановить бота, распаковать копию
+на место базы и запустить снова; при запуске применяются новые миграции.

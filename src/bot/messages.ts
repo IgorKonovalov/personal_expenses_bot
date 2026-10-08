@@ -641,6 +641,10 @@ function conversionNotes(
 // The privacy policy in the public repo; /privacy links it.
 const PRIVACY_URL = 'https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/PRIVACY.md';
 
+// The Russian user guide (ADR-0048), published beside the Mini App; /help links it.
+export const DOCS_URL = 'https://igorkonovalov.github.io/personal_expenses_bot/docs/';
+const helpDocsLine = html`Подробное руководство с примерами: ${DOCS_URL}`;
+
 // A group member with no stored display name: a deleted account, whose expenses stay in the
 // group's totals (ADR-0024).
 const DELETED_MEMBER = 'удалённый участник';
@@ -1342,6 +1346,7 @@ const CHANGELOG_URL =
 // What's new, per release, keyed `X.Y.Z` (ADR-0013). The version in package.json needs an entry:
 // messages.test.ts fails the gate otherwise. Bodies only; versionAnnouncement adds the envelope.
 const versionAnnouncements: Readonly<Record<string, Html>> = {
+  '0.36.0': html`Появилось подробное руководство на русском с примерами переписки: как записывать траты, смотреть итоги, вести бюджет, чеки, долги и группы. Ссылка на него есть и в /help: ${DOCS_URL}`,
   '0.35.0': html`Валюту можно указать словом или знаком после суммы: «300 € ремонт», «4500 дин доставка», «2500р такси». Тысячи пишутся буквой к: «45к шкаф». Сумму можно написать и в конце: «Чайник 3200». В личном чате такая трата записывается сразу, а в группе я сначала спрошу автора, записать ли; без ответа вопрос исчезнет через 15 минут.`,
   '0.34.0': html`Новые диаграммы. В отчёте по метке из /tags кнопка «📈 Диаграмма» показывает кольцо трат по категориям. На экране продукта в /prices она показывает столбиками цену за единицу по месяцам и траты по месяцам. Кнопка есть только в личном чате.`,
   '0.33.0': html`В диаграмме /week и /month нажмите на категорию, и под её строкой появятся столбики: сколько на неё ушло за показанный период и пять предыдущих. Повторное нажатие скрывает их.`,
@@ -1718,6 +1723,7 @@ export const messages = {
       html``,
       html`Общие траты семьи или компании: добавьте меня в группу. Там каждый записывает траты сам, а /month показывает итоги по категориям и по участникам. Личные траты отсюда в группу не попадают.`,
       html``,
+      helpDocsLine,
       helpDonateLine,
     ],
     '\n',
@@ -1738,6 +1744,7 @@ export const messages = {
       html`/help — эта подсказка`,
       html``,
       html`Личные траты из переписки со мной сюда не попадают.`,
+      helpDocsLine,
     ],
     '\n',
   ),

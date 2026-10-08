@@ -13,6 +13,13 @@ dist/
 # Runtime data (SQLite, backups, exports): real users' financial records
 /data/
 
+# The docs site (ADR-0048): generated transcripts, its build, and the assembled Pages artifact
+site/src/generated/
+site/dist/
+site/node_modules/
+site/.astro/
+.pages/
+
 # Coverage / logs
 coverage/
 *.log

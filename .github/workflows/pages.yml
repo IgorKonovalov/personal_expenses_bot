@@ -1,20 +1,18 @@
 name: Pages
 
-# Publishes the static Mini App page (webapp/, ADR-0025) to GitHub Pages. The page holds no data
-# and no secrets: it serves the same files to everyone.
+# Publishes one artifact to GitHub Pages: the static Mini App page (webapp/, ADR-0025) at the
+# root and the docs site (site/, ADR-0048) under docs/. Neither holds data or secrets: they serve
+# the same files to everyone. Pull requests run the build as a check and never deploy.
 on:
   push:
     branches: [main]
-    paths:
-      - 'webapp/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/pages.yml'
+  pull_request:
   workflow_dispatch:
 
-# One publish at a time; a newer push supersedes a queued one, never one in flight.
+# One publish at a time; a newer push supersedes a queued one, never one in flight. A pull
+# request builds in a group of its own, so it never queues behind a publish.
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('pages-{0}', github.ref) || 'pages' }}
   cancel-in-progress: false
 
 permissions:
@@ -30,14 +28,29 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            site/pnpm-lock.yaml
+      # The bot's dev dependencies: the chat generator runs the real bot in memory.
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir site install --frozen-lockfile
       - run: pnpm build:webapp
+      - run: pnpm docs:chats
+      # Every command in the bot's menus is on some guide page.
+      - run: pnpm docs:check
+      - run: pnpm --dir site build
+      - name: Assemble the Mini App at the root and the docs under docs/
+        run: |
+          mkdir -p .pages/docs
+          cp -R webapp/dist/. .pages/
+          cp -R site/dist/. .pages/docs/
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
-          path: webapp/dist
+          path: .pages
 
   deploy:
     needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write

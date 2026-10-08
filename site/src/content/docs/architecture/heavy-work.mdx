@@ -1,0 +1,55 @@
+---
+title: Чеки, выписки и тяжёлые задачи
+description: Как бот читает QR-коды чеков и PDF-выписки и почему это происходит в отдельном процессе.
+sidebar:
+  order: 4
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+## Чеки
+
+Чек записывается без сети, а подробности дописываются позже
+([ADR-0018](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0018-receipts-record-offline-enrich-async.md)).
+В QR-коде сербского или черногорского чека уже есть сумма, время и фискальный номер, поэтому
+трата записывается сразу. Фискальный номер — ключ, по которому повторный чек не записывается
+второй раз. Магазин и позиции фоновый обработчик загружает с сайта налоговой и обновляет
+карточку; при недоступности сайта он повторяет попытки с растущими паузами.
+
+QR-код с фото читает zxing-wasm
+([ADR-0019](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0019-qr-decoding-zxing-wasm.md)).
+Если JPEG не читается, попытка повторяется на обработанных пикселях
+([ADR-0034](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0034-qr-retry-on-preprocessed-pixels-jpeg-js.md)).
+Позиции чеков сводятся в продукты по правилам с ключевыми словами и поправками пользователя
+([ADR-0039](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0039-products-from-keyword-rules-and-per-user-overrides.md)).
+
+## Выписки
+
+PDF-выписку читает pdfjs-dist, загружаемый только при первой выписке
+([ADR-0033](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0033-pdf-statements-via-pdfjs-dist.md)).
+Из текста строятся строки с координатами, из них — покупки картой. Каждая покупка сверяется с
+уже записанными тратами: та же сумма и валюта в пределах дня считается записанной
+([ADR-0032](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0032-statement-rows-match-recorded-expenses.md)).
+Файл читается в памяти и не сохраняется.
+
+## Тяжёлые задачи
+
+Разбор фото и PDF занимает память и время, а бот работает на небольшом сервере. Поэтому
+обработчик не делает эту работу сам: он ставит задачу в ограниченную очередь и сразу
+освобождается. Очередь выполняет задачи по одной, каждую — в свежем дочернем процессе, который
+загружает только декодеры, никогда не загружает сам бот и завершается после задачи, возвращая
+память. Запись траты и ответ после разбора выполняются уже в процессе бота
+([ADR-0036](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0036-stay-on-node-memory-work-targets-heavy-jobs.md),
+[ADR-0042](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md)).
+
+<Mermaid
+  code={`flowchart LR
+  H[обработчик фото или PDF] -->|задача| Q[очередь с ограничением]
+  Q --> C[дочерний процесс: zxing-wasm, pdfjs-dist]
+  C -->|сумма, дата, строки| S[services]
+  S --> DB[(SQLite)]
+  S --> R[ответ в чат]`}
+/>
+
+Дочерний процесс, превысивший ограничение по времени, завершается принудительно. Если очередь
+заполнена, отправителя просят повторить позже.

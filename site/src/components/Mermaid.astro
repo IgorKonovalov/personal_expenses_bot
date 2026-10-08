@@ -1,0 +1,46 @@
+---
+// A mermaid diagram, drawn in the browser by the pinned `mermaid` package that Astro bundles
+// (ADR-0048): no CDN and no headless browser at build time. The script ships only with pages
+// that use this component. The diagram redraws when Starlight's theme switches.
+interface Props {
+  readonly code: string;
+}
+
+const { code } = Astro.props;
+---
+
+<pre class="mermaid-diagram not-content" data-source={code}>{code}</pre>
+
+<script>
+  import mermaid from 'mermaid';
+
+  const diagrams = [...document.querySelectorAll<HTMLElement>('pre.mermaid-diagram')];
+
+  async function draw(): Promise<void> {
+    const dark = document.documentElement.dataset['theme'] === 'dark';
+    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' });
+    for (const diagram of diagrams) {
+      diagram.removeAttribute('data-processed');
+      diagram.textContent = diagram.dataset['source'] ?? '';
+    }
+    await mermaid.run({ nodes: diagrams });
+  }
+
+  void draw();
+  new MutationObserver(() => void draw()).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+</script>
+
+<style>
+  .mermaid-diagram {
+    display: flex;
+    justify-content: center;
+    margin-block: 1.5rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background: transparent;
+    overflow-x: auto;
+  }
+</style>
