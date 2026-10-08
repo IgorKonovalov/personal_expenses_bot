@@ -7,6 +7,44 @@ a run, check that the previous run's open items were acted on. Newest run first.
 
 Status: `open`, `done (<commit>)` or `dropped (<why>)`.
 
+## 2026-10-08 06:43 to 21:37: Plans 0045, 0047 and 0046
+
+Queue `a`: 0045, 0046, 0047 (0046 after 0045). Merged 0045 (v0.35.0), 0047 (v0.36.0) and 0046
+(v0.37.0); 0046 took 1 fix round, the others 0. 1 park, 14 h 53 min wall including an 11 h 20 min
+machine suspend inside 0047's implement step, $52.79. The session survived the suspend and went on
+by itself. Each plan's live check is owed after the push.
+
+### Hand interventions
+
+| # | Plan | Park | What was done by hand |
+|---|---|---|---|
+| H12 | 0047 | none (before the run) | Phase 6 is a live check after the push but carried no `Blocks merge:` line (F37). Marked `Blocks merge: no` (`1cdcf05`). |
+| H13 | 0045-0047 | none (before the run) | `ready` was run on the three plans at once; only one readiness record survived, so `check` refused the other two. Re-ran them one at a time. |
+| H14 | 0046 | `api` in implement | A DNS failure (`EAI_AGAIN`) ended the session after Phase 1. `resume` refused over 6 uncommitted lines of a half-started Phase 2; restored them, then `resume`. |
+
+### Followups
+
+| # | Owner | Followup | Status |
+|---|---|---|---|
+| F40 | conductor (dev) | **Concurrent `ready` runs lose records** (H13): each rewrites the readiness file, last writer wins. Lock it, or merge on write. | open |
+| F41 | conductor (dev) | **An `api` park on a network error is mechanical** (H14): a transient `EAI_AGAIN` or similar should retry once after a pause, and the half-done work be stashed or left for the re-run, as `usage_limit` waits. | open |
+| F42 | conductor (dev) | **Review sessions are denied read-only `grep` with quoted patterns and a `cd` into the lane** (0047 review, four times). Check whether these are the CLI's substitution guard (as F8) or the allowlist, and steer the review prompt to Grep. | open |
+| F43 | architect | **0047's close left a `.claude/` edit for the owner:** the architect skill's close lens 4 should name the docs site's guide pages beside README and `/help` (`finding 0047 0`). | open |
+| F44 | owner | `claude` 2.1.291 runs unverified (patch warning). Verify and add to `VERIFIED_CLI`. | open |
+| F45 | - | `prune` the merged 0045-0047 from `queue.json`. | open |
+
+F32 (idle timeout) did not bite this time: the suspended session came back on its own. F28-F39 are
+still open.
+
+### Open product findings from the closes
+
+- 0045 minor `src/domain/expenseText.ts:734`: `Евро кубок 300` records 300.00 EUR «кубок», the
+  description's first word taken as a currency. Worth a fix before 0046's imports read old chat.
+- 0045 nit `src/services/groupChats.ts:244`, 0046 minor `importChat.test.ts:84` (no test with a
+  non-default ledger timezone or currency), 0046 nit `importChat.ts:1251` (`totalsOf` duplicates
+  `sumByCurrency`).
+- 0047's five nits were repaired by the close; record them `--done`.
+
 ## 2026-10-07 14:25 to 18:37: Plans 0040 to 0044
 
 Queue `a`: 0040, 0041, 0042, 0043, 0044. Merged 0040 (v0.30.0), 0041 (v0.31.0), 0042 (v0.32.0),
