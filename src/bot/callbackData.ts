@@ -39,6 +39,15 @@ export function groupRestoreData(expenseId: ExpenseId): string {
   return assertCallbackData(`grp:res:${expenseId}`);
 }
 
+// The question to an amount-last group message (ADR-0046): [Записать] `gask:ok:<messageId>`,
+// [Не трата] `gask:no:<messageId>` (at most 18 bytes). The chat comes from the update; the
+// question's stored row is the guard.
+export const GROUP_ASK = /^gask:(ok|no):(\d{1,10})$/;
+
+export function groupAskData(action: 'ok' | 'no', messageId: number): string {
+  return assertCallbackData(`gask:${action}:${messageId}`);
+}
+
 // A reading of an ambiguous amount: `amb:t` thousands, `amb:d` decimal. The amount itself isn't
 // in the data; the tap re-parses the message the question replies to.
 export const AMBIGUOUS_READING = /^amb:([td])$/;

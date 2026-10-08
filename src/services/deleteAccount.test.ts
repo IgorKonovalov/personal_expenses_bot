@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../db/connection.js';
+import { insertGroupAsk } from '../db/groupAsks.js';
 import { setItemProduct } from '../db/itemProducts.js';
 import { runMigrations } from '../db/migrate.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
@@ -130,6 +131,37 @@ describe('deleteAccount', () => {
     expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
 
     expect(db.prepare('SELECT user_id FROM user_notices').pluck().all()).toEqual([bob.id]);
+  });
+
+  it("deletes the questions pending on the user's group messages and no one else's", () => {
+    const shared = '30000000-0000-4000-8000-000000000001' as LedgerId;
+    insertLedger(db, {
+      id: shared,
+      kind: 'shared',
+      name: 'Семья',
+      defaultCurrency: 'RSD',
+      timezone: 'Europe/Belgrade',
+      ownerUserId: alice.id,
+      createdAt: NOW,
+    });
+    const ask = (messageId: number, senderTelegramId: string) =>
+      insertGroupAsk(db, {
+        chatId: '-100500',
+        messageId,
+        ledgerId: shared,
+        senderTelegramId,
+        text: 'Синтетика 3200',
+        sentAt: NOW,
+        askMessageId: messageId + 100,
+        createdAt: NOW,
+      });
+    ask(11, '1001');
+    ask(12, '1001');
+    ask(13, '2002');
+
+    expect(deleteAccount(deps(), { telegramId: 1001, now: NOW })).toBe('deleted');
+
+    expect(db.prepare('SELECT message_id FROM group_asks').pluck().all()).toEqual([13]);
   });
 
   it("deletes the personal ledger's summary push claims", () => {

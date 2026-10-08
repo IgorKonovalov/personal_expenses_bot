@@ -1,6 +1,15 @@
 import type { CurrencyCode } from '../domain/currencies.js';
-import { parseExpenseText } from '../domain/expenseText.js';
+import { chatterShaped, parseExpenseText, readTrailingExpense } from '../domain/expenseText.js';
+import type { Money } from '../domain/money.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
+import { findExpenseBySourceKey } from '../db/expenses.js';
+import {
+  deleteGroupAsk,
+  findGroupAsk,
+  insertGroupAsk,
+  listGroupAsksCreatedBy,
+  type GroupAsk,
+} from '../db/groupAsks.js';
 import {
   findLedgerChat,
   insertLedgerChat,
@@ -162,6 +171,8 @@ export function recordGroupExpense(
     readonly sourceKey: string;
     readonly occurredAt: Date;
     readonly now: Date;
+    // `any` also records amount-last text: an answered question (ADR-0046).
+    readonly forms?: 'leading' | 'any';
   },
 ): GroupRecordResult {
   const { db } = deps;
@@ -169,9 +180,12 @@ export function recordGroupExpense(
   if (ledger === undefined || ledger.timezone === null) return { kind: 'ignored' };
   const timezone = resolveLedgerTimezone(deps, { id: ledger.id, timezone: ledger.timezone });
   const sentOn = localDateOf(input.occurredAt, timezone);
-  if (parseExpenseText(input.text, ledger.defaultCurrency, sentOn).kind !== 'expense') {
-    return { kind: 'ignored' };
-  }
+  const leading = parseExpenseText(input.text, ledger.defaultCurrency, sentOn);
+  const parsed =
+    leading.kind === 'notExpense' && input.forms === 'any'
+      ? readTrailingExpense(input.text, ledger.defaultCurrency, sentOn)
+      : leading;
+  if (parsed.kind !== 'expense') return { kind: 'ignored' };
   return db.transaction((): GroupRecordResult => {
     const user = ensureSender(deps, input.sender, timezone, input.now);
     joinMember(db, {
@@ -187,7 +201,160 @@ export function recordGroupExpense(
       sourceKey: input.sourceKey,
       occurredAt: input.occurredAt,
       now: input.now,
+      ...(input.forms === undefined ? {} : { forms: input.forms }),
     });
     return result.kind === 'recorded' ? { ...result, sentOn } : { kind: 'ignored' };
   })();
+}
+
+// An amount-last group message (ADR-0046) is asked about before it records. The question
+// expires this long after it is asked.
+export const GROUP_ASK_TTL_MS = 15 * 60 * 1000;
+
+export interface GroupAskOffer {
+  readonly ledger: Ledger;
+  readonly money: Money;
+  readonly description: string;
+  // The expense's date, and the ledger's local date of the message.
+  readonly date: LocalDate;
+  readonly sentOn: LocalDate;
+}
+
+// The question to ask about a group message, or undefined for none: an unbound chat, text that
+// reads amount-first (recordGroupExpense's), text that doesn't read amount-last as a plain
+// expense (ambiguous, future-dated, too many tags, invalid), chatter («буду в 7»), and a message
+// already asked about or recorded. Reads only.
+export function groupAskFor(
+  deps: GroupDeps,
+  input: {
+    readonly chatId: number;
+    readonly messageId: number;
+    readonly text: string;
+    readonly occurredAt: Date;
+  },
+): GroupAskOffer | undefined {
+  const { db } = deps;
+  const ledger = boundLedger(deps, input.chatId);
+  if (ledger === undefined || ledger.timezone === null) return undefined;
+  const timezone = resolveLedgerTimezone(deps, { id: ledger.id, timezone: ledger.timezone });
+  const sentOn = localDateOf(input.occurredAt, timezone);
+  if (parseExpenseText(input.text, ledger.defaultCurrency, sentOn).kind !== 'notExpense') {
+    return undefined;
+  }
+  const parsed = readTrailingExpense(input.text, ledger.defaultCurrency, sentOn);
+  if (parsed.kind !== 'expense' || chatterShaped(input.text, sentOn)) return undefined;
+  if (findGroupAsk(db, chatKey(input.chatId), input.messageId) !== undefined) return undefined;
+  if (findExpenseBySourceKey(db, groupSourceKey(input.chatId, input.messageId)) !== undefined) {
+    return undefined;
+  }
+  return {
+    ledger,
+    money: { amountMinor: parsed.amountMinor, currency: parsed.currency },
+    description: parsed.description,
+    date: parsed.date ?? sentOn,
+    sentOn,
+  };
+}
+
+// Stores the question once it is sent. False when the message already had one.
+export function saveGroupAsk(
+  { db, logger }: GroupDeps,
+  input: {
+    readonly chatId: number;
+    readonly messageId: number;
+    readonly ledgerId: LedgerId;
+    readonly senderTelegramId: number;
+    readonly text: string;
+    readonly sentAt: Date;
+    readonly askMessageId: number;
+    readonly now: Date;
+  },
+): boolean {
+  const saved = insertGroupAsk(db, {
+    chatId: chatKey(input.chatId),
+    messageId: input.messageId,
+    ledgerId: input.ledgerId,
+    senderTelegramId: String(input.senderTelegramId),
+    text: input.text,
+    sentAt: input.sentAt,
+    askMessageId: input.askMessageId,
+    createdAt: input.now,
+  });
+  if (saved) logger.info({ ledgerId: input.ledgerId }, 'group expense asked');
+  return saved;
+}
+
+export type GroupAskAnswer =
+  | {
+      readonly kind: 'recorded';
+      readonly recorded: Extract<GroupRecordResult, { kind: 'recorded' }>;
+    }
+  | { readonly kind: 'dismissed' }
+  // The tapper is not the message's sender: nothing changes.
+  | { readonly kind: 'notSender' }
+  // No question, and the message's expense exists: a second tap, or a redelivered one.
+  | { readonly kind: 'alreadyRecorded' }
+  // No question and no expense: it expired, or was dismissed.
+  | { readonly kind: 'gone' };
+
+// The sender's answer to a question. Deleting the row claims it, in the transaction that
+// records, so a second tap finds no row. [Записать] records the message's own text under its
+// source key, dated by the message.
+export function answerGroupAsk(
+  deps: GroupDeps,
+  input: {
+    readonly chatId: number;
+    readonly messageId: number;
+    readonly tapper: GroupSender;
+    readonly answer: 'record' | 'dismiss';
+    readonly now: Date;
+  },
+): GroupAskAnswer {
+  const { db, logger } = deps;
+  const sourceKey = groupSourceKey(input.chatId, input.messageId);
+  return db.transaction((): GroupAskAnswer => {
+    const ask = findGroupAsk(db, chatKey(input.chatId), input.messageId);
+    if (ask === undefined) {
+      return findExpenseBySourceKey(db, sourceKey) === undefined
+        ? { kind: 'gone' }
+        : { kind: 'alreadyRecorded' };
+    }
+    if (ask.senderTelegramId !== String(input.tapper.telegramId)) return { kind: 'notSender' };
+    deleteGroupAsk(db, ask.chatId, ask.messageId);
+    if (input.answer === 'dismiss') {
+      logger.info({ ledgerId: ask.ledgerId }, 'group ask dismissed');
+      return { kind: 'dismissed' };
+    }
+    const recorded = recordGroupExpense(deps, {
+      chatId: input.chatId,
+      sender: input.tapper,
+      text: ask.text,
+      sourceKey,
+      occurredAt: ask.sentAt,
+      now: input.now,
+      forms: 'any',
+    });
+    return recorded.kind === 'recorded' ? { kind: 'recorded', recorded } : { kind: 'gone' };
+  })();
+}
+
+// The questions whose time ran out by `now`.
+export function dueGroupAsks({ db }: Pick<GroupDeps, 'db'>, now: Date): GroupAsk[] {
+  return listGroupAsksCreatedBy(db, new Date(now.getTime() - GROUP_ASK_TTL_MS));
+}
+
+// Claims an expired question: true when this call deleted its row, so the caller deletes the
+// question message once.
+export function expireGroupAsk(
+  { db, logger }: Pick<GroupDeps, 'db' | 'logger'>,
+  ask: Pick<GroupAsk, 'chatId' | 'messageId' | 'ledgerId'>,
+): boolean {
+  const claimed = db.transaction(() => deleteGroupAsk(db, ask.chatId, ask.messageId))();
+  if (claimed) logger.info({ ledgerId: ask.ledgerId }, 'group ask expired');
+  return claimed;
+}
+
+// The source key of a group message, the same as recordGroupExpense's callers build.
+function groupSourceKey(chatId: number, messageId: number): string {
+  return `tg:${chatId}:${messageId}`;
 }

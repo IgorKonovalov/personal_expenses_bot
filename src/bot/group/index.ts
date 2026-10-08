@@ -3,6 +3,7 @@ import { accessOf } from '../../services/admission.js';
 import type { AdminDeps } from '../bot.js';
 import { callbackDispatcher } from '../callbacks.js';
 import { registerActivation } from './activation.js';
+import { registerGroupAsk } from './ask.js';
 import { registerGroupCard } from './card.js';
 import { registerGroupExport } from './export.js';
 import { registerGroupHelp } from './help.js';
@@ -43,6 +44,7 @@ export function groupComposer(deps: GroupHandlerDeps): Composer<Context> {
   group.use(callbackDispatcher());
   registerActivation(group, deps);
   registerGroupCard(group, deps);
+  registerGroupAsk(group, deps);
   registerGroupSummary(group, deps);
   registerGroupExport(group, deps);
   registerGroupHelp(group, deps);

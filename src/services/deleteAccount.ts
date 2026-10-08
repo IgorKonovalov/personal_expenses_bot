@@ -4,6 +4,7 @@ import type { Db } from '../db/connection.js';
 import { deleteUserDebts } from '../db/debts.js';
 import { deleteLedgerExpenses } from '../db/expenses.js';
 import { deleteFlowSession } from '../db/flowSessions.js';
+import { deleteSenderGroupAsks } from '../db/groupAsks.js';
 import { deleteUserItemProducts } from '../db/itemProducts.js';
 import { clearMemberDisplayNames, deleteLedger, findPersonalLedger } from '../db/ledgers.js';
 import { deleteUserNotices } from '../db/notices.js';
@@ -19,7 +20,8 @@ import type { LedgerKeyring } from './ledgerKeys.js';
 // /delete_account (ADR-0024). One transaction hard-deletes the personal ledger with every
 // expense, receipt and its items, budget, cap, category, sealed key and membership, every
 // recurring rule and reminder the user made in any ledger with its occurrences, the ledger's
-// summary push claims, every debt person and operation (ADR-0030), then the user's flow session, one-time notices (ADR-0037),
+// summary push claims, every debt person and operation (ADR-0030), the questions pending on
+// their group messages (ADR-0046), then the user's flow session, one-time notices (ADR-0037),
 // tips (ADR-0028), item name corrections and own products (ADR-0039) and identity, and leaves the users row as a tombstone: `deleted_at` set,
 // admission and the active ledger cleared, and the display name forgotten in every group. The
 // user's expenses in group ledgers stay, so the group's totals don't change; they show under a
@@ -63,6 +65,7 @@ export function deleteAccount(
       deleteLedgerSummaryPushes(db, personal.id);
       deleteLedger(db, personal.id);
     }
+    deleteSenderGroupAsks(db, String(input.telegramId));
     deleteFlowSession(db, userId);
     deleteUserNotices(db, userId);
     deleteUserTips(db, userId);

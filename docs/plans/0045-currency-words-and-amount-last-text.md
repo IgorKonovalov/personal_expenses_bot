@@ -340,8 +340,8 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | 0fd5d2b |
-| 2: Amount-last text in the private chat | dev | done | committed with this row |
-| 3: Amount-last text in a group asks first | dev | not started | |
+| 2: Amount-last text in the private chat | dev | done | 340c2a9 |
+| 3: Amount-last text in a group asks first | dev | done | committed with this row |
 | 4: Help, README and the group help | dev | not started | |
 | 5: Live check | human | not started | |
 
@@ -364,6 +364,17 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
   `parseExpenseText('Аренда 2')` is `notExpense`, in `expenseText.test.ts`, because
   `recurring.test.ts` is not in the phase's files. `parseCategoryName('Кофе 2')` is tested there
   too.
+- Phase 3: `src/bot/callbacks.ts`, `src/bot/group/card.ts` and `src/bot/testHarness.ts` are
+  unchanged. The group tests give the question a message id with the harness's existing
+  `withMessageIds`.
+- Phase 3: `groupAskRecord` takes `{ money, description, date, sentOn }` and builds the «за …»
+  part itself, the same way `groupExpenseLine` does, in place of the plan's `when` argument.
+- Phase 3: the asking code is `askGroupExpense` in `src/bot/group/ask.ts`, called from
+  `group/text.ts`. The service side is `groupAskFor`, `saveGroupAsk`, `answerGroupAsk`,
+  `dueGroupAsks` and `expireGroupAsk` in `groupChats.ts`. A message that already has a row, or
+  already has an expense under its source key, gets no second question.
+- Phase 3, done-when «After A's `/delete_account`, A's pending rows are gone»: tested at the
+  service level in `deleteAccount.test.ts`, not through the bot.
 
 ### Close triggers
 

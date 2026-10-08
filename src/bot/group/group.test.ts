@@ -37,8 +37,10 @@ import {
   createTestBot,
   groupMessageUpdate,
   groupTextUpdate,
+  logContent,
   myChatMemberUpdate,
   textUpdate,
+  withMessageIds,
 } from '../testHarness.js';
 
 // A = ALLOWED_ID (Belgrade, personal ledger in RSD), B = STRANGER_ID (never DMed the bot),
@@ -51,6 +53,7 @@ interface HarnessOptions {
   readonly failMethods?: readonly string[];
   readonly now?: Date;
   readonly tips?: boolean;
+  readonly logLevel?: 'info' | 'silent';
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -1568,5 +1571,286 @@ describe('tags in a bound group (Plan 0012)', () => {
     await test.say(STRANGER_ID, '/tags', 3);
 
     expect(sentText(test.calls.at(-1))).toBe(`<b>Метки — «${GROUP_TITLE}»</b>\n#рим — 750.00 RSD`);
+  });
+});
+
+describe('amount-last text in a group asks first (ADR-0046)', () => {
+  // Wednesday 7 October, 12:00 in Belgrade.
+  const SENT = new Date('2026-10-07T10:00:00Z');
+  const TAPPED = new Date('2026-10-07T10:05:00Z');
+  // The question is the first message the bot sends after the binding: id 501.
+  const QUESTION_ID = 501;
+
+  async function asking(options: HarnessOptions = {}) {
+    const test = await bound({ now: TAPPED, ...options });
+    withMessageIds(test.bot, QUESTION_ID - 1);
+    return test;
+  }
+
+  const answerTap = (test: Awaited<ReturnType<typeof asking>>, fromId: number, data: string) =>
+    test.tap(fromId, data, { chatId: GROUP_ID, messageId: QUESTION_ID });
+
+  function asks(db: Db): unknown[] {
+    return db.prepare('SELECT * FROM group_asks').all();
+  }
+
+  function questionCall(text: string, messageId = 11) {
+    return {
+      method: 'sendMessage',
+      payload: {
+        chat_id: GROUP_ID,
+        text,
+        reply_parameters: { message_id: messageId },
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Записать', callback_data: `gask:ok:${messageId}` },
+              { text: 'Не трата', callback_data: `gask:no:${messageId}` },
+            ],
+          ],
+        },
+        disable_notification: true,
+        ...htmlParseMode,
+      },
+    };
+  }
+
+  it("replies once to A's Чайник 3200 with a silent question and records nothing yet", async () => {
+    const test = await asking();
+
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+
+    expect(test.calls).toEqual([questionCall('Записать <b>3 200.00 RSD</b> — Чайник?')]);
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toEqual([]);
+    expect(asks(test.db)).toEqual([
+      {
+        chat_id: String(GROUP_ID),
+        message_id: 11,
+        ledger_id: groupLedgerId(test.db),
+        sender_telegram_id: String(ALLOWED_ID),
+        text: 'Чайник 3200',
+        sent_at: '2026-10-07T10:00:00.000Z',
+        ask_message_id: QUESTION_ID,
+        created_at: '2026-10-07T10:05:00.000Z',
+      },
+    ]);
+  });
+
+  it('names the date of Чайник 3200 вчера and records it on that date', async () => {
+    const test = await asking();
+
+    await test.say(ALLOWED_ID, 'Чайник 3200 вчера', 11, { date: SENT });
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+
+    expect(test.calls[0]).toEqual(
+      questionCall('Записать <b>3 200.00 RSD</b> — Чайник за 6 октября?'),
+    );
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toMatchObject([
+      { amount_minor: 320000, description: 'Чайник', occurred_on: '2026-10-06' },
+    ]);
+  });
+
+  it("records A's [Записать] at 10:05 as A's expense of the message's 10:00, and drops the row", async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+
+    expect(
+      test.db
+        .prepare(
+          'SELECT created_by, amount_minor, currency, occurred_at, source_key FROM expenses WHERE ledger_id = ?',
+        )
+        .all(groupLedgerId(test.db)),
+    ).toEqual([
+      {
+        created_by: userOf(test.db, ALLOWED_ID)?.id,
+        amount_minor: 320000,
+        currency: 'RSD',
+        occurred_at: '2026-10-07T10:00:00.000Z',
+        source_key: `tg:${GROUP_ID}:11`,
+      },
+    ]);
+    expect(asks(test.db)).toEqual([]);
+  });
+
+  it('edits the question into the card for an expense in «Другое»', async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Синтетика 3200', 11, { date: SENT });
+    test.calls.length = 0;
+
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+
+    expect(test.calls.map((call) => call.method)).toEqual([
+      'answerCallbackQuery',
+      'editMessageText',
+    ]);
+    expect(test.calls[1]?.payload).toMatchObject({
+      chat_id: GROUP_ID,
+      message_id: QUESTION_ID,
+      text: 'Test: <b>3 200.00 RSD</b> — Синтетика · Другое',
+    });
+  });
+
+  it('reacts on the message and deletes the question for a recognised category', async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Такси 450', 11, { date: SENT });
+    test.calls.length = 0;
+
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+
+    expect(test.calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as unknown },
+      },
+      {
+        method: 'setMessageReaction',
+        payload: {
+          chat_id: GROUP_ID,
+          message_id: 11,
+          reaction: [{ type: 'emoji', emoji: messages.groupRecordedReaction }],
+        },
+      },
+      { method: 'deleteMessage', payload: { chat_id: GROUP_ID, message_id: QUESTION_ID } },
+    ]);
+  });
+
+  it('answers a second tap and a redelivered tap «Уже записано», recording once', async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+    const redelivered = callbackUpdate({
+      updateId: 900,
+      data: 'gask:ok:11',
+      fromId: ALLOWED_ID,
+      chatId: GROUP_ID,
+      messageId: QUESTION_ID,
+    });
+    test.calls.length = 0;
+
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+    await test.bot.handleUpdate(redelivered);
+    await test.bot.handleUpdate(redelivered);
+
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toHaveLength(1);
+    const toasts = test.calls
+      .filter((call) => call.method === 'answerCallbackQuery')
+      .map((call) => (call.payload as { text?: string }).text);
+    expect(toasts).toEqual(['Уже записано', 'Уже записано', 'Уже записано']);
+  });
+
+  it('answers a tap on an expired question «Вопрос устарел…», drops the keyboard and records nothing', async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+    test.db.prepare('DELETE FROM group_asks').run();
+    test.calls.length = 0;
+
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+
+    expect(test.calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: {
+          callback_query_id: expect.any(String) as unknown,
+          text: 'Вопрос устарел. Отправьте трату ещё раз.',
+        },
+      },
+      {
+        method: 'editMessageReplyMarkup',
+        payload: {
+          chat_id: GROUP_ID,
+          message_id: QUESTION_ID,
+          reply_markup: { inline_keyboard: [] },
+        },
+      },
+    ]);
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toEqual([]);
+  });
+
+  it("answers B's tap on A's question «Ответить может только автор сообщения»", async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+    test.calls.length = 0;
+
+    await answerTap(test, STRANGER_ID, 'gask:ok:11');
+    await answerTap(test, STRANGER_ID, 'gask:no:11');
+
+    const toasts = test.calls.map((call) => (call.payload as { text?: string }).text);
+    expect(toasts).toEqual([
+      'Ответить может только автор сообщения',
+      'Ответить может только автор сообщения',
+    ]);
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toEqual([]);
+    expect(asks(test.db)).toHaveLength(1);
+  });
+
+  it('deletes the question and the row on [Не трата], recording nothing', async () => {
+    const test = await asking();
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+    test.calls.length = 0;
+
+    await answerTap(test, ALLOWED_ID, 'gask:no:11');
+
+    expect(test.calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: expect.any(String) as unknown },
+      },
+      { method: 'deleteMessage', payload: { chat_id: GROUP_ID, message_id: QUESTION_ID } },
+    ]);
+    expect(asks(test.db)).toEqual([]);
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toEqual([]);
+  });
+
+  it.each(['буду в 7', 'Через 10', 'Будешь в 7?', 'Лампа 1.500'])(
+    'asks nothing about %j and stores nothing',
+    async (text) => {
+      const test = await asking();
+
+      await test.say(ALLOWED_ID, text, 11, { date: SENT });
+
+      expect(test.calls).toEqual([]);
+      expect(asks(test.db)).toEqual([]);
+      expect(expensesIn(test.db, groupLedgerId(test.db))).toEqual([]);
+    },
+  );
+
+  it('records 3200 чайник at once, with no question', async () => {
+    const test = await asking();
+
+    await test.say(ALLOWED_ID, '3200 чайник', 11, { date: SENT });
+
+    expect(expensesIn(test.db, groupLedgerId(test.db))).toMatchObject([
+      { amount_minor: 320000, description: 'чайник' },
+    ]);
+    expect(asks(test.db)).toEqual([]);
+    expect(JSON.stringify(test.calls)).not.toContain('gask:');
+  });
+
+  it('asks nothing in an unbound group', async () => {
+    const test = harness({ now: TAPPED });
+
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+
+    expect(test.calls).toEqual([]);
+    expect(asks(test.db)).toEqual([]);
+  });
+
+  it('logs neither the text nor the amount above debug', async () => {
+    const test = await asking({ logLevel: 'info' });
+
+    await test.say(ALLOWED_ID, 'Чайник 3200', 11, { date: SENT });
+    await answerTap(test, ALLOWED_ID, 'gask:ok:11');
+    await test.say(ALLOWED_ID, 'Шкаф 4500', 12, { date: SENT });
+    await answerTap(test, ALLOWED_ID, 'gask:no:12');
+
+    expect(test.logLines.some((line) => line.includes('group expense asked'))).toBe(true);
+    for (const line of test.logLines) {
+      const content = logContent(line);
+      for (const secret of ['Чайник', 'Шкаф', '3200', '320000', '4500']) {
+        expect(content).not.toContain(secret);
+      }
+    }
   });
 });

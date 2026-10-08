@@ -1613,6 +1613,27 @@ export const messages = {
   // A deep link to the author's DM card, shown only to an admitted author (ADR-0014, ADR-0024).
   groupEditInDmButton: 'Изменить в личке',
   groupNotAuthor: 'Это может только тот, кто записал трату',
+  // The question to an amount-last group message (ADR-0046). The date shows only when the
+  // expense's date differs from the message's local date: `Чайник 3200 вчера`.
+  groupAskRecord: ({
+    money,
+    description,
+    date,
+    sentOn,
+  }: {
+    money: Money;
+    description: string;
+    date: LocalDate;
+    sentOn: LocalDate;
+  }): Html => {
+    const when = date === sentOn ? '' : ` за ${shownDate(date, sentOn)}`;
+    return html`Записать <b>${formatMoney(money)}</b> — ${shownDescription(description)}${when}?`;
+  },
+  groupAskRecordButton: 'Записать',
+  groupAskNotExpenseButton: 'Не трата',
+  groupAskNotSender: 'Ответить может только автор сообщения',
+  groupAskAlreadyRecorded: 'Уже записано',
+  groupAskGone: 'Вопрос устарел. Отправьте трату ещё раз.',
   // The group's /settings, for the ledger's owner: the settings open in the DM.
   groupSettingsLink: html`Настройки группы — часовой пояс и валюта — открываются в личной переписке со мной.`,
   groupSettingsButton: 'Открыть настройки',

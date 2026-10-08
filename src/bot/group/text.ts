@@ -5,11 +5,13 @@ import { isAdmitted } from '../../services/admission.js';
 import { boundLedger, recordGroupExpense } from '../../services/groupChats.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
+import { askGroupExpense } from './ask.js';
 import { reacted, replyGroupCard } from './card.js';
 import type { GroupHandlerDeps } from './index.js';
 
 // A group message that parses as an expense is recorded in the bound ledger under its sender.
-// Everything else is chatter: no reply, nothing stored. Messages sent on behalf of a chat
+// Amount-last text gets a question first (ADR-0046). Everything else is chatter: no reply,
+// nothing stored. Messages sent on behalf of a chat
 // (anonymous admins, linked channels) and from bots never record.
 
 export function fromPerson(message: Message): boolean {
@@ -36,8 +38,10 @@ export function registerGroupText(group: Composer<Context>, deps: GroupHandlerDe
       occurredAt: new Date(message.date * 1000),
       now,
     });
-    // A `/N` split records nothing in a bound group: the group splits every expense itself.
     if (result.kind === 'ignored') {
+      // Amount-last text records only once its sender answers the question (ADR-0046).
+      if (await askGroupExpense(ctx, deps, message)) return;
+      // A `/N` split records nothing in a bound group: the group splits every expense itself.
       const parsed = parseExpenseText(message.text, deps.defaultCurrency);
       if ('split' in parsed && boundLedger(deps, ctx.chat.id) !== undefined) {
         await replyHtml(ctx, messages.splitInGroup, {

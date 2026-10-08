@@ -3,10 +3,15 @@ import { openDatabase, type Db } from '../db/connection.js';
 import { runMigrations } from '../db/migrate.js';
 import { createLogger } from '../logger.js';
 import {
+  answerGroupAsk,
   bindGroup,
   boundLedger,
+  dueGroupAsks,
+  expireGroupAsk,
+  groupAskFor,
   migrateGroup,
   recordGroupExpense,
+  saveGroupAsk,
   unbindGroup,
   type GroupDeps,
 } from './groupChats.js';
@@ -180,5 +185,108 @@ describe('recordGroupExpense', () => {
     expect(boundLedger(deps, CHAT)).toBeUndefined();
     expect(say(BORIS, '300 такси', 4)).toEqual({ kind: 'ignored' });
     expect(count('expenses')).toBe(0);
+  });
+});
+
+describe('group questions to amount-last text (ADR-0046)', () => {
+  const offer = (text: string, messageId = 11, at = NOW) =>
+    groupAskFor(deps, { chatId: CHAT, messageId, text, occurredAt: at });
+  const save = (messageId = 11, now = NOW) => {
+    const ledger = boundLedger(deps, CHAT);
+    if (ledger === undefined) throw new Error('setup: not bound');
+    return saveGroupAsk(deps, {
+      chatId: CHAT,
+      messageId,
+      ledgerId: ledger.id,
+      senderTelegramId: ANNA.telegramId,
+      text: 'Чайник 3200',
+      sentAt: NOW,
+      askMessageId: 500 + messageId,
+      now,
+    });
+  };
+  const answer = (tapper: typeof ANNA, kind: 'record' | 'dismiss', messageId = 11) =>
+    answerGroupAsk(deps, { chatId: CHAT, messageId, tapper, answer: kind, now: NOW });
+
+  it('offers Чайник 3200 as 3 200.00 RSD and stores nothing', () => {
+    const { ledger } = bind();
+
+    expect(offer('Чайник 3200')).toEqual({
+      ledger,
+      money: { amountMinor: 320000, currency: 'RSD' },
+      description: 'Чайник',
+      date: '2026-09-30',
+      sentOn: '2026-09-30',
+    });
+    expect(count('group_asks')).toBe(0);
+    expect(count('expenses')).toBe(0);
+  });
+
+  it.each(['3200 чайник', 'буду в 7', 'Через 10', 'Будешь в 7?', 'Лампа 1.500', 'привет'])(
+    'offers no question for %j',
+    (text) => {
+      bind();
+      expect(offer(text)).toBeUndefined();
+    },
+  );
+
+  it('offers nothing in an unbound chat, or for a message asked about already', () => {
+    expect(offer('Чайник 3200')).toBeUndefined();
+    bind();
+    expect(save()).toBe(true);
+    expect(save()).toBe(false);
+    expect(offer('Чайник 3200')).toBeUndefined();
+  });
+
+  it('records the sender’s [Записать] once, dated by the message, and deletes the row', () => {
+    bind();
+    save();
+
+    expect(answer(ANNA, 'record')).toMatchObject({ kind: 'recorded' });
+    expect(answer(ANNA, 'record')).toEqual({ kind: 'alreadyRecorded' });
+    expect(
+      db.prepare('SELECT amount_minor, description, occurred_at, source_key FROM expenses').all(),
+    ).toEqual([
+      {
+        amount_minor: 320000,
+        description: 'Чайник',
+        occurred_at: '2026-09-30T10:00:00.000Z',
+        source_key: `tg:${CHAT}:11`,
+      },
+    ]);
+    expect(count('group_asks')).toBe(0);
+  });
+
+  it('refuses anyone but the sender and keeps the question', () => {
+    bind();
+    save();
+
+    expect(answer(BORIS, 'record')).toEqual({ kind: 'notSender' });
+    expect(answer(BORIS, 'dismiss')).toEqual({ kind: 'notSender' });
+    expect(count('group_asks')).toBe(1);
+    expect(count('expenses')).toBe(0);
+  });
+
+  it('dismisses, then answers gone, recording nothing', () => {
+    bind();
+    save();
+
+    expect(answer(ANNA, 'dismiss')).toEqual({ kind: 'dismissed' });
+    expect(answer(ANNA, 'record')).toEqual({ kind: 'gone' });
+    expect(count('group_asks')).toBe(0);
+    expect(count('expenses')).toBe(0);
+  });
+
+  it('expires a question 15 minutes after it was asked, once', () => {
+    bind();
+    save(11, new Date('2026-09-30T10:00:00Z'));
+
+    expect(dueGroupAsks(deps, new Date('2026-09-30T10:14:59Z'))).toEqual([]);
+    const [due] = dueGroupAsks(deps, new Date('2026-09-30T10:15:00Z'));
+    expect(due).toMatchObject({ messageId: 11, askMessageId: 511 });
+    if (due === undefined) return;
+    expect(expireGroupAsk(deps, due)).toBe(true);
+    expect(expireGroupAsk(deps, due)).toBe(false);
+    expect(count('group_asks')).toBe(0);
   });
 });
