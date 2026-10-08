@@ -875,7 +875,8 @@ const chatImportNothingReady = html`Новых трат, готовых к за�
 
 // A review card shows at most this many code points of the message.
 const MAX_CARD_TEXT = 600;
-// A name prefix's question quotes at most this many code points of its example.
+// A name prefix's question quotes at most this many code points of its example, and a fix's
+// bad line as many of the line.
 const MAX_PREFIX_EXAMPLE = 100;
 
 // Why a message of a group history import needs a look: one line.
@@ -2416,8 +2417,14 @@ export const messages = {
   chatImportFinishButton: 'Закончить проверку',
   chatImportBackToCardButton: '« Назад к карточке',
   chatImportFixPrompt: html`Отправьте траты из этого сообщения, по одной в строке, например:\n2000 краска\n500 кисти\nДата будет как у сообщения.`,
-  chatImportFixBadLine: ({ n, line }: { readonly n: number; readonly line: string }): Html =>
-    html`Строку ${n} («${line}») не понял. Отправьте все строки ещё раз.`,
+  chatImportFixBadLine: ({ n, line }: { readonly n: number; readonly line: string }): Html => {
+    const codePoints = Array.from(line);
+    const quoted =
+      codePoints.length <= MAX_PREFIX_EXAMPLE
+        ? line
+        : `${codePoints.slice(0, MAX_PREFIX_EXAMPLE).join('')}…`;
+    return html`Строку ${n} («${quoted}») не понял. Отправьте все строки ещё раз.`;
+  },
   chatImportReviewDone: ({
     recorded,
     skipped,

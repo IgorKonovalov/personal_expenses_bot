@@ -27,6 +27,14 @@ describe('/help', () => {
   });
 });
 
+describe('chatImportFixBadLine', () => {
+  it('quotes a line of 5000 characters cut at 100 code points', () => {
+    expect(messages.chatImportFixBadLine({ n: 3, line: 'я'.repeat(5000) })).toBe(
+      `Строку 3 («${'я'.repeat(100)}…») не понял. Отправьте все строки ещё раз.`,
+    );
+  });
+});
+
 describe('the group help (ADR-0046)', () => {
   it('names a currency sign and the к suffix', () => {
     expect(messages.groupHelp).toContain('«300 € ремонт»');
