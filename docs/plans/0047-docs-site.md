@@ -295,7 +295,7 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 | 3: User guide | dev | done | 055c1fd |
 | 4: Architecture section | dev | done | ad3458e |
 | 5: README hands off | dev | done | e1e1bbd |
-| 6: Live check and proofreading | human | not started | |
+| 6: Live check and proofreading | human | owed | |
 
 ### Notes
 
