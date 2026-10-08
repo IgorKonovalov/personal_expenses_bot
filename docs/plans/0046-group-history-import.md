@@ -516,7 +516,7 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 | 3: Name prefixes | dev | done | 6f3042b |
 | 4: Undo and the group notice | dev | done | b8d79e7 |
 | 5: Limits, help and docs | dev | done | 228b20c |
-| 6: A real export | human | not started | |
+| 6: A real export | human | owed | |
 
 ### Notes
 
