@@ -1,0 +1,50 @@
+---
+title: Mini App
+description: 'Статическая страница диаграмм и сканера: данные приходят во фрагменте адреса, уходят через sendData.'
+sidebar:
+  order: 6
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Mini App — одна статическая страница на GitHub Pages, без сервера и без зависимостей
+([ADR-0025](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0025-static-mini-app-fragment-in-senddata-out.md)).
+Она собирается простым `tsc` и не делает ни одного сетевого запроса: её политика безопасности
+разрешает скрипты только с telegram.org и с самой страницы.
+
+<Mermaid
+  code={`sequenceDiagram
+  participant B as бот
+  participant T as Telegram
+  participant P as страница (Pages)
+  B->>T: кнопка web_app: адрес + #z=…
+  T->>P: открыть адрес
+  Note over P: фрагмент не уходит на сервер
+  P->>P: распаковать и нарисовать
+  P-->>T: sendData (только сканер)
+  T-->>B: web_app_data`}
+/>
+
+## Данные внутрь: фрагмент
+
+Для диаграммы бот кладёт уже посчитанные и отформатированные итоги во фрагмент адреса кнопки:
+`#z=…` — сжатый JSON в base64url
+([ADR-0045](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0045-chart-payload-v2-deflated-sections.md)).
+Браузер не отправляет фрагмент на сервер, поэтому GitHub Pages его не видит. Во фрагменте только
+итоги по категориям, никогда отдельные траты. Страница не считает деньги: суммы приходят
+готовыми строками. Полезная нагрузка — список разделов, которые страница рисует по порядку, и
+незнакомый раздел она пропускает. Размер ограничен, и при превышении первыми отбрасываются
+истории категорий.
+
+## Данные наружу: sendData
+
+В режиме сканера (`#m=scan`) страница открывает встроенный сканер QR-кодов Telegram и отправляет
+первый прочитанный текст обратно боту через `sendData`. Бот обрабатывает его как ссылку на чек.
+
+## Соседство с этим сайтом
+
+Этот сайт публикуется в том же артефакте Pages, что и Mini App: страница остаётся в корне, сайт
+— в `docs/`. Адрес Mini App не меняется, а визит без данных во фрагменте страница отправляет
+сюда. Диаграммы в руководстве — та же страница во встроенном фрейме, открытая с фрагментом из
+кнопки, которую записал сценарий
+([ADR-0048](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md)).

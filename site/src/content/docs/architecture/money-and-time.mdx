@@ -1,0 +1,50 @@
+---
+title: Деньги и время
+description: Минимальные единицы валюты, часовой пояс пользователя и пересчёт валют в момент отчёта.
+sidebar:
+  order: 3
+---
+
+## Деньги
+
+Сумма — это целое число в минимальных единицах валюты и код ISO-4217: 450 динаров хранятся как
+`45000` и `RSD`. Число знаков после запятой задаёт таблица валют. Разбор суммы, хранение, суммы
+и тесты не используют дробные числа; линтер запрещает `parseFloat` и `toFixed` в `src/`.
+
+Разбор следует одному правилу для всех
+([ADR-0004](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0004-amount-parsing-rule.md)):
+точка или запятая с одной-двумя цифрами — дробная часть, пробел группирует тысячи, а один
+разделитель с ровно тремя цифрами («1.200») неоднозначен. Тысячекратная ошибка — худшее, что
+может случиться с учётом трат, поэтому такую сумму бот не угадывает.
+
+## Время
+
+Моменты хранятся в UTC. «Сегодня», «эта неделя» и «этот месяц» считаются в часовом поясе
+пользователя, а для общего учёта группы — в часовом поясе учёта
+([ADR-0015](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0015-shared-ledgers-carry-a-timezone.md)).
+Трата получает местную дату в момент записи, поэтому смена часового пояса не сдвигает прошлые
+траты. Domain не читает часы: «сейчас» передаётся параметром, и тесты запускаются в поясе
+UTC+14, чтобы поймать код, который по ошибке читает время сервера.
+
+Всё, что происходит «в 09:00 по вашему времени» — итоги, регулярные траты, напоминания, —
+запускает один планировщик с тиком раз в 60 секунд
+([ADR-0031](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0031-local-time-scheduler.md)).
+Рассылки идут с паузами, с ограничением на тик и пропуском недоступных пользователей
+([ADR-0043](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0043-scheduled-sends-paced-capped-and-skipping-unreachable-users.md)).
+
+## Пересчёт валют
+
+Трата хранится в исходной валюте. Пересчёт выполняется только при чтении — в итогах и бюджете
+([ADR-0003](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0003-currency-conversion-at-report-time.md)).
+
+- Итоги сводятся в валюту учёта, каждая трата — по среднему курсу НБС на день траты
+  ([ADR-0022](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0022-fx-nbs-middle-rate-ledger-currency.md)).
+- Курс хранится как целое число с четырьмя знаками; каждая трата пересчитывается одним точным
+  шагом и округляется до минимальных единиц, а итог — сумма округлённых частей.
+- Бюджет считает пересчитанные траты в своей валюте
+  ([ADR-0023](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0023-budgets-count-converted-spending.md)),
+  с периодом от дня зарплаты и накопительным остатком
+  ([ADR-0017](https://github.com/IgorKonovalov/personal_expenses_bot/blob/main/docs/adrs/0017-budgets-payday-periods-cumulative-allowance.md)).
+- Валюта без курса остаётся отдельной строкой и никогда не смешивается с пересчитанными.
+
+Курсы загружает отдельный обработчик при запуске и затем раз в час.

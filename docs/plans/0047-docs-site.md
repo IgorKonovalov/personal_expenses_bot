@@ -292,8 +292,8 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 |---|---|---|---|
 | 1: Walking skeleton | dev | done | 8f30d78 |
 | 2: Chat renderer and chart embed | dev | done | 65335b5 |
-| 3: User guide | dev | done | committed with this row |
-| 4: Architecture section | dev | not started | |
+| 3: User guide | dev | done | 055c1fd |
+| 4: Architecture section | dev | done | committed with this row |
 | 5: README hands off | dev | not started | |
 | 6: Live check and proofreading | human | not started | |
 
@@ -339,6 +339,11 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
   (reactions are dropped); the page says so in prose.
 - Phase 3: `docs-check-commands.ts` was checked by hand: with `/settle` renamed on its page it
   exited 1 naming `/settle`, and 0 on the finished guide. No test file covers it.
+- Phase 4: pinned `mermaid` 12.0.0 (12.1.0 is inside the cooldown). The ADR-link check lives in
+  `scripts/docs-check-commands.ts`, run by `pnpm docs:check`; with one link renamed it exited 1
+  naming the page and the path. The mermaid script is in the built HTML of the six pages with a
+  diagram and of no other page; rendering in a browser is left to Phase 6. Vite warns that the
+  mermaid chunk is over 500 kB.
 
 ### Close triggers
 

@@ -24,6 +24,10 @@ export default defineConfig({
           label: 'Руководство',
           items: [{ autogenerate: { directory: 'guide' } }],
         },
+        {
+          label: 'Как это устроено',
+          items: [{ autogenerate: { directory: 'architecture' } }],
+        },
       ],
     }),
   ],
