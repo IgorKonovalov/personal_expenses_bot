@@ -585,6 +585,11 @@ The longest is `imp:back:<n>:<i>` or `imp:skip:<n>:<i>`: 9 + 6 + 1 + 5 = 21 byte
 - Followup, not acted on: the group notice is posted after the DM reply, from the handler, with
   no tap guard. Updates are handled one at a time today, so two record taps can't both see no
   notice; a concurrent runner could post it twice.
+- Review round 1, major 1 (review card past 4096 characters): fixed in a36fbb5. The card lists
+  item lines while they fit, each description cut at 40 code points, then `…и ещё N трат`.
+- Review round 1, nit 3 (`chatImportFixBadLine` echoes the line uncut): fixed in a561c48.
+- Review round 1, minor 2 (ledger zone and currency against the defaults) and nit 4 (`totalsOf`
+  against `sumByCurrency`): not acted on.
 
 ### Close triggers
 
