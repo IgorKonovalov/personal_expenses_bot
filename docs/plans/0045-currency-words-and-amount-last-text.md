@@ -342,7 +342,7 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 | 1: Walking skeleton: `300 € ремонт` records in euros | dev | done | 0fd5d2b |
 | 2: Amount-last text in the private chat | dev | done | 340c2a9 |
 | 3: Amount-last text in a group asks first | dev | done | 7f3e16b |
-| 4: Help, README and the group help | dev | done | committed with this row |
+| 4: Help, README and the group help | dev | done | 3639052 |
 | 5: Live check | human | not started | |
 
 ### Notes
@@ -378,7 +378,31 @@ message id is at most 10 digits, so the longest is 8 + 10 = 18 bytes.
 - Phase 4: the README gets three rows in the private table, one in the group table, and a new
   `### Currency words` section after `### Amount rules` with the alias table and the two chatter
   rules. `README.md` was not prettier-clean before this phase and is left unformatted.
+- Followup, not acted on: the test harness's fake answers every `sendMessage` with `true`, so the
+  question's `message_id` is undefined in any test bot without `withMessageIds`. A group test that
+  sends amount-last text from a person to a bound group without it would fail on the
+  `group_asks` insert. No current test does this.
 
 ### Close triggers
+
+- Phases 1 to 4 (`dev`) are done in 0fd5d2b, 340c2a9, 7f3e16b and 3639052. Phase 5 (`human`,
+  `Blocks merge: no`) has not started.
+- Gate on the tip (3639052):
+  - `pnpm typecheck` exited 0.
+  - `pnpm lint` exited 0.
+  - `pnpm test` exited 0, with 144 files and 2149 tests passed.
+  - `pnpm build` exited 0.
+  - `node scripts/check-doc-links.mjs` exited 0, with 359 relative links resolving.
+- New migration: `src/db/migrations/0028_group_asks.sql` (the `group_asks` table and its
+  `created_at` index).
+- New files: `src/db/groupAsks.ts`, `src/bot/group/ask.ts`, `src/bot/groupAskProvider.ts`, and
+  tests `src/domain/currencies.test.ts`, `src/db/groupAsks.test.ts`,
+  `src/bot/groupAskProvider.test.ts`.
+- New scheduler provider: `groupAsk`, registered in `src/index.ts` after `summary`.
+- New callback data: `gask:ok:<messageId>` and `gask:no:<messageId>` (`GROUP_ASK`).
+- New messages: `groupAskRecord`, `groupAskRecordButton`, `groupAskNotExpenseButton`,
+  `groupAskNotSender`, `groupAskAlreadyRecorded`, `groupAskGone`. Changed: `help` (first line)
+  and `groupHelp` (first line, plus a new second line).
+- No dependency change.
 
 ## Followups
