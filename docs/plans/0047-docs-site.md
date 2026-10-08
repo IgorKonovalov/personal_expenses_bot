@@ -290,8 +290,8 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Walking skeleton | dev | done | committed with this row |
-| 2: Chat renderer and chart embed | dev | not started | |
+| 1: Walking skeleton | dev | done | 8f30d78 |
+| 2: Chat renderer and chart embed | dev | done | committed with this row |
 | 3: User guide | dev | not started | |
 | 4: Architecture section | dev | not started | |
 | 5: README hands off | dev | not started | |
@@ -310,6 +310,17 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
   checked by reading `.dockerignore`; no image was built.
 - Phase 1: scenarios run as the invited user `SECOND_ALLOWED_ID`, not the admin, and the recorder
   keeps only calls to that user's chat.
+- Phase 2: the recorder also draws `sendMediaGroup` (the two-file export) as one file bubble per
+  file, which the phase didn't list.
+- Phase 2: `tap(label)` looks in the latest bot bubble that still carries an inline keyboard, not
+  the latest bot bubble of any kind.
+- Phase 2: for the "sent nothing" rule, a reaction to the chat counts as a reply (it is still not
+  drawn), and a callback answer counts only with a toast. The rule is tested through
+  `expectReply` on hand-built calls; the bot answers every private text, so no real step is silent.
+- Phase 2: the iframe inside the docs page was checked in the built HTML (`src` is
+  `/personal_expenses_bot/#z=…`, set on the first click), not in a browser. The Mini App's
+  meta CSP has no `frame-ancestors`; behaviour of `telegram-web-app.js` in an iframe is left to
+  Phase 6.
 
 ### Close triggers
 

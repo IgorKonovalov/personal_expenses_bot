@@ -1,6 +1,7 @@
 // The scenario API for the docs site's chats (ADR-0048): a short script of user actions, run
 // through the real bot in memory. Inputs are invented, never taken from anyone's data.
 import {
+  type ApiCall,
   SECOND_ALLOWED_ID,
   callbackUpdate,
   createTestBot,
@@ -60,7 +61,7 @@ export async function runScenario({ name, options, steps }: Scenario): Promise<T
     updateId += 1;
     if (step.kind === 'say') {
       userMessageId += 1;
-      recorder.user(step.text);
+      recorder.user(step.text, userMessageId);
       await bot.handleUpdate(
         textUpdate({
           updateId,
@@ -70,6 +71,7 @@ export async function runScenario({ name, options, steps }: Scenario): Promise<T
           date: now,
         }),
       );
+      recorder.apply(calls.slice(before));
     } else {
       const target = recorder.target(step.label);
       if (target === undefined) {
@@ -83,8 +85,28 @@ export async function runScenario({ name, options, steps }: Scenario): Promise<T
           messageId: target.messageId,
         }),
       );
+      recorder.apply(calls.slice(before), target.messageId);
     }
-    recorder.apply(calls.slice(before));
+    expectReply(name, step, USER_ID, calls.slice(before));
   }
   return recorder.transcript(name);
+}
+
+// Throws unless the bot sent something to the chat after `step`: any call to it, a reaction
+// included, or a callback answer with a toast. A step with no reply is a broken scenario, and
+// it fails `docs:chats`.
+export function expectReply(
+  name: string,
+  step: Step,
+  chatId: number,
+  calls: readonly ApiCall[],
+): void {
+  const replied = calls.some(({ method, payload }) => {
+    const { chat_id, text } = payload as { chat_id?: number; text?: string };
+    return chat_id === chatId || (method === 'answerCallbackQuery' && (text ?? '') !== '');
+  });
+  if (!replied) {
+    const what = step.kind === 'say' ? `say «${step.text}»` : `tap «${step.label}»`;
+    throw new Error(`scenario ${name}: the bot sent nothing after ${what}`);
+  }
 }
