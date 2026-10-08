@@ -30,10 +30,12 @@ src/
 ├── version.ts       # the running version, read from package.json at boot
 └── index.ts         # boot: config, db, bot
 webapp/              # the static Mini App page (ADR-0025): plain tsc, no deps, own messages module
+site/                # the Russian docs site (ADR-0048): standalone Starlight project, own lockfile,
+                     #   published under the Mini App at docs/; never in the bot image
 Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
 docker-compose.yml   # the one service: volume, backup bind mount, heartbeat health check
 .github/workflows/   # deploy.yml: `check` on PRs and pushes, SSH deploy on push to main
-                     #   pages.yml: builds webapp/ and publishes it to GitHub Pages
+                     #   pages.yml: builds webapp/ and site/ on pushes and PRs, publishes from main
 docs/
 ├── adrs/            # NNNN-<slug>.md: decisions + rejected alternatives. Append-only once accepted.
 │   └── README.md    #   ADR index + next free number
@@ -53,6 +55,9 @@ scripts/
 ├── bench-prices.ts       # `pnpm bench:prices <items>`: times the /prices views on synthetic data
 ├── bench-due.ts          # `pnpm bench:due <users>`: times the due-push read on synthetic users
 ├── probe-webapp-url.ts   # `pnpm probe:webapp`: sends the admin web_app buttons of padded lengths
+├── docs-chats/           # `pnpm docs:chats`: runs scenarios/ through the real bot in memory and
+│                         #   writes the site's chat transcripts (gitignored, built in pages.yml)
+├── docs-check-commands.ts # `pnpm docs:check`: every menu command is in the guide, ADR links resolve
 └── deploy-vps.sh         # the VPS deploy, run by the deploy key's forced command (+ its test)
 tools/
 └── conductor/       # runs queued, approved plans headless in worktree lanes (ADR-0010).

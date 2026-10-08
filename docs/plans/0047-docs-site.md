@@ -293,8 +293,8 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 | 1: Walking skeleton | dev | done | 8f30d78 |
 | 2: Chat renderer and chart embed | dev | done | 65335b5 |
 | 3: User guide | dev | done | 055c1fd |
-| 4: Architecture section | dev | done | committed with this row |
-| 5: README hands off | dev | not started | |
+| 4: Architecture section | dev | done | ad3458e |
+| 5: README hands off | dev | done | committed with this row |
 | 6: Live check and proofreading | human | not started | |
 
 ### Notes
@@ -344,6 +344,16 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
   naming the page and the path. The mermaid script is in the built HTML of the six pages with a
   diagram and of no other page; rendering in a browser is left to Phase 6. Vite warns that the
   mermaid chunk is over 500 kB.
+- Phase 4: the first commit attempt failed the pre-commit hook on a timeout in
+  `src/bot/bot.test.ts` («answers a 10th photo with heavyJobBusy…», 5000 ms, suite at 70 s); the
+  retry passed with no change.
+- Phase 5: the old `## Using the bot` moved to new subsections: «Admission and the admin»,
+  «Groups», «Donations», «Receipts» and «Currency conversion» (the outbound hosts; headings kept
+  because `src/bot/handlers/privacy.test.ts` reads the hosts from those two sections, which the
+  first commit attempt broke) under `## Running in Docker`, and «GitHub Pages:
+  the Mini App and the docs site» under `## Deploy`. The amount and currency-word rules, the
+  concepts and the chart details went to the site only. The README's development table gained
+  `docs:build` and `docs:dev`; CLAUDE.md's tree also gained `scripts/docs-check-commands.ts`.
 
 ### Close triggers
 
