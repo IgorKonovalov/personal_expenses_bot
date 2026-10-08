@@ -294,7 +294,7 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
 | 2: Chat renderer and chart embed | dev | done | 65335b5 |
 | 3: User guide | dev | done | 055c1fd |
 | 4: Architecture section | dev | done | ad3458e |
-| 5: README hands off | dev | done | committed with this row |
+| 5: README hands off | dev | done | e1e1bbd |
 | 6: Live check and proofreading | human | not started | |
 
 ### Notes
@@ -354,13 +354,29 @@ Bubbles carry no timestamps, so a picture never shows a date that dates it.
   the Mini App and the docs site» under `## Deploy`. The amount and currency-word rules, the
   concepts and the chart details went to the site only. The README's development table gained
   `docs:build` and `docs:dev`; CLAUDE.md's tree also gained `scripts/docs-check-commands.ts`.
+- Followups noticed, not acted on: the Phase 3 additions to the recorder and runner (`cut`,
+  `author`, the reply target, group runs) have no unit test of their own, only the scenarios
+  that use them; `scripts/docs-check-commands.ts` has no test; the harness's `backupKeep: 14`
+  differs from production's default, which keeps `/delete_account` out of the pictures.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `site/` (Starlight, Russian) with a «Руководство» group of task pages and a
+  «Как это устроено» group of architecture pages; `scripts/docs-chats/` (scenario API,
+  recorder, runner, scenarios); `scripts/docs-check-commands.ts`; `<Chat>`, `<ChartEmbed>` and
+  `<Mermaid>` components; `pages.yml` building the Mini App and the site into one artifact on
+  pushes and pull requests and deploying from `main` only; `webapp/src/redirect.ts`; `DOCS_URL`
+  in `src/bot/messages.ts`; the README hand-off and CLAUDE.md tree entries.
+- **User-visible surface changed:** the private `/help` gains «Подробное руководство с
+  примерами: https://igorkonovalov.github.io/personal_expenses_bot/docs/» before the donate line,
+  and the group help ends with it. The Mini App root opened with no `z`, `d` or `m` in its
+  fragment now goes to `./docs/`. The docs site is new at `/personal_expenses_bot/docs/`.
+- **Gate at the tip:** on e1e1bbd: `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test`
+  exit 0 (146 files, 2168 tests); `pnpm build` exit 0; `node --test "scripts/*.test.mjs"` exit 0
+  (8 tests); `pnpm docs:build` exit 0 (27 transcripts, `docs:check` passing, 23 pages built);
+  `node scripts/check-doc-links.mjs` exit 0 (347 links).
+- **Outstanding `human` phases:** Phase 6 (live check and proofreading after the push to
+  `main`; `Blocks merge: no`).
 
 ## Followups
 
