@@ -11,7 +11,7 @@ import {
   receiptSummary,
   type ReceiptSummary,
 } from '../../services/fetchDueReceipt.js';
-import { currentAnchor, type Screen } from '../../services/flowSessions.js';
+import { currentAnchor, holdsCard } from '../../services/flowSessions.js';
 import { foldedReceipt, isLocked } from '../../services/ledgerKeys.js';
 import { effectiveTimezone, restoreExpense, undoExpense } from '../../services/recordExpense.js';
 import type { HandlerDeps } from '../bot.js';
@@ -184,17 +184,9 @@ export function tappedMessage(ctx: Context): MessageRef | undefined {
     : { chatId: message.chat.id, messageId: message.message_id };
 }
 
-// The anchor's screen holds this expense's card inside a summary drill-down (Plan 0037).
-function showsInDrill(screen: Screen, expenseId: ExpenseId): boolean {
-  return (
-    screen.name === 'summary' &&
-    screen.drill?.level === 'list' &&
-    screen.drill.expenseId === expenseId
-  );
-}
-
 // ADR-0040: every card a callback or a flow answer re-renders goes through here. Drawn into `at`
-// while `at` is the user's anchor and the anchor holds this expense in a summary drill-down, the
+// while `at` is the user's anchor and the anchor holds this expense in a list screen (a summary
+// drill-down, a day list), the
 // card gets [« Назад] (`drl:back`) on its own bottom row, and a viewer who isn't the author, for
 // whom every card action is refused, gets [« Назад] alone. Anywhere else the card is unchanged.
 export function cardAt(
@@ -210,7 +202,7 @@ export function cardAt(
     anchor === undefined ||
     anchor.chatId !== at.chatId ||
     anchor.messageId !== at.messageId ||
-    !showsInDrill(anchor.screen, view.expense.id)
+    !holdsCard(anchor.screen, view.expense.id)
   ) {
     return card;
   }

@@ -11,10 +11,11 @@ import {
 } from '../../services/editExpense.js';
 import {
   currentAnchor,
+  holdsCard,
   setAnchor,
   type EditFlow,
+  type ListScreen,
   type ScreenAnchor,
-  type SummaryScreen,
 } from '../../services/flowSessions.js';
 import type { HandlerDeps } from '../bot.js';
 import {
@@ -110,24 +111,20 @@ export function editPromptView(
   };
 }
 
-// The summary screen the anchor at `at` holds this expense's card in: the drill-down itself, or
-// the one an earlier prompt of the card kept. Undefined for a card anywhere else.
-function drillScreenAt(
+// The list screen the anchor at `at` holds this expense's card in: the list itself, or the one an
+// earlier prompt of the card kept. Undefined for a card anywhere else.
+function listScreenAt(
   anchor: ScreenAnchor | undefined,
   at: MessageRef,
   expenseId: ExpenseId,
-): SummaryScreen | undefined {
+): ListScreen | undefined {
   if (anchor === undefined || anchor.chatId !== at.chatId || anchor.messageId !== at.messageId) {
     return undefined;
   }
   const { screen } = anchor;
   if (screen.name === 'expense')
     return screen.expenseId === expenseId ? screen.returnTo : undefined;
-  return screen.name === 'summary' &&
-    screen.drill?.level === 'list' &&
-    screen.drill.expenseId === expenseId
-    ? screen
-    : undefined;
+  return holdsCard(screen, expenseId) ? screen : undefined;
 }
 
 export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
@@ -168,9 +165,9 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     // The card becomes the anchor: the typed answer and /cancel re-render it. A card the anchor
-    // already holds inside a summary drill-down keeps that screen as its way back (ADR-0040).
+    // already holds inside a list screen keeps that screen as its way back (ADR-0040).
     const at = { chatId: card.chat.id, messageId: card.message_id };
-    const returnTo = drillScreenAt(currentAnchor(deps, user), at, expenseId);
+    const returnTo = listScreenAt(currentAnchor(deps, user), at, expenseId);
     setAnchor(deps, user, {
       ...at,
       screen: {

@@ -277,8 +277,18 @@ export function dayItemsData(date: LocalDate, page: number): string {
   return assertCallbackData(`itm:d:${date}:${page}`);
 }
 
-// [« Назад] under /today's items: edits the message back into /today for the current day.
+// [« Назад] under /today's items and its day list: edits the message back into /today for the
+// current day.
 export const TODAY_SHOW = 'itm:today';
+
+// [Траты] under /today and the day list's pager and day row (Plan 0048): `day:<YYYY-MM-DD>:<page>`
+// (at most 19 bytes), a 1-based page of that day's expenses. It reads the active ledger at tap
+// time and makes the tapped message the anchor, so it works on any copy of /today.
+export const DAY_LIST = /^day:(\d{4}-\d{2}-\d{2}):(\d{1,4})$/;
+
+export function dayListData(date: LocalDate, page: number): string {
+  return assertCallbackData(`day:${date}:${page}`);
+}
 
 // The /budget screen (ADR-0017). Only the current screen anchor accepts these, and they act on
 // the anchor's ledger, so none carries a ledger id. `bud:open` shows the screen in the anchor;

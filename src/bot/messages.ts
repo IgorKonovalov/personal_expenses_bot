@@ -443,6 +443,24 @@ interface DrillPickerView {
   readonly convertedFrom: readonly Money[];
 }
 
+// One page of a day's expenses (Plan 0048): the day's totals as /today shows them, how many
+// expenses in all, and the page's lines.
+interface DayListView {
+  readonly ledger: LedgerRef;
+  readonly date: LocalDate;
+  readonly totals: readonly Money[];
+  readonly convertedFrom: readonly Money[];
+  readonly count: number;
+  readonly lines: readonly {
+    // The line's number across all pages, 1-based.
+    readonly n: number;
+    readonly money: Money;
+    readonly description: string;
+    // A shared ledger's author, null when unnamed. Absent in a personal ledger.
+    readonly author?: string | null;
+  }[];
+}
+
 // One page of a category's expenses in a period: its totals as the digest shows them (the first
 // block `≈` when it holds converted spending), how many expenses in all, and the page's lines.
 interface DrillListView {
@@ -962,6 +980,26 @@ function drillLine(line: DrillListView['lines'][number]): Html {
       : `${codePoints.slice(0, MAX_LIST_DESCRIPTION).join('')}…`;
   const author = line.author === undefined ? '' : ` · ${line.author ?? UNNAMED_AUTHOR}`;
   return html`${line.n}. ${shortDate(line.occurredOn)} — ${formatMoney(line.money)} · ${description}${author}`;
+}
+
+// A list line's description, cut to MAX_LIST_DESCRIPTION code points.
+function listDescription(description: string): string {
+  const codePoints = Array.from(description);
+  return codePoints.length <= MAX_LIST_DESCRIPTION
+    ? description
+    : `${codePoints.slice(0, MAX_LIST_DESCRIPTION).join('')}…`;
+}
+
+// `2. 450.00 RSD · кофе`, with ` · Анна` after it in a shared ledger: a drill-down line without
+// the date, which the day list's header carries.
+function dayLine(line: DayListView['lines'][number]): Html {
+  const author = line.author === undefined ? '' : ` · ${line.author ?? UNNAMED_AUTHOR}`;
+  return html`${line.n}. ${formatMoney(line.money)} · ${listDescription(line.description)}${author}`;
+}
+
+// `2026-10-07` -> `07.10`.
+function ddmm(date: LocalDate): string {
+  return `${date.slice(8, 10)}.${date.slice(5, 7)}`;
 }
 
 // `1 категория`, `2 категории`, `5 категорий`, `21 категория`.
@@ -1811,7 +1849,7 @@ export const messages = {
       html`Метки для поездок и проектов: добавьте к трате слово с #, например «450 кофе #отпуск». /tags покажет, сколько ушло на каждую метку, по категориям. «/tag отпуск» добавляет метку ко всем новым тратам, пока вы её не снимете.`,
       html`Итоги: 1-го числа в 09:00 я пришлю итоги прошлого месяца с изменениями к месяцу до него, бюджетом и самыми крупными тратами; с бюджетом от дня зарплаты — на следующий день после конца периода. Итоги недели по понедельникам включаются в /settings. Там же или кнопкой [Отключить] под итогами их можно отключить.`,
       html``,
-      html`${menu.today} — траты за сегодня`,
+      html`${menu.today} — траты за сегодня; кнопка [Траты] под ними — список трат по дням, чтобы изменить или удалить любую`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
       html`${menu.settings} — часовой пояс, валюта, категории, итоги и шифрование`,
@@ -3063,6 +3101,35 @@ export const messages = {
     ),
   drillListEmpty: (view: Pick<DrillListView, 'period' | 'categoryName'>): Html =>
     html`В категории «${view.categoryName ?? UNCATEGORIZED}» за ${periodAfterZa(view.period)} трат нет.`,
+  // /today's [Траты] (Plan 0048): the day's numbered expenses, a number opening its card.
+  dayListButton: 'Траты',
+  // `◀ 07.10` / `09.10 ▶`: the day before and after on the day list.
+  dayPrevButton: (date: LocalDate): string => `◀ ${ddmm(date)}`,
+  dayNextButton: (date: LocalDate): string => `${ddmm(date)} ▶`,
+  // `<b>Траты за 7 октября</b>` / `«Личные расходы» · 3 траты · 1 650.00 RSD`, a blank line, the
+  // page's lines, a blank line, the prompt.
+  dayList: (view: DayListView): Html =>
+    joinHtml(
+      [
+        joinHtml(
+          [
+            html`<b>Траты за ${dayMonth.format(new Date(`${view.date}T00:00:00Z`))}</b>`,
+            html`«${ledgerName(view.ledger)}» · ${spendCountWords(view.count)} · ${view.totals
+              .map(
+                (money, index) =>
+                  `${index === 0 && view.convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney(money)}`,
+              )
+              .join(', ')}`,
+          ],
+          '\n',
+        ),
+        joinHtml(view.lines.map(dayLine), '\n'),
+        html`Нажмите номер, чтобы изменить или удалить трату.`,
+      ],
+      '\n\n',
+    ),
+  dayListEmpty: (date: LocalDate): Html =>
+    html`${dayMonth.format(new Date(`${date}T00:00:00Z`))} трат нет.`,
   // The summary push (ADR-0031): the closed period's report, sent at 09:00 local the day after
   // it ends. Each total and category carries its change against the period before; then the
   // budget's end, the largest expenses, the conversion notes and the /donate line.

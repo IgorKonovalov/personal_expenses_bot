@@ -5,6 +5,7 @@ import type { ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import type { User } from '../db/users.js';
+import type { LocalDate } from '../domain/time.js';
 import {
   cancelFlow,
   completeFlow,
@@ -86,6 +87,31 @@ describe('screen anchor', () => {
     const screen = { name: 'budget', ledgerId, fromSettings: true } as const;
     setAnchor({ db }, user, { chatId: 1001, messageId: 11, screen });
     expect(currentAnchor({ db }, user)?.screen).toEqual(screen);
+  });
+
+  it('round-trips a day list with its open card, and an edit prompt returning to it', () => {
+    const expenseId = '00000000-0000-4000-8000-000000000009' as ExpenseId;
+    const day = {
+      name: 'day',
+      ledgerId,
+      date: '2026-10-07' as LocalDate,
+      page: 2,
+      expenseId,
+    } as const;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 12, screen: day });
+    expect(currentAnchor({ db }, user)?.screen).toEqual(day);
+
+    const prompt = { name: 'expense', expenseId, returnTo: day } as const;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 12, screen: prompt });
+    expect(currentAnchor({ db }, user)?.screen).toEqual(prompt);
+  });
+
+  it('reads a day row with a malformed date as no screen', () => {
+    db.prepare(
+      `UPDATE flow_sessions SET screen = 'day', screen_ctx = '{"ledgerId":"x","date":"2026-13-01","page":1}'`,
+    ).run();
+
+    expect(currentAnchor({ db }, user)).toBeUndefined();
   });
 
   it('reads a summary row without a ledger id as no screen', () => {

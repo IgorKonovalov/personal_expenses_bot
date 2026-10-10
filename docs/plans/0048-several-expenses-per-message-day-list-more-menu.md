@@ -297,12 +297,24 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: «Поддержать» across the top of «Ещё» | dev | done | committed with this row |
-| 2: [Траты] under /today | dev | not started | |
+| 1: «Поддержать» across the top of «Ещё» | dev | done | e9e6a72 |
+| 2: [Траты] under /today | dev | done | committed with this row |
 | 3: Several expenses in one message | dev | not started | |
 | 4: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: no guide page quotes the «Ещё» layout in text (`start.mdx` embeds the rendered
+  `more` transcript), and `scripts/docs-chats/scenarios/more.ts` needed no change; neither was
+  edited.
+- Phase 2, outside `Files touched`: `src/bot/handlers/edit.ts` (its `drillScreenAt`, which picks
+  an edit prompt's `returnTo`, now `listScreenAt` over the new `holdsCard` in
+  `src/services/flowSessions.ts`; without it the card's edit prompts lose [« Назад] on the day
+  list) and `src/bot/group/group.test.ts` (its DM /today expectation now carries [Траты]).
+- Phase 2: `src/db/expenses.ts` and `src/bot/callbacks.ts` were not changed;
+  `listLedgerExpensesOn` already gives the day's rows.
+- Phase 2: the done-when tests live in `src/bot/bot.test.ts` (describe «[Траты] under /today»);
+  the Plan 0037 drill-down tests in `src/bot/handlers/drill.test.ts` are unchanged.
 
 ### Close triggers
 

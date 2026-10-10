@@ -116,10 +116,6 @@ export function registerItems(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    await editHtml(
-      ctx,
-      reply.text,
-      reply.markup === undefined ? {} : { reply_markup: reply.markup },
-    );
+    await editHtml(ctx, reply.text, { reply_markup: reply.markup });
   });
 }

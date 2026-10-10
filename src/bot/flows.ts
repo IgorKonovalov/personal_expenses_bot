@@ -87,8 +87,8 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const anchor = currentAnchor(deps, user);
   if (anchor === undefined) return;
   const { screen } = anchor;
-  // A summary starts no flow, so a cancel never has one to restore.
-  if (screen.name === 'summary') return;
+  // A summary or a day list starts no flow, so a cancel never has one to restore.
+  if (screen.name === 'summary' || screen.name === 'day') return;
   if (screen.name === 'prices') {
     // The review name the [Новый продукт] prompt was asked for.
     const view = pricesScreenFor(deps, user, screen);
@@ -103,8 +103,8 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
     return;
   }
   if (screen.name === 'expense') {
-    // The card for the expense's stored state, as it was before the prompt, back in the summary
-    // drill-down it was opened from when it has one (ADR-0040).
+    // The card for the expense's stored state, as it was before the prompt, back in the list
+    // screen it was opened from when it has one (ADR-0040).
     returnFromPrompt(deps, user, screen.expenseId);
     const shown = showExpense(deps, { user, expenseId: screen.expenseId });
     if (shown.kind === 'card') {
@@ -138,7 +138,7 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
 // A typed answer to an edit prompt in the card (the anchor). A valid one puts the card back with
 // the new value; an invalid one re-asks there. After the expense was deleted mid-flow, the flow
 // is cleared and the card shows its deleted form. Either way a prompt over hands the anchor back
-// to the summary drill-down it was started from, if any (ADR-0040).
+// to the list screen it was started from, if any (ADR-0040).
 async function answerEdit(
   ctx: Context,
   deps: HandlerDeps,

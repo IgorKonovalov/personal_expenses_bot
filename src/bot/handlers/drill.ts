@@ -6,11 +6,14 @@ import type { LedgerId } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { parsePeriod, periodKey, type Period } from '../../domain/periods.js';
 import { showExpense } from '../../services/changeCategory.js';
+import { dayExpenses } from '../../services/dayExpenses.js';
 import {
   cancelFlowIf,
   isEditOf,
   setAnchor,
   type Drill,
+  type ListScreen,
+  type Screen,
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
@@ -35,6 +38,7 @@ import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { backRow, renderAnchor, requireScreen, type ScreenTap } from '../screens.js';
 import { cardAt, cardFor, cardView } from './card.js';
+import { showDay } from './day.js';
 
 // The summary's drill-down (Plan 0037), three more states of the /week and /month screen in its
 // anchor (ADR-0011): [По категориям] shows the period's category picker, a category its numbered
@@ -146,6 +150,15 @@ export async function showList(
   });
 }
 
+// The list screen with this expense's card open in it; undefined unless the screen shows a list.
+function holdingCard(screen: Screen, expenseId: ExpenseId): ListScreen | undefined {
+  if (screen.name === 'day') return { ...screen, expenseId };
+  if (screen.name === 'summary' && screen.drill?.level === 'list') {
+    return { ...screen, drill: { ...screen.drill, expenseId } };
+  }
+  return undefined;
+}
+
 export function registerDrill(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.callbackQuery(DRILL_PICKER, async (ctx) => {
     const tap = await requireSummary(ctx, deps);
@@ -195,39 +208,61 @@ export function registerDrill(bot: Composer<Context>, deps: HandlerDeps): void {
     if (listing !== undefined) await showList(ctx, deps, tap, listing, Number(ctx.match[4]));
   });
 
-  // [n]: the expense's real card in the anchor, accepted only while the anchor shows a list and
-  // only for an expense of the screen's ledger. cardAt adds its [« Назад] once the anchor holds it.
+  // [n]: the expense's real card in the anchor, accepted only while the anchor shows a list (a
+  // summary category list or a day list) and only for an expense of the screen's ledger. cardAt
+  // adds its [« Назад] once the anchor holds it.
   bot.callbackQuery(DRILL_EXPENSE, async (ctx) => {
-    const tap = await requireSummary(ctx, deps);
+    const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
-    const { drill } = tap.screen;
-    if (drill?.level !== 'list') {
+    const expenseId = ctx.match[1] as ExpenseId;
+    const holding = holdingCard(tap.anchor.screen, expenseId);
+    if (holding === undefined) {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
-    const expenseId = ctx.match[1] as ExpenseId;
     const shown = showExpense(deps, { user: tap.user, expenseId });
-    if (shown.kind !== 'card' || shown.expense.ledgerId !== tap.screen.ledgerId) {
+    if (shown.kind !== 'card' || shown.expense.ledgerId !== holding.ledgerId) {
       await ctx.answerCallbackQuery({
         text: shown.kind === 'locked' ? messages.ledgerLockedToast : messages.expenseNotFound,
       });
       return;
     }
     await ctx.answerCallbackQuery();
-    recordDrill(deps, tap, tap.screen.ledgerId, { ...drill, expenseId });
+    setAnchor(deps, tap.user, { ...tap.anchor, screen: holding });
     const view = cardView(deps, tap.user, shown);
     await renderAnchor(ctx, tap.anchor, cardAt(deps, tap.user, tap.anchor, view, cardFor(view)));
   });
 
   // The card's [« Назад]: the list it was opened from, re-read, on the same page or the last one
   // that still exists. The anchor may still be the card's edit prompt, an ExpenseScreen keeping
-  // the summary screen in `returnTo`, after the prompt expired (ADR-0040); its edit is cancelled.
+  // the list screen in `returnTo`, after the prompt expired (ADR-0040); its edit is cancelled.
   bot.callbackQuery(DRILL_BACK, async (ctx) => {
     const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
     const { screen } = tap.anchor;
-    const summary =
-      screen.name === 'summary' ? screen : screen.name === 'expense' ? screen.returnTo : undefined;
+    const list =
+      screen.name === 'summary' || screen.name === 'day'
+        ? screen
+        : screen.name === 'expense'
+          ? screen.returnTo
+          : undefined;
+    if (list?.name === 'day') {
+      if (screen.name === 'expense') cancelFlowIf(deps, tap.user, isEditOf(screen.expenseId));
+      const listing = dayExpenses(deps, {
+        user: tap.user,
+        ledgerId: list.ledgerId,
+        date: list.date,
+        now: deps.now(),
+      });
+      if (isLocked(listing)) {
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (listing !== undefined) await showDay(ctx, deps, tap, listing, list.page);
+      return;
+    }
+    const summary = list;
     const drill = summary?.drill;
     if (summary === undefined || drill?.level !== 'list') {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });

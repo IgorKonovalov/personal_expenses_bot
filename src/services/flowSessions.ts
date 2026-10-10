@@ -59,13 +59,36 @@ export interface SummaryScreen {
   readonly drill?: Drill;
 }
 
+// /today's [Траты] (Plan 0048): one day's expenses of `ledgerId` on a page; `expenseId` once a
+// number opened that expense's card in the anchor (ADR-0040).
+export interface DayScreen {
+  readonly name: 'day';
+  readonly ledgerId: LedgerId;
+  readonly date: LocalDate;
+  readonly page: number;
+  readonly expenseId?: ExpenseId;
+}
+
+// The screens whose number buttons open an expense's card in place, with [« Назад] to the list.
+export type ListScreen = SummaryScreen | DayScreen;
+
+// The list screen shows this expense's card in place.
+export function holdsCard(screen: Screen, expenseId: ExpenseId): screen is ListScreen {
+  if (screen.name === 'day') return screen.expenseId === expenseId;
+  return (
+    screen.name === 'summary' &&
+    screen.drill?.level === 'list' &&
+    screen.drill.expenseId === expenseId
+  );
+}
+
 // An expense card holding an edit prompt: the card is the edit flow's anchor. A prompt started
-// from a card inside a summary drill-down keeps that summary screen in `returnTo`, and the anchor
+// from a card shown in place in a list screen keeps that screen in `returnTo`, and the anchor
 // becomes it again when the prompt is over (ADR-0040).
 export interface ExpenseScreen {
   readonly name: 'expense';
   readonly expenseId: ExpenseId;
-  readonly returnTo?: SummaryScreen;
+  readonly returnTo?: ListScreen;
 }
 
 // The /settings hub; with `ledgerId`, the hub scoped to that shared ledger (its timezone and
@@ -131,6 +154,7 @@ export type Screen =
   | PricesScreen
   | CategoriesScreen
   | SummaryScreen
+  | DayScreen
   | ExpenseScreen
   | SettingsScreen
   | BudgetScreen
@@ -390,7 +414,7 @@ export function cancelFlowIf(deps: Deps, user: User, matches: (flow: Flow) => bo
 }
 
 // ADR-0040: once an edit prompt of this expense is over, an anchor that is its ExpenseScreen with
-// a `returnTo` becomes that summary screen again, so the card it re-renders keeps its
+// a `returnTo` becomes that list screen again, so the card it re-renders keeps its
 // [« Назад]. Any other anchor is left as it is.
 export function returnFromPrompt(deps: Deps, user: User, expenseId: ExpenseId): void {
   const anchor = currentAnchor(deps, user);
@@ -465,6 +489,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       : { name };
   }
   if (name === 'summary' && parsed !== undefined) return parseSummary(parsed);
+  if (name === 'day' && parsed !== undefined) return parseDay(parsed);
   if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
     const { names, position, product, newProduct } = parsed;
     const review =
@@ -481,7 +506,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
     const returnTo =
       typeof parsed.returnTo === 'object' && parsed.returnTo !== null
-        ? parseSummary(parsed.returnTo as Record<string, unknown>)
+        ? parseListScreen(parsed.returnTo as Record<string, unknown>)
         : undefined;
     return {
       name,
@@ -628,6 +653,26 @@ function parseSummary(parsed: Record<string, unknown>): SummaryScreen | undefine
     ledgerId: parsed.ledgerId as LedgerId,
     ...(drill === undefined ? {} : { drill }),
   };
+}
+
+function parseDay(parsed: Record<string, unknown>): DayScreen | undefined {
+  const { ledgerId, page, expenseId } = parsed;
+  const date = typeof parsed.date === 'string' ? parseLocalDate(parsed.date) : undefined;
+  if (typeof ledgerId !== 'string' || date === undefined || !Number.isSafeInteger(page)) {
+    return undefined;
+  }
+  return {
+    name: 'day',
+    ledgerId: ledgerId as LedgerId,
+    date,
+    page: page as number,
+    ...(typeof expenseId === 'string' ? { expenseId: expenseId as ExpenseId } : {}),
+  };
+}
+
+// A `returnTo` keeps its screen's name; a summary's is the default.
+function parseListScreen(parsed: Record<string, unknown>): ListScreen | undefined {
+  return parsed.name === 'day' ? parseDay(parsed) : parseSummary(parsed);
 }
 
 // A damaged drill reads as none: the screen is then the digest's.

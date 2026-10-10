@@ -18,6 +18,7 @@ import { registerCategories } from './handlers/categories.js';
 import { registerCategory } from './handlers/category.js';
 import { registerChangelog } from './handlers/changelog.js';
 import { registerChatImport } from './handlers/chatImport.js';
+import { registerDay } from './handlers/day.js';
 import { registerDebts } from './handlers/debts.js';
 import { registerDeleteAccount } from './handlers/deleteAccount.js';
 import { registerDrill } from './handlers/drill.js';
@@ -158,6 +159,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerSummary(dm, options);
   registerSummaryPush(dm, options);
   registerItems(dm, options);
+  registerDay(dm, options);
   registerDrill(dm, options);
   registerCategories(dm, options);
   registerBudget(dm, options);

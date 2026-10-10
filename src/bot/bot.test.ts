@@ -3288,6 +3288,9 @@ describe('/today', () => {
           text:
             '<b>Сегодня, 30 сентября — «Личные расходы»</b>\n462.50 RSD\n12.50 EUR\n\n' +
             'Без курса НБС, не пересчитано: EUR.',
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Траты', callback_data: 'day:2026-09-30:1' }]],
+          },
           ...htmlParseMode,
         },
       },
@@ -3326,6 +3329,9 @@ describe('/today', () => {
         payload: {
           chat_id: ALLOWED_ID,
           text: '<b>Сегодня, 30 сентября — «Личные расходы»</b>\nТрат нет. Отправьте, например, «450 кофе».',
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Траты', callback_data: 'day:2026-09-30:1' }]],
+          },
           ...htmlParseMode,
         },
       },
@@ -4656,7 +4662,12 @@ describe('[Позиции]: receipt items of a period by category (ADR-0038)', (
       reply_markup?: unknown;
     };
     expect(today.reply_markup).toEqual({
-      inline_keyboard: [[{ text: 'Позиции', callback_data: 'itm:d:2026-10-06:1' }]],
+      inline_keyboard: [
+        [
+          { text: 'Траты', callback_data: 'day:2026-10-06:1' },
+          { text: 'Позиции', callback_data: 'itm:d:2026-10-06:1' },
+        ],
+      ],
     });
     calls.length = 0;
 
@@ -4694,7 +4705,9 @@ describe('[Позиции]: receipt items of a period by category (ADR-0038)', (
       reply_markup?: unknown;
     };
     expect(today.text).toContain('450.00 RSD');
-    expect(today.reply_markup).toBeUndefined();
+    expect(today.reply_markup).toEqual({
+      inline_keyboard: [[{ text: 'Траты', callback_data: 'day:2026-10-06:1' }]],
+    });
   });
 
   it('keeps the longest items callback data within 64 bytes', () => {
@@ -12076,5 +12089,253 @@ describe('group history import (Plan 0046)', () => {
         );
       }
     });
+  });
+});
+
+describe('[Траты] under /today (Plan 0048)', () => {
+  // 12:00 local (CEST, UTC+2) on Thursday 8 October 2026.
+  const NOW = new Date('2026-10-08T10:00:00Z');
+  type Button = { text: string; callback_data: string };
+  const button = (text: string, callback_data: string): Button => ({ text, callback_data });
+  const fid = (n: number) => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}` as ExpenseId;
+
+  async function dayBot() {
+    const harness = createTestBot({ now: NOW });
+    const lastSent = withMessageIds(harness.bot, 100);
+    const { bot, db } = harness;
+    let updateId = 0;
+    const say = (text: string, fromId = ALLOWED_ID, date = NOW) =>
+      bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, fromId, date }),
+      );
+    const tap = (data: string, messageId: number, fromId = ALLOWED_ID) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId, fromId }));
+    await say('/start');
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    const ledger = user === undefined ? undefined : findActiveLedger(db, user.id);
+    if (user === undefined || ledger === undefined) throw new Error('user not provisioned');
+    // Expense n on `occurredOn`; a higher n is a later instant, so it lists first.
+    const add = (n: number, occurredOn: string, amountMinor: number) =>
+      insertExpenseOrGetExisting(db, {
+        id: fid(n),
+        ledgerId: ledger.id,
+        createdBy: user.id,
+        amountMinor,
+        currency: 'RSD',
+        description: `трата ${n}`,
+        occurredAt: new Date(NOW.getTime() - 1_000_000 + n * 1000),
+        occurredOn: occurredOn as LocalDate,
+        sourceKey: `fixture:${n}`,
+        createdAt: NOW,
+      });
+    // /today, answered as a new message: its id.
+    const today = async () => {
+      await say('/today');
+      return lastSent();
+    };
+    harness.calls.length = 0;
+    return { ...harness, say, tap, add, today, user };
+  }
+
+  function lastEdit(calls: readonly ApiCall[]) {
+    const edit = calls.filter((c) => c.method === 'editMessageText').at(-1);
+    return edit?.payload as
+      | { message_id: number; text: string; reply_markup: { inline_keyboard: Button[][] } }
+      | undefined;
+  }
+
+  const toasts = (calls: readonly ApiCall[]) =>
+    calls
+      .filter((c) => c.method === 'answerCallbackQuery')
+      .map((c) => (c.payload as { text?: string }).text);
+
+  it('lists 00:30 local on the 8th under the 8th and not under the 7th', async () => {
+    const { say, tap, calls, today } = await dayBot();
+    await say('450 кофе', ALLOWED_ID, new Date('2026-10-07T22:30:00Z'));
+    const at = await today();
+
+    await tap('day:2026-10-08:1', at);
+    expect(lastEdit(calls)?.text).toBe(
+      '<b>Траты за 8 октября</b>\n«Личные расходы» · 1 трата · 450.00 RSD\n\n' +
+        '1. 450.00 RSD · кофе\n\nНажмите номер, чтобы изменить или удалить трату.',
+    );
+
+    await tap('day:2026-10-07:1', at);
+    expect(lastEdit(calls)?.text).toBe('7 октября трат нет.');
+  });
+
+  it('offers [Траты] on an empty /today, and steps back a day with the next day row', async () => {
+    const { tap, calls, today, add } = await dayBot();
+    add(1, '2026-10-07', 30000);
+    const at = await today();
+    const sent = calls.find((c) => c.method === 'sendMessage')?.payload as {
+      reply_markup: { inline_keyboard: Button[][] };
+    };
+    expect(sent.reply_markup.inline_keyboard).toEqual([[button('Траты', 'day:2026-10-08:1')]]);
+
+    await tap('day:2026-10-08:1', at);
+
+    expect(lastEdit(calls)).toMatchObject({
+      message_id: at,
+      text: '8 октября трат нет.',
+      reply_markup: {
+        inline_keyboard: [
+          [button('◀ 07.10', 'day:2026-10-07:1')],
+          [button('« Назад', 'itm:today')],
+        ],
+      },
+    });
+
+    await tap('day:2026-10-07:1', at);
+
+    expect(lastEdit(calls)).toMatchObject({
+      text: expect.stringContaining('1. 300.00 RSD · трата 1') as unknown,
+      reply_markup: {
+        inline_keyboard: [
+          [button('1', `drl:e:${fid(1)}`)],
+          [button('◀ 06.10', 'day:2026-10-06:1'), button('08.10 ▶', 'day:2026-10-08:1')],
+          [button('« Назад', 'itm:today')],
+        ],
+      },
+    });
+  });
+
+  it('pages a 10-expense day: lines 1-8, then 9 and 10 with their number buttons', async () => {
+    const { tap, calls, today, add } = await dayBot();
+    for (let n = 1; n <= 10; n++) add(n, '2026-10-07', n * 10000);
+    const at = await today();
+
+    await tap('day:2026-10-07:1', at);
+    const first = lastEdit(calls);
+    expect(first?.text.split('\n').filter((line) => /^\d+\. /.test(line))).toEqual([
+      '1. 1 000.00 RSD · трата 10',
+      ...[9, 8, 7, 6, 5, 4, 3].map((n, i) => `${i + 2}. ${n}00.00 RSD · трата ${n}`),
+    ]);
+    expect(first?.reply_markup.inline_keyboard.slice(0, 3)).toEqual([
+      [1, 2, 3, 4].map((i) => button(String(i), `drl:e:${fid(11 - i)}`)),
+      [5, 6, 7, 8].map((i) => button(String(i), `drl:e:${fid(11 - i)}`)),
+      [button('1/2', 'day:2026-10-07:1'), button('▶', 'day:2026-10-07:2')],
+    ]);
+
+    await tap('day:2026-10-07:2', at);
+
+    expect(lastEdit(calls)).toMatchObject({
+      text:
+        '<b>Траты за 7 октября</b>\n«Личные расходы» · 10 трат · 5 500.00 RSD\n\n' +
+        '9. 200.00 RSD · трата 2\n10. 100.00 RSD · трата 1\n\n' +
+        'Нажмите номер, чтобы изменить или удалить трату.',
+      reply_markup: {
+        inline_keyboard: [
+          [button('9', `drl:e:${fid(2)}`), button('10', `drl:e:${fid(1)}`)],
+          [button('◀', 'day:2026-10-07:1'), button('2/2', 'day:2026-10-07:2')],
+          [button('◀ 06.10', 'day:2026-10-06:1'), button('08.10 ▶', 'day:2026-10-08:1')],
+          [button('« Назад', 'itm:today')],
+        ],
+      },
+    });
+  });
+
+  it('opens [2] in place, edits its amount to 500, and [« Назад] lists the new amount on line 2', async () => {
+    const { db, tap, say, calls, today, add } = await dayBot();
+    add(1, '2026-10-07', 10000);
+    add(2, '2026-10-07', 20000);
+    add(3, '2026-10-07', 30000);
+    const at = await today();
+    await tap('day:2026-10-07:1', at);
+
+    await tap(`drl:e:${fid(2)}`, at);
+    expect(lastEdit(calls)?.reply_markup.inline_keyboard.at(-1)).toEqual([
+      button('« Назад', 'drl:back'),
+    ]);
+
+    await tap(`exp:edit:${fid(2)}`, at);
+    await tap(`exp:ef:${fid(2)}:a`, at);
+    await say('500');
+
+    expect(db.prepare('SELECT amount_minor FROM expenses WHERE id = ?').pluck().get(fid(2))).toBe(
+      50000,
+    );
+    expect(lastEdit(calls)).toMatchObject({ message_id: at });
+    expect(lastEdit(calls)?.reply_markup.inline_keyboard.at(-1)).toEqual([
+      button('« Назад', 'drl:back'),
+    ]);
+
+    await tap('drl:back', at);
+
+    expect(
+      lastEdit(calls)
+        ?.text.split('\n')
+        .filter((line) => /^\d+\. /.test(line)),
+    ).toEqual(['1. 300.00 RSD · трата 3', '2. 500.00 RSD · трата 2', '3. 100.00 RSD · трата 1']);
+  });
+
+  it('[Удалить] on a card opened from the day list, then [« Назад], lists the day without it', async () => {
+    const { tap, calls, today, add } = await dayBot();
+    add(1, '2026-10-07', 10000);
+    add(2, '2026-10-07', 20000);
+    const at = await today();
+    await tap('day:2026-10-07:1', at);
+    await tap(`drl:e:${fid(2)}`, at);
+
+    await tap(`exp:undo:${fid(2)}`, at);
+    await tap('drl:back', at);
+
+    expect(lastEdit(calls)).toMatchObject({
+      text:
+        '<b>Траты за 7 октября</b>\n«Личные расходы» · 1 трата · 100.00 RSD\n\n' +
+        '1. 100.00 RSD · трата 1\n\nНажмите номер, чтобы изменить или удалить трату.',
+      reply_markup: {
+        inline_keyboard: [
+          [button('1', `drl:e:${fid(1)}`)],
+          [button('◀ 06.10', 'day:2026-10-06:1'), button('08.10 ▶', 'day:2026-10-08:1')],
+          [button('« Назад', 'itm:today')],
+        ],
+      },
+    });
+  });
+
+  it("toasts expenseNotFound for another ledger's expense tapped on a day list, editing nothing", async () => {
+    const { db, say, tap, calls, today, add } = await dayBot();
+    add(1, '2026-10-07', 10000);
+    await say('/start', SECOND_ALLOWED_ID);
+    await say('450 кофе', SECOND_ALLOWED_ID);
+    const foreign = db
+      .prepare("SELECT id FROM expenses WHERE description = 'кофе'")
+      .pluck()
+      .get() as string;
+    const at = await today();
+    await tap('day:2026-10-07:1', at);
+    calls.length = 0;
+
+    await tap(`drl:e:${foreign}`, at);
+
+    expect(toasts(calls)).toEqual([messages.expenseNotFound]);
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+  });
+
+  it('answers a future or malformed day silently and edits nothing', async () => {
+    const { tap, calls, today } = await dayBot();
+    const at = await today();
+    calls.length = 0;
+
+    await tap('day:2026-10-09:1', at);
+    await tap('day:2026-02-30:1', at);
+
+    expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
+    expect(toasts(calls)).toEqual([undefined, undefined]);
+  });
+
+  it('toasts ledgerLockedToast on a locked sealed ledger', async () => {
+    const { db, keys, tap, calls, today, user } = await dayBot();
+    const at = await today();
+    const deps = { db, keys, logger: silentLogger(), newId: () => randomUUID() };
+    const ledger = await sealPersonalLedger(deps, user, NOW);
+    keys.lock(ledger.id);
+    calls.length = 0;
+
+    await tap('day:2026-10-08:1', at);
+
+    expect(toasts(calls)).toEqual([messages.ledgerLockedToast]);
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
   });
 });

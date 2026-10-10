@@ -214,6 +214,9 @@ describe('recording in a bound group (Phase 1)', () => {
           date: '2026-09-30' as never,
           totals: new Map(),
         }),
+        reply_markup: {
+          inline_keyboard: [[{ text: messages.dayListButton, callback_data: 'day:2026-09-30:1' }]],
+        },
         ...htmlParseMode,
       },
     });
