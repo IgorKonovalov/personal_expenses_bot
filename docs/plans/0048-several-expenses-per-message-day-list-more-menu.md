@@ -299,7 +299,7 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 |---|---|---|---|
 | 1: «Поддержать» across the top of «Ещё» | dev | done | e9e6a72 |
 | 2: [Траты] under /today | dev | done | 67cc4db |
-| 3: Several expenses in one message | dev | done | committed with this row |
+| 3: Several expenses in one message | dev | done | 3ce3077 |
 | 4: Live check | human | not started | |
 
 ### Notes
@@ -336,9 +336,20 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** Phases 1-3 in e9e6a72, 67cc4db and 3ce3077. New modules:
+  `src/services/dayExpenses.ts`, `src/bot/handlers/day.ts`, `src/domain/expenseLines.ts`,
+  `src/services/recordExpenseLines.ts`, `src/bot/handlers/batch.ts`. New anchor screens `day`
+  and `batch`; `ExpenseScreen.returnTo` is `ListScreen` (summary, day, batch). New callback
+  `day:<yyyy-mm-dd>:<page>`. No migration.
+- **User-visible surface changed:** the «Ещё» keyboard order (`more:don` alone on row 1,
+  `more:prv` beside `more:del` last); [Траты] on every /today and 📊 reply, and the day list
+  screen; multi-line messages record a batch and answer with the batch card, or `linesBadLine` /
+  `linesTooMany`; `/help` gains the [Траты] wording on the /today line and «Несколько трат — по
+  одной в строке.»; the first-expense tip gains the same sentence. Guide pages `totals.mdx` and
+  `record.mdx`; scenarios `record-edit.ts` (extended) and `record-lines.ts` (new).
+- **Gate at the tip (3ce3077):** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit
+  0, 154 files, 2294 tests passed; `pnpm build` exit 0; `pnpm docs:chats` exit 0, 28
+  transcripts; `pnpm docs:check` exit 0; `node scripts/check-doc-links.mjs` exit 0, 352 links.
+- **Outstanding `human` phases:** Phase 4 (live check on the deployed bot).
 
 ## Followups
