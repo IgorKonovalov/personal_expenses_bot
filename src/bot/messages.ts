@@ -16,6 +16,7 @@ import {
 } from '../domain/chatImport/readMessage.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { addDays } from '../domain/dateText.js';
+import { MAX_EXPENSE_LINES, type BadLineReason } from '../domain/expenseLines.js';
 import type { ExportRange } from '../domain/export/rows.js';
 import { collapseTail, type Change } from '../domain/deltas.js';
 import { formatMoney, type Money } from '../domain/money.js';
@@ -441,6 +442,25 @@ interface DrillPickerView {
   readonly period: PeriodRef;
   readonly currencies: SummaryView['currencies'];
   readonly convertedFrom: readonly Money[];
+}
+
+// A multi-line message's recorded expenses, in line order (ADR-0049), and the totals per currency
+// of those not deleted.
+interface BatchView {
+  readonly ledger: LedgerRef;
+  readonly totals: readonly Money[];
+  readonly lines: readonly {
+    // The line's 1-based number.
+    readonly n: number;
+    readonly money: Money;
+    readonly description: string;
+    // Null: no category.
+    readonly category: string | null;
+    readonly occurredOn: LocalDate;
+    // The sender's local date of the message.
+    readonly sentOn: LocalDate;
+    readonly deleted: boolean;
+  }[];
 }
 
 // One page of a day's expenses (Plan 0048): the day's totals as /today shows them, how many
@@ -995,6 +1015,14 @@ function listDescription(description: string): string {
 function dayLine(line: DayListView['lines'][number]): Html {
   const author = line.author === undefined ? '' : ` · ${line.author ?? UNNAMED_AUTHOR}`;
   return html`${line.n}. ${formatMoney(line.money)} · ${listDescription(line.description)}${author}`;
+}
+
+// `2. 1 200.00 RSD · такси · Транспорт`, with ` · 07.10` when dated off the message's day; a
+// deleted expense's line struck through.
+function batchLine(line: BatchView['lines'][number]): Html {
+  const date = line.occurredOn === line.sentOn ? '' : ` · ${ddmm(line.occurredOn)}`;
+  const text = `${formatMoney(line.money)} · ${listDescription(line.description)} · ${line.category ?? UNCATEGORIZED}${date}`;
+  return line.deleted ? html`${line.n}. <s>${text}</s>` : html`${line.n}. ${text}`;
 }
 
 // `2026-10-07` -> `07.10`.
@@ -1655,7 +1683,7 @@ export const messages = {
   // Contextual tips (ADR-0028), one per registry key in src/domain/tips.ts. Currency codes only.
   tips: {
     tipFirstExpense: () =>
-      html`💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить].`,
+      html`💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить]. Несколько трат — по одной в строке.`,
     tipOther: () =>
       html`💡 Категорию не узнал и записал в «Другое». Выберите её кнопкой [Категория], и для такого же описания я дальше буду выбирать её сам.`,
     tipForeign: ({ ledgerCurrency, expenseCurrency }) =>
@@ -1840,6 +1868,7 @@ export const messages = {
       html`Чтобы записать трату, отправьте сумму и описание, например «450 кофе» или «Чайник 3200». Валюту можно указать после суммы кодом или знаком: «12,50 EUR такси», «300 € ремонт». Тысячи — буквой к: «45к шкаф».`,
       html`Задним числом: дата последним словом, например «450 такси вчера» или «450 такси 25.09».`,
       html`Под подтверждением: [Категория] — сменить категорию, [Изменить] — сумму, описание или дату, [Удалить] — удалить трату.`,
+      html`Несколько трат — по одной в строке.`,
       html`Чек из Сербии или Черногории: отправьте фото QR-кода с чека или ссылку из него. Я запишу сумму, а через несколько секунд добавлю магазин и кнопку [Позиции].`,
       html`СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».`,
       html`Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.`,
@@ -3130,6 +3159,32 @@ export const messages = {
     ),
   dayListEmpty: (date: LocalDate): Html =>
     html`${dayMonth.format(new Date(`${date}T00:00:00Z`))} трат нет.`,
+  // A multi-line message's batch card (ADR-0049): `<b>Записал 3 траты в «Личные расходы»</b>`, a
+  // blank line, the numbered lines (a deleted one struck through), a blank line, `Итого: ` over
+  // the expenses not deleted, a blank line, the prompt.
+  batchCard: (view: BatchView): Html =>
+    joinHtml(
+      [
+        html`<b>Записал ${spendCountWords(view.lines.length)} в «${ledgerName(view.ledger)}»</b>`,
+        joinHtml(view.lines.map(batchLine), '\n'),
+        html`Итого: ${
+          view.totals.length === 0 ? '0' : view.totals.map((money) => formatMoney(money)).join(', ')
+        }`,
+        html`Нажмите номер, чтобы изменить трату.`,
+      ],
+      '\n\n',
+    ),
+  linesBadLine: ({ n, line, reason }: { n: number; line: string; reason: BadLineReason }): Html =>
+    html`Строку ${n} («${listDescription(line)}») не понял${
+      reason === 'ambiguous'
+        ? ': напишите сумму без точки, например 1500 или 1,5'
+        : reason === 'future'
+          ? ': эта дата ещё не наступила'
+          : reason === 'split'
+            ? ': делить на части можно только одну трату'
+            : ''
+    }. Ничего не записано — исправьте строку и отправьте все траты ещё раз.`,
+  linesTooMany: html`Не больше ${MAX_EXPENSE_LINES} трат в одном сообщении. Ничего не записано.`,
   // The summary push (ADR-0031): the closed period's report, sent at 09:00 local the day after
   // it ends. Each total and category carries its change against the period before; then the
   // budget's end, the largest expenses, the conversion notes and the /donate line.

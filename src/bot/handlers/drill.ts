@@ -23,6 +23,7 @@ import {
   type CategoryExpenses,
 } from '../../services/periodCategory.js';
 import { ledgerPeriodSummary, type PeriodSummary } from '../../services/periodSummary.js';
+import { storedBatch } from '../../services/recordExpenseLines.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   DRILL_BACK,
@@ -37,6 +38,7 @@ import {
 import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
 import { backRow, renderAnchor, requireScreen, type ScreenTap } from '../screens.js';
+import { showBatch } from './batch.js';
 import { cardAt, cardFor, cardView } from './card.js';
 import { showDay } from './day.js';
 
@@ -152,7 +154,7 @@ export async function showList(
 
 // The list screen with this expense's card open in it; undefined unless the screen shows a list.
 function holdingCard(screen: Screen, expenseId: ExpenseId): ListScreen | undefined {
-  if (screen.name === 'day') return { ...screen, expenseId };
+  if (screen.name === 'day' || screen.name === 'batch') return { ...screen, expenseId };
   if (screen.name === 'summary' && screen.drill?.level === 'list') {
     return { ...screen, drill: { ...screen.drill, expenseId } };
   }
@@ -241,11 +243,26 @@ export function registerDrill(bot: Composer<Context>, deps: HandlerDeps): void {
     if (tap === undefined) return;
     const { screen } = tap.anchor;
     const list =
-      screen.name === 'summary' || screen.name === 'day'
+      screen.name === 'summary' || screen.name === 'day' || screen.name === 'batch'
         ? screen
         : screen.name === 'expense'
           ? screen.returnTo
           : undefined;
+    if (list?.name === 'batch') {
+      if (screen.name === 'expense') cancelFlowIf(deps, tap.user, isEditOf(screen.expenseId));
+      const batch = storedBatch(deps, {
+        user: tap.user,
+        sourceKey: list.sourceKey,
+        ledgerId: list.ledgerId,
+      });
+      if (isLocked(batch)) {
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (batch !== undefined) await showBatch(ctx, deps, tap, batch);
+      return;
+    }
     if (list?.name === 'day') {
       if (screen.name === 'expense') cancelFlowIf(deps, tap.user, isEditOf(screen.expenseId));
       const listing = dayExpenses(deps, {

@@ -25,11 +25,7 @@ import { descriptionKey, suggestCategory } from '../domain/categories.js';
 import { FALLBACK_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { splitShares } from '../domain/debts.js';
-import {
-  parseExpenseText,
-  readTrailingExpense,
-  type ExpenseTextResult,
-} from '../domain/expenseText.js';
+import { readExpenseText, type ExpenseTextResult } from '../domain/expenseText.js';
 import type { AmountReading } from '../domain/money.js';
 import { MAX_TAGS_PER_EXPENSE } from '../domain/tags.js';
 import { localDateOf } from '../domain/time.js';
@@ -166,11 +162,8 @@ export function recordExpense(
 
   // "Today" is the ledger's local date when the message was sent; a date word counts back from it.
   const sentOn = localDateOf(input.occurredAt, effectiveTimezone(deps, user, ledger));
-  const leading = parseExpenseText(input.text, ledger.defaultCurrency, sentOn);
   const parsed = resolveReading(
-    leading.kind === 'notExpense' && input.forms === 'any'
-      ? readTrailingExpense(input.text, ledger.defaultCurrency, sentOn)
-      : leading,
+    readExpenseText(input.text, ledger.defaultCurrency, sentOn, input.forms),
     input.reading,
   );
   // A shared ledger splits every expense on its own (ADR-0030): a `/N` there records nothing.

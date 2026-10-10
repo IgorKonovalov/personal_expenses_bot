@@ -6,12 +6,14 @@ import { decodeReceiptUrl } from '../../domain/receipts/index.js';
 import { cancelFlow, routeText } from '../../services/flowSessions.js';
 import { recordBankSms } from '../../services/recordBankSms.js';
 import { recordExpense } from '../../services/recordExpense.js';
+import { recordExpenseLines } from '../../services/recordExpenseLines.js';
 import type { HandlerDeps } from '../bot.js';
 import { answerFlow } from '../flows.js';
 import { messages } from '../messages.js';
 import { joinHtml, replyHtml } from '../render/html.js';
 import { offerTip } from '../tips.js';
 import { ambiguousKeyboard, registerAmbiguous } from './ambiguous.js';
+import { sendBatch } from './batch.js';
 import { cardFor, cardView } from './card.js';
 import { offerSplit } from './debts.js';
 import { sendStrayReply } from './help.js';
@@ -67,6 +69,36 @@ export function registerText(bot: Composer<Context>, deps: MoreDeps): void {
     if (sms.kind !== 'notBankSms') {
       await answerBankSms(ctx, deps, { user, sms, messageKey: sourceKey, occurredAt, now });
       return;
+    }
+
+    // Two or more expense lines record one expense per line, or none (ADR-0049).
+    const batch = recordExpenseLines(deps, {
+      user,
+      text: ctx.message.text,
+      sourceKey,
+      occurredAt,
+      now,
+    });
+    switch (batch.kind) {
+      case 'single':
+        break;
+      case 'recorded': {
+        const [first] = batch.expenses;
+        await sendBatch(ctx, deps, user, batch);
+        await tidyAfterRecording(ctx, deps, user);
+        if (first !== undefined)
+          await offerTip(ctx, deps, user, 'expenseRecorded', { expense: first });
+        return;
+      }
+      case 'badLine':
+        await replyHtml(ctx, messages.linesBadLine(batch));
+        return;
+      case 'tooMany':
+        await replyHtml(ctx, messages.linesTooMany);
+        return;
+      case 'sealedDuplicate':
+        await replyHtml(ctx, messages.sealedDuplicate);
+        return;
     }
 
     const result = recordExpense(deps, {

@@ -106,6 +106,17 @@ describe('screen anchor', () => {
     expect(currentAnchor({ db }, user)?.screen).toEqual(prompt);
   });
 
+  it('round-trips a batch card with its open card, and an edit prompt returning to it', () => {
+    const expenseId = '00000000-0000-4000-8000-000000000009' as ExpenseId;
+    const batch = { name: 'batch', ledgerId, sourceKey: 'tg:1001:44', expenseId } as const;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 13, screen: batch });
+    expect(currentAnchor({ db }, user)?.screen).toEqual(batch);
+
+    const prompt = { name: 'expense', expenseId, returnTo: batch } as const;
+    setAnchor({ db }, user, { chatId: 1001, messageId: 13, screen: prompt });
+    expect(currentAnchor({ db }, user)?.screen).toEqual(prompt);
+  });
+
   it('reads a day row with a malformed date as no screen', () => {
     db.prepare(
       `UPDATE flow_sessions SET screen = 'day', screen_ctx = '{"ledgerId":"x","date":"2026-13-01","page":1}'`,

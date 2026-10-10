@@ -10828,7 +10828,7 @@ describe('onboarding (Plan 0015)', () => {
       inline_keyboard: [[{ text: 'Отключить подсказки', callback_data: 'tip:off' }]],
     };
     const FIRST_EXPENSE_TIP =
-      '💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить].';
+      '💡 Категорию я подбираю сам и запоминаю ваши исправления. Под подтверждением: [Категория], [Изменить] и [Удалить]. Несколько трат — по одной в строке.';
 
     it('sends the first-expense tip after the card, as its own message with the off button', async () => {
       const { send, calls } = onboardingBot({ onboarding: false });
@@ -12337,5 +12337,162 @@ describe('[Траты] under /today (Plan 0048)', () => {
 
     expect(toasts(calls)).toEqual([messages.ledgerLockedToast]);
     expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+  });
+});
+
+describe('several expenses in one message (Plan 0048, ADR-0049)', () => {
+  // 12:00 local (CEST, UTC+2) on Thursday 8 October 2026.
+  const NOW = new Date('2026-10-08T10:00:00Z');
+  const THREE = '450 кофе\n1200 такси\n12 eur обед';
+  type Button = { text: string; callback_data: string };
+
+  async function batchBot() {
+    const harness = createTestBot({ now: NOW });
+    const lastSent = withMessageIds(harness.bot, 100);
+    const { bot, db } = harness;
+    let updateId = 0;
+    const update = (text: string, messageId: number) =>
+      textUpdate({ updateId: ++updateId, messageId, text, date: NOW });
+    const say = (text: string, messageId = 50 + updateId) =>
+      bot.handleUpdate(update(text, messageId));
+    const tap = (data: string, messageId: number) =>
+      bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
+    await say('/start');
+    const user = findUserByIdentity(db, 'telegram', String(ALLOWED_ID));
+    if (user === undefined) throw new Error('user not provisioned');
+    const rows = () =>
+      db
+        .prepare(
+          'SELECT id, source_key, amount_minor, description FROM expenses ORDER BY source_key',
+        )
+        .all() as { id: string; source_key: string; amount_minor: number; description: string }[];
+    harness.calls.length = 0;
+    return { ...harness, say, tap, update, rows, user, lastSent };
+  }
+
+  const sent = (calls: readonly ApiCall[]) =>
+    calls
+      .filter((c) => c.method === 'sendMessage')
+      .map((c) => c.payload as { text: string; reply_markup?: { inline_keyboard: Button[][] } });
+
+  function lastEdit(calls: readonly ApiCall[]) {
+    const edit = calls.filter((c) => c.method === 'editMessageText').at(-1);
+    return edit?.payload as
+      | { message_id: number; text: string; reply_markup: { inline_keyboard: Button[][] } }
+      | undefined;
+  }
+
+  it('stores three expenses under the message key and :2, :3, with one batch card', async () => {
+    const { say, calls, rows } = await batchBot();
+
+    await say(THREE, 77);
+
+    expect(rows().map((r) => [r.source_key, r.amount_minor, r.description])).toEqual([
+      [`tg:${ALLOWED_ID}:77`, 45000, 'кофе'],
+      [`tg:${ALLOWED_ID}:77:2`, 120000, 'такси'],
+      [`tg:${ALLOWED_ID}:77:3`, 1200, 'обед'],
+    ]);
+    const ids = rows().map((r) => r.id);
+    const [card, ...rest] = sent(calls);
+    // A tip may follow the card; nothing else is sent.
+    expect(rest.every((m) => m.text.startsWith('💡'))).toBe(true);
+    expect(card?.text.split('\n')).toEqual([
+      '<b>Записал 3 траты в «Личные расходы»</b>',
+      '',
+      expect.stringMatching(/^1\. 450\.00 RSD · кофе · /) as unknown,
+      expect.stringMatching(/^2\. 1 200\.00 RSD · такси · /) as unknown,
+      expect.stringMatching(/^3\. 12\.00 EUR · обед · /) as unknown,
+      '',
+      'Итого: 1 650.00 RSD, 12.00 EUR',
+      '',
+      'Нажмите номер, чтобы изменить трату.',
+    ]);
+    expect(card?.reply_markup?.inline_keyboard).toEqual([
+      ids.map((id, i) => ({ text: String(i + 1), callback_data: `drl:e:${id}` })),
+    ]);
+  });
+
+  it('stores nothing new on a redelivery and re-sends the same batch card', async () => {
+    const { bot, calls, rows, update } = await batchBot();
+    const delivery = update(THREE, 77);
+    await bot.handleUpdate(delivery);
+    const first = sent(calls)[0];
+    calls.length = 0;
+
+    await bot.handleUpdate(delivery);
+
+    expect(rows()).toHaveLength(3);
+    expect(sent(calls)[0]).toEqual(first);
+  });
+
+  it('stores nothing for an ambiguous line and names line 2', async () => {
+    const { say, calls, rows } = await batchBot();
+
+    await say('450 кофе\n1.500 лампа');
+
+    expect(rows()).toEqual([]);
+    expect(sent(calls).map((m) => m.text)).toEqual([
+      messages.linesBadLine({ n: 2, line: '1.500 лампа', reason: 'ambiguous' }),
+    ]);
+    expect(sent(calls)[0]?.text).toBe(
+      'Строку 2 («1.500 лампа») не понял: напишите сумму без точки, например 1500 или 1,5. ' +
+        'Ничего не записано — исправьте строку и отправьте все траты ещё раз.',
+    );
+  });
+
+  it('still records one expense with a wrapped description under the plain key', async () => {
+    const { say, rows } = await batchBot();
+
+    await say('450 кофе\nс Ирой', 78);
+
+    expect(rows().map((r) => [r.source_key, r.amount_minor, r.description])).toEqual([
+      [`tg:${ALLOWED_ID}:78`, 45000, 'кофе с Ирой'],
+    ]);
+  });
+
+  it('opens [2] in place, recategorises it, and [« Назад] shows line 2 in the new category', async () => {
+    const { db, say, tap, calls, rows, user, lastSent } = await batchBot();
+    await say(THREE, 77);
+    const card = lastSent() - (sent(calls).length - 1);
+    const taxi = rows()[1]?.id ?? '';
+    const ledgerId = findActiveLedger(db, user.id)?.id;
+    const fun = db
+      .prepare("SELECT id FROM categories WHERE ledger_id = ? AND preset_key = 'fun'")
+      .pluck()
+      .get(ledgerId) as number;
+
+    await tap(`drl:e:${taxi}`, card);
+    expect(lastEdit(calls)).toMatchObject({ message_id: card });
+    expect(lastEdit(calls)?.reply_markup.inline_keyboard.at(-1)).toEqual([
+      { text: '« Назад', callback_data: 'drl:back' },
+    ]);
+
+    await tap(`exp:cat:${taxi}`, card);
+    await tap(`exp:setcat:${taxi}:${fun}`, card);
+    expect(lastEdit(calls)?.reply_markup.inline_keyboard.at(-1)).toEqual([
+      { text: '« Назад', callback_data: 'drl:back' },
+    ]);
+
+    await tap('drl:back', card);
+
+    expect(lastEdit(calls)?.text.split('\n')[3]).toBe('2. 1 200.00 RSD · такси · Развлечения');
+  });
+
+  it('records three sealed rows into a locked sealed ledger, and answers the redelivery sealedDuplicate', async () => {
+    const { bot, db, keys, calls, user, update } = await batchBot();
+    const deps = { db, keys, logger: silentLogger(), newId: () => randomUUID() };
+    const ledger = await sealPersonalLedger(deps, user, NOW);
+    keys.lock(ledger.id);
+    const delivery = update(THREE, 77);
+
+    await bot.handleUpdate(delivery);
+    expect(db.prepare('SELECT COUNT(*) FROM expenses WHERE sealed IS NOT NULL').pluck().get()).toBe(
+      3,
+    );
+    calls.length = 0;
+
+    await bot.handleUpdate(delivery);
+
+    expect(sent(calls).map((m) => m.text)).toEqual([messages.sealedDuplicate]);
   });
 });

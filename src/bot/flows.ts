@@ -87,8 +87,8 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   const anchor = currentAnchor(deps, user);
   if (anchor === undefined) return;
   const { screen } = anchor;
-  // A summary or a day list starts no flow, so a cancel never has one to restore.
-  if (screen.name === 'summary' || screen.name === 'day') return;
+  // A list screen starts no flow, so a cancel never has one to restore.
+  if (screen.name === 'summary' || screen.name === 'day' || screen.name === 'batch') return;
   if (screen.name === 'prices') {
     // The review name the [Новый продукт] prompt was asked for.
     const view = pricesScreenFor(deps, user, screen);

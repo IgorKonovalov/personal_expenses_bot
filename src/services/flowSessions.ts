@@ -69,12 +69,22 @@ export interface DayScreen {
   readonly expenseId?: ExpenseId;
 }
 
+// A multi-line message's batch card (ADR-0049): the expenses stored under line 1's key
+// `sourceKey`, line n under `${sourceKey}:${n}`; `expenseId` once a number opened that expense's
+// card in the anchor (ADR-0040).
+export interface BatchScreen {
+  readonly name: 'batch';
+  readonly ledgerId: LedgerId;
+  readonly sourceKey: string;
+  readonly expenseId?: ExpenseId;
+}
+
 // The screens whose number buttons open an expense's card in place, with [« Назад] to the list.
-export type ListScreen = SummaryScreen | DayScreen;
+export type ListScreen = SummaryScreen | DayScreen | BatchScreen;
 
 // The list screen shows this expense's card in place.
 export function holdsCard(screen: Screen, expenseId: ExpenseId): screen is ListScreen {
-  if (screen.name === 'day') return screen.expenseId === expenseId;
+  if (screen.name === 'day' || screen.name === 'batch') return screen.expenseId === expenseId;
   return (
     screen.name === 'summary' &&
     screen.drill?.level === 'list' &&
@@ -155,6 +165,7 @@ export type Screen =
   | CategoriesScreen
   | SummaryScreen
   | DayScreen
+  | BatchScreen
   | ExpenseScreen
   | SettingsScreen
   | BudgetScreen
@@ -490,6 +501,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   }
   if (name === 'summary' && parsed !== undefined) return parseSummary(parsed);
   if (name === 'day' && parsed !== undefined) return parseDay(parsed);
+  if (name === 'batch' && parsed !== undefined) return parseBatch(parsed);
   if (name === 'prices' && typeof parsed?.ledgerId === 'string') {
     const { names, position, product, newProduct } = parsed;
     const review =
@@ -670,9 +682,22 @@ function parseDay(parsed: Record<string, unknown>): DayScreen | undefined {
   };
 }
 
+function parseBatch(parsed: Record<string, unknown>): BatchScreen | undefined {
+  const { ledgerId, sourceKey, expenseId } = parsed;
+  if (typeof ledgerId !== 'string' || typeof sourceKey !== 'string') return undefined;
+  return {
+    name: 'batch',
+    ledgerId: ledgerId as LedgerId,
+    sourceKey,
+    ...(typeof expenseId === 'string' ? { expenseId: expenseId as ExpenseId } : {}),
+  };
+}
+
 // A `returnTo` keeps its screen's name; a summary's is the default.
 function parseListScreen(parsed: Record<string, unknown>): ListScreen | undefined {
-  return parsed.name === 'day' ? parseDay(parsed) : parseSummary(parsed);
+  if (parsed.name === 'day') return parseDay(parsed);
+  if (parsed.name === 'batch') return parseBatch(parsed);
+  return parseSummary(parsed);
 }
 
 // A damaged drill reads as none: the screen is then the digest's.

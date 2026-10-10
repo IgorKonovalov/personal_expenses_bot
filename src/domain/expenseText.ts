@@ -143,6 +143,23 @@ export function parseExpenseText(
   }
 }
 
+// A plain expense reading: its amount, currency, description, date, split and tags.
+export type ExpenseReading = Extract<ExpenseTextResult, { readonly kind: 'expense' }>;
+
+// One text read as a recorded expense reads it: amount-first, and with `forms: 'any'` amount-last
+// (readTrailingExpense) when the text doesn't start with an amount.
+export function readExpenseText(
+  text: string,
+  defaultCurrency: CurrencyCode,
+  today: LocalDate | undefined,
+  forms: 'leading' | 'any' = 'leading',
+): ExpenseTextResult {
+  const leading = parseExpenseText(text, defaultCurrency, today);
+  return leading.kind === 'notExpense' && forms === 'any'
+    ? readTrailingExpense(text, defaultCurrency, today)
+    : leading;
+}
+
 // Amount-last text, `<description> <amount>[к] [CUR] [#tag…] [date]` on one line (ADR-0046):
 // `Чайник 3200`, `Шкаф 45к дин`, `Краска: 2000`. It is rewritten amount-first and parsed by
 // parseExpenseText, so ambiguity, a future date and too many tags read the same. Text with a `?`

@@ -298,8 +298,8 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: «Поддержать» across the top of «Ещё» | dev | done | e9e6a72 |
-| 2: [Траты] under /today | dev | done | committed with this row |
-| 3: Several expenses in one message | dev | not started | |
+| 2: [Траты] under /today | dev | done | 67cc4db |
+| 3: Several expenses in one message | dev | done | committed with this row |
 | 4: Live check | human | not started | |
 
 ### Notes
@@ -315,6 +315,24 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
   `listLedgerExpensesOn` already gives the day's rows.
 - Phase 2: the done-when tests live in `src/bot/bot.test.ts` (describe «[Траты] under /today»);
   the Plan 0037 drill-down tests in `src/bot/handlers/drill.test.ts` are unchanged.
+- Phase 3, done-when not met as stated: the table row `450 кофе\n1200 такси 25.12` → `badLine`,
+  `future`. `parseDateSuffix` reads a bare `dd.mm` as the most recent such date not after today,
+  so on 2026-10-08 `25.12` is 2025-12-25 and the text reads as `lines`. The `future` reason is
+  tested with `25.12.2026` instead, and `src/domain/expenseLines.test.ts` pins `25.12` →
+  2025-12-25.
+- Phase 3: `tooMany` is checked over every non-blank line (once at least two read as expenses),
+  not over the expense lines alone. A `tooManyTags` line does not count toward the two expense
+  lines (the plan lists plain, ambiguous, future and split). `badLine`'s `n` counts non-blank
+  lines. A line over the tag cap only with the sticky tag is refused by `recordExpenseLines` as
+  `badLine` `tooManyTags`.
+- Phase 3: `linesBadLine` puts its hints in as plain strings, since `html` escapes every
+  interpolation; the rendered text matches the plan's illustration (asserted in `bot.test.ts`).
+  `linesTooMany` takes its number from `MAX_EXPENSE_LINES`.
+- Phase 3: `src/bot/handlers/card.ts` was not changed; `holdsCard` in
+  `src/services/flowSessions.ts` covers the batch screen. `record.mdx` also got one sentence
+  pointing at /today's [Траты] in its edit section, next to the `record-edit` transcript that
+  Phase 2 extended. The `record-lines` scenario shows the batch card only: a number tap edits
+  it in place, so the transcript would show the expense card instead.
 
 ### Close triggers
 
