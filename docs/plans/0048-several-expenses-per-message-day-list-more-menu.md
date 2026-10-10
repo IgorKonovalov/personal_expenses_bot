@@ -1,6 +1,6 @@
 # 0048: Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-08
 > **Related ADRs:** [ADR-0049](../adrs/0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md), ADR-0011, ADR-0040
 
@@ -297,7 +297,7 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: «Поддержать» across the top of «Ещё» | dev | not started | |
+| 1: «Поддержать» across the top of «Ещё» | dev | done | committed with this row |
 | 2: [Траты] under /today | dev | not started | |
 | 3: Several expenses in one message | dev | not started | |
 | 4: Live check | human | not started | |

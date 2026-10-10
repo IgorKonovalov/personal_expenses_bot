@@ -86,7 +86,11 @@ const ask =
 
 const { moreButtons: label } = messages;
 
-// In screen order, two per row.
+// Drawn alone on the first row, full width.
+const WIDE: MoreButton = { key: 'don', command: 'donate', label: label.donate, run: sendDonate };
+
+// In screen order, two per row under WIDE. The destructive delete is last, in a pair, so it is
+// never drawn full width.
 const BUTTONS: readonly MoreButton[] = [
   { key: 'rec', command: 'recurring', label: label.recurring, run: sendRecurring },
   { key: 'debt', command: 'debts', label: label.debts, run: sendDebts },
@@ -95,7 +99,6 @@ const BUTTONS: readonly MoreButton[] = [
   { key: 'prc', command: 'prices', label: label.prices, run: sendPrices },
   { key: 'exp', command: 'export', label: label.export, run: sendExportPicker },
   { key: 'chg', command: 'changelog', label: label.changelog, run: (ctx) => sendChangelog(ctx) },
-  { key: 'don', command: 'donate', label: label.donate, run: sendDonate },
   { key: 'pay', command: 'paysupport', label: label.paysupport, run: ask('paysupport') },
   { key: 'prv', command: 'privacy', label: label.privacy, run: (ctx) => sendPrivacy(ctx) },
   {
@@ -125,7 +128,7 @@ const ADMIN_BUTTONS: readonly MoreButton[] = [
   { key: 'ref', command: 'refund', label: label.refund, run: ask('refund') },
 ];
 
-const USER_BUTTONS = [...BUTTONS, UNLOCK, LOCK];
+const USER_BUTTONS = [WIDE, ...BUTTONS, UNLOCK, LOCK];
 
 // Every more-screen button: its callback data and the command it runs.
 export const MORE_BUTTONS: readonly { readonly data: string; readonly command: string }[] = [
@@ -147,7 +150,7 @@ function pairs(
 }
 
 function moreKeyboard(deps: AdminDeps, user: User, telegramId: number): InlineKeyboard {
-  const rows = pairs(BUTTONS, moreData);
+  const rows = [[InlineKeyboard.text(WIDE.label, moreData(WIDE.key))], ...pairs(BUTTONS, moreData)];
   const encryption = encryptionState(deps, user).kind;
   if (encryption !== 'off') {
     const toggle = encryption === 'locked' ? UNLOCK : LOCK;

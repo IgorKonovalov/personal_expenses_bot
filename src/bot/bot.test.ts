@@ -10053,12 +10053,12 @@ describe('[☰ Ещё] (Plan 0034)', () => {
   function moreKeyboard(opts: { lockRow?: Button[][]; admin?: boolean } = {}) {
     return {
       inline_keyboard: [
+        [more(label.donate, 'don')],
         [more(label.recurring, 'rec'), more(label.debts, 'debt')],
         [more(label.tags, 'tags'), more(label.tag, 'tag')],
         [more(label.prices, 'prc'), more(label.export, 'exp')],
-        [more(label.changelog, 'chg'), more(label.donate, 'don')],
-        [more(label.paysupport, 'pay'), more(label.privacy, 'prv')],
-        [more(label.deleteAccount, 'del')],
+        [more(label.changelog, 'chg'), more(label.paysupport, 'pay')],
+        [more(label.privacy, 'prv'), more(label.deleteAccount, 'del')],
         ...(opts.lockRow ?? []),
         ...(opts.admin === true
           ? [
@@ -10122,6 +10122,19 @@ describe('[☰ Ещё] (Plan 0034)', () => {
         },
       },
     ]);
+  });
+
+  it('draws «Поддержать» alone on the first row and delete beside privacy on the last (Plan 0048)', async () => {
+    const { send, calls } = moreBot();
+
+    await send('☰ Ещё', SECOND_ALLOWED_ID);
+
+    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: Button[][] } })
+      .reply_markup.inline_keyboard;
+    const data = markup.map((row) => row.map((b) => b.callback_data));
+    expect(data[0]).toEqual(['more:don']);
+    expect(data.slice(1).every((row) => row.length === 2)).toBe(true);
+    expect(data.at(-1)).toEqual(['more:prv', 'more:del']);
   });
 
   const ARG_COMMANDS = ['tag', 'paysupport', 'block', 'unblock', 'refund'];
