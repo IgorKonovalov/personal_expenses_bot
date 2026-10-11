@@ -1,8 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  archiveCategory,
+  insertCategory,
+  listActiveCategories,
+  type CategoryId,
+} from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
-import { softDeleteExpense, type ExpenseId } from '../db/expenses.js';
+import { setExpenseCategory, softDeleteExpense, type ExpenseId } from '../db/expenses.js';
 import { insertLedger, insertMember, type LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
@@ -247,6 +253,94 @@ describe('a shared ledger', () => {
       ['Бананы', 24900],
       ['Хлеб', 6500],
     ]);
+  });
+});
+
+// The ledger's category with this preset key.
+function preset(ledger: LedgerId, key: string): CategoryId {
+  const category = listActiveCategories(db, ledger).find((c) => c.presetKey === key);
+  if (category === undefined) throw new Error(`no ${key} category`);
+  return category.id;
+}
+
+// A September milk receipt filed under `category`.
+function milkIn(who: User, category: CategoryId, totalMinor: number): ExpenseId {
+  const id = receipt(who, '2026-09-15', [['MLEKO 1L', '1', totalMinor]]);
+  setExpenseCategory(db, id, category, NOW);
+  return id;
+}
+
+const september = (product: ProductView) => {
+  const line = product.months.find((m) => m.month === '2026-09');
+  return line === undefined ? undefined : [line.spentMinor, line.unitPriceMinor];
+};
+
+const milk = (ledger: LedgerId = ledgerId) =>
+  view(ledgerProduct(deps, { user, ledgerId: ledger, ref: 'b:milk' }));
+
+describe('cafe receipts (ADR-0051)', () => {
+  it('leave Молоко at 15000 spent and 15000 per l, and count again once moved to Продукты', () => {
+    milkIn(user, preset(ledgerId, 'groceries'), 15000);
+    const cafe = milkIn(user, preset(ledgerId, 'cafe'), 40000);
+
+    expect(september(milk())).toEqual([15000, 15000]);
+
+    setExpenseCategory(db, cafe, preset(ledgerId, 'groceries'), NOW);
+
+    expect(september(milk())).toEqual([55000, 27500]);
+  });
+
+  it('stay out once Кафе и рестораны is archived', () => {
+    const cafe = preset(ledgerId, 'cafe');
+    milkIn(user, preset(ledgerId, 'groceries'), 15000);
+    milkIn(user, cafe, 40000);
+    archiveCategory(db, cafe, NOW);
+
+    expect(september(milk())).toEqual([15000, 15000]);
+  });
+
+  it('do not include a user-created Обеды: it counts', () => {
+    const lunches = insertCategory(
+      db,
+      ledgerId,
+      { name: 'Обеды', nameKey: 'обеды', presetKey: null },
+      NOW,
+    );
+    milkIn(user, preset(ledgerId, 'groceries'), 15000);
+    milkIn(user, lunches, 40000);
+
+    expect(september(milk())).toEqual([55000, 27500]);
+  });
+
+  it('stay out of an unlocked sealed ledger: 15000 and 15000', async () => {
+    milkIn(user, preset(ledgerId, 'groceries'), 15000);
+    milkIn(user, preset(ledgerId, 'cafe'), 40000);
+    await sealPersonalLedger(deps, user, NOW);
+    await unlockPersonalLedger(deps, user, NOW);
+
+    expect(september(milk())).toEqual([15000, 15000]);
+  });
+
+  it("stay out of a group ledger by its own cafe category, and another member's items too", () => {
+    const shared = 'ledger-shared' as LedgerId;
+    insertLedger(db, {
+      id: shared,
+      kind: 'shared',
+      name: 'Семья',
+      defaultCurrency: 'RSD',
+      ownerUserId: user.id,
+      timezone: 'Europe/Belgrade',
+      createdAt: NOW,
+    });
+    insertMember(db, { ledgerId: shared, userId: user.id, role: 'owner' });
+    insertMember(db, { ledgerId: shared, userId: other.id, role: 'member' });
+    db.prepare('UPDATE users SET active_ledger_id = ?').run(shared);
+    seedLedgerCategories(db, shared, NOW);
+    milkIn(user, preset(shared, 'groceries'), 15000);
+    milkIn(user, preset(shared, 'cafe'), 40000);
+    milkIn(other, preset(shared, 'groceries'), 50000);
+
+    expect(september(milk(shared))).toEqual([15000, 15000]);
   });
 });
 

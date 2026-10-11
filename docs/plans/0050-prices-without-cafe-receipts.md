@@ -1,6 +1,6 @@
 # 0050: Product prices without cafe and restaurant receipts
 
-> **Status:** approved (2026-10-11)
+> **Status:** in-progress (2026-10-11)
 > **Created:** 2026-10-11
 > **Related ADRs:** [ADR-0051](../adrs/0051-product-prices-leave-out-cafe-receipts-by-category.md), [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0041](../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md)
 
@@ -151,7 +151,7 @@ No migration, no callback data, no new copy in the messages module.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Cafe receipts leave /prices | dev | not started | |
+| 1: Cafe receipts leave /prices | dev | done | committed with this row |
 | 2: The coverage report and the guide follow | dev | not started | |
 | 3: Live check | human | not started | |
 

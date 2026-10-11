@@ -28,6 +28,10 @@ export interface CategoryPreset {
 // The fallback when nothing else matches. It can't be archived.
 export const FALLBACK_PRESET: PresetKey = 'other';
 
+// Receipt items filed under this preset's category, archived or not, never count toward product
+// prices: cafe food and drinks distort a shop price (ADR-0051).
+export const PRICES_EXCLUDED_PRESET: PresetKey = 'cafe';
+
 export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   {
     key: 'groceries',

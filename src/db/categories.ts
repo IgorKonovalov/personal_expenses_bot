@@ -166,6 +166,22 @@ export function listEssentialCategoryIds(db: Db, ledgerId: LedgerId): ReadonlySe
   return new Set(ids as CategoryId[]);
 }
 
+// The ids of the ledger's categories with this preset key, archived ones included: past expenses
+// keep them.
+export function listCategoryIdsByPreset(
+  db: Db,
+  ledgerId: LedgerId,
+  presetKey: string,
+): ReadonlySet<CategoryId> {
+  const ids = db
+    .prepare<[string, string], number>(
+      'SELECT id FROM categories WHERE ledger_id = ? AND preset_key = ? ORDER BY id',
+    )
+    .pluck()
+    .all(ledgerId, presetKey);
+  return new Set(ids as CategoryId[]);
+}
+
 // Ledgers with no category at all: created before categories existed.
 export function listLedgersWithoutCategories(db: Db): LedgerId[] {
   return db

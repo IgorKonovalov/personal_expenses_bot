@@ -8,6 +8,7 @@ import {
   archiveCategory,
   insertCategoriesOrIgnore,
   listActiveCategories,
+  listCategoryIdsByPreset,
   listEssentialCategoryIds,
   listLedgersWithoutCategories,
   setCategoryEssential,
@@ -101,6 +102,19 @@ describe('categories repository', () => {
     archiveCategory(db, cafeRow.id, LATER);
 
     expect([...listEssentialCategoryIds(db, LEDGER_A)]).toEqual([cafeRow.id, otherRow.id]);
+  });
+
+  it("lists a ledger's ids of one preset key, archived ones included, none of another ledger", () => {
+    insertCategoriesOrIgnore(db, LEDGER_A, [cafe, other], NOW);
+    insertCategoriesOrIgnore(db, LEDGER_B, [cafe], NOW);
+    const [cafeRow] = listActiveCategories(db, LEDGER_A);
+    const [cafeB] = listActiveCategories(db, LEDGER_B);
+    if (cafeRow === undefined || cafeB === undefined) throw new Error('setup failed');
+    archiveCategory(db, cafeRow.id, LATER);
+
+    expect([...listCategoryIdsByPreset(db, LEDGER_A, 'cafe')]).toEqual([cafeRow.id]);
+    expect([...listCategoryIdsByPreset(db, LEDGER_B, 'cafe')]).toEqual([cafeB.id]);
+    expect([...listCategoryIdsByPreset(db, LEDGER_B, 'other')]).toEqual([]);
   });
 });
 

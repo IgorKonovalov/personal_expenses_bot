@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LocalDate } from '../domain/time.js';
 import { openDatabase, type Db } from './connection.js';
-import { insertExpenseOrGetExisting, softDeleteExpense, type ExpenseId } from './expenses.js';
+import { insertCategory } from './categories.js';
+import {
+  insertExpenseOrGetExisting,
+  setExpenseCategory,
+  softDeleteExpense,
+  type ExpenseId,
+} from './expenses.js';
 import { insertLedger, insertMember, type LedgerId } from './ledgers.js';
 import { runMigrations } from './migrate.js';
 import {
@@ -125,10 +131,22 @@ describe('receipt items', () => {
       occurredOn: '2026-10-01',
       currency: 'EUR',
       createdBy: 'user-a',
+      categoryId: null,
     };
     expect(listLedgerDatedItems(db, 'ledger-a' as LedgerId)).toEqual([
       { name: 'Hljeb', quantity: '2', totalMinor: 240, ...dated },
       { name: 'Sir', quantity: '0.535', totalMinor: 4010, ...dated },
+    ]);
+    const cafe = insertCategory(
+      db,
+      'ledger-a' as LedgerId,
+      { name: 'Кафе и рестораны', nameKey: 'кафе и рестораны', presetKey: 'cafe' },
+      NOW,
+    );
+    setExpenseCategory(db, 'expense-1' as ExpenseId, cafe, NOW);
+    expect(listLedgerDatedItems(db, 'ledger-a' as LedgerId).map((i) => i.categoryId)).toEqual([
+      cafe,
+      cafe,
     ]);
     expect(listLedgerDatedItems(db, 'ledger-b' as LedgerId)).toEqual([]);
     softDeleteExpense(db, 'expense-1' as ExpenseId, NOW);

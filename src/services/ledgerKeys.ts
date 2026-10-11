@@ -589,9 +589,21 @@ export function foldedReceiptOf(
   deps: Pick<KeyDeps, 'keys'>,
   row: SealedExpense,
 ): SealedReceipt | undefined {
+  return foldedReceiptWithCategoryOf(deps, row)?.receipt;
+}
+
+// The folded receipt and the row's category, read in one open of a sealed row already read.
+// Undefined for a locked ledger; `receipt` undefined for a row without one.
+export function foldedReceiptWithCategoryOf(
+  deps: Pick<KeyDeps, 'keys'>,
+  row: SealedExpense,
+):
+  | { readonly receipt: SealedReceipt | undefined; readonly categoryId: CategoryId | null }
+  | undefined {
   const privateKey = deps.keys.privateKey(row.ledgerId);
   if (privateKey === undefined) return undefined;
-  return decodePayload(open(row.sealed, privateKey, rowAad(row))).receipt;
+  const payload = decodePayload(open(row.sealed, privateKey, rowAad(row)));
+  return { receipt: payload.receipt, categoryId: payload.categoryId as CategoryId | null };
 }
 
 // The row's payload with `change` applied, sealed again to the ledger's public key. The

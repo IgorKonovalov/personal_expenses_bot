@@ -1,3 +1,4 @@
+import { listCategoryIdsByPreset, type CategoryId } from '../db/categories.js';
 import { isSealed, listLedgerExpenses } from '../db/expenses.js';
 import { listItemProducts } from '../db/itemProducts.js';
 import {
@@ -9,6 +10,7 @@ import {
 import { listLedgerDatedItems } from '../db/receiptItems.js';
 import { listUserProducts } from '../db/userProducts.js';
 import type { User } from '../db/users.js';
+import { PRICES_EXCLUDED_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { monthOf, previous } from '../domain/periods.js';
 import { amountOf, type Unit } from '../domain/products/amount.js';
@@ -23,7 +25,7 @@ import {
 } from '../domain/products/monthly.js';
 import { localDateOf, type LocalDate } from '../domain/time.js';
 import {
-  foldedReceiptOf,
+  foldedReceiptWithCategoryOf,
   isLocked,
   isSealedLedger,
   ledgerIsLocked,
@@ -129,17 +131,24 @@ interface RawItem {
   readonly occurredOn: LocalDate;
 }
 
-// The viewer's items in the ledger, oldest first. A sealed ledger's names go through a matcher
+// The viewer's items in the ledger, oldest first. An item whose expense sits in a category of
+// PRICES_EXCLUDED_PRESET, archived or not, is left out (ADR-0051); the category is read on every
+// call, so moving an expense takes effect at once. A sealed ledger's names go through a matcher
 // of this call's own, so they never outlive the call that decrypted them.
 function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean): RawItem[] {
+  const excluded = listCategoryIdsByPreset(deps.db, ledger.id, PRICES_EXCLUDED_PRESET);
+  const counts = (categoryId: CategoryId | null) =>
+    categoryId === null || !excluded.has(categoryId);
   const items: RawItem[] = listLedgerDatedItems(deps.db, ledger.id)
-    .filter((item) => item.createdBy === user.id)
+    .filter((item) => item.createdBy === user.id && counts(item.categoryId))
     .map((item) => ({ ...item, ...sharedNameMatcher.match(item.name) }));
   if (!sealed) return items;
   const matcher = createNameMatcher(NAME_MATCHER_CAPACITY);
   for (const row of listLedgerExpenses(deps.db, { ledgerId: ledger.id, memberId: user.id })) {
     if (!isSealed(row) || row.createdBy !== user.id) continue;
-    const folded = foldedReceiptOf(deps, row);
+    const opened = foldedReceiptWithCategoryOf(deps, row);
+    if (opened === undefined || !counts(opened.categoryId)) continue;
+    const folded = opened.receipt;
     if (folded === undefined || folded.sellerName === null) continue;
     for (const item of folded.items) {
       items.push({

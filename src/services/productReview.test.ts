@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { listActiveCategories, type CategoryId } from '../db/categories.js';
 import { openDatabase, type Db } from '../db/connection.js';
+import { setExpenseCategory, type ExpenseId } from '../db/expenses.js';
 import type { LedgerId } from '../db/ledgers.js';
 import { runMigrations } from '../db/migrate.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
@@ -57,8 +59,8 @@ beforeEach(() => {
 
 type Item = readonly [name: string, quantity: string, totalMinor: number];
 
-// A receipt issued at noon of the local `day`, fetched with `items`.
-function receipt(day: string, items: readonly Item[]): void {
+// A receipt issued at noon of the local `day`, fetched with `items`. Returns the expense id.
+function receipt(day: string, items: readonly Item[]): ExpenseId {
   const instant = new Date(`${day}T10:00:00Z`);
   const result = recordReceipt(deps, {
     user,
@@ -84,6 +86,14 @@ function receipt(day: string, items: readonly Item[]): void {
       items.map(([name, quantity, totalMinor]) => ({ name, quantity, totalMinor })),
     );
   })();
+  return result.expense.id;
+}
+
+// The ledger's category with this preset key.
+function preset(key: string): CategoryId {
+  const category = listActiveCategories(db, ledgerId).find((c) => c.presetKey === key);
+  if (category === undefined) throw new Error(`no ${key} category`);
+  return category.id;
 }
 
 // The plan's fixture, items 1 to 8.
@@ -134,6 +144,24 @@ describe('the review queue', () => {
       purchases: 1,
       latest: { amountMinor: 300, currency: 'RSD' },
     });
+  });
+
+  it('leaves a cafe receipt item out of the queue, and holds the same name from a shop', () => {
+    setExpenseCategory(
+      db,
+      receipt('2026-09-20', [['CAPPUCCINO', '1', 30000]]),
+      preset('cafe'),
+      NOW,
+    );
+
+    expect(reviewQueue(items())).toEqual([]);
+    expect(unmatched()).toBe(0);
+
+    const shop = receipt('2026-09-21', [['CAPPUCCINO', '1', 30000]]);
+    setExpenseCategory(db, shop, preset('groceries'), NOW);
+
+    expect(reviewQueue(items())).toEqual(['cappuccino']);
+    expect(unmatched()).toBe(1);
   });
 
   it('drops kesa from the queue and from every product once it is not a product', () => {

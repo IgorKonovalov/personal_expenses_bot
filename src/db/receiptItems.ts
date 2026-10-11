@@ -1,6 +1,7 @@
 import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import type { FetchedItem } from '../domain/receipts/types.js';
 import type { LocalDate } from '../domain/time.js';
+import type { CategoryId } from './categories.js';
 import type { Db } from './connection.js';
 import type { ExpenseId } from './expenses.js';
 import type { LedgerId } from './ledgers.js';
@@ -111,10 +112,11 @@ export interface DatedReceiptItem extends FetchedItem {
   readonly occurredOn: LocalDate;
   readonly currency: CurrencyCode;
   readonly createdBy: UserId;
+  readonly categoryId: CategoryId | null;
 }
 
 // The items of the fetched receipts behind one ledger's live plaintext expenses, each with its
-// expense's local day, currency and author, oldest first. A sealed row's items live in its
+// expense's local day, currency, author and category, oldest first. A sealed row's items live in its
 // payload (ADR-0020), so none comes from here.
 export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptItem[] {
   return db
@@ -127,9 +129,11 @@ export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptIt
         occurred_on: string;
         currency: string;
         created_by: string;
+        category_id: number | null;
       }
     >(
-      `SELECT i.name, i.quantity, i.total_minor, e.occurred_on, e.currency, e.created_by
+      `SELECT i.name, i.quantity, i.total_minor, e.occurred_on, e.currency, e.created_by,
+              e.category_id
          FROM receipt_items i
          JOIN receipts r ON r.id = i.receipt_id
          JOIN expenses e ON e.id = r.expense_id
@@ -148,6 +152,7 @@ export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptIt
         occurredOn: row.occurred_on as LocalDate,
         currency,
         createdBy: row.created_by as UserId,
+        categoryId: row.category_id as CategoryId | null,
       };
     });
 }
