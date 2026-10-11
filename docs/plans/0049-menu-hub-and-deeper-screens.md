@@ -396,8 +396,8 @@ and `more:chg` are reused.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Bar and ☰ Меню hub | dev | done | committed with this row |
-| 2: Settings split | dev | not started | |
+| 1: Bar and ☰ Меню hub | dev | done | adb66c4 |
+| 2: Settings split | dev | done | committed with this row |
 | 3: Budget read-first | dev | not started | |
 | 4: Help topics | dev | not started | |
 | 5: Card and labels | dev | not started | |
@@ -425,6 +425,15 @@ and `more:chg` are reused.
   confirmation.
 - Phase 1: `withMenuBack` and `MenuOpened` live in `src/bot/keyboards.ts`; `src/bot/screens.ts`
   is not in the phase's files.
+- Phase 1: the commit adb66c4's body is not plain ASCII (button labels in it).
+- Phase 2: `src/bot/handlers/unlock.test.ts` (outside the phase's files) changes one expectation:
+  the encryption screen's [« Назад] is `set:acc`.
+- Phase 2: [Отмена] on the delete prompt in Аккаунт и данные re-renders that screen with
+  «Ничего не удалено.» above it; the handler sits in `settings.ts` ahead of the command's own.
+- Phase 2: the hub no longer draws or answers `more:prv` / `more:del`; an old hub copy's tap on
+  them gets the silent unknown answer. The reachability guard counts `set:prv` and `set:del`.
+- Phase 2: the `settings` and `privacy` scenarios keep their final screen (the hub; the policy),
+  `privacy` and `encryption` now reach it through Аккаунт и данные.
 
 ### Close triggers
 

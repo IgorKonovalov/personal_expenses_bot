@@ -1711,10 +1711,10 @@ export const messages = {
     tipBudget: () =>
       html`💡 Можно задать бюджет на месяц, и после каждой траты я покажу, сколько осталось на сегодня: /budget.`,
     tipEncrypt: () =>
-      html`💡 Траты можно зашифровать паролем: прочитать их сможете только вы. Включается здесь, в настройках.`,
+      html`💡 Траты можно зашифровать паролем: прочитать их сможете только вы. Включается в настройках: «Аккаунт и данные» → «Шифрование».`,
   } satisfies Record<TipKey, (view: TipCopyView) => Html>,
   tipsOffButton: 'Отключить подсказки',
-  tipsOff: 'Подсказки отключены. Включить: /settings',
+  tipsOff: 'Подсказки отключены. Включить: /settings → «Уведомления».',
   tipsToggleOn: 'Подсказки: вкл',
   tipsToggleOff: 'Подсказки: выкл',
   // The tidy chat switch (ADR-0038): deletes the user's message once it has recorded an expense.
@@ -2694,13 +2694,34 @@ export const messages = {
   staleScreen: 'Этот экран устарел. Откройте его заново.',
   cancelButton: 'Отмена',
 
-  // The /settings hub.
-  settingsScreen: ({ timezone, ledger }: SettingsScreenView): Html =>
+  // The /settings hub, with the summary pushes' state.
+  settingsScreen: (
+    { timezone, ledger }: SettingsScreenView,
+    pushes: { readonly monthly: boolean; readonly weekly: boolean },
+  ): Html =>
     joinHtml(
       [
         html`<b>Настройки</b>`,
         html`Часовой пояс: ${timezoneName(timezone)}`,
         html`Валюта по умолчанию для новых трат в «${ledgerName(ledger)}»: ${ledger.defaultCurrency}`,
+        html`Итоги: месяц — ${pushes.monthly ? 'вкл' : 'выкл'}, неделя — ${pushes.weekly ? 'вкл' : 'выкл'}`,
+      ],
+      '\n',
+    ),
+  settingsNotificationsButton: 'Уведомления',
+  settingsAccountButton: 'Аккаунт и данные',
+  // The hub's [Уведомления]: the summary push, tips and tidy chat switches.
+  notificationsScreen: html`<b>Уведомления</b>\nИтоги месяца приходят утром после конца месяца, итоги недели — по понедельникам. Подсказки — не чаще раза в день.\n«Убирать мои сообщения» — удалять ваше сообщение, когда трата из него записана.`,
+  // The hub's [Аккаунт и данные]: encryption, privacy and the account's deletion.
+  accountScreen: (encryption: 'off' | 'locked' | 'unlocked'): Html =>
+    joinHtml(
+      [
+        html`<b>Аккаунт и данные</b>`,
+        encryption === 'off'
+          ? html`Шифрование: выключено.`
+          : encryption === 'locked'
+            ? html`Шифрование: включено, учёт закрыт.`
+            : html`Шифрование: включено, учёт открыт.`,
       ],
       '\n',
     ),
@@ -2784,7 +2805,7 @@ export const messages = {
   // A redelivered expense in a locked ledger: it stays recorded, and nothing about it is shown.
   sealedDuplicate: html`Уже записано. Учёт зашифрован и закрыт, открыть: /unlock.`,
   unlockPrompt: html`Отправьте пароль учёта. Я сразу удалю сообщение с ним.`,
-  unlockNotSealed: html`Личный учёт не зашифрован. Включить шифрование: /settings, затем «Шифрование».`,
+  unlockNotSealed: html`Личный учёт не зашифрован. Включить шифрование: /settings → «Аккаунт и данные» → «Шифрование».`,
   alreadyUnlocked: html`Учёт уже открыт.`,
   ledgerLockedNow: html`Учёт закрыт. Открыть: /unlock.`,
   alreadyLocked: html`Учёт уже закрыт.`,
@@ -3246,7 +3267,7 @@ export const messages = {
   pushShowButton: 'Показать',
   pushOffButton: 'Отключить',
   pushOff: (push: 'monthly' | 'weekly'): string =>
-    `${push === 'monthly' ? 'Итоги месяца' : 'Итоги недели'} больше не придут. Включить: /settings`,
+    `${push === 'monthly' ? 'Итоги месяца' : 'Итоги недели'} больше не придут. Включить: /settings → «Уведомления».`,
   // Recurring expenses (Plan 0025, ADR-0031). Occurrences fire at 09:00 in the ledger's zone.
   repeatButton: 'Повторять',
   repeatPicker: (view: ExpenseView): Html =>

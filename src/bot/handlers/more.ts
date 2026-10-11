@@ -16,6 +16,8 @@ import {
   ADMIN_ACTION,
   MENU_OPEN,
   MORE_ACTION,
+  SETTINGS_DELETE,
+  SETTINGS_PRIVACY,
   STICKY_TAG_ASK,
   adminData,
   moreData,
@@ -27,13 +29,11 @@ import { cancelRow, renderAnchor, showScreen } from '../screens.js';
 import { sendBlock, sendStats } from './admin.js';
 import { changelogFromMenu } from './changelog.js';
 import { debtsFromMenu } from './debts.js';
-import { sendDeleteAccount } from './deleteAccount.js';
 import { donateFromMenu, type DonateDeps } from './donate.js';
 import { exportFromMenu } from './export.js';
 import { sendInvite, sendInvites } from './invite.js';
 import { sendPaySupport } from './paysupport.js';
 import { pricesFromMenu } from './prices.js';
-import { privacyFromMenu } from './privacy.js';
 import { recurringFromMenu } from './recurring.js';
 import { sendRefund } from './refund.js';
 import { settingsFromMenu } from './settings.js';
@@ -149,27 +149,14 @@ const SETTINGS: MoreButton = {
   label: label.settings,
   open: settingsFromMenu,
 };
-const PRIVACY: MoreButton = {
-  key: 'prv',
-  command: 'privacy',
-  label: label.privacy,
-  open: () => privacyFromMenu(),
-};
-const DELETE: MoreButton = {
-  key: 'del',
-  command: 'delete_account',
-  label: label.deleteAccount,
-  run: (ctx, deps) => sendDeleteAccount(ctx, deps.backupKeep),
-};
 const HELP: MoreButton = { key: 'help', command: 'help', label: label.help, open: helpFromMenu };
 
-// The hub's rows, from the top. The destructive delete sits in a pair, never full width.
+// The hub's rows, from the top.
 const HUB_ROWS: readonly (readonly MoreButton[])[] = [
   [DONATE],
   [RECURRING, DEBTS],
   [TAGS, PRICES],
   [EXPORT, SETTINGS],
-  [PRIVACY, DELETE],
   [HELP],
 ];
 
@@ -220,6 +207,9 @@ export const MENU_BUTTONS: readonly { readonly data: string; readonly command: s
   ...ADMIN_BUTTONS.map(({ key, command }) => ({ data: adminData(key), command })),
   // [Постоянная метка] on /tags.
   { data: STICKY_TAG_ASK, command: 'tag' },
+  // [Приватность] and [Удалить аккаунт] on settings' Аккаунт и данные.
+  { data: SETTINGS_PRIVACY, command: 'privacy' },
+  { data: SETTINGS_DELETE, command: 'delete_account' },
 ];
 
 function cell(button: MoreButton, data: (key: string) => string): InlineKeyboardButton {

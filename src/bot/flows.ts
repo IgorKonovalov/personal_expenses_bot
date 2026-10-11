@@ -35,7 +35,7 @@ import {
   recurringRecordedCard,
   recurringScreenFor,
 } from './handlers/recurring.js';
-import { settingsView, timezonePromptView } from './handlers/settings.js';
+import { settingsScreenFor, settingsView, timezonePromptView } from './handlers/settings.js';
 import { ensureUser } from './handlers/start.js';
 import { answerCommandArg, type MoreDeps } from './handlers/more.js';
 import { answerProductName, pricesScreenFor } from './handlers/prices.js';
@@ -132,7 +132,7 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   }
   const view =
     screen.name === 'settings'
-      ? settingsView(deps, user, screen.ledgerId, screen.fromMenu)
+      ? settingsScreenFor(deps, user, screen)
       : screen.name === 'budget'
         ? budgetView(ctx, deps, user, screen)
         : categoriesScreenFor(deps, user, screen);

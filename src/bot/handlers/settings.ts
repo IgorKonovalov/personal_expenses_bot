@@ -5,6 +5,7 @@ import type { User } from '../../db/users.js';
 import { CURRENCY_CODES, toCurrencyCode } from '../../domain/currencies.js';
 import { TIMEZONES, timezoneBySlug } from '../../domain/timezones.js';
 import {
+  currentAnchor,
   menuMark,
   setAnchor,
   type BudgetScreen,
@@ -32,13 +33,18 @@ import {
 } from '../../services/settings.js';
 import type { HandlerDeps } from '../bot.js';
 import {
+  ACCOUNT_KEEP,
   CURRENCY_PICKER,
   SET_CURRENCY,
   SET_TIMEZONE,
+  SETTINGS_ACCOUNT,
   SETTINGS_BUDGET,
   SETTINGS_CATEGORIES,
+  SETTINGS_DELETE,
   SETTINGS_ENCRYPTION,
+  SETTINGS_NOTIFICATIONS,
   SETTINGS_OPEN,
+  SETTINGS_PRIVACY,
   SETTINGS_PASSPHRASE,
   SETTINGS_PUSH_MONTHLY,
   SETTINGS_PUSH_WEEKLY,
@@ -67,12 +73,14 @@ import {
 import { offerTip, registerTipsOff } from '../tips.js';
 import { budgetView } from './budget.js';
 import { categoriesView } from './categories.js';
+import { deleteAccountView } from './deleteAccount.js';
 import { ensureUser } from './start.js';
 
-// The /settings hub (ADR-0011): the user's timezone and the active ledger's default currency,
-// each changed in place in the anchor, a way into the categories screen, and the tips, summary
-// push and tidy chat switches. [Другой…] asks for an IANA name through a text flow (ADR-0009); flows.ts
-// takes the answer.
+// The /settings hub (ADR-0011, ADR-0050): the user's timezone and the active ledger's default
+// currency, each changed in place in the anchor, a way into the categories screen, Уведомления
+// (the tips, summary push and tidy chat switches) and Аккаунт и данные (encryption, privacy,
+// deletion). [Другой…] asks for an IANA name through a text flow (ADR-0009); flows.ts takes the
+// answer.
 // Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
 // link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
 
@@ -99,45 +107,85 @@ export function settingsView(
       ]),
     };
   }
+  const pushes = {
+    monthly: summaryPushOn(deps, user, 'monthly'),
+    weekly: summaryPushOn(deps, user, 'weekly'),
+  };
   return withMenuBack(
     {
-      text: messages.settingsScreen(settings),
+      text: messages.settingsScreen(settings, pushes),
       markup: InlineKeyboard.from([
         pickers,
-        [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
-        [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
         [
-          InlineKeyboard.text(
-            summaryPushOn(deps, user, 'monthly')
-              ? messages.pushMonthlyToggleOn
-              : messages.pushMonthlyToggleOff,
-            SETTINGS_PUSH_MONTHLY,
-          ),
+          InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES),
+          InlineKeyboard.text(messages.settingsNotificationsButton, SETTINGS_NOTIFICATIONS),
         ],
-        [
-          InlineKeyboard.text(
-            summaryPushOn(deps, user, 'weekly')
-              ? messages.pushWeeklyToggleOn
-              : messages.pushWeeklyToggleOff,
-            SETTINGS_PUSH_WEEKLY,
-          ),
-        ],
-        [
-          InlineKeyboard.text(
-            tipsOn(deps, user) ? messages.tipsToggleOn : messages.tipsToggleOff,
-            SETTINGS_TIPS,
-          ),
-        ],
-        [
-          InlineKeyboard.text(
-            tidyChatOn(deps, user) ? messages.tidyChatToggleOn : messages.tidyChatToggleOff,
-            SETTINGS_TIDY,
-          ),
-        ],
+        [InlineKeyboard.text(messages.settingsAccountButton, SETTINGS_ACCOUNT)],
       ]),
     },
     fromMenu,
   );
+}
+
+// Уведомления: the summary push, tips and tidy chat switches, one per row, then [« Назад] to the
+// hub.
+function notificationsView(deps: HandlerDeps, user: User): ScreenView {
+  const toggle = (on: boolean, labels: readonly [string, string], data: string) => [
+    InlineKeyboard.text(on ? labels[0] : labels[1], data),
+  ];
+  return {
+    text: messages.notificationsScreen,
+    markup: InlineKeyboard.from([
+      toggle(
+        summaryPushOn(deps, user, 'monthly'),
+        [messages.pushMonthlyToggleOn, messages.pushMonthlyToggleOff],
+        SETTINGS_PUSH_MONTHLY,
+      ),
+      toggle(
+        summaryPushOn(deps, user, 'weekly'),
+        [messages.pushWeeklyToggleOn, messages.pushWeeklyToggleOff],
+        SETTINGS_PUSH_WEEKLY,
+      ),
+      toggle(tipsOn(deps, user), [messages.tipsToggleOn, messages.tipsToggleOff], SETTINGS_TIPS),
+      toggle(
+        tidyChatOn(deps, user),
+        [messages.tidyChatToggleOn, messages.tidyChatToggleOff],
+        SETTINGS_TIDY,
+      ),
+      backRow(SETTINGS_OPEN),
+    ]),
+  };
+}
+
+// Аккаунт и данные: the encryption state, [Шифрование] [Приватность] / [Удалить аккаунт], then
+// [« Назад] to the hub; `header` above it when something just happened there.
+function accountView(deps: HandlerDeps, user: User, header?: Html): ScreenView {
+  const screen = messages.accountScreen(encryptionState(deps, user).kind);
+  return {
+    text: header === undefined ? screen : joinHtml([header, screen], '\n\n'),
+    markup: InlineKeyboard.from([
+      [
+        InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION),
+        InlineKeyboard.text(messages.moreButtons.privacy, SETTINGS_PRIVACY),
+      ],
+      [InlineKeyboard.text(messages.moreButtons.deleteAccount, SETTINGS_DELETE)],
+      backRow(SETTINGS_OPEN),
+    ]),
+  };
+}
+
+// What the anchor's settings screen shows, re-rendered after a cancel or a change: its pane, or
+// the hub. Undefined when it is scoped to a ledger the user doesn't own.
+export function settingsScreenFor(
+  deps: HandlerDeps,
+  user: User,
+  screen: SettingsScreen,
+): ScreenView | undefined {
+  if (screen.ledgerId === undefined && screen.pane === 'notifications') {
+    return notificationsView(deps, user);
+  }
+  if (screen.ledgerId === undefined && screen.pane === 'account') return accountView(deps, user);
+  return settingsView(deps, user, screen.ledgerId, screen.fromMenu);
 }
 
 // The hub's [Настройки]: the personal hub, as /settings shows it, adopting the tapped message as
@@ -225,7 +273,7 @@ export function encryptionView(deps: HandlerDeps, user: User): ScreenView | unde
       ...(state.kind === 'unlocked'
         ? [[InlineKeyboard.text(messages.changePassphraseButton, SETTINGS_PASSPHRASE)]]
         : []),
-      backRow(SETTINGS_OPEN),
+      backRow(SETTINGS_ACCOUNT),
     ]),
   };
 }
@@ -247,7 +295,6 @@ export async function sendSettings(ctx: Context, deps: HandlerDeps): Promise<voi
   const view = settingsView(deps, user);
   if (view === undefined) throw new Error('the personal settings view always exists');
   await showScreen(ctx, deps, user, { name: 'settings' }, view);
-  await offerTip(ctx, deps, user, 'settingsShown');
 }
 
 // The personal hub edited into the tapped message, which becomes the anchor: the setup check's
@@ -300,18 +347,38 @@ function hubView(deps: HandlerDeps, tap: SettingsTap, user: User = tap.user): Sc
   return view;
 }
 
-export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): void {
+// The personal hub's pane `pane`, stored on the tap's anchor.
+function paneAnchor(tap: SettingsTap, pane: 'notifications' | 'account') {
+  const screen: SettingsScreen = { name: 'settings', pane, ...menuMark(tap.anchor.screen) };
+  return { ...tap.anchor, screen };
+}
+
+// A personal-hub tap: a scoped hub's anchor gets the stale toast.
+async function personalTap(ctx: Context, deps: HandlerDeps): Promise<SettingsTap | undefined> {
+  const tap = await settingsTap(ctx, deps);
+  if (tap === undefined) return undefined;
+  if (tap.ledgerId !== undefined) {
+    await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    return undefined;
+  }
+  return tap;
+}
+
+export function registerSettings(
+  bot: Composer<Context>,
+  deps: HandlerDeps & { readonly backupKeep: number },
+): void {
   bot.command('settings', (ctx) => sendSettings(ctx, deps));
 
-  // Back to the hub from its pickers, and from the categories or budget screen it opened. A
-  // scoped hub keeps its ledger; only a scoped hub opens a budget screen.
+  // Back to the hub from its panes and pickers, and from the categories or budget screen it
+  // opened. A scoped hub keeps its ledger; only a scoped hub opens a budget screen.
   bot.callbackQuery(SETTINGS_OPEN, async (ctx) => {
     const tap = await requireScreen(ctx, deps);
     if (tap === undefined) return;
     const from = tap.anchor.screen;
     const screen: SettingsScreen =
-      from.name === 'settings'
-        ? from
+      from.name === 'settings' && from.ledgerId !== undefined
+        ? { name: 'settings', ledgerId: from.ledgerId }
         : from.name === 'budget'
           ? { name: 'settings', ledgerId: from.ledgerId }
           : { name: 'settings', ...menuMark(from) };
@@ -324,8 +391,74 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     setAnchor(deps, tap.user, anchor);
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, anchor, view);
-    // The personal hub only: the scoped one is about a shared ledger.
-    if (screen.ledgerId === undefined) await offerTip(ctx, deps, tap.user, 'settingsShown');
+  });
+
+  bot.callbackQuery(SETTINGS_NOTIFICATIONS, async (ctx) => {
+    const tap = await personalTap(ctx, deps);
+    if (tap === undefined) return;
+    const anchor = paneAnchor(tap, 'notifications');
+    setAnchor(deps, tap.user, anchor);
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, anchor, notificationsView(deps, tap.user));
+  });
+
+  // Аккаунт и данные, from the hub and back from its screens. The encryption tip is offered
+  // here (ADR-0028).
+  bot.callbackQuery(SETTINGS_ACCOUNT, async (ctx) => {
+    const tap = await personalTap(ctx, deps);
+    if (tap === undefined) return;
+    const anchor = paneAnchor(tap, 'account');
+    setAnchor(deps, tap.user, anchor);
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, anchor, accountView(deps, tap.user));
+    await offerTip(ctx, deps, tap.user, 'settingsShown');
+  });
+
+  bot.callbackQuery(SETTINGS_PRIVACY, async (ctx) => {
+    const tap = await personalTap(ctx, deps);
+    if (tap === undefined) return;
+    const anchor = paneAnchor(tap, 'account');
+    setAnchor(deps, tap.user, anchor);
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, anchor, {
+      text: messages.privacy,
+      markup: InlineKeyboard.from([backRow(SETTINGS_ACCOUNT)]),
+    });
+  });
+
+  // The /delete_account prompt in the anchor: [Удалить всё] deletes as the command's does, and
+  // [Отмена] and [« Назад] come back here.
+  bot.callbackQuery(SETTINGS_DELETE, async (ctx) => {
+    const tap = await personalTap(ctx, deps);
+    if (tap === undefined) return;
+    const anchor = paneAnchor(tap, 'account');
+    setAnchor(deps, tap.user, anchor);
+    await ctx.answerCallbackQuery();
+    const prompt = deleteAccountView(deps.backupKeep);
+    await renderAnchor(ctx, anchor, {
+      text: prompt.text,
+      markup: InlineKeyboard.from([...prompt.markup.inline_keyboard, backRow(SETTINGS_ACCOUNT)]),
+    });
+  });
+
+  // [Отмена] on that prompt: Аккаунт и данные again, under «Ничего не удалено.». On any other
+  // message it is the command's own [Отмена] (deleteAccount.ts).
+  bot.callbackQuery(ACCOUNT_KEEP, async (ctx, next) => {
+    const tapped = ctx.callbackQuery.message;
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const anchor = currentAnchor(deps, user);
+    if (
+      tapped === undefined ||
+      anchor?.chatId !== tapped.chat.id ||
+      anchor.messageId !== tapped.message_id ||
+      anchor.screen.name !== 'settings' ||
+      anchor.screen.pane !== 'account'
+    ) {
+      await next();
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, anchor, accountView(deps, user, messages.accountKept));
   });
 
   bot.callbackQuery(SETTINGS_CATEGORIES, async (ctx) => {
@@ -344,71 +477,52 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
     await renderAnchor(ctx, anchor, categoriesView(view, screen));
   });
 
-  // The personal hub's [Шифрование]: the sealed ledger's state, or the enable prompt.
+  // [Шифрование] on Аккаунт и данные: the sealed ledger's state, or the enable prompt. Both lead
+  // back there.
   bot.callbackQuery(SETTINGS_ENCRYPTION, async (ctx) => {
-    const tap = await settingsTap(ctx, deps);
+    const tap = await personalTap(ctx, deps);
     if (tap === undefined) return;
-    if (tap.ledgerId !== undefined) {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
-      return;
-    }
+    const anchor = paneAnchor(tap, 'account');
+    setAnchor(deps, tap.user, anchor);
     const sealed = encryptionView(deps, tap.user);
     await ctx.answerCallbackQuery();
     if (sealed !== undefined) {
-      await renderAnchor(ctx, tap.anchor, sealed);
+      await renderAnchor(ctx, anchor, sealed);
       return;
     }
     startEnableFlow(deps, tap.user, deps.now());
-    await renderAnchor(ctx, tap.anchor, encryptionPromptView());
+    await renderAnchor(ctx, anchor, encryptionPromptView());
   });
 
-  // The personal hub's [Подсказки: вкл/выкл] (ADR-0028): flips the switch and re-renders.
-  bot.callbackQuery(SETTINGS_TIPS, async (ctx) => {
-    const tap = await settingsTap(ctx, deps);
-    if (tap === undefined) return;
-    if (tap.ledgerId !== undefined) {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
-      return;
-    }
-    switchTips(deps, tap.user, !tipsOn(deps, tap.user));
-    await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
+  // A switch on Уведомления flips its setting and re-renders that screen.
+  const switchOn = (data: string, flip: (user: User) => void) => {
+    bot.callbackQuery(data, async (ctx) => {
+      const tap = await personalTap(ctx, deps);
+      if (tap === undefined) return;
+      flip(tap.user);
+      const anchor = paneAnchor(tap, 'notifications');
+      setAnchor(deps, tap.user, anchor);
+      await ctx.answerCallbackQuery();
+      await renderAnchor(ctx, anchor, notificationsView(deps, tap.user));
+    });
+  };
+  // [Подсказки: вкл/выкл] (ADR-0028).
+  switchOn(SETTINGS_TIPS, (user) => {
+    switchTips(deps, user, !tipsOn(deps, user));
   });
   // [Отключить подсказки] under a tip.
   registerTipsOff(bot, deps);
-
-  // The personal hub's [Убирать мои сообщения: вкл/выкл] (ADR-0038): flips the switch and
-  // re-renders.
-  bot.callbackQuery(SETTINGS_TIDY, async (ctx) => {
-    const tap = await settingsTap(ctx, deps);
-    if (tap === undefined) return;
-    if (tap.ledgerId !== undefined) {
-      await ctx.answerCallbackQuery({ text: messages.staleScreen });
-      return;
-    }
-    switchTidyChat(deps, tap.user, !tidyChatOn(deps, tap.user));
-    await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
+  // [Убирать мои сообщения: вкл/выкл] (ADR-0038).
+  switchOn(SETTINGS_TIDY, (user) => {
+    switchTidyChat(deps, user, !tidyChatOn(deps, user));
   });
-
-  // The personal hub's [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл]: flip that summary
-  // push and re-render.
-  for (const [data, push] of [
-    [SETTINGS_PUSH_MONTHLY, 'monthly'],
-    [SETTINGS_PUSH_WEEKLY, 'weekly'],
-  ] as const) {
-    bot.callbackQuery(data, async (ctx) => {
-      const tap = await settingsTap(ctx, deps);
-      if (tap === undefined) return;
-      if (tap.ledgerId !== undefined) {
-        await ctx.answerCallbackQuery({ text: messages.staleScreen });
-        return;
-      }
-      switchSummaryPush(deps, tap.user, push, !summaryPushOn(deps, tap.user, push));
-      await ctx.answerCallbackQuery();
-      await renderAnchor(ctx, tap.anchor, hubView(deps, tap));
-    });
-  }
+  // [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл].
+  switchOn(SETTINGS_PUSH_MONTHLY, (user) => {
+    switchSummaryPush(deps, user, 'monthly', !summaryPushOn(deps, user, 'monthly'));
+  });
+  switchOn(SETTINGS_PUSH_WEEKLY, (user) => {
+    switchSummaryPush(deps, user, 'weekly', !summaryPushOn(deps, user, 'weekly'));
+  });
 
   // [Сменить пароль] on the unlocked ledger's encryption screen.
   bot.callbackQuery(SETTINGS_PASSPHRASE, async (ctx) => {

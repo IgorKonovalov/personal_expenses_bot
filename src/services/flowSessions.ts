@@ -114,10 +114,13 @@ export interface ExpenseScreen {
 }
 
 // The /settings hub; with `ledgerId`, the hub scoped to that shared ledger (its timezone and
-// currency), opened from its group's /settings deep link.
+// currency), opened from its group's /settings deep link. `pane` is the personal hub's
+// sub-screen the anchor shows: its switches, or Аккаунт и данные with the encryption, privacy and
+// delete screens it opens.
 export interface SettingsScreen extends FromMenu {
   readonly name: 'settings';
   readonly ledgerId?: LedgerId;
+  readonly pane?: 'notifications' | 'account';
 }
 
 // The /budget screen of one ledger (ADR-0017). Its setup taps act on this ledger.
@@ -508,8 +511,12 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
   if (name === 'commandArg' && parsed !== undefined) return { name };
   const fromMenu: FromMenu = parsed?.fromMenu === true ? { fromMenu: true } : {};
   if (name === 'settings' && parsed !== undefined) {
-    return typeof parsed.ledgerId === 'string'
-      ? { name, ledgerId: parsed.ledgerId as LedgerId, ...fromMenu }
+    if (typeof parsed.ledgerId === 'string') {
+      return { name, ledgerId: parsed.ledgerId as LedgerId, ...fromMenu };
+    }
+    const { pane } = parsed;
+    return pane === 'notifications' || pane === 'account'
+      ? { name, pane, ...fromMenu }
       : { name, ...fromMenu };
   }
   if (name === 'summary' && parsed !== undefined) return parseSummary(parsed);

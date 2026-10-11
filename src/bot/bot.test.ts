@@ -4784,19 +4784,20 @@ describe('tidy chat (ADR-0038)', () => {
     };
   }
 
-  it('turns on from the /settings row, which then reads вкл', async () => {
+  it('turns on from the row on /settings → [Уведомления], which then reads вкл', async () => {
     const { bot, db, calls } = tidyBot();
     withMessageIds(bot, 100);
     await bot.handleUpdate(textUpdate({ updateId: 1, messageId: 1, text: '/settings' }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'set:ntf', messageId: 101 }));
     calls.length = 0;
 
-    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'set:tidy', messageId: 101 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'set:tidy', messageId: 101 }));
 
     expect(db.prepare('SELECT tidy_chat FROM users').pluck().get()).toBe(1);
     const edit = calls.find((c) => c.method === 'editMessageText')?.payload as {
       reply_markup: { inline_keyboard: unknown[][] };
     };
-    expect(edit.reply_markup.inline_keyboard.at(-1)).toEqual([
+    expect(edit.reply_markup.inline_keyboard.at(-2)).toEqual([
       { text: 'Убирать мои сообщения: вкл', callback_data: 'set:tidy' },
     ]);
   });
@@ -5415,22 +5416,33 @@ describe('/settings hub and the timezone picker', () => {
       '<b>Настройки</b>',
       `Часовой пояс: ${zone}`,
       `Валюта по умолчанию для новых трат в «Личные расходы»: ${currency}`,
+      // A new user gets the monthly push and not the weekly one.
+      'Итоги: месяц — вкл, неделя — выкл',
     ].join('\n');
+  // Exactly three rows, and no [« Назад] on a typed /settings.
   const hubKeyboard = {
     inline_keyboard: [
       [
         { text: 'Часовой пояс', callback_data: 'set:tz' },
         { text: 'Валюта', callback_data: 'set:cur' },
       ],
-      [{ text: 'Категории', callback_data: 'set:cat' }],
-      [{ text: 'Шифрование', callback_data: 'set:enc' }],
-      [{ text: 'Итоги месяца: вкл', callback_data: 'set:pm' }],
-      [{ text: 'Итоги недели: выкл', callback_data: 'set:pw' }],
+      [
+        { text: 'Категории', callback_data: 'set:cat' },
+        { text: 'Уведомления', callback_data: 'set:ntf' },
+      ],
+      [{ text: 'Аккаунт и данные', callback_data: 'set:acc' }],
+    ],
+  };
+  const notificationsKeyboard = (monthly: string, weekly: string) => ({
+    inline_keyboard: [
+      [{ text: monthly, callback_data: 'set:pm' }],
+      [{ text: weekly, callback_data: 'set:pw' }],
       // Tips are off for a test user that isn't about them.
       [{ text: 'Подсказки: выкл', callback_data: 'set:tips' }],
       [{ text: 'Убирать мои сообщения: выкл', callback_data: 'set:tidy' }],
+      [{ text: '« Назад', callback_data: 'set:open' }],
     ],
-  };
+  });
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
   const PROMPT =
     'Сейчас: Белград (Europe/Belgrade). Отправьте название часового пояса, например Europe/Istanbul.';
@@ -5470,29 +5482,34 @@ describe('/settings hub and the timezone picker', () => {
     ]);
   });
 
-  it('[Итоги недели: выкл] turns the weekly push on and [Итоги месяца: вкл] the monthly one off, each re-rendered', async () => {
+  it('[Уведомления] → [Итоги недели: выкл] turns the weekly push on and [Итоги месяца: вкл] the monthly one off, each re-rendering Уведомления', async () => {
     const { say, tap, calls, db } = settingsBot();
     await say('/settings', 1);
     calls.length = 0;
 
+    await tap('set:ntf', 101);
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        messages.notificationsScreen,
+        notificationsKeyboard('Итоги месяца: вкл', 'Итоги недели: выкл'),
+      ),
+    );
+
+    calls.length = 0;
     await tap('set:pw', 101);
 
     expect(db.prepare('SELECT weekly_push, monthly_push FROM users').get()).toEqual({
       weekly_push: 1,
       monthly_push: 1,
     });
-    const rows = (keyboard: { inline_keyboard: unknown[][] }) => keyboard.inline_keyboard;
-    const pushRows = (expected: [string, string]) =>
-      editOf(101, hubText(), {
-        inline_keyboard: rows(hubKeyboard).map((row, i) =>
-          i === 3
-            ? [{ text: expected[0], callback_data: 'set:pm' }]
-            : i === 4
-              ? [{ text: expected[1], callback_data: 'set:pw' }]
-              : row,
-        ),
-      });
-    expect(calls[1]).toEqual(pushRows(['Итоги месяца: вкл', 'Итоги недели: вкл']));
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        messages.notificationsScreen,
+        notificationsKeyboard('Итоги месяца: вкл', 'Итоги недели: вкл'),
+      ),
+    );
 
     calls.length = 0;
     await tap('set:pm', 101);
@@ -5501,7 +5518,125 @@ describe('/settings hub and the timezone picker', () => {
       weekly_push: 1,
       monthly_push: 0,
     });
-    expect(calls[1]).toEqual(pushRows(['Итоги месяца: выкл', 'Итоги недели: вкл']));
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        messages.notificationsScreen,
+        notificationsKeyboard('Итоги месяца: выкл', 'Итоги недели: вкл'),
+      ),
+    );
+
+    // [« Назад] shows the hub, whose line now reads the new state.
+    calls.length = 0;
+    await tap('set:open', 101);
+    expect(calls[1]).toEqual(
+      editOf(
+        101,
+        hubText().replace('месяц — вкл, неделя — выкл', 'месяц — выкл, неделя — вкл'),
+        hubKeyboard,
+      ),
+    );
+  });
+
+  describe('Аккаунт и данные (ADR-0050)', () => {
+    const accountKeyboard = {
+      inline_keyboard: [
+        [
+          { text: 'Шифрование', callback_data: 'set:enc' },
+          { text: 'Приватность', callback_data: 'set:prv' },
+        ],
+        [{ text: 'Удалить аккаунт', callback_data: 'set:del' }],
+        [{ text: '« Назад', callback_data: 'set:open' }],
+      ],
+    };
+    const ACCOUNT_OFF = '<b>Аккаунт и данные</b>\nШифрование: выключено.';
+
+    it('[Удалить аккаунт] → [Удалить всё] deletes the account as /delete_account does', async () => {
+      const { say, tap, calls, db } = settingsBot();
+      await say('450 кофе', 1);
+      await say('/settings', 2);
+      await tap('set:acc', 102);
+      expect(calls.at(-1)).toEqual(editOf(102, ACCOUNT_OFF, accountKeyboard));
+      await tap('set:del', 102);
+      expect(calls.at(-1)).toEqual(
+        editOf(102, messages.deleteAccountPrompt(14), {
+          inline_keyboard: [
+            [
+              { text: 'Удалить всё', callback_data: 'acct:del' },
+              { text: 'Отмена', callback_data: 'acct:keep' },
+            ],
+            [{ text: '« Назад', callback_data: 'set:acc' }],
+          ],
+        }),
+      );
+      calls.length = 0;
+
+      await tap('acct:del', 102);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: 'cb-5', text: messages.accountDeletedToast },
+        },
+        editOf(102, messages.accountDeleted, undefined),
+      ]);
+      expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(0);
+      expect(db.prepare("SELECT COUNT(*) FROM ledgers WHERE kind = 'personal'").pluck().get()).toBe(
+        0,
+      );
+    });
+
+    it('[Удалить аккаунт] → [« Назад] or [Отмена] shows Аккаунт и данные and deletes nothing', async () => {
+      const { say, tap, calls, db } = settingsBot();
+      await say('450 кофе', 1);
+      await say('/settings', 2);
+      await tap('set:acc', 102);
+      await tap('set:del', 102);
+      calls.length = 0;
+
+      await tap('set:acc', 102);
+      expect(calls.at(-1)).toEqual(editOf(102, ACCOUNT_OFF, accountKeyboard));
+      await tap('set:del', 102);
+      await tap('acct:keep', 102);
+      expect(calls.at(-1)).toEqual(
+        editOf(102, `${messages.accountKept}\n\n${ACCOUNT_OFF}`, accountKeyboard),
+      );
+
+      expect(db.prepare('SELECT COUNT(*) FROM expenses').pluck().get()).toBe(1);
+      expect(db.prepare("SELECT COUNT(*) FROM ledgers WHERE kind = 'personal'").pluck().get()).toBe(
+        1,
+      );
+    });
+
+    it('[Приватность] shows the policy with [« Назад] to Аккаунт и данные', async () => {
+      const { say, tap, calls } = settingsBot();
+      await say('/settings', 1);
+      await tap('set:acc', 101);
+
+      await tap('set:prv', 101);
+
+      expect(calls.at(-1)).toEqual(
+        editOf(101, messages.privacy, {
+          inline_keyboard: [[{ text: '« Назад', callback_data: 'set:acc' }]],
+        }),
+      );
+    });
+
+    it('[Шифрование] → [Отмена] on the enable prompt returns to Аккаунт и данные', async () => {
+      const { say, tap, calls, db } = settingsBot();
+      await say('/settings', 1);
+      await tap('set:acc', 101);
+      await tap('set:enc', 101);
+      expect(calls.at(-1)).toEqual(editOf(101, messages.encryptionEnablePrompt, cancelKeyboard));
+      calls.length = 0;
+
+      await tap('flow:cancel', 101);
+
+      expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([
+        editOf(101, ACCOUNT_OFF, accountKeyboard),
+      ]);
+      expect(db.prepare('SELECT kind FROM flow_sessions').pluck().get()).toBeNull();
+    });
   });
 
   it('pages the city list with the current zone marked, [Другой…] and [« Назад] below', async () => {
@@ -10115,7 +10250,6 @@ describe('[☰ Меню] (Plan 0034, ADR-0050)', () => {
         [more(label.recurring, 'rec'), more(label.debts, 'debt')],
         [more(label.tags, 'tags'), more(label.prices, 'prc')],
         [more(label.export, 'exp'), more(label.settings, 'set')],
-        [more(label.privacy, 'prv'), more(label.deleteAccount, 'del')],
         [more(label.help, 'help')],
         ...(opts.lockRow ?? []),
         ...(opts.admin === true ? [[more(label.admin, 'adm')]] : []),
@@ -10340,8 +10474,13 @@ describe('[☰ Меню] (Plan 0034, ADR-0050)', () => {
   );
 
   const ARG_COMMANDS = ['tag', 'paysupport', 'block', 'unblock', 'refund'];
+  // The menu's own buttons that run their command as typed; the settings screens' buttons have
+  // their own tests.
   const runs = MENU_BUTTONS.filter(
-    (b) => !ARG_COMMANDS.includes(b.command) && !MENU_IN_PLACE.some((p) => p.data === b.data),
+    (b) =>
+      /^(more|adm):/.test(b.data) &&
+      !ARG_COMMANDS.includes(b.command) &&
+      !MENU_IN_PLACE.some((p) => p.data === b.data),
   );
   const withArg = MENU_BUTTONS.filter((b) => ARG_COMMANDS.includes(b.command));
 
@@ -10524,7 +10663,7 @@ describe('[☰ Меню] (Plan 0034, ADR-0050)', () => {
     await tap('set:tzother', ADMIN_ID, 101);
     expect(pendingFlow(db)).toEqual(['setTimezone']);
 
-    await tap('more:prv');
+    await tap('more:rec');
 
     expect(pendingFlow(db)).toEqual([null]);
   });
@@ -10857,10 +10996,13 @@ describe('onboarding (Plan 0015)', () => {
     expect(edits[0]?.payload).toMatchObject({
       chat_id: ALLOWED_ID,
       message_id: check,
-      text: messages.settingsScreen({
-        timezone: 'Europe/Belgrade',
-        ledger: { kind: 'personal', name: 'Личные расходы', defaultCurrency: 'RSD' },
-      }),
+      text: messages.settingsScreen(
+        {
+          timezone: 'Europe/Belgrade',
+          ledger: { kind: 'personal', name: 'Личные расходы', defaultCurrency: 'RSD' },
+        },
+        { monthly: true, weekly: false },
+      ),
     });
     expect(edits).toHaveLength(3);
     expect(db.prepare('SELECT timezone FROM users WHERE id = ?').pluck().get(userId())).toBe(
@@ -11095,7 +11237,7 @@ describe('onboarding (Plan 0015)', () => {
           method: 'answerCallbackQuery',
           payload: {
             callback_query_id: 'cb-2',
-            text: 'Подсказки отключены. Включить: /settings',
+            text: 'Подсказки отключены. Включить: /settings → «Уведомления».',
           },
         },
         {
@@ -11106,7 +11248,7 @@ describe('onboarding (Plan 0015)', () => {
       expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(userId())).toBe(1);
     });
 
-    it('sends no tip on any trigger with tips off; [Подсказки: выкл] in the hub turns them back on', async () => {
+    it('sends no tip on any trigger with tips off; [Подсказки: выкл] on Уведомления turns them back on', async () => {
       const { send, tap, calls, db, userId, lastMessageId } = onboardingBot({ onboarding: false });
       await send('/help');
       db.prepare('UPDATE users SET tips_off = 1 WHERE id = ?').run(userId());
@@ -11115,21 +11257,29 @@ describe('onboarding (Plan 0015)', () => {
       await send('450 кофе');
       await send('/today');
       await send('/settings');
+      const hub = lastMessageId();
+      await tap('set:ntf', hub);
+      await tap('set:acc', hub);
 
       expect(sentTexts(calls).filter((text) => String(text).startsWith('💡'))).toEqual([]);
-      const hub = calls.at(-1)?.payload as { reply_markup: { inline_keyboard: unknown[][] } };
-      expect(hub.reply_markup.inline_keyboard.at(-2)).toEqual([
+      await tap('set:ntf', hub);
+      const notifications = calls.at(-1)?.payload as {
+        reply_markup: { inline_keyboard: unknown[][] };
+      };
+      expect(notifications.reply_markup.inline_keyboard.at(-3)).toEqual([
         { text: 'Подсказки: выкл', callback_data: 'set:tips' },
       ]);
       calls.length = 0;
 
-      await tap('set:tips', lastMessageId());
+      await tap('set:tips', hub);
 
       expect(db.prepare('SELECT tips_off FROM users WHERE id = ?').pluck().get(userId())).toBe(0);
       const edit = calls.find((c) => c.method === 'editMessageText')?.payload as {
+        text: string;
         reply_markup: { inline_keyboard: unknown[][] };
       };
-      expect(edit.reply_markup.inline_keyboard.at(-2)).toEqual([
+      expect(edit.text).toBe(messages.notificationsScreen);
+      expect(edit.reply_markup.inline_keyboard.at(-3)).toEqual([
         { text: 'Подсказки: вкл', callback_data: 'set:tips' },
       ]);
     });
@@ -11178,10 +11328,13 @@ describe('onboarding (Plan 0015)', () => {
       expect(tipsSent(open.calls)).toEqual([BUDGET_TIP]);
     });
 
-    it('offers tipEncrypt in the hub of an unsealed personal ledger, never a sealed or shared one', async () => {
+    it('offers tipEncrypt on Аккаунт и данные of an unsealed personal ledger, never a sealed or shared one', async () => {
       const plain = onboardingBot({ onboarding: false });
       await plain.send('/settings');
+      expect(tipsSent(plain.calls)).toEqual([]);
+      await plain.tap('set:acc', plain.lastMessageId());
       expect(tipsSent(plain.calls)).toEqual([ENCRYPT_TIP]);
+      expect(ENCRYPT_TIP).toContain('Включается в настройках: «Аккаунт и данные» → «Шифрование».');
 
       const sealed = onboardingBot({ onboarding: false });
       await sealed.send('/help');
@@ -11193,7 +11346,8 @@ describe('onboarding (Plan 0015)', () => {
         NOW,
       );
       await sealed.send('/settings');
-      expect(sentTexts(sealed.calls).at(-1)).toMatch(/^<b>Настройки<\/b>/);
+      await sealed.tap('set:acc', sealed.lastMessageId());
+      expect(sentTexts(sealed.calls).at(-1)).toMatch(/^<b>Аккаунт и данные<\/b>/);
       expect(tipsSent(sealed.calls)).toEqual([]);
 
       const shared = onboardingBot({ onboarding: false });
@@ -11214,6 +11368,7 @@ describe('onboarding (Plan 0015)', () => {
       expect(sentTexts(shared.calls).at(-1)).toContain(
         'Валюта по умолчанию для новых трат в «Семья»',
       );
+      await shared.tap('set:acc', shared.lastMessageId());
       expect(tipsSent(shared.calls)).toEqual([]);
     });
 

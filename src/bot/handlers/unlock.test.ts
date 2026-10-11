@@ -297,7 +297,7 @@ describe('/recover and the passphrase change in the bot', () => {
         reply_markup: {
           inline_keyboard: [
             [{ text: 'Сменить пароль', callback_data: SETTINGS_PASSPHRASE }],
-            [{ text: messages.backButton, callback_data: 'set:open' }],
+            [{ text: messages.backButton, callback_data: 'set:acc' }],
           ],
         },
       },

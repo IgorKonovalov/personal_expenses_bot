@@ -171,19 +171,26 @@ export const SETTINGS_OPEN = 'set:open';
 export const SETTINGS_CATEGORIES = 'set:cat';
 // The hub scoped to a shared ledger opens that ledger's /budget screen in the anchor.
 export const SETTINGS_BUDGET = 'set:bud';
-// The personal hub's [Шифрование] (ADR-0020): the enable prompt, or the sealed ledger's state.
+// The personal hub's [Уведомления] and [Аккаунт и данные] (ADR-0050): the switches, and the
+// encryption, privacy and deletion screen. On the latter, [Приватность] `set:prv` and [Удалить
+// аккаунт] `set:del` show the policy and the delete prompt in the anchor.
+export const SETTINGS_NOTIFICATIONS = 'set:ntf';
+export const SETTINGS_ACCOUNT = 'set:acc';
+export const SETTINGS_PRIVACY = 'set:prv';
+export const SETTINGS_DELETE = 'set:del';
+// [Шифрование] on Аккаунт и данные (ADR-0020): the enable prompt, or the sealed ledger's state.
 export const SETTINGS_ENCRYPTION = 'set:enc';
 // [Сменить пароль] on that screen, while the ledger is unlocked.
 export const SETTINGS_PASSPHRASE = 'set:encpw';
 // [Сохранил] under the recovery code message deletes that message.
 export const RECOVERY_SAVED = 'enc:saved';
-// The personal hub's [Подсказки: вкл/выкл] (ADR-0028): flips the tips switch and re-renders.
+// [Подсказки: вкл/выкл] on Уведомления (ADR-0028): flips the tips switch and re-renders.
 export const SETTINGS_TIPS = 'set:tips';
-// The personal hub's [Убирать мои сообщения: вкл/выкл] (ADR-0038): flips the tidy chat switch
-// and re-renders.
+// [Убирать мои сообщения: вкл/выкл] on Уведомления (ADR-0038): flips the tidy chat switch and
+// re-renders.
 export const SETTINGS_TIDY = 'set:tidy';
-// The personal hub's [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл]: flip the summary
-// push switch and re-render.
+// [Итоги месяца: вкл/выкл] and [Итоги недели: вкл/выкл] on Уведомления: flip the summary push
+// switch and re-render.
 export const SETTINGS_PUSH_MONTHLY = 'set:pm';
 export const SETTINGS_PUSH_WEEKLY = 'set:pw';
 // `set:cur` opens the currency picker, `set:cur:<CODE>` picks (11 bytes).
