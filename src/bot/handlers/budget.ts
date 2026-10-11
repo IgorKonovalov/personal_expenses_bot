@@ -47,6 +47,7 @@ import {
   budgetCapsPageData,
   budgetScopeData,
   categoryEssentialPageData,
+  moreData,
   setCategoryEssentialData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
@@ -185,8 +186,9 @@ function chartUrlOf(
 }
 
 // The screen for the ledger an anchor names, as its pane shows it; undefined once the user no
-// longer owns it, and the locked message alone while its sealed ledger is locked (ADR-0020).
-// `droppedCapsCurrency` puts the line about deleted category caps above it.
+// longer owns it, and the locked message while its sealed ledger is locked (ADR-0020), with
+// [Открыть учёт] (the hub's unlock entry). `droppedCapsCurrency` puts the line about deleted
+// category caps above it.
 export function budgetView(
   ctx: Context,
   deps: HandlerDeps,
@@ -199,7 +201,10 @@ export function budgetView(
   if (isLocked(view)) {
     return {
       text: messages.ledgerLocked,
-      markup: InlineKeyboard.from(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
+      markup: InlineKeyboard.from([
+        [InlineKeyboard.text(messages.moreButtons.unlock, moreData('unl'))],
+        ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
+      ]),
     };
   }
   const header =

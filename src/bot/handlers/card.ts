@@ -23,7 +23,6 @@ import {
   editExpenseData,
   receiptItemsData,
   receiptRetryData,
-  repeatExpenseData,
   restoreExpenseData,
   undoExpenseData,
 } from '../callbackData.js';
@@ -53,8 +52,6 @@ export interface CardView {
   // The receipt behind the expense: absent for a deleted expense or one typed in. A fetched
   // receipt carries its items when the viewer may read them (the author, the ledger open).
   readonly receipt?: ReceiptSummary & { readonly items?: readonly FetchedItem[] };
-  // The viewer is the author: the card offers [Повторять].
-  readonly repeatable?: boolean;
 }
 
 export interface CardCap {
@@ -87,7 +84,6 @@ export function cardView(
     expense,
     ledger,
     sentOn: localDateOf(expense.occurredAt, effectiveTimezone(deps, user, ledger)),
-    repeatable: expense.createdBy === user.id,
   };
   if (expense.deletedAt !== null) return view;
   const receipt = receiptSummary(deps, expense.id) ?? foldedReceiptSummary(deps, expense.id);
@@ -136,16 +132,15 @@ function withItems(
 }
 
 // [Категория] [Изменить] above [Удалить]: the destructive button gets its own row (ADR-0011).
-// The author's card adds [Повторять] on a row between them, and a receipt expense adds
-// [Позиции] once fetched, unless its items fold into the card (ADR-0038), or [Повторить] once
-// the fetch gave up, on the next.
+// A receipt expense adds a row between them: [Позиции] once fetched, unless its items fold into
+// the card (ADR-0038), or [Загрузить позиции] once the fetch gave up. [Повторять] sits under
+// [Изменить] (ADR-0050).
 export function recordedCard(view: CardView): Card {
   const id = view.expense.id;
   const markup = new InlineKeyboard()
     .text(messages.categoryButton, categoryPickerData(id))
     .text(messages.editButton, editExpenseData(id))
     .row();
-  if (view.repeatable === true) markup.text(messages.repeatButton, repeatExpenseData(id)).row();
   if (view.receipt?.state === 'fetched') {
     if (!messages.foldsReceiptItems(view)) {
       markup.text(messages.receiptItemsButton, receiptItemsData(id, 1)).row();

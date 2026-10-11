@@ -15,6 +15,7 @@ import type { HandlerDeps } from '../bot.js';
 import {
   SUMMARY_PAGE,
   drillPickerData,
+  moreData,
   periodItemsData,
   summaryPageData,
 } from '../callbackData.js';
@@ -104,7 +105,10 @@ export async function sendSummary(
   const user = ensureUser(deps, ctx.from.id, now);
   const summary = currentPeriodSummary(deps, { user, kind, now });
   if (isLocked(summary)) {
-    await replyHtml(ctx, messages.ledgerLocked);
+    // [Открыть учёт] is the hub's unlock entry: the /unlock prompt.
+    await replyHtml(ctx, messages.ledgerLocked, {
+      reply_markup: new InlineKeyboard().text(messages.moreButtons.unlock, moreData('unl')),
+    });
     return;
   }
   const screen: SummaryScreen = { name: 'summary', ledgerId: summary.ledger.id };

@@ -614,7 +614,6 @@ describe('quiet confirmation and the group card (Phase 2)', () => {
                 { text: messages.categoryButton, callback_data: `exp:cat:${a}` },
                 { text: messages.editButton, callback_data: `exp:edit:${a}` },
               ],
-              [{ text: messages.repeatButton, callback_data: `rec:new:${a}` }],
               [{ text: messages.undoButton, callback_data: `exp:undo:${a}` }],
             ],
           },

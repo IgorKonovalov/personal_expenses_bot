@@ -399,8 +399,8 @@ and `more:chg` are reused.
 | 1: Bar and ☰ Меню hub | dev | done | adb66c4 |
 | 2: Settings split | dev | done | 4dbb764 |
 | 3: Budget read-first | dev | done | 3d0d575 |
-| 4: Help topics | dev | done | committed with this row |
-| 5: Card and labels | dev | not started | |
+| 4: Help topics | dev | done | caa3c20 |
+| 5: Card and labels | dev | done | committed with this row |
 | 6: Live check | human | not started | |
 
 ### Notes
@@ -455,6 +455,12 @@ and `more:chg` are reused.
 - Phase 4: [Что нового] on the help screen is `more:chg`, whose [« Назад] goes to the hub, also
   from a typed /help.
 - Phase 4: the `start` scenario runs with WEBAPP_URL, so its bar shows [📷 Скан].
+- Phase 5: `src/bot/group/group.test.ts` and `src/bot/handlers/drill.test.ts` (outside the phase's
+  files) drop the card's [Повторять] row and take the new labels.
+- Phase 5: the locked `ledgerLocked` view of /budget carries [Открыть учёт] wherever it renders,
+  above the scoped hub's [« Назад]; `scripts/docs-chats/scenarios/record.ts` needed no change.
+- Phase 5: the record.mdx line about «Обязательные» on /categories (Phase 3's note) now points to
+  /budget → «Настроить» → «Что считать».
 
 ### Close triggers
 

@@ -23,6 +23,7 @@ import {
   EDIT_FIELD,
   SET_EXPENSE_DATE,
   editFieldData,
+  repeatExpenseData,
   setExpenseDateData,
   showExpenseData,
   type EditField,
@@ -138,6 +139,7 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
+    // The fields, then [Повторять] for the author (ADR-0050), then [« Назад] to the card.
     await editHtml(ctx, messages.editPicker(found), {
       reply_markup: InlineKeyboard.from([
         [
@@ -146,6 +148,9 @@ export function registerEdit(bot: Composer<Context>, deps: HandlerDeps): void {
           InlineKeyboard.text(messages.editDateButton, editFieldData(expenseId, 't')),
           InlineKeyboard.text(messages.editTagsButton, editFieldData(expenseId, 'g')),
         ],
+        ...(found.stored.createdBy === user.id
+          ? [[InlineKeyboard.text(messages.repeatButton, repeatExpenseData(expenseId))]]
+          : []),
         backRow(showExpenseData(expenseId)),
       ]),
     });

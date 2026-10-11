@@ -122,7 +122,7 @@ describe('[По категориям] on the summary', () => {
 
     expect(sentKeyboard(calls)).toEqual([
       [button('◀ Август', 'sum:m:2026-08')],
-      [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
+      [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции чеков', 'itm:m:2026-09:1')],
     ]);
 
     calls.length = 0;
@@ -130,7 +130,7 @@ describe('[По категориям] on the summary', () => {
 
     expect(lastEdit(calls)?.reply_markup.inline_keyboard).toEqual([
       [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-      [button('Позиции', 'itm:m:2026-08:1')],
+      [button('Позиции чеков', 'itm:m:2026-08:1')],
     ]);
   });
 });
@@ -585,7 +585,6 @@ describe('the card in the drill-down (ADR-0040)', () => {
     );
     expect(card?.reply_markup.inline_keyboard).toEqual([
       [button('Категория', `exp:cat:${eid(1)}`), button('Изменить', `exp:edit:${eid(1)}`)],
-      [button('Повторять', `rec:new:${eid(1)}`)],
       [button('Удалить', `exp:undo:${eid(1)}`)],
       BACK_ROW,
     ]);
@@ -755,7 +754,7 @@ describe('the back row survives every card action on the anchor', () => {
 
     await openCard(5);
     expect(lastEdit(calls)?.reply_markup.inline_keyboard).toContainEqual([
-      button('Повторить', `exp:rcretry:${eid(5)}`),
+      button('Загрузить позиции', `exp:rcretry:${eid(5)}`),
     ]);
     calls.length = 0;
     await tap(`exp:rcretry:${eid(5)}`, anchor());

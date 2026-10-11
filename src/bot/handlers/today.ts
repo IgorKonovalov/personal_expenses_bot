@@ -4,7 +4,7 @@ import { isLocked, type Locked } from '../../services/ledgerKeys.js';
 import { activePeriodItems } from '../../services/periodItems.js';
 import { todaySummary } from '../../services/todaySummary.js';
 import type { HandlerDeps } from '../bot.js';
-import { dayItemsData, dayListData } from '../callbackData.js';
+import { dayItemsData, dayListData, moreData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml, type Html } from '../render/html.js';
 import { offerTip } from '../tips.js';
@@ -39,7 +39,10 @@ export async function sendToday(ctx: Context, deps: HandlerDeps): Promise<void> 
   const user = ensureUser(deps, ctx.from.id, now);
   const reply = todayReply(deps, user, now);
   if (isLocked(reply)) {
-    await replyHtml(ctx, messages.ledgerLocked);
+    // [Открыть учёт] is the hub's unlock entry: the /unlock prompt.
+    await replyHtml(ctx, messages.ledgerLocked, {
+      reply_markup: new InlineKeyboard().text(messages.moreButtons.unlock, moreData('unl')),
+    });
     return;
   }
   await replyHtml(ctx, reply.text, { reply_markup: reply.markup });

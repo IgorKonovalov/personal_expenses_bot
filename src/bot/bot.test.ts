@@ -136,14 +136,13 @@ function silentLogger() {
 }
 
 const EXPENSE_ID = '00000000-0000-4000-8000-000000000003';
-// The recorded card's keyboard: [Категория] [Изменить], then [Повторять], above [Удалить].
+// The recorded card's keyboard: [Категория] [Изменить] above [Удалить] (ADR-0050).
 const undoKeyboard = {
   inline_keyboard: [
     [
       { text: 'Категория', callback_data: `exp:cat:${EXPENSE_ID}` },
       { text: 'Изменить', callback_data: `exp:edit:${EXPENSE_ID}` },
     ],
-    [{ text: 'Повторять', callback_data: `rec:new:${EXPENSE_ID}` }],
     [{ text: messages.undoButton, callback_data: `exp:undo:${EXPENSE_ID}` }],
   ],
 };
@@ -2422,7 +2421,7 @@ describe('editing an expense from its card', () => {
     expect(Buffer.byteLength(setExpenseDateData(ID, '2026-09-29' as LocalDate))).toBe(54);
   });
 
-  it('opens the field picker in the card with [« Назад] alone below', async () => {
+  it('opens the field picker in the card with [Повторять], then [« Назад] alone below', async () => {
     const { tap, calls } = await recorded();
 
     await tap(`exp:edit:${ID}`);
@@ -2436,6 +2435,7 @@ describe('editing an expense from its card', () => {
             { text: 'Дата', callback_data: `exp:ef:${ID}:t` },
             { text: 'Метки', callback_data: `exp:ef:${ID}:g` },
           ],
+          [{ text: 'Повторять', callback_data: `rec:new:${ID}` }],
           [{ text: '« Назад', callback_data: `exp:show:${ID}` }],
         ],
       }),
@@ -3708,7 +3708,10 @@ describe('/week and /month', () => {
           reply_markup: {
             inline_keyboard: [
               [button('◀ Август', 'sum:m:2026-08')],
-              [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
+              [
+                button('По категориям', 'drl:p:m:2026-09:1'),
+                button('Позиции чеков', 'itm:m:2026-09:1'),
+              ],
             ],
           },
           ...htmlParseMode,
@@ -3733,7 +3736,7 @@ describe('/week and /month', () => {
               [button('◀ 21–27 сен', 'sum:w:2026-09-21')],
               [
                 button('По категориям', 'drl:p:w:2026-09-28:1'),
-                button('Позиции', 'itm:w:2026-09-28:1'),
+                button('Позиции чеков', 'itm:w:2026-09-28:1'),
               ],
             ],
           },
@@ -3795,7 +3798,10 @@ describe('/week and /month', () => {
         '<b>Август 2026 — «Личные расходы»</b>\n\n<b>100.00 RSD</b>\n<blockquote expandable>Продукты: 100.00</blockquote>',
         [
           [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-          [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции', 'itm:m:2026-08:1')],
+          [
+            button('По категориям', 'drl:p:m:2026-08:1'),
+            button('Позиции чеков', 'itm:m:2026-08:1'),
+          ],
         ],
       ),
     ]);
@@ -3819,7 +3825,7 @@ describe('/week and /month', () => {
           ],
           [
             button('По категориям', 'drl:p:w:2026-09-21:1'),
-            button('Позиции', 'itm:w:2026-09-21:1'),
+            button('Позиции чеков', 'itm:w:2026-09-21:1'),
           ],
         ],
       ),
@@ -3948,7 +3954,7 @@ describe('/week and /month', () => {
       const markup = markupOf(calls[0]);
       expect(markup.inline_keyboard.slice(0, -1)).toEqual([
         [button('◀ Август', 'sum:m:2026-08')],
-        [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции', 'itm:m:2026-09:1')],
+        [button('По категориям', 'drl:p:m:2026-09:1'), button('Позиции чеков', 'itm:m:2026-09:1')],
       ]);
       const chart = await chartOf(markup);
       expect(chart.base).toBe(webappUrl);
@@ -4103,7 +4109,7 @@ describe('/week and /month', () => {
       const markup = markupOf(calls[1]);
       expect(markup.inline_keyboard.slice(0, -1)).toEqual([
         [button('◀ Июль', 'sum:m:2026-07'), button('Сентябрь ▶', 'sum:m:2026-09')],
-        [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции', 'itm:m:2026-08:1')],
+        [button('По категориям', 'drl:p:m:2026-08:1'), button('Позиции чеков', 'itm:m:2026-08:1')],
       ]);
       expect((await chartOf(markup)).payload).toEqual({
         v: 2,
@@ -4485,7 +4491,7 @@ describe('/week and /month', () => {
       expect(markupOf(calls[0])).toEqual({
         inline_keyboard: [
           [button('◀ Август', 'sum:m:2026-08')],
-          [button('Позиции', 'itm:m:2026-09:1')],
+          [button('Позиции чеков', 'itm:m:2026-09:1')],
         ],
       });
     });
@@ -4848,7 +4854,7 @@ describe('[Позиции]: receipt items of a period by category (ADR-0038)', (
       inline_keyboard: [
         [
           { text: 'Траты', callback_data: 'day:2026-10-06:1' },
-          { text: 'Позиции', callback_data: 'itm:d:2026-10-06:1' },
+          { text: 'Позиции чеков', callback_data: 'itm:d:2026-10-06:1' },
         ],
       ],
     });
@@ -6276,7 +6282,6 @@ describe('fiscal receipts', () => {
           { text: 'Категория', callback_data: `exp:cat:${expenseId}` },
           { text: 'Изменить', callback_data: `exp:edit:${expenseId}` },
         ],
-        [{ text: 'Повторять', callback_data: `rec:new:${expenseId}` }],
         [{ text: messages.undoButton, callback_data: `exp:undo:${expenseId}` }],
       ],
     };
@@ -6934,7 +6939,6 @@ describe('fiscal receipts', () => {
             { text: 'Категория', callback_data: `exp:cat:${expenseId}` },
             { text: 'Изменить', callback_data: `exp:edit:${expenseId}` },
           ],
-          [{ text: 'Повторять', callback_data: `rec:new:${expenseId}` }],
           ...(withItems ? [[{ text: 'Позиции', callback_data: `exp:items:${expenseId}:1` }]] : []),
           [{ text: 'Удалить', callback_data: `exp:undo:${expenseId}` }],
         ],
@@ -7120,7 +7124,30 @@ describe('fiscal receipts', () => {
       ]);
     });
 
-    it('resets a failed receipt once on a double tap of [Повторить], and the worker fetches it once', async () => {
+    it('draws a failed receipt card as [Категория] [Изменить] / [Загрузить позиции] / [Удалить]', async () => {
+      const { send, bot, calls, db } = receiptBot();
+      await send(RS_LINK);
+      settle(db, 'failed');
+      const id = String(expenseIds(db)[0]);
+      calls.length = 0;
+
+      await tapAs(bot, `exp:show:${id}`);
+
+      const card = calls.find((c) => c.method === 'editMessageText')?.payload as {
+        reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
+      };
+      expect(card.reply_markup.inline_keyboard).toEqual([
+        [
+          { text: 'Категория', callback_data: `exp:cat:${id}` },
+          { text: 'Изменить', callback_data: `exp:edit:${id}` },
+        ],
+        [{ text: 'Загрузить позиции', callback_data: `exp:rcretry:${id}` }],
+        [{ text: 'Удалить', callback_data: `exp:undo:${id}` }],
+      ]);
+      expect(JSON.stringify(card.reply_markup)).not.toMatch(/"text":"Повтор/);
+    });
+
+    it('resets a failed receipt once on a double tap of [Загрузить позиции], and the worker fetches it once', async () => {
       const { send, bot, calls, db } = receiptBot();
       await send(RS_LINK);
       settle(db, 'failed');
@@ -7217,7 +7244,6 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
           { text: 'Категория', callback_data: `exp:cat:${id}` },
           { text: 'Изменить', callback_data: `exp:edit:${id}` },
         ],
-        [{ text: 'Повторять', callback_data: `rec:new:${id}` }],
         [{ text: messages.undoButton, callback_data: `exp:undo:${id}` }],
       ],
     };
@@ -7736,6 +7762,55 @@ describe('recurring expenses', () => {
     );
   });
 
+  it('[Изменить] → [Повторять] → «Каждый месяц» makes the rule as the card button did (ADR-0050)', async () => {
+    const { tap, calls, db } = await rentBot();
+    calls.length = 0;
+
+    await tap(`exp:edit:${EXPENSE_ID}`);
+    const picker = calls.find((c) => c.method === 'editMessageText')?.payload as {
+      reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
+    };
+    expect(picker.reply_markup.inline_keyboard[1]).toEqual([
+      { text: 'Повторять', callback_data: `rec:new:${EXPENSE_ID}` },
+    ]);
+    expect(picker.reply_markup.inline_keyboard[2]).toEqual([
+      { text: messages.backButton, callback_data: `exp:show:${EXPENSE_ID}` },
+    ]);
+    calls.length = 0;
+    await tap(`rec:new:${EXPENSE_ID}`);
+    expect(calls.find((c) => c.method === 'editMessageText')?.payload).toMatchObject({
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Каждый месяц, 1-го', callback_data: `rec:s:${EXPENSE_ID}:m` }],
+          [{ text: 'Каждую неделю, по четвергам', callback_data: `rec:s:${EXPENSE_ID}:w` }],
+          [{ text: 'Каждый год, 01.10', callback_data: `rec:s:${EXPENSE_ID}:y` }],
+          [{ text: messages.backButton, callback_data: `exp:show:${EXPENSE_ID}` }],
+        ],
+      },
+    });
+    await tap(`rec:s:${EXPENSE_ID}:m`);
+
+    expect(db.prepare('SELECT kind, next_due_on FROM recurring_rules').all()).toEqual([
+      { kind: 'expense', next_due_on: '2026-11-01' },
+    ]);
+  });
+
+  it('gives a non-author no [Повторять]: their [Изменить] is refused before the picker', async () => {
+    const { bot, calls } = await rentBot();
+    calls.length = 0;
+
+    await bot.handleUpdate(
+      callbackUpdate({ updateId: 60, fromId: SECOND_ALLOWED_ID, data: `exp:edit:${EXPENSE_ID}` }),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-60', text: messages.editForbidden },
+      },
+    ]);
+  });
+
   it('[Повторять] on someone else’s expense records no rule', async () => {
     const { bot, db } = await rentBot();
 
@@ -7948,7 +8023,7 @@ describe('/export (ADR-0026)', () => {
         { text: 'CSV', callback_data: `xp:f:${range}:csv` },
         { text: 'Excel', callback_data: `xp:f:${range}:xlsx` },
       ],
-      [{ text: '← Назад', callback_data: 'xp:back' }],
+      [{ text: '« Назад', callback_data: 'xp:back' }],
     ],
   });
 
@@ -7962,7 +8037,7 @@ describe('/export (ADR-0026)', () => {
     return harness;
   }
 
-  it('asks for the range, then the format in place, and [← Назад] goes back', async () => {
+  it('asks for the range, then the format in place, and [« Назад] goes back', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/export' }));
@@ -10840,6 +10915,34 @@ describe('[☰ Меню] (Plan 0034, ADR-0050)', () => {
       hubKeyboard({ lockRow: [[more(label.unlock, 'unl')]] }),
       hubKeyboard({ lockRow: [[more(label.lock, 'lock')]] }),
     ]);
+  });
+
+  it.each(['/today', '/week', '/month', '/budget'])(
+    'answers %s on a locked sealed ledger with ledgerLocked and one button, more:unl',
+    async (command) => {
+      const { send, calls, db, keys } = moreBot();
+      await send('/start', SECOND_ALLOWED_ID);
+      const user = findUserByIdentity(db, 'telegram', String(SECOND_ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const ledger = await sealPersonalLedger({ db, logger: silentLogger(), keys }, user, NOW);
+      keys.lock(ledger.id);
+      calls.length = 0;
+
+      await send(command, SECOND_ALLOWED_ID);
+
+      expect(ofMethod(calls, 'sendMessage')).toEqual([
+        {
+          chat_id: SECOND_ALLOWED_ID,
+          text: messages.ledgerLocked,
+          reply_markup: { inline_keyboard: [[more(label.unlock, 'unl')]] },
+          ...htmlParseMode,
+        },
+      ]);
+    },
+  );
+
+  it('keeps «← Назад» out of the messages module', () => {
+    expect(JSON.stringify(messages)).not.toContain('← Назад');
   });
 
   it('clears a pending flow before the screen opens, as a typed command does', async () => {

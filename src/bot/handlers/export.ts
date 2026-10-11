@@ -59,7 +59,7 @@ function formatKeyboard(range: ExportRange, fromMenu: boolean): InlineKeyboard {
       InlineKeyboard.text(messages.exportCsvButton, exportFormatData(range, 'csv', fromMenu)),
       InlineKeyboard.text(messages.exportXlsxButton, exportFormatData(range, 'xlsx', fromMenu)),
     ],
-    [InlineKeyboard.text(messages.exportBackButton, exportBackData(fromMenu))],
+    [InlineKeyboard.text(messages.backButton, exportBackData(fromMenu))],
   ]);
 }
 
@@ -135,7 +135,7 @@ export function rangeStep(sealed: boolean, fromMenu = false): ScreenView {
   return { text: messages.exportRangePrompt(sealed), markup: rangeKeyboard(fromMenu) };
 }
 
-// [← Назад] and a range tap, which edit the picker in place; shared with the group picker.
+// [« Назад] and a range tap, which edit the picker in place; shared with the group picker.
 export async function showRangeStep(
   ctx: Context,
   sealed: boolean,

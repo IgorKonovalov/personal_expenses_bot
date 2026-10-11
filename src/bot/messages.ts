@@ -1941,7 +1941,7 @@ export const messages = {
     recurring: joinHtml(
       [
         html`<b>Регулярные</b>`,
-        html`Аренда, подписки и другие регулярные траты: на карточке траты нажмите [Повторять] и выберите расписание. В этот день в 09:00 я сам запишу такую же трату или спрошу, записать ли.`,
+        html`Аренда, подписки и другие регулярные траты: на карточке траты нажмите [Изменить] → [Повторять] и выберите расписание. В этот день в 09:00 я сам запишу такую же трату или спрошу, записать ли.`,
         html`/recurring — регулярные траты и напоминания.`,
       ],
       '\n\n',
@@ -2266,7 +2266,7 @@ export const messages = {
 
   // A receipt card's buttons: the item list once fetched, a refetch once the fetch gave up.
   receiptItemsButton: 'Позиции',
-  receiptRetryButton: 'Повторить',
+  receiptRetryButton: 'Загрузить позиции',
   receiptItemsForbidden: 'Позиции видит только тот, кто записал трату',
   receiptItemsUnavailable: 'Позиции чека ещё не загружены',
   receiptRetryToast: 'Загружаю позиции',
@@ -2290,7 +2290,7 @@ export const messages = {
     return pages;
   },
   // [Позиции] under /today, /week and /month: the period's receipt items by category.
-  periodItemsButton: 'Позиции',
+  periodItemsButton: 'Позиции чеков',
   periodItemPages,
   // A private screen's `web_app` button: the screen as a chart in the Mini App (ADR-0025).
   chartButton: '📈 Диаграмма',
@@ -3063,7 +3063,6 @@ export const messages = {
   exportFormatPrompt: html`Формат файла?`,
   exportCsvButton: 'CSV',
   exportXlsxButton: 'Excel',
-  exportBackButton: '← Назад',
   exportEmpty: html`За этот период расходов нет`,
   // `Готово: 2 расхода за сентябрь 2026`. `key` is the file key: `2026-09`, `2026` or `all`.
   exportDone: (count: number, key: string): Html =>
@@ -3393,7 +3392,10 @@ export const messages = {
     const title = html`<b>Регулярные траты</b>`;
     if (rules.length === 0) {
       return joinHtml(
-        [title, html`Пока ничего нет. Чтобы трата записывалась сама, нажмите «Повторять» под ней.`],
+        [
+          title,
+          html`Пока ничего нет. Чтобы трата записывалась сама, нажмите под ней «Изменить» → «Повторять».`,
+        ],
         '\n',
       );
     }
