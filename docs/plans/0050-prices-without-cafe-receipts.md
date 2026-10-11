@@ -153,7 +153,7 @@ No migration, no callback data, no new copy in the messages module.
 |---|---|---|---|
 | 1: Cafe receipts leave /prices | dev | done | 20c97e5 |
 | 2: The coverage report and the guide follow | dev | done | 6efe981 |
-| 3: Live check | human | not started | |
+| 3: Live check | human | owed | |
 
 ### Notes
 
