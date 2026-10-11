@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0050`
+- **Next free number:** `0051`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -17,7 +17,7 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0008](0008-category-suggestion-from-history.md) | Suggest a category from the ledger's history, then keyword rules, then «Другое» | accepted (2026-09-30) |
 | [0009](0009-persisted-flow-sessions.md) | Multi-step flows keep their state in SQLite, one pending flow per user | accepted (2026-09-30) |
 | [0010](0010-approved-plans-run-under-a-forked-conductor-on-trial.md) | Approved plans run under a conductor forked from Ritmolux, on trial before any package | accepted (2026-09-30) |
-| [0011](0011-navigation-model.md) | Navigation: a persistent menu, expense cards, one screen anchor per user | accepted (2026-09-30) |
+| [0011](0011-navigation-model.md) | Navigation: a persistent menu, expense cards, one screen anchor per user | accepted (2026-09-30), bar layout and /help carrying the bar superseded by 0050 (proposed) |
 | [0012](0012-html-rendering-seam.md) | Telegram HTML through one escaping seam | accepted (2026-09-30) |
 | [0013](0013-version-announcements-at-boot.md) | Announce each new version to the admin at boot, recorded in SQLite | accepted (2026-09-30) |
 | [0014](0014-group-chats-bind-to-shared-ledgers.md) | A group chat binds to one shared ledger, and the chat, not the active ledger, routes its messages | accepted (2026-10-01) |
@@ -56,3 +56,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0047](0047-group-history-import-from-a-desktop-export.md) | A group's history from before the bot joined is imported from a Telegram Desktop JSON export, read by rules and reviewed before recording | accepted (2026-10-08) |
 | [0048](0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md) | A Russian docs site beside the Mini App, with its chat pictures generated from the real bot | accepted (2026-10-08) |
 | [0049](0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md) | A multi-line message records one expense per line, all or nothing, under one card | proposed (2026-10-08) |
+| [0050](0050-a-second-navigation-level-menu-hub-edited-in-place.md) | A second navigation level: a ☰ Меню hub edited in place, and /help as topics | proposed (2026-10-11) |

@@ -4,7 +4,7 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0049`
+- **Next free number:** `0050`
 
 ## Active
 
@@ -12,6 +12,7 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0048](0048-several-expenses-per-message-day-list-more-menu.md) | Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu | approved (2026-10-08) |
+| [0049](0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | approved (2026-10-11) |
 
 ## Recently closed
 
