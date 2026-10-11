@@ -401,7 +401,7 @@ and `more:chg` are reused.
 | 3: Budget read-first | dev | done | 3d0d575 |
 | 4: Help topics | dev | done | caa3c20 |
 | 5: Card and labels | dev | done | a571cac |
-| 6: Live check | human | not started | |
+| 6: Live check | human | owed | |
 
 ### Notes
 
