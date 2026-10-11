@@ -1,8 +1,8 @@
 # 0048: Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu
 
-> **Status:** in-progress
+> **Status:** done (2026-10-11): built as planned, one nit fixed at close, two nits open, Phase 4 live check owed, v0.38.0
 > **Created:** 2026-10-08
-> **Related ADRs:** [ADR-0049](../adrs/0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md), ADR-0011, ADR-0040
+> **Related ADRs:** [ADR-0049](../../adrs/0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md), ADR-0011, ADR-0040
 
 ## TL;DR
 
@@ -352,5 +352,176 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
   0, 154 files, 2294 tests passed; `pnpm build` exit 0; `pnpm docs:chats` exit 0, 28
   transcripts; `pnpm docs:check` exit 0; `node scripts/check-doc-links.mjs` exit 0, 352 links.
 - **Outstanding `human` phases:** Phase 4 (live check on the deployed bot).
+
+## Close review
+
+Closed 2026-10-11 as v0.38.0. Phase 4 (live check on the deployed bot) stays owed. Nit 1 was
+repaired at close in 989525f (the Phase 3 table row now reads `25.12.2026`); nits 2 and 3 stay
+open. No earlier round raised findings for a fix round to resolve.
+
+### Plan 0048 review, round 1 (tip de1625e)
+
+**Verdict:** Phases 1-3 are built as planned and the gate is green. The only findings are three
+nits: one plan-side arithmetic slip, which `dev` disclosed and worked around correctly, and two
+untested timezone edges. The plan is clean to close.
+
+#### Gate (run in this session at de1625e)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 154 files, 2294 tests passed
+- `node scripts/check-doc-links.mjs`: exit 0, 352 relative links resolve
+
+#### Lens 1: alignment
+
+- Phase-to-commit map: e9e6a72 (Phase 1), 67cc4db (Phase 2) and 3ce3077 (Phase 3), then the log
+  commits. Phase 4 is `human`, `Blocks merge: no`, and owed. Every phase has one in-vocabulary
+  owner tag. The log is shorter than the phases section.
+- Phase 1: `src/bot/handlers/more.ts` draws `WIDE` (`more:don`) alone, then `pairs(BUTTONS)` in
+  the planned order, ending `prv · del`. `bot.test.ts` «draws «Поддержать» alone on the first
+  row…» asserts the first row is `['more:don']`, every later row has two buttons, and the last row
+  is `['more:prv','more:del']`. `moreKeyboard()` in the same describe pins the full layout. The
+  diff does not touch `reachability.test.ts`, and it passes.
+- Phase 2: the done-when tests are in `bot.test.ts` «[Траты] under /today (Plan 0048)», and each
+  one asserts exact text and markup:
+  - Belgrade 00:30: the 8th lists «кофе», and the 7th reads «7 октября трат нет.».
+  - Empty /today: it carries `[[Траты day:2026-10-08:1]]`, the 8th has `◀ 07.10` and no next
+    button, and the 7th's day row is `◀ 06.10 · 08.10 ▶`.
+  - A 10-expense day: page 1 has lines 1-8, and page 2 has lines 9 and 10 with buttons 9 and 10.
+  - [2] → amount 500: the DB holds 50000, both card renders end in `drl:back`, and back shows
+    `2. 500.00 RSD · трата 2`.
+  - [Удалить] → back lists the remaining expense only.
+  - A foreign ledger's `drl:e` toasts `expenseNotFound`, with no edit.
+  - A future or malformed day is answered silently, and a locked sealed ledger toasts
+    `ledgerLockedToast`.
+
+  `src/bot/handlers/drill.test.ts` is unchanged in the diff and passes. `dayExpenses.test.ts`
+  covers newest-first order, the exclusion of deleted expenses, per-currency totals and the
+  future refusal.
+- Phase 3: `expenseLines.test.ts` asserts every row of the plan's table with `toEqual`, except
+  `25.12` (see nit 1). `bot.test.ts` «several expenses in one message» asserts:
+  - the keys `tg:<c>:77`, `:77:2` and `:77:3` with amounts 45000, 120000 and 1200;
+  - the card line `Итого: 1 650.00 RSD, 12.00 EUR` and buttons 1-3;
+  - that a redelivery leaves three rows and an identical card;
+  - the exact `linesBadLine` text for line 2;
+  - that `450 кофе\nс Ирой` stays one 45000 row under `tg:<c>:78`;
+  - that a recategorisation from the batch card is shown on back as `2. 1 200.00 RSD · такси ·
+    Развлечения`;
+  - three sealed rows, with the redelivery answering `sealedDuplicate`.
+
+  `recordExpenseLines.test.ts` repeats these at the service level.
+- Disclosed deviations, all checked and acceptable:
+  - Phase 2 also changed `edit.ts` (`listScreenAt` over `holdsCard`) and `group.test.ts`, and
+    left `db/expenses.ts` and `callbacks.ts` alone.
+  - `tooMany` counts every non-blank line.
+  - A `tooManyTags` line does not count toward the two expense lines.
+  - `card.ts` was not changed in Phase 3.
+- ADR-0049: the code matches its decision. The test-and-record steps run in this order: two or
+  more expense lines, all or nothing, line 1 keeps the plain key, line n gets `:<n>`, one
+  transaction, and a redelivery re-shows the batch. No other ADR is reversed. ADR-0040's
+  `returnTo` widens to `ListScreen`, as the plan states.
+
+#### Lens 2: layering
+
+- The domain (`expenseLines.ts`, `readExpenseText`) imports no I/O and no grammY. The services
+  import no grammY. The new callbacks are registered on the `dm` composer only (`bot.ts`), and
+  `todayReply` is reached only from DM handlers.
+- All new copy lives in `messages.ts`: `dayList`, `dayListEmpty`, `batchCard`, `linesBadLine`,
+  `linesTooMany` and the day buttons. The handlers hold no literals.
+
+#### Lens 3: correctness
+
+- **Money:** batch totals go through `sumByCurrency`, and the day totals through
+  `summarizeConverted`. There is no float or `toFixed` in the diff.
+- **Time:** the day list filters on the stored `occurred_on`. Its "today" uses
+  `effectiveTimezone(user, ledger)`, the same as `todaySummary`. `dayMonth` formats in UTC from a
+  `LocalDate`, so the server timezone cannot shift it.
+- **Idempotency:**
+  - Line 1's key is checked before reading.
+  - A key without a `:2` falls back to the single path, so one-line redeliveries are unchanged.
+  - The batch inserts through `storeExpense` (insert-or-get) inside one `db.transaction`.
+  - No other feature writes `tg:<c>:<m>:<n>` keys. Imports use `tgx:`, and SMS falls back to
+    `sms:`.
+- **Privacy:** the batch log carries `userId`, `ledgerId` and `count` only. The refused line is
+  never logged.
+- **Telegram:**
+  - `day:<date>:<page>` goes through `assertCallbackData`, at 19 bytes at most.
+  - The batch holds at most 20 `drl:e` buttons in five rows.
+  - Descriptions are cut to `MAX_LIST_DESCRIPTION`.
+  - Every interpolation goes through `html`, which escapes it, and that includes the quoted
+    refused line.
+
+#### Lens 4: docs freshness
+
+- `/help`: the /today line names [Траты], and «Несколько трат — по одной в строке.» is added.
+- `tipFirstExpense` carries the same sentence.
+- Guide pages: `totals.mdx` (day list prose) and `record.mdx` (new «Несколько трат сразу»
+  section and the edit pointer).
+- Scenarios: `record-edit.ts` is extended, and `record-lines.ts` is new.
+- No config or env key changed. `CLAUDE.md`'s "Where things live" still matches the tree (no new
+  directories).
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+None.
+
+##### nit
+
+1. **The plan's `future` example is unmeetable as written.** (Fixed at close in 989525f.)
+   - **Where:** `docs/plans/0048-several-expenses-per-message-day-list-more-menu.md:209`
+   - **What:** the table row `450 кофе\n1200 такси 25.12` → `badLine`, line 2, `future` is wrong.
+     `parseDateSuffix` reads a bare `dd.mm` as the latest such date not after today, so on
+     2026-10-08 `25.12` is 2025-12-25 and the text reads as `lines`.
+   - **What `dev` did:** disclosed it in the log and tested `future` with `25.12.2026`
+     (`src/domain/expenseLines.test.ts:56`). `dev` also pinned `25.12` → 2025-12-25
+     (`expenseLines.test.ts:63`).
+   - **Why it matters:** a closed plan should not carry a false example. A reader of the done-when
+     would expect a refusal the bot never gives.
+   - **Fix (close session):** annotate that row in the plan's close section as corrected to
+     `25.12.2026`. The code needs no change.
+2. **No test runs the day list with differing timezones.** (Open.)
+   - **Where:** `src/services/dayExpenses.ts:68`
+   - **What:** no test has the user's timezone differ from the ledger's (a shared ledger). Every
+     day-list test uses a personal Belgrade ledger.
+   - **Why it matters:** hiding [▶] and refusing a future date depend on the ledger's effective
+     timezone. The code calls the same `effectiveTimezone` as `todaySummary`, so the risk is low,
+     but nothing probes the case where the two differ.
+   - **Fix:** if a later plan touches the day list, add a `dayExpenses.test.ts` case. Use a shared
+     ledger whose timezone is ahead of the member's, with `now` in the window where their local
+     dates differ, and assert `today` follows the ledger.
+3. **The batch card's date markers can drift after a timezone change.** (Open.)
+   - **Where:** `src/services/recordExpenseLines.ts:170`
+   - **What:** `storedBatch` recomputes the batch's `sentOn` at every redraw from the current
+     effective timezone, not the one in force at recording.
+   - **Why it matters:** after a timezone change between recording and a [« Назад] redraw, the
+     ` · dd.mm` markers can move: a line dated the message's day may gain a marker, or lose one.
+     Display only, and rare.
+   - **Fix (optional):** derive `sentOn` from line 1's stored `occurred_on` when line 1 carries
+     no date word. Or accept it as is, because the stored dates are right.
+
+#### Bookkeeping owed at close
+
+- Flip the plan's `Status:` to `done` with the date and verdict, `git mv` it to
+  `docs/plans/done/`, and repair inbound and outbound links. The inbound link is ADR-0049's
+  `../plans/0048-…`. Then run `node scripts/check-doc-links.mjs`.
+- Accept ADR-0049 (`proposed` → `accepted`) and refresh its row in `docs/adrs/README.md`.
+- In `docs/plans/README.md`, move the 0048 row (currently `approved`) to recently closed. The next
+  free plan number is already `0049`.
+- Version: a **minor** bump, because this is a feature plan. Bump `package.json`, add a
+  `CHANGELOG.md` entry and the version's `versionAnnouncements` entry in `src/bot/messages.ts`.
+  It should cover the «Ещё» layout, /today [Траты] and multi-line messages.
+- Phase 4 (human live check) stays owed after the merge. The close should record it as
+  outstanding.
+- Nit 1: note the corrected `25.12.2026` example in the close section.
 
 ## Followups

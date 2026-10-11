@@ -2,6 +2,20 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.38.0 (2026-10-11)
+
+From Plan 0048 (several expenses per message, a day list under /today, a calmer «Ещё» menu).
+
+- A message with one expense per line records them all, under one batch card with a total per
+  currency and a number button per expense. It is all or nothing: one unreadable line records
+  nothing and names that line. At most 20 lines (ADR-0049).
+- /today and the 📊 button gain [Траты]: the day's expenses, numbered, a day back or forward at a
+  time. A number opens that expense's card in place to edit or delete it, and [« Назад] returns
+  to the list.
+- «Ещё» draws [Поддержать] across the top, and [Удалить аккаунт] now sits beside [Приватность] in
+  the last row.
+- `/help` and the first-expense tip name both.
+
 ## 0.37.0 (2026-10-08)
 
 From Plan 0046 (group history import).

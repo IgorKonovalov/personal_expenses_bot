@@ -1,8 +1,8 @@
 # ADR-0049: A multi-line message records one expense per line, all or nothing, under one card
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-11)
 > **Date:** 2026-10-08
-> **Related plan(s):** [Plan 0048](../plans/0048-several-expenses-per-message-day-list-more-menu.md)
+> **Related plan(s):** [Plan 0048](../plans/done/0048-several-expenses-per-message-day-list-more-menu.md)
 
 ## Context
 
