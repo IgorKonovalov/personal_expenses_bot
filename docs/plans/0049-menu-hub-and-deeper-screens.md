@@ -400,7 +400,7 @@ and `more:chg` are reused.
 | 2: Settings split | dev | done | 4dbb764 |
 | 3: Budget read-first | dev | done | 3d0d575 |
 | 4: Help topics | dev | done | caa3c20 |
-| 5: Card and labels | dev | done | committed with this row |
+| 5: Card and labels | dev | done | a571cac |
 | 6: Live check | human | not started | |
 
 ### Notes
@@ -461,12 +461,29 @@ and `more:chg` are reused.
   above the scoped hub's [« Назад]; `scripts/docs-chats/scenarios/record.ts` needed no change.
 - Phase 5: the record.mdx line about «Обязательные» on /categories (Phase 3's note) now points to
   /budget → «Настроить» → «Что считать».
+- Followup, not acted on: the header comment of `src/bot/handlers/recurring.ts` still says
+  "[Повторять] on an expense card turns the card into a schedule picker".
+- Followup, not acted on: [Что нового] (`more:chg`) returns to the hub, not to the help screen it
+  sits on.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** a two-rows-of-three bar with [☰ Меню]; a stateless hub edited in place, with
+  [« Назад] (`more:open`) on every screen it opens and a `fromMenu` mark (stateful screens) or a
+  `:m` data suffix (tags, export, help) that survives pagers, sub-screens and prompts; an admin
+  sub-screen; old bar labels as aliases; /settings split into Уведомления and Аккаунт и данные;
+  /budget read view with Настроить and Что считать (the essential picker moved from /categories);
+  /help as a core with six topic screens and no reply keyboard; the card's [Повторять] moved into
+  [Изменить]; renamed receipt and period-item buttons; [Открыть учёт] under locked replies.
+- **User-visible surface changed:** the reply bar, «☰ Меню», /tags (sticky tag line and button),
+  /donate ([Вопрос о пожертвовании]), /settings and its two new screens, /budget, /categories,
+  /help, the expense card and its [Изменить] picker, /export's back button, /today /week /month
+  /budget when locked, copy of `welcome`, `notUnderstood`, `tipEncrypt`, `tipsOff`, `pushOff`,
+  `unlockNotSealed`, `recurringList`; site pages start, tags, encryption, data, budget, recurring,
+  record and their generated chats.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 154 files,
+  2330 tests; `pnpm build` exit 0; `pnpm docs:chats` exit 0, 28 transcripts; `pnpm docs:check`
+  exit 0; `node scripts/check-doc-links.mjs` exit 0, 356 links.
+- **Outstanding `human` phases:** Phase 6 (live check on a ~360 px phone), `Blocks merge: no`.
 
 ## Followups
