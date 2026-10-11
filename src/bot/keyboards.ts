@@ -4,9 +4,9 @@ import { messages } from './messages.js';
 import type { Screen } from '../services/flowSessions.js';
 import type { ScreenView } from './screens.js';
 
-// The persistent menu bar (ADR-0011, ADR-0050): two rows of three. It rides on the /start and
-// /help replies only: a message can't carry both a reply keyboard and an inline one, and Telegram
-// keeps showing it afterwards. With `webappUrl`, the second row holds «📷 Скан», a `web_app` button opening the
+// The persistent menu bar (ADR-0011, ADR-0050): two rows of three. It rides on the /start reply
+// only: a message can't carry both a reply keyboard and an inline one, and Telegram keeps showing
+// it afterwards. With `webappUrl`, the second row holds «📷 Скан», a `web_app` button opening the
 // Mini App in scan mode: only a page opened from a reply-keyboard button can call sendData
 // (ADR-0025).
 export function menuKeyboard(webappUrl?: string): Keyboard {

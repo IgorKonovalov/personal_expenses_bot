@@ -172,7 +172,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerUnlock(dm, options);
   registerCancel(dm, options);
   registerDeleteAccount(dm, options);
-  registerHelp(dm, options);
+  registerHelp(dm);
   registerChangelog(dm);
   registerPrivacy(dm);
   registerDonate(dm, donateDeps);

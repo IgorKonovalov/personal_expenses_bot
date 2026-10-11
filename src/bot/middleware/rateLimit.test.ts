@@ -50,7 +50,9 @@ describe('rateLimit middleware', () => {
     }
 
     expect(calls).toHaveLength(30);
-    expect(calls.every((c) => (c.payload as { text: string }).text === messages.help)).toBe(true);
+    expect(calls.every((c) => (c.payload as { text: string }).text === messages.helpCore)).toBe(
+      true,
+    );
     const drops = logLines.map(logContent).filter((l) => l.includes('rate limit'));
     expect(drops).toEqual([
       JSON.stringify({ level: 30, updateId: 31, msg: 'update over the rate limit dropped' }),

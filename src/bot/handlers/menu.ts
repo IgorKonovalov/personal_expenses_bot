@@ -35,7 +35,7 @@ const ROUTES: readonly MenuRoute[] = [
 // The labels of an earlier bar, still on a client until its next /start: each answers as before.
 const ALIASES: readonly MenuRoute[] = [
   { label: messages.menuAliases.settings, run: sendSettings },
-  { label: messages.menuAliases.help, run: (ctx, deps) => sendHelp(ctx, deps.webappUrl) },
+  { label: messages.menuAliases.help, run: (ctx) => sendHelp(ctx) },
   { label: messages.menuAliases.more, run: sendMore },
 ];
 

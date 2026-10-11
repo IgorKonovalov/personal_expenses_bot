@@ -22,7 +22,7 @@ import {
   adminData,
   moreData,
 } from '../callbackData.js';
-import { withMenuBack, type MenuOpened } from '../keyboards.js';
+import type { MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { editHtml, editHtmlAt, replyHtml } from '../render/html.js';
 import { cancelRow, renderAnchor, showScreen } from '../screens.js';
@@ -31,6 +31,7 @@ import { changelogFromMenu } from './changelog.js';
 import { debtsFromMenu } from './debts.js';
 import { donateFromMenu, type DonateDeps } from './donate.js';
 import { exportFromMenu } from './export.js';
+import { helpView } from './help.js';
 import { sendInvite, sendInvites } from './invite.js';
 import { sendPaySupport } from './paysupport.js';
 import { pricesFromMenu } from './prices.js';
@@ -99,17 +100,9 @@ const ask =
 
 const { moreButtons: label } = messages;
 
-// The hub's [Помощь]: the help text, with [Что нового] under it.
+// The hub's [Помощь]: the help screen /help sends, its topics carrying the hub mark.
 function helpFromMenu(): MenuOpened {
-  return {
-    view: withMenuBack(
-      {
-        text: messages.help,
-        markup: InlineKeyboard.from([[InlineKeyboard.text(label.changelog, moreData('chg'))]]),
-      },
-      true,
-    ),
-  };
+  return { view: helpView(true) };
 }
 
 const DONATE: MoreButton = {

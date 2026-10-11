@@ -671,6 +671,29 @@ function marked(data: string, fromMenu: boolean): string {
   return assertCallbackData(fromMenu ? `${data}:m` : data);
 }
 
+// The /help screen (ADR-0050): `help:<topic>` edits the tapped message into a topic, `help:open`
+// back into the help screen (at most 16 bytes with the hub mark, `help:recurring:m`). Stateless:
+// any copy works.
+export const HELP_TOPICS = [
+  'record',
+  'receipts',
+  'totals',
+  'debts',
+  'recurring',
+  'groups',
+] as const;
+export type HelpTopic = (typeof HELP_TOPICS)[number];
+export const HELP_TOPIC = new RegExp(`^help:(${HELP_TOPICS.join('|')})(:m)?$`);
+export const HELP_OPEN = /^help:open(:m)?$/;
+
+export function helpTopicData(topic: HelpTopic, fromMenu: boolean): string {
+  return marked(`help:${topic}`, fromMenu);
+}
+
+export function helpOpenData(fromMenu: boolean): string {
+  return marked('help:open', fromMenu);
+}
+
 // The admin's buttons, behind the hub's [Админ]: `adm:<key>` (at most 9 bytes). Only the admin's
 // taps run.
 export const ADMIN_ACTION = /^adm:([a-z]{3,5})$/;

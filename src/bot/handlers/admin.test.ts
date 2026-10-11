@@ -177,7 +177,7 @@ describe('/stats', () => {
 
       await say(t.bot, MEMBER, command);
 
-      expect(t.calls).toMatchObject([{ payload: { chat_id: MEMBER, text: messages.help } }]);
+      expect(t.calls).toMatchObject([{ payload: { chat_id: MEMBER, text: messages.helpCore } }]);
     },
   );
 });

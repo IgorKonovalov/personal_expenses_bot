@@ -29,7 +29,7 @@ describe('the onboarding middleware', () => {
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/help', date: NOW }));
 
-    expect(sentTexts(calls)).toEqual([messages.help]);
+    expect(sentTexts(calls)).toEqual([messages.helpCore]);
   });
 
   it('onboards no one on an edited message', async () => {
@@ -50,10 +50,10 @@ describe('the onboarding middleware', () => {
     await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help', date: NOW }));
 
     expect(sentTexts(calls)).toEqual([
-      messages.help,
+      messages.helpCore,
       messages.welcome,
       messages.setupCheck({ timezone: 'Europe/Belgrade', localTime: '14:05', currency: 'RSD' }),
-      messages.help,
+      messages.helpCore,
     ]);
   });
 });

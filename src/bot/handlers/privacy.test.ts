@@ -27,9 +27,10 @@ describe('/privacy', () => {
     );
   });
 
-  it('is listed in /help with /delete_account', () => {
-    expect(messages.help).toContain('/privacy');
-    expect(messages.help).toContain('/delete_account');
+  it('is in the command list with /delete_account', () => {
+    const commands = messages.commands.map((c) => c.command);
+    expect(commands).toContain('privacy');
+    expect(commands).toContain('delete_account');
   });
 
   it('names every external host the README lists under Receipts and Currency conversion', () => {

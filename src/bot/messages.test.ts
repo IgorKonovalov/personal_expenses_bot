@@ -5,25 +5,46 @@ import type { LocalDate } from '../domain/time.js';
 import { compareVersions, parseVersion } from '../domain/version.js';
 import { GROUP_ASK_TTL_MS } from '../services/groupChats.js';
 import { readAppVersion } from '../version.js';
-import { DOCS_URL, messages } from './messages.js';
+import { DOCS_URL, messages, visibleLength } from './messages.js';
 import { html } from './render/html.js';
 
-describe('/help', () => {
-  it('mentions past dates, the card buttons, receipts and /cancel, within one message', () => {
-    expect(messages.help).toContain('«450 такси вчера»');
-    expect(messages.help).toContain('[Категория]');
-    expect(messages.help).toContain('[Изменить]');
-    expect(messages.help).toContain('Чек из Сербии или Черногории');
-    expect(messages.help).toContain('фото QR-кода');
-    expect(messages.help).toContain('/cancel — отменить ввод');
-    // HTML length bounds the visible length Telegram counts.
-    expect(messages.help.length).toBeLessThan(4096);
+describe('/help (ADR-0050)', () => {
+  const topics = Object.values(messages.helpTopics);
+
+  it('keeps the core under 1,000 visible characters, with past dates, a sign and the к suffix', () => {
+    expect(visibleLength(messages.helpCore)).toBeLessThan(1000);
+    expect(messages.helpCore).toContain('«450 такси вчера»');
+    expect(messages.helpCore).toContain('«300 € ремонт»');
+    expect(messages.helpCore).toContain('«45к шкаф»');
+    expect(messages.helpCore).toContain('[Категория], [Изменить] и [Удалить]');
   });
 
-  it('names a currency sign, the к suffix and amount-last text (ADR-0046)', () => {
-    expect(messages.help).toContain('«300 € ремонт»');
-    expect(messages.help).toContain('«45к шкаф»');
-    expect(messages.help).toContain('«Чайник 3200»');
+  it('keeps each topic within one message', () => {
+    expect(topics).toHaveLength(6);
+    for (const topic of topics) expect(visibleLength(topic)).toBeLessThanOrEqual(4096);
+  });
+
+  it.each(['вчера', '/3', '#отпуск', 'result.json', '/settle', '09:00'])(
+    'names %s in the topics',
+    (needle) => {
+      expect(topics.join('\n')).toContain(needle);
+    },
+  );
+
+  it('tells receipts, /cancel, amount-last text and the summary switches in their topics', () => {
+    expect(messages.helpTopics.receipts).toContain('Чек из Сербии или Черногории');
+    expect(messages.helpTopics.receipts).toContain('фото QR-кода');
+    expect(messages.helpTopics.receipts).toContain('/prices — цены продуктов из чеков по месяцам');
+    expect(messages.helpTopics.record).toContain('/cancel — отменить ввод');
+    expect(messages.helpTopics.record).toContain('«Чайник 3200»');
+    expect(messages.helpTopics.totals).toContain(
+      '1-го числа в 09:00 я пришлю итоги прошлого месяца',
+    );
+    expect(messages.helpTopics.totals).toContain(
+      'Итоги недели по понедельникам включаются в /settings → «Уведомления»',
+    );
+    expect(messages.helpTopics.totals).toContain('[Отключить] под итогами');
+    expect(messages.helpTopics.totals).toContain('/export');
   });
 });
 
@@ -54,10 +75,7 @@ describe('the docs link (ADR-0048)', () => {
     expect(DOCS_URL).toBe('https://igorkonovalov.github.io/personal_expenses_bot/docs/');
   });
 
-  it('closes the private help before the donate line, and the group help', () => {
-    expect(messages.help).toContain(
-      `Подробное руководство с примерами: ${DOCS_URL}\n${messages.helpDonateLine}`,
-    );
+  it('closes the group help', () => {
     expect(messages.groupHelp.endsWith(`Подробное руководство с примерами: ${DOCS_URL}`)).toBe(
       true,
     );
@@ -204,8 +222,8 @@ describe('/prices (ADR-0039)', () => {
     );
   });
 
-  it('lists /prices in the help text', () => {
-    expect(messages.help).toContain('/prices — цены продуктов из чеков по месяцам');
+  it('lists /prices in the help', () => {
+    expect(messages.helpTopics.receipts).toContain('/prices — цены продуктов из чеков по месяцам');
   });
 });
 

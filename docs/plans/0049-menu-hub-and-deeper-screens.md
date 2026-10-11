@@ -398,8 +398,8 @@ and `more:chg` are reused.
 |---|---|---|---|
 | 1: Bar and ☰ Меню hub | dev | done | adb66c4 |
 | 2: Settings split | dev | done | 4dbb764 |
-| 3: Budget read-first | dev | done | committed with this row |
-| 4: Help topics | dev | not started | |
+| 3: Budget read-first | dev | done | 3d0d575 |
+| 4: Help topics | dev | done | committed with this row |
 | 5: Card and labels | dev | not started | |
 | 6: Live check | human | not started | |
 
@@ -443,6 +443,18 @@ and `more:chg` are reused.
   no change. The `budget-set` scenario now ends on Настроить.
 - Phase 3: `site/src/content/docs/guide/record.mdx` still says /categories has «Обязательные»; it
   is outside this phase's files (Phase 5 lists it).
+- Phase 4: `messages.help` and `helpDonateLine` are gone; outside the phase's files,
+  `src/bot/bot.ts` (`registerHelp(dm)`), `src/bot/keyboards.ts` (its comment),
+  `src/bot/handlers/privacy.test.ts` (now asserts the command list) and the `messages.help` →
+  `messages.helpCore` rename in `admin.test.ts`, `access.test.ts`, `onboarding.test.ts` and
+  `rateLimit.test.ts` changed.
+- Phase 4: the help's command lines for /changelog, /start, /unlock, /lock, /recover, /privacy and
+  /delete_account are dropped with the legend; /prices joins «Чеки и выписки», /recurring
+  «Регулярные». The «Группы» topic gains a /settle line (the old help named none). The push line
+  in «Итоги и бюджет» names /settings → «Уведомления».
+- Phase 4: [Что нового] on the help screen is `more:chg`, whose [« Назад] goes to the hub, also
+  from a typed /help.
+- Phase 4: the `start` scenario runs with WEBAPP_URL, so its bar shows [📷 Скан].
 
 ### Close triggers
 

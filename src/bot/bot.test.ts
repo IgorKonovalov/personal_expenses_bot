@@ -183,6 +183,26 @@ const menuKeyboard = {
   resize_keyboard: true,
 };
 const withMenu = { reply_markup: menuKeyboard, ...htmlParseMode };
+// The /help screen's buttons (ADR-0050): no reply keyboard.
+const helpKeyboard = {
+  inline_keyboard: [
+    [
+      { text: 'Как записать', callback_data: 'help:record' },
+      { text: 'Чеки и выписки', callback_data: 'help:receipts' },
+    ],
+    [
+      { text: 'Итоги и бюджет', callback_data: 'help:totals' },
+      { text: 'Долги и метки', callback_data: 'help:debts' },
+    ],
+    [
+      { text: 'Регулярные', callback_data: 'help:recurring' },
+      { text: 'Группы', callback_data: 'help:groups' },
+    ],
+    [{ text: 'Руководство', url: 'https://igorkonovalov.github.io/personal_expenses_bot/docs/' }],
+    [{ text: 'Что нового', callback_data: 'more:chg' }],
+  ],
+};
+const withHelp = { reply_markup: helpKeyboard, ...htmlParseMode };
 const WELCOME =
   'Здравствуйте! Я веду учёт трат.' +
   '\n\nОтправьте сумму и описание, например «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».' +
@@ -260,7 +280,7 @@ describe('menu and help', () => {
     ]);
   });
 
-  it('carries the persistent menu on the /start and /help replies', async () => {
+  it('carries the persistent menu on /start only; /help is the help screen with no keyboard field', async () => {
     const { bot, calls } = createTestBot();
 
     await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
@@ -281,11 +301,16 @@ describe('menu and help', () => {
           ...htmlParseMode,
         },
       },
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.helpCore, ...withHelp },
+      },
     ]);
+    const help = calls[2]?.payload as { reply_markup: Record<string, unknown> };
+    expect(help.reply_markup).not.toHaveProperty('keyboard');
   });
 
-  it('puts a 📷 Скан web_app button opening WEBAPP_URL in scan mode on the /start and /help menus', async () => {
+  it('puts a 📷 Скан web_app button opening WEBAPP_URL in scan mode on the /start menu', async () => {
     const webappUrl = 'https://example.github.io/bot/';
     const { bot, calls } = createTestBot({ webappUrl });
 
@@ -308,7 +333,7 @@ describe('menu and help', () => {
       .filter((call) => (call.payload as { text?: unknown }).text !== undefined)
       .map((call) => (call.payload as { reply_markup?: unknown }).reply_markup)
       .filter((markup) => markup !== undefined && 'keyboard' in (markup as object));
-    expect(markups).toEqual([scanMenu, scanMenu, scanMenu]);
+    expect(markups).toEqual([scanMenu]);
     expect(messages.scanButton).toBe('📷 Скан');
   });
 
@@ -320,7 +345,7 @@ describe('menu and help', () => {
       await bot.handleUpdate(textUpdate({ updateId: 2, text: '/help' }));
     }
     expect(plain.calls[0]?.payload).toMatchObject({ reply_markup: menuKeyboard });
-    expect(plain.calls.at(-1)?.payload).toMatchObject({ reply_markup: menuKeyboard });
+    expect(plain.calls.at(-1)?.payload).toMatchObject({ reply_markup: helpKeyboard });
 
     for (const { bot } of [plain, scan]) {
       await bot.handleUpdate(
@@ -353,15 +378,53 @@ describe('menu and help', () => {
     expect(count()).toBe(CATEGORY_PRESETS.length);
   });
 
-  it('names the menu buttons in the help text', () => {
-    expect(messages.help).toContain('📊 Сегодня');
-    expect(messages.help).toContain('☰ Меню');
+  it('[Чеки и выписки] edits /help into its topic, and [« Назад] edits it back', async () => {
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/help' }));
+    calls.length = 0;
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'help:receipts', messageId: 7 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'help:open', messageId: 7 }));
+
+    const edits = calls
+      .filter((c) => c.method === 'editMessageText')
+      .map((c) => c.payload as { message_id: number; text: string; reply_markup: unknown });
+    expect(calls.filter((c) => c.method === 'sendMessage')).toEqual([]);
+    expect(edits[0]?.message_id).toBe(7);
+    expect(edits[0]?.text).toContain('Korišćenje kartice');
+    expect(edits[0]?.text).toContain('Izvod po tekućem računu');
+    expect(edits[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: '« Назад', callback_data: 'help:open' }]],
+    });
+    expect(edits[1]).toEqual({
+      chat_id: ALLOWED_ID,
+      message_id: 7,
+      text: messages.helpCore,
+      ...withHelp,
+    });
   });
 
-  it('tells about the summary pushes and their switches in the help text', () => {
-    expect(messages.help).toContain('1-го числа в 09:00 я пришлю итоги прошлого месяца');
-    expect(messages.help).toContain('Итоги недели по понедельникам включаются в /settings');
-    expect(messages.help).toContain('[Отключить] под итогами');
+  it('keeps the hub mark through a topic of the hub-opened help', async () => {
+    const { bot, calls } = createTestBot();
+
+    await bot.handleUpdate(callbackUpdate({ updateId: 1, data: 'more:help', messageId: 7 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 2, data: 'help:recurring:m', messageId: 7 }));
+    await bot.handleUpdate(callbackUpdate({ updateId: 3, data: 'help:open:m', messageId: 7 }));
+
+    const markups = calls
+      .filter((c) => c.method === 'editMessageText')
+      .map((c) => (c.payload as { reply_markup: { inline_keyboard: unknown[][] } }).reply_markup);
+    const back = [{ text: '« Назад', callback_data: 'more:open' }];
+    expect(markups[0]?.inline_keyboard.at(-1)).toEqual(back);
+    expect(markups[0]?.inline_keyboard[2]).toContainEqual({
+      text: 'Регулярные',
+      callback_data: 'help:recurring:m',
+    });
+    expect(markups[1]).toEqual({
+      inline_keyboard: [[{ text: '« Назад', callback_data: 'help:open:m' }]],
+    });
+    expect(markups[2]?.inline_keyboard.at(-1)).toEqual(back);
+    expect(Buffer.byteLength('help:recurring:m', 'utf8')).toBe(16);
   });
 
   it('answers the 📊 Сегодня label exactly like /today and records nothing', async () => {
@@ -397,7 +460,7 @@ describe('menu and help', () => {
 
       await bot.handleUpdate(textUpdate({ updateId: 1, text }));
 
-      expect(sentTexts(calls)).toEqual([messages.help]);
+      expect(sentTexts(calls)).toEqual([messages.helpCore]);
       expect(expenseCount(db)).toEqual({ n: 0 });
     },
   );
@@ -479,7 +542,10 @@ describe('input that is not an expense text', () => {
     await bot.handleUpdate(messageUpdate(1, content));
 
     expect(calls).toEqual([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.helpCore, ...withHelp },
+      },
     ]);
     expect(expenseCount(db)).toEqual({ n: 0 });
     // The only write besides provisioning: the help is now seen (ADR-0037).
@@ -764,9 +830,11 @@ describe('/changelog', () => {
     expect(messages.changelog(announcements)).not.toContain('Более ранние версии');
   });
 
-  it('is in the command menu and the help text', () => {
+  it('is in the command menu and behind [Что нового] on the help screen', async () => {
     expect(messages.commands.map((c) => c.command)).toContain('changelog');
-    expect(messages.help).toContain('/changelog');
+    const { bot, calls } = createTestBot();
+    await bot.handleUpdate(textUpdate({ updateId: 1, text: '/help' }));
+    expect(JSON.stringify(calls[0]?.payload)).toContain('"callback_data":"more:chg"');
   });
 
   it('answers a user who is not admitted with the invitation reply only', async () => {
@@ -1048,7 +1116,7 @@ describe('donations (ADR-0027)', () => {
     ]);
   });
 
-  it('ends the private /help with the donate line, and keeps /donate out of the group help', async () => {
+  it('keeps /donate out of both helps: [Поддержать] heads the hub instead (ADR-0050)', async () => {
     const { bot, calls } = createTestBot();
     await bot.handleUpdate(
       myChatMemberUpdate({
@@ -1064,8 +1132,8 @@ describe('donations (ADR-0027)', () => {
     await bot.handleUpdate(groupTextUpdate({ updateId: 3, text: '/help' }));
 
     const [privateHelp, groupHelp] = sentTexts(calls);
-    expect(String(privateHelp).endsWith('\nБот бесплатный. Поддержать: /donate')).toBe(true);
-    expect(messages.helpDonateLine).toBe('Бот бесплатный. Поддержать: /donate');
+    expect(privateHelp).toBe(messages.helpCore);
+    expect(String(privateHelp)).not.toContain('/donate');
     expect(groupHelp).toBe(messages.groupHelp);
     expect(String(groupHelp)).not.toContain('/donate');
   });
@@ -1280,7 +1348,7 @@ describe('/paysupport and /refund', () => {
 
     expect(refundCalls(calls)).toEqual([]);
     expect(refundedAt(db, 'charge-a')).toBeNull();
-    expect(sentTexts(calls)).toEqual([messages.help]);
+    expect(sentTexts(calls)).toEqual([messages.helpCore]);
   });
 });
 
@@ -1385,7 +1453,10 @@ describe('recording an expense', () => {
     await bot.handleUpdate(textUpdate({ updateId: 1, text: 'coffee later' }));
 
     expect(calls).toEqual([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu } },
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: messages.helpCore, ...withHelp },
+      },
     ]);
   });
 
@@ -1464,7 +1535,7 @@ describe('amount-last text in the private chat (ADR-0046)', () => {
       expect(calls).toEqual([
         {
           method: 'sendMessage',
-          payload: { chat_id: ALLOWED_ID, text: messages.help, ...withMenu },
+          payload: { chat_id: ALLOWED_ID, text: messages.helpCore, ...withHelp },
         },
       ]);
       expect(expenseCount(db)).toEqual({ n: 0 });
@@ -5423,7 +5494,7 @@ describe('/categories screen and text flows', () => {
 
     expect(sentTexts(calls).slice(0, 2)).toEqual([
       'Время ответа истекло. Начните заново.',
-      messages.help,
+      messages.helpCore,
     ]);
     expect(categoryCount(db)).toBe(categories);
     expect(expenseTotal(db)).toBe(1);
@@ -5448,7 +5519,7 @@ describe('/categories screen and text flows', () => {
     clock.now = new Date(T.getTime() + 25 * 60 * MIN);
     await say('Дача', 2);
 
-    expect(sentTexts(calls)).toEqual([messages.help]);
+    expect(sentTexts(calls)).toEqual([messages.helpCore]);
     expect(categoryCount(db)).toBe(categories);
   });
 
@@ -6663,7 +6734,7 @@ describe('fiscal receipts', () => {
 
       expect(getFiles).toEqual([]);
       expect(fetched).toEqual([]);
-      expect(sentTexts(calls)).toEqual([messages.help]);
+      expect(sentTexts(calls)).toEqual([messages.helpCore]);
     });
 
     describe('the heavy-job hand-off (ADR-0042)', () => {
@@ -7219,7 +7290,7 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
 
     expect(expenseCount(db)).toEqual({ n: 0 });
     expect(sentTexts(calls)).toEqual([reply]);
-    expect(sentTexts(calls)).not.toContain(messages.help);
+    expect(sentTexts(calls)).not.toContain(messages.helpCore);
     expect(sentTexts(calls)).not.toContain(messages.invalidAmount);
   });
 
@@ -7243,24 +7314,15 @@ describe('bank card-purchase SMS (ADR-0021)', () => {
     expect(db.prepare('SELECT occurred_on FROM expenses').pluck().all()).toEqual(['2026-09-15']);
   });
 
-  it('lists bank SMS in /help', async () => {
-    const { send, calls } = smsBot();
-
-    await send('/help');
-
-    expect(String(sentTexts(calls)[0])).toContain(
+  it('lists bank SMS in the help topic «Чеки и выписки»', () => {
+    expect(messages.helpTopics.receipts).toContain(
       'СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».',
     );
   });
 
-  it('says in /help that totals and budgets convert at the NBS rate', async () => {
-    const { send, calls } = smsBot();
-
-    await send('/help');
-
-    expect(String(sentTexts(calls)[0])).toContain(
-      'СМС банка о покупке картой: перешлите или вставьте его текст, и я запишу сумму, дату и магазин. Пока понимаю сербские СМС «Korišćenje kartice».\n' +
-        'Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.',
+  it('says in the help topic «Итоги и бюджет» that totals and budgets convert at the NBS rate', () => {
+    expect(messages.helpTopics.totals).toContain(
+      'Итоги и бюджет в разных валютах пересчитываются в одну валюту по курсу НБС на день траты.',
     );
   });
 
@@ -8213,7 +8275,7 @@ describe('/export (ADR-0026)', () => {
 
   it('is in the command menu and the help text', () => {
     expect(messages.commands.map((c) => c.command)).toContain('export');
-    expect(messages.help).toContain('/export');
+    expect(messages.helpTopics.totals).toContain('/export');
     expect(messages.groupHelp).toContain('/export');
   });
 });
@@ -8862,7 +8924,7 @@ describe('bank statements (Plan 0027)', () => {
 
     expect(expenseCount(db)).toEqual({ n: 0 });
     expect(sentTexts(calls.filter((call) => call.method === 'sendMessage'))).toEqual([
-      messages.help,
+      messages.helpCore,
     ]);
   });
 
@@ -10911,7 +10973,7 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     vi.useRealTimers();
   });
 
-  it('answers the first sticker with the full help and the second with a line deleted after 60 s', async () => {
+  it('answers the first sticker with the help screen and the second with a line deleted after 60 s', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout'] });
     const { sendSticker, calls, lastMessageId } = noticeBot();
 
@@ -10919,7 +10981,8 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     await sendSticker();
     const transientId = lastMessageId();
 
-    expect(sentTexts(calls)).toEqual([messages.help, messages.notUnderstood]);
+    expect(sentTexts(calls)).toEqual([messages.helpCore, messages.notUnderstood]);
+    expect(calls[0]?.payload).toMatchObject({ reply_markup: helpKeyboard });
     expect(messages.notUnderstood).toBe('Не понял. Как записать трату — в /help.');
     calls.length = 0;
 
@@ -10940,7 +11003,7 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     await send('/help');
     await send('❓ Помощь');
 
-    expect(sentTexts(calls)).toEqual([messages.help, messages.help]);
+    expect(sentTexts(calls)).toEqual([messages.helpCore, messages.helpCore]);
   });
 
   it('answers an unknown command and a non-expense text with the line once the help was seen', async () => {
@@ -10951,7 +11014,7 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     await send('привет');
 
     expect(sentTexts(calls)).toEqual([
-      messages.help,
+      messages.helpCore,
       messages.notUnderstood,
       messages.notUnderstood,
     ]);
@@ -10962,7 +11025,7 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
 
     await Promise.all([bot.handleUpdate(sticker(1)), bot.handleUpdate(sticker(2))]);
 
-    expect(sentTexts(calls).sort()).toEqual([messages.help, messages.notUnderstood].sort());
+    expect(sentTexts(calls).sort()).toEqual([messages.helpCore, messages.notUnderstood].sort());
   });
 
   async function sealedNoticeBot() {

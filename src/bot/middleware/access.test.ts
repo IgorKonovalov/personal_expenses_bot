@@ -61,7 +61,7 @@ describe('access', () => {
     await bot.handleUpdate(locationUpdate(1, ALLOWED_ID));
 
     expect(calls).toMatchObject([
-      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.help } },
+      { method: 'sendMessage', payload: { chat_id: ALLOWED_ID, text: messages.helpCore } },
     ]);
   });
 
@@ -177,7 +177,7 @@ describe('access', () => {
 
     await bot.handleUpdate(textUpdate({ updateId: 3, fromId: STRANGER_ID, text: '/invite' }));
 
-    expect(calls).toMatchObject([{ payload: { text: messages.help } }]);
+    expect(calls).toMatchObject([{ payload: { text: messages.helpCore } }]);
     expect(db.prepare('SELECT COUNT(*) FROM invite_codes').pluck().get()).toBe(1);
   });
 
