@@ -11,13 +11,13 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0049](0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | approved (2026-10-11) |
 | [0050](0050-prices-without-cafe-receipts.md) | Product prices without cafe and restaurant receipts | draft (2026-10-11) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0049](done/0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | done (2026-10-11): built as planned, two minors and one nit fixed at close, two minors and two nits open, Phase 6 live check owed, v0.39.0 |
 | [0048](done/0048-several-expenses-per-message-day-list-more-menu.md) | Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu | done (2026-10-11): built as planned, one nit fixed at close, two nits open, Phase 4 live check owed, v0.38.0 |
 | [0046](done/0046-group-history-import.md) | Group history import: a Telegram Desktop export brings in the expenses from before the bot joined | done (2026-10-08): built as planned after one fix pass, one minor and one nit open, Phase 6 real export owed, v0.37.0 |
 | [0047](done/0047-docs-site.md) | A Russian docs site: a user guide with chats generated from the real bot, and an architecture section | done (2026-10-08): built as planned, five nits fixed at close, one minor open (architect lens 4 edit under .claude/), Phase 6 live check owed, v0.36.0 |

@@ -2,6 +2,25 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.39.0 (2026-10-11)
+
+From Plan 0049 (a ☰ Меню hub, a six-button bar, deeper settings, budget and help).
+
+- The bar is two rows of three: [📊 Сегодня] [📅 Неделя] [🗓 Месяц] / [💰 Бюджет] [📷 Скан]
+  [☰ Меню]. The old labels still work until the next /start (ADR-0050).
+- [☰ Меню] opens a hub edited in place. Every screen it opens ends in [« Назад] back to it, through
+  its pages, sub-screens and prompts. The admin's buttons sit on their own [Админ] screen.
+- /tags shows and sets the sticky tag, and /donate carries [Вопрос о пожертвовании].
+- /settings splits into Уведомления and Аккаунт и данные (encryption, privacy, account deletion),
+  and shows whether the monthly and weekly summaries are on.
+- /budget leads with the figures; its setup sits behind [Настроить], and [Что считать] holds the
+  scope and the essential categories, which leave /categories.
+- /help is a short screen with six topic buttons, a link to the guide and [Что нового], and no
+  longer carries the bar.
+- The expense card's [Повторять] moves into [Изменить]. [Загрузить позиции] and [Позиции чеков]
+  replace the old receipt and period-item labels, and a locked ledger's reply carries
+  [Открыть учёт].
+
 ## 0.38.0 (2026-10-11)
 
 From Plan 0048 (several expenses per message, a day list under /today, a calmer «Ещё» menu).

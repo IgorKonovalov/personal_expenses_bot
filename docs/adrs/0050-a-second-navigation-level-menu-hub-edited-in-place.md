@@ -1,8 +1,8 @@
 # ADR-0050: A second navigation level: a ☰ Меню hub edited in place, and /help as topics
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-11)
 > **Date:** 2026-10-11
-> **Related plan(s):** [Plan 0049](../plans/0049-menu-hub-and-deeper-screens.md)
+> **Related plan(s):** [Plan 0049](../plans/done/0049-menu-hub-and-deeper-screens.md)
 
 ## Context
 

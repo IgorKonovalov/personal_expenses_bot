@@ -1,8 +1,8 @@
 # 0049: A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help
 
-> **Status:** in-progress
+> **Status:** done (2026-10-11): built as planned, two minors and one nit fixed at close, two minors and two nits open, Phase 6 live check owed, v0.39.0
 > **Created:** 2026-10-11
-> **Related ADRs:** [ADR-0050](../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md),
+> **Related ADRs:** [ADR-0050](../../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md),
 > ADR-0011, ADR-0040, ADR-0017, ADR-0028
 
 ## TL;DR
@@ -486,4 +486,181 @@ and `more:chg` are reused.
   exit 0; `node scripts/check-doc-links.mjs` exit 0, 356 links.
 - **Outstanding `human` phases:** Phase 6 (live check on a ~360 px phone), `Blocks merge: no`.
 
+## Close review
+
+Closed by the conductor on 2026-10-11 after review round 1 at 6061eba. No earlier round raised a
+finding, so no fix round resolved one. Fixed at close: minor 1 (683769f), minor 2 (a5ee7c8) and
+nit 7 (5a50065). Open: minors 3 and 4, nits 5 and 6 (see `## Followups`). Phase 6, the live check,
+stays **owed**. The review, in full (headings demoted one level):
+
+### Plan 0049 review, round 1 (tip 6061ebabdb3f6ce035d66c64a2b1b4ccf5d294c8)
+
+**Verdict:** Phases 1 to 5 deliver the plan and every done-when has a test whose assertion matches
+it. There are no blockers or majors. Four minors remain: two stale docs and two hub-reached
+actions whose [« Назад] goes nowhere or to the wrong place. The plan can close, with those minors
+recorded as followups or fixed in a small pass.
+
+#### Gate (run in this session at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 154 files, 2331 tests
+- `node scripts/check-doc-links.mjs`: exit 0, 363 links resolve
+- `pnpm docs:check` (extra): exit 0
+- `git status` clean afterwards
+
+#### Alignment
+
+- The log maps every dev phase to a commit (adb66c4, 4dbb764, 3d0d575, caa3c20, a571cac).
+  Phase 6 is `human`, is owed, and is `Blocks merge: no`. Every phase has one in-vocabulary owner
+  tag.
+- Tests named by the done-whens, opened and read:
+  - The bar (`bot.test.ts:261`) matches both layouts exactly.
+  - Aliases: `bot.test.ts:10959` compares each old label's calls to the current command's calls.
+    `bot.test.ts:467` probes every currency code against all labels, aliases included.
+  - Hub → [Долги] → [« Назад] (`:10576`): one edit on message 101, no `sendMessage`, the debts
+    text, BACK last, then the hub's exact payload.
+  - Tags paging from the hub versus typed (`:10614`): 8 and 2 buttons, pager data with `:m`, BACK
+    last. The typed /tags has neither the mark nor BACK.
+  - Debts [Я дал в долг] → [Отмена] keeps BACK (`:10599`).
+  - The in-place sweep (`:10715`): the edited text equals the typed text, BACK is last, and
+    exactly one `answerCallbackQuery` is made.
+  - The reachability guard (`:11015`).
+  - A non-admin's `more:adm` gets one silent answer (`:10704`).
+  - Settings: the monthly-on, weekly-off line and exactly three rows (`:5615-5684`). The
+    Уведомления switches re-render that screen and write the DB (`:5686`). Delete, back/keep,
+    privacy, and the encryption [Отмена] to «Шифрование: выключено.» (`:5742-5840`).
+  - Budget: no limit gives exactly `bud:lim` (`:2952`). Saving a limit gives `limit_minor`
+    3000000 RSD and the read view with [Настроить] (`:2974`). The read view lacks `bud:day`,
+    `bud:scope:`, `bud:caps`, and Настроить shows the four buttons and «Лимит: 30 000.00 RSD на
+    период» (`:3141`). The scope test checks the toast, «✓ Без обязательных» and the double tap
+    (`:3083`). The essential picker on the budget anchor goes back to `bud:what` (`:5254`). A
+    `cat:ess` tap on a categories anchor gets staleScreen (`:5296`). /categories has no
+    [Обязательные] (`:5134`).
+  - Help: the topic edit and back (`:380`), the hub mark through a topic and the 16-byte check
+    (`:406`), and no `keyboard` field on /help (`:282`). `messages.test.ts:11-49` covers the core
+    under 1,000 visible characters, each topic at most 4,096, and the six needles.
+  - Card and labels: `undoKeyboard` (`:140`), the failed-receipt card with no «Повтор» label
+    (`:7127`), [Изменить] → [Повторять] → monthly creates the rule (`:7765`), no «← Назад»
+    (`:10944`), and the locked replies carry `more:unl` (`:10920`).
+- No ADR is silently reversed. ADR-0050 is `proposed` and its decision matches the code, apart
+  from the [Что нового] back route (minor 3).
+
+#### Layering and correctness
+
+- grammY stays in `src/bot/`. Copy is in `messages.ts`. No Telegram id is a key.
+- The callback data is under 64 bytes: the longest new value, `help:recurring:m`, is 16 bytes, and
+  `xp:f:all:xlsx:m` is 15.
+- No new writes. The essential and scope taps are still set-to-value, and the deletion goes
+  through the existing `acct:del`.
+- `menuMark` keys on `'fromMenu' in screen`, so it relies on screens never carrying
+  `fromMenu: undefined`. A grep finds every literal `fromMenu: true`, and `parseScreen` spreads
+  it only when it is true. That is correct today.
+
+#### Findings
+
+##### blocker
+
+None.
+
+##### major
+
+None.
+
+##### minor
+
+1. **The README still points the admin at [☰ Ещё].** *(fixed at close in 683769f)*
+   - *Where:* `README.md:116`, which reads «the admin's [☰ Ещё] has a button for each».
+   - *Why it matters:* the admin's buttons now sit behind [☰ Меню] → [Админ] (Phase 1), and
+     «☰ Ещё» survives only as a bar alias.
+   - *Fix:* write «the admin's [☰ Меню] → [Админ] screen has a button for each».
+
+2. **Two guide pages name buttons that Phase 5 renamed.** *(fixed at close in a5ee7c8)*
+   - *Where:* `site/src/content/docs/guide/receipts.mdx:24` («предложит «Повторить»») and
+     `site/src/content/docs/guide/totals.mdx:18` («Позиции» — позиции чеков за период).
+   - *Why it matters:* the failed-receipt button is now «Загрузить позиции» (`receiptRetryButton`)
+     and the period button is «Позиции чеков» (`periodItemsButton`). The guide tells users to look
+     for labels that no longer exist. Neither page is in Phase 5's files, so the rename missed
+     them.
+   - *Fix:* replace «Повторить» with «Загрузить позиции» in receipts.mdx. In totals.mdx, write
+     «Позиции чеков» — позиции чеков за период по категориям.
+
+3. **[Что нового] on the help screen goes back to the hub, even from a typed /help.**
+   - *Where:* `src/bot/handlers/help.ts:38` always draws `moreData('chg')`, and
+     `changelogFromMenu` ends in [« Назад] (`more:open`).
+   - *Trigger:* /help → [Что нового] → [« Назад] edits the message into «Меню», a hub the user
+     never opened.
+   - *Why it matters:* ADR-0050 says a typed command's screen leads to «no [« Назад] to a hub it
+     never came from». Plan Phase 4 gives the help screen [« Назад] → hub "only when opened from
+     the hub". From the hub, the same back skips the help screen the user came from. The dev log
+     lists it as a followup it did not act on.
+   - *Fix:* give the changelog view its own back to `helpOpenData(fromMenu)`, the help screen
+     with its hub mark kept. Either a `help:chg[:m]` callback in `help.ts` or a mark on `more:chg`
+     would do.
+   - *Test:* /help → [Что нового] has `help:open` as its last row. The hub-opened help →
+     [Что нового] has `help:open:m`.
+
+4. **[Снять метку] on a hub-opened /tags drops the screen and its [« Назад].**
+   - *Where:* the `STICKY_TAG_OFF` handler, `src/bot/handlers/tags.ts:172`, edits the tapped
+     message into `messages.stickyTagOff` with no keyboard.
+   - *Trigger:* [☰ Меню] → [Метки] → [Снять метку] leaves a bare «метка снята» line. The tag
+     list and the [« Назад] → hub are gone.
+   - *Why it matters:* Phase 1 says a stateless screen opened from the hub keeps [« Назад] → hub
+     through "its pager and steps". This is the one step on /tags that doesn't, and a typed /tags
+     loses its list the same way.
+   - *Fix:* when the tapped message is the /tags screen, re-render `privateView` with
+     `messages.stickyTagOff` as a header. Keep the bare edit for the `tag:off` button under a
+     /tag reply. Either carry the hub mark (`tag:off:m`) or add a `tag:offl[:m]` variant for the
+     list.
+   - *Test:* hub → [Метки] with a sticky tag on → [Снять метку] shows «Постоянной метки нет»,
+     [Постоянная метка] and BACK last.
+
+##### nit
+
+5. **The reachability guard lists three sub-screen buttons by hand.**
+   - *Where:* `src/bot/handlers/more.ts:202-206` appends `tag:sticky`, `set:prv` and `set:del` to
+     `MENU_BUTTONS` as literals, not taken from the keyboards that draw them.
+   - *Why it matters:* the plan says coverage "is computed from … every sub-screen button". Here
+     it is declared, and it only holds because the screen tests at `:10649` and `:5743` pin those
+     keyboards.
+   - *Fix:* none needed now. If more sub-screen buttons arrive, derive the list from the views.
+
+6. **The limit test types `30000`, not `30 000`.**
+   - *Where:* `bot.test.ts:2982`.
+   - *Why it matters:* Phase 3's done-when says "Answering `30 000`". Grouping with a space is
+     covered by `money.test.ts:12`, so the claim holds, but the test doesn't use the plan's input.
+   - *Fix:* send `'30 000'` there.
+
+7. **A stale header comment in `recurring.ts`.** *(fixed at close in 5a50065)*
+   - *Where:* `src/bot/handlers/recurring.ts:82` still says "[Повторять] on an expense card turns
+     the card into a schedule picker".
+   - *Why it matters:* the button now sits under [Изменить]. The dev log names this.
+   - *Fix:* write "[Изменить] → [Повторять] on an expense card".
+
+#### Bookkeeping owed at close
+
+- Plan `Status:` goes from `in-progress` to `done`, with the date and this verdict, and
+  `git mv` moves it to `docs/plans/done/`. Repair the links in both directions and re-run
+  `node scripts/check-doc-links.mjs`.
+- `docs/plans/README.md`: the row still reads `approved (2026-10-11)`. Move it to recently closed
+  and bump the next free number.
+- ADR-0050 goes from `proposed` to `accepted`. In `docs/adrs/README.md`, the 0050 row (line 59)
+  becomes `accepted`, and the 0011 row's "superseded by 0050 (proposed)" (line 20) drops
+  "(proposed)".
+- A minor version bump for this feature plan: `package.json`, `CHANGELOG.md` and the
+  `versionAnnouncements` entry in `messages.ts` (ADR-0013).
+- Phase 6 (the human live check on a ~360 px phone) stays owed. It does not block merge.
+- Record minors 1 to 4 and nits 5 to 7 under the plan's `## Followups` if they are not fixed
+  before the close. The non-ASCII body of commit adb66c4 is disclosed and can't be amended. No
+  action.
+
 ## Followups
+
+- Minor 3: [Что нового] on the help screen returns to the hub, also from a typed /help. Give the
+  changelog view a back to the help screen, keeping the hub mark.
+- Minor 4: [Снять метку] on the /tags screen edits it into a bare `stickyTagOff` line, dropping
+  the list and its [« Назад] → hub. Re-render the list with that line as a header.
+- Nit 5: the reachability guard lists `tag:sticky`, `set:prv` and `set:del` by hand instead of
+  deriving them from the keyboards that draw them.
+- Nit 6: the Phase 3 limit test sends `30000`, not the plan's `30 000`.
+- Phase 6 (live check on a ~360 px phone) is owed.
