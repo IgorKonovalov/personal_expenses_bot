@@ -3,7 +3,7 @@
 One decision per file, with its rejected alternatives. Append-only once accepted: supersede,
 never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and date.
 
-- **Next free number:** `0051`
+- **Next free number:** `0052`
 
 | ADR | Title | Status |
 |---|---|---|
@@ -57,3 +57,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0048](0048-a-russian-docs-site-beside-the-mini-app-with-chats-generated-from-the-real-bot.md) | A Russian docs site beside the Mini App, with its chat pictures generated from the real bot | accepted (2026-10-08) |
 | [0049](0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md) | A multi-line message records one expense per line, all or nothing, under one card | accepted (2026-10-11) |
 | [0050](0050-a-second-navigation-level-menu-hub-edited-in-place.md) | A second navigation level: a ☰ Меню hub edited in place, and /help as topics | proposed (2026-10-11) |
+| [0051](0051-product-prices-leave-out-cafe-receipts-by-category.md) | Product prices leave out receipts filed under the cafe category | proposed (2026-10-11) |
