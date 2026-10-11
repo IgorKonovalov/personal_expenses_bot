@@ -152,11 +152,44 @@ No migration, no callback data, no new copy in the messages module.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Cafe receipts leave /prices | dev | done | 20c97e5 |
-| 2: The coverage report and the guide follow | dev | done | committed with this row |
+| 2: The coverage report and the guide follow | dev | done | 6efe981 |
 | 3: Live check | human | not started | |
 
 ### Notes
 
+- Phase 1: the sealed open is a new `foldedReceiptWithCategoryOf` in `src/services/ledgerKeys.ts`
+  returning the receipt and the payload's `categoryId`; `foldedReceiptOf` now delegates to it.
+- Phase 1: the diagram's `excludedFromPrices` domain predicate is not a function. The domain holds
+  the constant `PRICES_EXCLUDED_PRESET`; `ownItems` turns it into the id set via
+  `listCategoryIdsByPreset` and filters locally. The coverage tool repeats the constant plus
+  `listCategoryIdsByPreset` (it does not call into `productPrices.ts`).
+- Phase 1: the done-when's "15000 minor per litre" is asserted as the September month line's
+  `[spentMinor, unitPriceMinor]` (`src/services/productPrices.test.ts`, "cafe receipts"); expenses
+  are moved between categories with `setExpenseCategory` from `src/db/expenses.ts`.
+- Phase 1: the «Обеды» case files a 40000 milk receipt under «Обеды» and asserts 55000 / 27500.
+- Phase 2: the cafe line is printed per ledger-and-currency block, as the report already splits a
+  ledger by currency; `LedgerCoverage` gains a `cafe: Share` field. The line reads
+  `  cafe: 1 item, 400.00 RSD`.
+- Phase 2: the done-when's "matched 1 (100.0%)" is the report's existing `rules 1 (100.0%)` label;
+  there is no "matched" label.
+- Phase 2: `src/tools/productsCoverage.test.ts` moved the eight-item fixture into the first
+  describe's `beforeEach` and gained a `receipt()` helper, so the cafe test starts from an empty
+  ledger.
+- `pnpm docs:chats` was not run: no scenario or bot copy changed.
+
 ### Close triggers
+
+- **What shipped:** receipt items whose expense is in a category with preset key `cafe`, archived
+  or not, are left out of /prices (list, product screen, chart, review queue) for plaintext and
+  unlocked sealed ledgers, group ledgers included; the products coverage report leaves them out of
+  its shares and unmatched names and prints a `cafe:` line per ledger and currency; the guide's
+  /prices section says so.
+- **User-visible surface changed:** /prices figures and its review queue (no copy or keyboard
+  change); `site/src/content/docs/guide/receipts.mdx` «Цены продуктов»; `pnpm products:coverage`
+  output.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 154 files,
+  2339 tests; `pnpm build` exit 0; `pnpm docs:check` exit 0; `node scripts/check-doc-links.mjs`
+  exit 0, 363 links.
+- **Outstanding `human` phases:** Phase 3 (live check), `Blocks merge: no`.
 
 ## Followups
