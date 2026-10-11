@@ -307,7 +307,7 @@ page), and one key for the tidy switch in the `set:` family.
 | 3: period items on /week, /month | dev | done | 9b8f76b |
 | 4: period items on /today | dev | done | d4dfeee |
 | 5: tidy chat | dev | done | c7d3a54 |
-| 6: live check | human | owed | |
+| 6: live check | human | done (owner-reported 2026-10-11) | (no commit) |
 
 ### Notes
 

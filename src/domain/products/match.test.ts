@@ -31,6 +31,19 @@ describe('matchProduct', () => {
     expect(productOf('JOGURT SA MLEKOM 1L')).toBe('Йогурт');
   });
 
+  it('matches meat cuts, fish, bakery, paper towels and fuel', () => {
+    expect(productOf('JUNEĆI BUT 1KG')).toBe('Говядина');
+    expect(productOf('PILEĆA DŽIGERICA 500G')).toBe('Печень');
+    expect(productOf('PANCETA 200GR')).toBe('Бекон');
+    expect(productOf('RIBLJI ŠTAPIĆI 300G')).toBe('Рыба');
+    expect(productOf('PECIVO SA SIROM')).toBe('Выпечка');
+    expect(productOf('ROLNICA SA DŽEMOM')).toBe('Выпечка');
+    expect(productOf('BUREK SIR 300GR')).toBe('Бурек');
+    expect(productOf('KEKS SA ČOKOLADOM 200G')).toBe('Печенье');
+    expect(productOf('UBRUS 2SL 2/1')).toBe('Бумажные полотенца');
+    expect(productOf('DIZEL /LIT')).toBe('Топливо');
+  });
+
   it('keys every product with at most 24 ASCII characters, each key once', () => {
     const keys = CATALOG.map((product) => product.key);
 

@@ -187,7 +187,7 @@ interface ChartPayloadV1 {
 | 1: Walking skeleton: /month opens a pie chart | dev | done | 3a994ba |
 | 2: Publish and measure the URL limit | human | owed | |
 | 3: Payload budget and the trend chart | dev | done | 0112fca |
-| 4: Live check on a phone | human | owed | |
+| 4: Live check on a phone | human | done (owner-reported 2026-10-11) | (no commit) |
 
 ### Notes
 
