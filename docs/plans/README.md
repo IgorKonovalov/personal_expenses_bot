@@ -12,7 +12,7 @@ status and date. What a plan did lives in the plan.
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
 | [0049](0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | approved (2026-10-11) |
-| [0050](0050-prices-without-cafe-receipts.md) | Product prices without cafe and restaurant receipts | draft (2026-10-11) |
+| [0050](0050-prices-without-cafe-receipts.md) | Product prices without cafe and restaurant receipts | approved (2026-10-11) |
 
 ## Recently closed
 
