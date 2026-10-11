@@ -3,6 +3,7 @@ import type { InlineKeyboardButton } from 'grammy/types';
 import type { User } from '../../db/users.js';
 import { encodeBarsPayload } from '../../domain/chartPayload.js';
 import {
+  menuMark,
   setAnchor,
   startFlow,
   type PricesScreen,
@@ -49,6 +50,7 @@ import {
   reviewAnswerData,
   reviewPageData,
 } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { pageOf, pagerRow } from '../nav.js';
 import { replyHtml, type Html } from '../render/html.js';
@@ -94,10 +96,14 @@ export function priceListView(list: ProductList, requested: number): ScreenView 
   };
 }
 
-function listOrEmpty(list: ProductList, page: number): ScreenView {
-  return list.products.length === 0 && list.unmatched === 0
-    ? { text: messages.pricesEmpty, markup: new InlineKeyboard() }
-    : priceListView(list, page);
+// The list, or pricesEmpty, with [« Назад] to the hub when the screen was opened from it.
+function listOrEmpty(list: ProductList, page: number, fromMenu?: true): ScreenView {
+  return withMenuBack(
+    list.products.length === 0 && list.unmatched === 0
+      ? { text: messages.pricesEmpty, markup: new InlineKeyboard() }
+      : priceListView(list, page),
+    fromMenu,
+  );
 }
 
 function productView(product: ProductView, chartUrl: string | undefined): ScreenView {
@@ -126,7 +132,21 @@ function chartUrlOf(ctx: Context, deps: HandlerDeps, product: ProductView): stri
   return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
 }
 
-// /prices and its [☰ Ещё] button: page 1 of the active ledger's products, as a new anchor.
+// The hub's [Цены]: page 1, as /prices shows it, adopting the tapped message as its anchor.
+export function pricesFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  const list = activeProductList(deps, user, deps.now());
+  if (isLocked(list)) {
+    return {
+      view: withMenuBack({ text: messages.ledgerLocked, markup: new InlineKeyboard() }, true),
+    };
+  }
+  return {
+    view: listOrEmpty(list, 1, true),
+    screen: { name: 'prices', ledgerId: list.ledger.id, fromMenu: true },
+  };
+}
+
+// /prices: page 1 of the active ledger's products, as a new anchor.
 export async function sendPrices(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const now = deps.now();
@@ -166,7 +186,11 @@ function saveScreen(deps: HandlerDeps, tap: PricesTap, screen: PricesScreen): vo
   setAnchor(deps, tap.user, { chatId: tap.anchor.chatId, messageId: tap.anchor.messageId, screen });
 }
 
-const plain = (tap: PricesTap): PricesScreen => ({ name: 'prices', ledgerId: tap.screen.ledgerId });
+const plain = (tap: PricesTap): PricesScreen => ({
+  name: 'prices',
+  ledgerId: tap.screen.ledgerId,
+  ...menuMark(tap.screen),
+});
 
 async function showList(
   ctx: Context,
@@ -187,7 +211,7 @@ async function showList(
   await ctx.answerCallbackQuery(toast === undefined ? undefined : { text: toast });
   if (list === undefined) return;
   saveScreen(deps, tap, plain(tap));
-  await renderAnchor(ctx, tap.anchor, listOrEmpty(list, page));
+  await renderAnchor(ctx, tap.anchor, listOrEmpty(list, page, tap.screen.fromMenu));
 }
 
 async function showProduct(

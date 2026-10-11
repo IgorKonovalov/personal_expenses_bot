@@ -1,6 +1,6 @@
 # 0049: A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-10-11
 > **Related ADRs:** [ADR-0050](../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md),
 > ADR-0011, ADR-0040, ADR-0017, ADR-0028
@@ -396,7 +396,7 @@ and `more:chg` are reused.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Bar and ☰ Меню hub | dev | not started | |
+| 1: Bar and ☰ Меню hub | dev | done | committed with this row |
 | 2: Settings split | dev | not started | |
 | 3: Budget read-first | dev | not started | |
 | 4: Help topics | dev | not started | |
@@ -404,6 +404,27 @@ and `more:chg` are reused.
 | 6: Live check | human | not started | |
 
 ### Notes
+
+- Phase 1: [Что нового] (`more:chg`, in place) sits under the hub's [Помощь], which edits the
+  hub into `messages.help` with [Что нового] and [« Назад]. The plan's Phase 1 hub has no
+  changelog button, and the reachability guard needs one.
+- Phase 1: [Удалить аккаунт], [Открыть учёт] / [Закрыть учёт], [Вопрос о пожертвовании],
+  [Постоянная метка] and the admin's six buttons still send a new message, as their typed command
+  does. The in-place test covers `MENU_IN_PLACE` (donate, recurring, debts, tags, prices, export,
+  settings, privacy, help, changelog); the rest keep the "answers exactly as /x" test.
+- Phase 1: the admin sub-screen's text is a new `messages.adminScreen` («<b>Админ</b>»); the plan
+  names none.
+- Phase 1: with `menu.settings` and `menu.help` gone, `notUnderstood` reads «…— в /help.» and the
+  help text's legend lines name /settings and /help.
+- Phase 1: `CategoriesScreen` also carries `fromMenu`, so settings → [Категории] → [« Назад]
+  keeps the settings hub's [« Назад] to the menu.
+- Phase 1: /tags with no tags shows `tagsEmpty`, the sticky line and [Постоянная метка];
+  `donateUnavailable` also carries [Вопрос о пожертвовании]. [Снять метку] on /tags is the
+  existing `tag:off` action, which edits the screen into `stickyTagOff`.
+- Phase 1: a debt recorded from a hub-opened debts screen keeps [« Назад] → hub under its
+  confirmation.
+- Phase 1: `withMenuBack` and `MenuOpened` live in `src/bot/keyboards.ts`; `src/bot/screens.ts`
+  is not in the phase's files.
 
 ### Close triggers
 

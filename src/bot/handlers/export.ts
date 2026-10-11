@@ -15,17 +15,22 @@ import {
 import { isLocked } from '../../services/ledgerKeys.js';
 import { seenNotice } from '../../services/notices.js';
 import type { HandlerDeps } from '../bot.js';
+import type { User } from '../../db/users.js';
 import {
   EXPORT_BACK,
   EXPORT_FORMAT,
   EXPORT_RANGE,
+  MENU_OPEN,
+  exportBackData,
   exportFormatData,
   exportRangeData,
   type ExportFormat,
 } from '../callbackData.js';
 import { createTapGuard } from '../callbacks.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
-import { editHtml, replyHtml, type Html } from '../render/html.js';
+import { editHtml, replyHtml } from '../render/html.js';
+import type { ScreenView } from '../screens.js';
 import { ensureUser } from './start.js';
 
 // /export (ADR-0026): a range step and a format step edited in place, then the file sent as a
@@ -36,22 +41,25 @@ import { ensureUser } from './start.js';
 // Telegram takes bot uploads up to 50 MB; past this the export fails loudly instead.
 const MAX_FILE_BYTES = 45 * 1024 * 1024;
 
-function rangeKeyboard(): InlineKeyboard {
+// `fromMenu`: the picker was opened from the hub, so every step carries the hub mark and the
+// range step ends in [« Назад] to the hub.
+function rangeKeyboard(fromMenu: boolean): InlineKeyboard {
   const button = (range: ExportRange) =>
-    InlineKeyboard.text(messages.exportRangeButtons[range], exportRangeData(range));
+    InlineKeyboard.text(messages.exportRangeButtons[range], exportRangeData(range, fromMenu));
   return InlineKeyboard.from([
     [button('tm'), button('pm')],
     [button('ty'), button('all')],
+    ...(fromMenu ? [[InlineKeyboard.text(messages.backButton, MENU_OPEN)]] : []),
   ]);
 }
 
-function formatKeyboard(range: ExportRange): InlineKeyboard {
+function formatKeyboard(range: ExportRange, fromMenu: boolean): InlineKeyboard {
   return InlineKeyboard.from([
     [
-      InlineKeyboard.text(messages.exportCsvButton, exportFormatData(range, 'csv')),
-      InlineKeyboard.text(messages.exportXlsxButton, exportFormatData(range, 'xlsx')),
+      InlineKeyboard.text(messages.exportCsvButton, exportFormatData(range, 'csv', fromMenu)),
+      InlineKeyboard.text(messages.exportXlsxButton, exportFormatData(range, 'xlsx', fromMenu)),
     ],
-    [InlineKeyboard.text(messages.exportBackButton, EXPORT_BACK)],
+    [InlineKeyboard.text(messages.exportBackButton, exportBackData(fromMenu))],
   ]);
 }
 
@@ -123,36 +131,53 @@ export async function sendExport(
 }
 
 // The range step's view; a sealed ledger's says the file is a copy outside the encryption.
-export function rangeStep(sealed: boolean): { text: Html; markup: InlineKeyboard } {
-  return { text: messages.exportRangePrompt(sealed), markup: rangeKeyboard() };
+export function rangeStep(sealed: boolean, fromMenu = false): ScreenView {
+  return { text: messages.exportRangePrompt(sealed), markup: rangeKeyboard(fromMenu) };
 }
 
 // [← Назад] and a range tap, which edit the picker in place; shared with the group picker.
-export async function showRangeStep(ctx: Context, sealed: boolean): Promise<void> {
-  const step = rangeStep(sealed);
+export async function showRangeStep(
+  ctx: Context,
+  sealed: boolean,
+  fromMenu = false,
+): Promise<void> {
+  const step = rangeStep(sealed, fromMenu);
   await ctx.answerCallbackQuery();
   await editHtml(ctx, step.text, { reply_markup: step.markup });
 }
 
-export async function showFormatStep(ctx: Context, range: string): Promise<void> {
+export async function showFormatStep(ctx: Context, range: string, fromMenu = false): Promise<void> {
   await ctx.answerCallbackQuery();
   if (!isExportRange(range)) return;
-  await editHtml(ctx, messages.exportFormatPrompt, { reply_markup: formatKeyboard(range) });
+  await editHtml(ctx, messages.exportFormatPrompt, {
+    reply_markup: formatKeyboard(range, fromMenu),
+  });
 }
 
-// /export and its [☰ Ещё] button: the range step for the active ledger.
-export async function sendExportPicker(ctx: Context, deps: HandlerDeps): Promise<void> {
-  if (ctx.from === undefined) return;
+// The /export view for the active ledger: the range step, or the locked message. The sealed
+// ledger's plaintext-copy warning is shown once (ADR-0037).
+function pickerView(deps: HandlerDeps, user: User, fromMenu: boolean): ScreenView {
   const now = deps.now();
-  const user = ensureUser(deps, ctx.from.id, now);
   const state = activeExportState(deps, user);
   if (isLocked(state)) {
-    await replyHtml(ctx, messages.ledgerLocked);
-    return;
+    return withMenuBack({ text: messages.ledgerLocked, markup: new InlineKeyboard() }, fromMenu);
   }
-  // The sealed ledger's plaintext-copy warning is shown once (ADR-0037).
-  const step = rangeStep(state.sealed && seenNotice(deps, user, 'export_plaintext', now));
-  await replyHtml(ctx, step.text, { reply_markup: step.markup });
+  return rangeStep(state.sealed && seenNotice(deps, user, 'export_plaintext', now), fromMenu);
+}
+
+// The hub's [Экспорт]: the range step, as /export shows it, with the hub mark in its data.
+export function exportFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  return { view: pickerView(deps, user, true) };
+}
+
+// /export: the range step for the active ledger.
+export async function sendExportPicker(ctx: Context, deps: HandlerDeps): Promise<void> {
+  if (ctx.from === undefined) return;
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  const view = pickerView(deps, user, false);
+  // The locked message carries no keyboard.
+  const empty = view.markup.inline_keyboard.length === 0;
+  await replyHtml(ctx, view.text, empty ? {} : { reply_markup: view.markup });
 }
 
 export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void {
@@ -160,7 +185,9 @@ export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void 
 
   bot.command('export', (ctx) => sendExportPicker(ctx, deps));
 
-  bot.callbackQuery(EXPORT_RANGE, (ctx) => showFormatStep(ctx, ctx.match[1] ?? ''));
+  bot.callbackQuery(EXPORT_RANGE, (ctx) =>
+    showFormatStep(ctx, ctx.match[1] ?? '', ctx.match[2] !== undefined),
+  );
 
   // The tapping user's active ledger; a locked ledger answers locked. The warning was shown with
   // the first range step, so the step it goes back to carries it only if it was never seen.
@@ -172,7 +199,11 @@ export function registerExport(bot: Composer<Context>, deps: HandlerDeps): void 
       await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
       return;
     }
-    await showRangeStep(ctx, state.sealed && seenNotice(deps, user, 'export_plaintext', now));
+    await showRangeStep(
+      ctx,
+      state.sealed && seenNotice(deps, user, 'export_plaintext', now),
+      ctx.match[1] !== undefined,
+    );
   });
 
   bot.callbackQuery(EXPORT_FORMAT, async (ctx) => {

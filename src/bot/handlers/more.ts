@@ -4,6 +4,7 @@ import type { User } from '../../db/users.js';
 import {
   cancelFlow,
   completeFlow,
+  setAnchor,
   startFlow,
   type ArgCommand,
   type CommandArgFlow,
@@ -11,30 +12,40 @@ import {
 } from '../../services/flowSessions.js';
 import { encryptionState } from '../../services/ledgerKeys.js';
 import type { AdminDeps } from '../bot.js';
-import { ADMIN_ACTION, MORE_ACTION, adminData, moreData } from '../callbackData.js';
+import {
+  ADMIN_ACTION,
+  MENU_OPEN,
+  MORE_ACTION,
+  STICKY_TAG_ASK,
+  adminData,
+  moreData,
+} from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
-import { replyHtml } from '../render/html.js';
+import { editHtml, editHtmlAt, replyHtml } from '../render/html.js';
 import { cancelRow, renderAnchor, showScreen } from '../screens.js';
 import { sendBlock, sendStats } from './admin.js';
-import { sendChangelog } from './changelog.js';
-import { sendDebts } from './debts.js';
+import { changelogFromMenu } from './changelog.js';
+import { debtsFromMenu } from './debts.js';
 import { sendDeleteAccount } from './deleteAccount.js';
-import { sendDonate, type DonateDeps } from './donate.js';
-import { sendExportPicker } from './export.js';
+import { donateFromMenu, type DonateDeps } from './donate.js';
+import { exportFromMenu } from './export.js';
 import { sendInvite, sendInvites } from './invite.js';
 import { sendPaySupport } from './paysupport.js';
-import { sendPrices } from './prices.js';
-import { sendPrivacy } from './privacy.js';
-import { sendRecurring } from './recurring.js';
+import { pricesFromMenu } from './prices.js';
+import { privacyFromMenu } from './privacy.js';
+import { recurringFromMenu } from './recurring.js';
 import { sendRefund } from './refund.js';
+import { settingsFromMenu } from './settings.js';
 import { ensureUser } from './start.js';
-import { sendTag, sendTags } from './tags.js';
+import { sendTag, tagsFromMenu } from './tags.js';
 import { sendLock, sendUnlock } from './unlock.js';
 
-// [☰ Ещё]: one inline button for every private command the menu bar lacks. Each button runs the
-// function its command runs, so a tap answers exactly what the typed command answers. A command
-// that needs an argument asks for it first (the commandArg flow), and the answer runs
-// `/<command> <answer>`.
+// [☰ Меню] (ADR-0050): a stateless hub, and a second level under it. A hub button edits the
+// tapped message into the screen its typed command sends, with [« Назад] (`more:open`) back to
+// the hub; a stateful screen adopts the message as its anchor. A button that asks a question
+// first (the commandArg flow) or answers with a plain reply still sends a new message, as its
+// typed command does. Every private command stays reachable by a button at some depth.
 
 export interface MoreDeps extends DonateDeps {
   readonly backupKeep: number;
@@ -42,15 +53,17 @@ export interface MoreDeps extends DonateDeps {
 }
 
 type Run = (ctx: Context, deps: MoreDeps) => Promise<void>;
+type Open = (deps: MoreDeps, user: User) => MenuOpened;
 
-interface MoreButton {
+// A button on the hub or one of its screens: it opens a screen in place, or runs as its typed
+// command does.
+type MoreButton = {
   // The `more:<key>` or `adm:<key>` callback data.
   readonly key: string;
   // The command the button stands for.
   readonly command: string;
   readonly label: string;
-  readonly run: Run;
-}
+} & ({ readonly open: Open } | { readonly run: Run });
 
 // What `/<command> <arg>` runs, for each command a button asks the argument of.
 const WITH_ARG: Record<ArgCommand, (ctx: Context, deps: MoreDeps, arg: string) => Promise<void>> = {
@@ -86,34 +99,100 @@ const ask =
 
 const { moreButtons: label } = messages;
 
-// Drawn alone on the first row, full width.
-const WIDE: MoreButton = { key: 'don', command: 'donate', label: label.donate, run: sendDonate };
+// The hub's [Помощь]: the help text, with [Что нового] under it.
+function helpFromMenu(): MenuOpened {
+  return {
+    view: withMenuBack(
+      {
+        text: messages.help,
+        markup: InlineKeyboard.from([[InlineKeyboard.text(label.changelog, moreData('chg'))]]),
+      },
+      true,
+    ),
+  };
+}
 
-// In screen order, two per row under WIDE. The destructive delete is last, in a pair, so it is
-// never drawn full width.
-const BUTTONS: readonly MoreButton[] = [
-  { key: 'rec', command: 'recurring', label: label.recurring, run: sendRecurring },
-  { key: 'debt', command: 'debts', label: label.debts, run: sendDebts },
-  { key: 'tags', command: 'tags', label: label.tags, run: sendTags },
-  { key: 'tag', command: 'tag', label: label.tag, run: ask('tag') },
-  { key: 'prc', command: 'prices', label: label.prices, run: sendPrices },
-  { key: 'exp', command: 'export', label: label.export, run: sendExportPicker },
-  { key: 'chg', command: 'changelog', label: label.changelog, run: (ctx) => sendChangelog(ctx) },
-  { key: 'pay', command: 'paysupport', label: label.paysupport, run: ask('paysupport') },
-  { key: 'prv', command: 'privacy', label: label.privacy, run: (ctx) => sendPrivacy(ctx) },
-  {
-    key: 'del',
-    command: 'delete_account',
-    label: label.deleteAccount,
-    run: (ctx, deps) => sendDeleteAccount(ctx, deps.backupKeep),
-  },
+const DONATE: MoreButton = {
+  key: 'don',
+  command: 'donate',
+  label: label.donate,
+  open: (deps) => donateFromMenu(deps),
+};
+const RECURRING: MoreButton = {
+  key: 'rec',
+  command: 'recurring',
+  label: label.recurring,
+  open: recurringFromMenu,
+};
+const DEBTS: MoreButton = {
+  key: 'debt',
+  command: 'debts',
+  label: label.debts,
+  open: debtsFromMenu,
+};
+const TAGS: MoreButton = { key: 'tags', command: 'tags', label: label.tags, open: tagsFromMenu };
+const PRICES: MoreButton = {
+  key: 'prc',
+  command: 'prices',
+  label: label.prices,
+  open: pricesFromMenu,
+};
+const EXPORT: MoreButton = {
+  key: 'exp',
+  command: 'export',
+  label: label.export,
+  open: exportFromMenu,
+};
+const SETTINGS: MoreButton = {
+  key: 'set',
+  command: 'settings',
+  label: label.settings,
+  open: settingsFromMenu,
+};
+const PRIVACY: MoreButton = {
+  key: 'prv',
+  command: 'privacy',
+  label: label.privacy,
+  open: () => privacyFromMenu(),
+};
+const DELETE: MoreButton = {
+  key: 'del',
+  command: 'delete_account',
+  label: label.deleteAccount,
+  run: (ctx, deps) => sendDeleteAccount(ctx, deps.backupKeep),
+};
+const HELP: MoreButton = { key: 'help', command: 'help', label: label.help, open: helpFromMenu };
+
+// The hub's rows, from the top. The destructive delete sits in a pair, never full width.
+const HUB_ROWS: readonly (readonly MoreButton[])[] = [
+  [DONATE],
+  [RECURRING, DEBTS],
+  [TAGS, PRICES],
+  [EXPORT, SETTINGS],
+  [PRIVACY, DELETE],
+  [HELP],
 ];
 
 // Shown only for a sealed personal ledger: the one that changes its state.
 const UNLOCK: MoreButton = { key: 'unl', command: 'unlock', label: label.unlock, run: sendUnlock };
 const LOCK: MoreButton = { key: 'lock', command: 'lock', label: label.lock, run: sendLock };
 
-// The admin's rows, two per row, under `adm:<key>`.
+// Buttons on the screens the hub opens: [Что нового] under its help, [Вопрос о пожертвовании] on
+// /donate.
+const CHANGELOG: MoreButton = {
+  key: 'chg',
+  command: 'changelog',
+  label: label.changelog,
+  open: () => changelogFromMenu(),
+};
+const PAYSUPPORT: MoreButton = {
+  key: 'pay',
+  command: 'paysupport',
+  label: label.paysupport,
+  run: ask('paysupport'),
+};
+
+// The admin's sub-screen, behind [Админ]: two per row, under `adm:<key>`.
 const ADMIN_BUTTONS: readonly MoreButton[] = [
   {
     key: 'inv',
@@ -128,44 +207,50 @@ const ADMIN_BUTTONS: readonly MoreButton[] = [
   { key: 'ref', command: 'refund', label: label.refund, run: ask('refund') },
 ];
 
-const USER_BUTTONS = [WIDE, ...BUTTONS, UNLOCK, LOCK];
+const USER_BUTTONS = [...HUB_ROWS.flat(), UNLOCK, LOCK, CHANGELOG, PAYSUPPORT];
 
-// Every more-screen button: its callback data and the command it runs.
-export const MORE_BUTTONS: readonly { readonly data: string; readonly command: string }[] = [
+// The `more:<key>` buttons that open their screen in the tapped message, and the command each
+// stands for.
+export const MENU_IN_PLACE: readonly { readonly data: string; readonly command: string }[] =
+  USER_BUTTONS.flatMap((b) => ('open' in b ? [{ data: moreData(b.key), command: b.command }] : []));
+
+// Every button of the hub and the screens under it, and the command it reaches.
+export const MENU_BUTTONS: readonly { readonly data: string; readonly command: string }[] = [
   ...USER_BUTTONS.map(({ key, command }) => ({ data: moreData(key), command })),
   ...ADMIN_BUTTONS.map(({ key, command }) => ({ data: adminData(key), command })),
+  // [Постоянная метка] on /tags.
+  { data: STICKY_TAG_ASK, command: 'tag' },
 ];
 
-function pairs(
-  buttons: readonly MoreButton[],
-  data: (key: string) => string,
-): InlineKeyboardButton[][] {
-  const rows: InlineKeyboardButton[][] = [];
-  buttons.forEach((button, i) => {
-    const cell = InlineKeyboard.text(button.label, data(button.key));
-    if (i % 2 === 0) rows.push([cell]);
-    else rows.at(-1)?.push(cell);
-  });
-  return rows;
+function cell(button: MoreButton, data: (key: string) => string): InlineKeyboardButton {
+  return InlineKeyboard.text(button.label, data(button.key));
 }
 
-function moreKeyboard(deps: AdminDeps, user: User, telegramId: number): InlineKeyboard {
-  const rows = [[InlineKeyboard.text(WIDE.label, moreData(WIDE.key))], ...pairs(BUTTONS, moreData)];
+function hubKeyboard(deps: AdminDeps, user: User, telegramId: number): InlineKeyboard {
+  const rows = HUB_ROWS.map((row) => row.map((button) => cell(button, moreData)));
   const encryption = encryptionState(deps, user).kind;
-  if (encryption !== 'off') {
-    const toggle = encryption === 'locked' ? UNLOCK : LOCK;
-    rows.push([InlineKeyboard.text(toggle.label, moreData(toggle.key))]);
+  if (encryption !== 'off') rows.push([cell(encryption === 'locked' ? UNLOCK : LOCK, moreData)]);
+  if (telegramId === deps.adminTelegramId) {
+    rows.push([InlineKeyboard.text(label.admin, moreData('adm'))]);
   }
-  if (telegramId === deps.adminTelegramId) rows.push(...pairs(ADMIN_BUTTONS, adminData));
   return InlineKeyboard.from(rows);
 }
 
-// The [☰ Ещё] tap: the screen as a new message. It holds no state, so any old copy still works.
+function adminKeyboard(): InlineKeyboard {
+  const rows: InlineKeyboardButton[][] = [];
+  for (let i = 0; i < ADMIN_BUTTONS.length; i += 2) {
+    rows.push(ADMIN_BUTTONS.slice(i, i + 2).map((button) => cell(button, adminData)));
+  }
+  rows.push([InlineKeyboard.text(messages.backButton, MENU_OPEN)]);
+  return InlineKeyboard.from(rows);
+}
+
+// The [☰ Меню] tap: the hub as a new message. It holds no state, so any old copy still works.
 export async function sendMore(ctx: Context, deps: AdminDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
   await replyHtml(ctx, messages.moreScreen, {
-    reply_markup: moreKeyboard(deps, user, ctx.from.id),
+    reply_markup: hubKeyboard(deps, user, ctx.from.id),
   });
 }
 
@@ -195,24 +280,73 @@ export async function answerCommandArg(
   await WITH_ARG[command](ctx, deps, input.text);
 }
 
-async function runTap(ctx: Context, deps: MoreDeps, button: MoreButton): Promise<void> {
-  if (ctx.from === undefined) return;
+// The prologue of every menu tap: answered, and the pending flow cleared as a typed command
+// clears it.
+async function menuTap(ctx: Context, deps: MoreDeps): Promise<User | undefined> {
+  if (ctx.from === undefined) return undefined;
   await ctx.answerCallbackQuery();
-  // As a typed command does: the pending flow is cleared before the command runs.
-  cancelFlow(deps, ensureUser(deps, ctx.from.id, deps.now()));
-  await button.run(ctx, deps);
+  const user = ensureUser(deps, ctx.from.id, deps.now());
+  cancelFlow(deps, user);
+  return user;
+}
+
+async function runTap(ctx: Context, deps: MoreDeps, button: MoreButton): Promise<void> {
+  const user = await menuTap(ctx, deps);
+  if (user === undefined) return;
+  if ('run' in button) {
+    await button.run(ctx, deps);
+    return;
+  }
+  const tapped = ctx.callbackQuery?.message;
+  if (tapped === undefined) return;
+  const opened = button.open(deps, user);
+  const at = { chatId: tapped.chat.id, messageId: tapped.message_id };
+  if (opened.screen !== undefined) setAnchor(deps, user, { ...at, screen: opened.screen });
+  await editHtmlAt(ctx, at, opened.view.text, {
+    reply_markup: opened.view.markup,
+    ...(opened.noPreview === true ? { link_preview_options: { is_disabled: true } } : {}),
+  });
 }
 
 export function registerMore(bot: Composer<Context>, deps: MoreDeps): void {
   const userButtons = new Map(USER_BUTTONS.map((b) => [b.key, b]));
   const adminButtons = new Map(ADMIN_BUTTONS.map((b) => [b.key, b]));
 
-  bot.callbackQuery(MORE_ACTION, async (ctx) => {
-    const button = userButtons.get(ctx.match[1] ?? '');
-    if (button !== undefined) await runTap(ctx, deps, button);
+  // [« Назад] on every screen the hub opened: the hub again, in the same message.
+  bot.callbackQuery(MENU_OPEN, async (ctx) => {
+    const user = await menuTap(ctx, deps);
+    if (user === undefined) return;
+    await editHtml(ctx, messages.moreScreen, {
+      reply_markup: hubKeyboard(deps, user, ctx.from.id),
+    });
   });
 
-  // From anyone but the admin, an `adm:*` tap falls through to the silent unknown-button answer.
+  // [Постоянная метка] on /tags: the /tag prompt.
+  bot.callbackQuery(STICKY_TAG_ASK, async (ctx) => {
+    if ((await menuTap(ctx, deps)) === undefined) return;
+    await askArgument(ctx, deps, 'tag');
+  });
+
+  // [Админ], for the admin only: the hub becomes the admin's buttons. From anyone else it falls
+  // through to the silent unknown-button answer, as a forged `adm:*` tap does.
+  bot.callbackQuery(moreData('adm'), async (ctx, next) => {
+    if (ctx.from.id !== deps.adminTelegramId) {
+      await next();
+      return;
+    }
+    if ((await menuTap(ctx, deps)) === undefined) return;
+    await editHtml(ctx, messages.adminScreen, { reply_markup: adminKeyboard() });
+  });
+
+  bot.callbackQuery(MORE_ACTION, async (ctx, next) => {
+    const button = userButtons.get(ctx.match[1] ?? '');
+    if (button === undefined) {
+      await next();
+      return;
+    }
+    await runTap(ctx, deps, button);
+  });
+
   bot.callbackQuery(ADMIN_ACTION, async (ctx, next) => {
     const button = adminButtons.get(ctx.match[1] ?? '');
     if (ctx.from.id !== deps.adminTelegramId || button === undefined) {

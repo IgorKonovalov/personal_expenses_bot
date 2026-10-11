@@ -31,12 +31,14 @@ import {
 } from '../../services/debts.js';
 import {
   currentFlow,
+  menuMark,
   setAnchor,
   type DebtAmountFlow,
   type DebtPersonFlow,
   type DebtRepayFlow,
   type DebtSplitFlow,
   type DebtsScreen,
+  type Screen,
   type ScreenAnchor,
 } from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
@@ -63,6 +65,7 @@ import {
   debtRepayCurrencyData,
   debtRepayData,
 } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { editHtml, joinHtml, replyHtml, type Html } from '../render/html.js';
 import { pageOf, pagerRow } from '../nav.js';
@@ -88,24 +91,38 @@ function lockedView(): ScreenView {
   return { text: messages.ledgerLocked, markup: new InlineKeyboard() };
 }
 
-// The debts list: a button per person on it, two per row, then the two new-loan buttons.
-export function debtsListView(deps: HandlerDeps, user: User): ScreenView {
+// The debts list: a button per person on it, two per row, then the two new-loan buttons, and
+// [« Назад] to the hub when opened from it.
+export function debtsListView(deps: HandlerDeps, user: User, fromMenu?: true): ScreenView {
   const lines = debtLines(deps, user);
-  if (isLocked(lines)) return lockedView();
+  if (isLocked(lines)) return withMenuBack(lockedView(), fromMenu);
   const people = [...new Map(lines.map((line) => [line.personId, line.name])).entries()];
   const buttons = people.map(([id, name]) => InlineKeyboard.text(name, debtPersonData(id)));
   const rows: InlineKeyboardButton[][] = [];
   for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
-  return {
-    text: messages.debtsScreen(lines),
-    markup: InlineKeyboard.from([
-      ...rows,
-      [
-        InlineKeyboard.text(messages.lendButton, debtNewData('lend')),
-        InlineKeyboard.text(messages.borrowButton, debtNewData('borrow')),
-      ],
-    ]),
-  };
+  return withMenuBack(
+    {
+      text: messages.debtsScreen(lines),
+      markup: InlineKeyboard.from([
+        ...rows,
+        [
+          InlineKeyboard.text(messages.lendButton, debtNewData('lend')),
+          InlineKeyboard.text(messages.borrowButton, debtNewData('borrow')),
+        ],
+      ]),
+    },
+    fromMenu,
+  );
+}
+
+// The hub's [Долги]: the list, as /debts shows it, adopting the tapped message as its anchor.
+export function debtsFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  if (debtsLocked(deps, user)) {
+    return {
+      view: withMenuBack({ text: messages.ledgerLocked, markup: new InlineKeyboard() }, true),
+    };
+  }
+  return { view: debtsListView(deps, user, true), screen: { name: 'debts', fromMenu: true } };
 }
 
 // A person's card: [Мне вернули] while they owe the user something, [Я вернул] while the user
@@ -148,7 +165,7 @@ export function debtsScreenFor(deps: HandlerDeps, user: User, screen: DebtsScree
   }
   const card =
     screen.personId === undefined ? undefined : personCardView(deps, user, screen.personId);
-  return card ?? debtsListView(deps, user);
+  return card ?? debtsListView(deps, user, screen.fromMenu);
 }
 
 // The split picker: a toggle per known person, two per row, then [Готово (k/n)] [Пропустить].
@@ -279,17 +296,21 @@ function personPickerView(
   };
 }
 
-// A recorded operation's confirmation, with [Удалить].
-function recordedView(result: DebtRecorded): ScreenView {
+// A recorded operation's confirmation, with [Удалить], and [« Назад] to the hub when the debts
+// screen was opened from it.
+function recordedView(result: DebtRecorded, screen: Screen | undefined): ScreenView {
   const { op, person, balance } = result;
-  return {
-    text: messages.debtRecorded({
-      kind: op.kind,
-      money: { amountMinor: op.amountMinor, currency: op.currency },
-      balance: { ...balance, name: person.name },
-    }),
-    markup: new InlineKeyboard().text(messages.undoButton, debtDeleteData(op.id)),
-  };
+  return withMenuBack(
+    {
+      text: messages.debtRecorded({
+        kind: op.kind,
+        money: { amountMinor: op.amountMinor, currency: op.currency },
+        balance: { ...balance, name: person.name },
+      }),
+      markup: new InlineKeyboard().text(messages.undoButton, debtDeleteData(op.id)),
+    },
+    screen?.name === 'debts' ? screen.fromMenu : undefined,
+  );
 }
 
 async function show(ctx: Context, anchor: ScreenAnchor | undefined, view: ScreenView) {
@@ -347,7 +368,7 @@ export async function answerDebtFlow(
       anchor,
       result.kind === 'refused'
         ? repayAmountView(result.balance, repayRefusal[result.reason](result.balance))
-        : recordedView(result),
+        : recordedView(result, anchor?.screen),
     );
     return;
   }
@@ -376,7 +397,7 @@ export async function answerDebtFlow(
     anchor,
     result.kind === 'invalid'
       ? personPickerView(deps, user, flow, 1, messages.debtPersonRefused[result.reason])
-      : recordedView(result),
+      : recordedView(result, anchor?.screen),
   );
 }
 
@@ -454,7 +475,7 @@ async function showRepayStart(
   });
 }
 
-// /debts and its [☰ Ещё] button: the debts list as a new anchor.
+// /debts: the debts list as a new anchor.
 export async function sendDebts(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
@@ -470,7 +491,14 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     const tap = await debtsTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    await showDebts(ctx, deps, tap, { name: 'debts' }, debtsListView(deps, tap.user));
+    const mark = menuMark(tap.anchor.screen);
+    await showDebts(
+      ctx,
+      deps,
+      tap,
+      { name: 'debts', ...mark },
+      debtsListView(deps, tap.user, mark.fromMenu),
+    );
   });
 
   bot.callbackQuery(DEBT_PERSON, async (ctx) => {
@@ -483,7 +511,8 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    await showDebts(ctx, deps, tap, { name: 'debts', personId }, view);
+    const screen = { name: 'debts', personId, ...menuMark(tap.anchor.screen) } as const;
+    await showDebts(ctx, deps, tap, screen, view);
   });
 
   bot.callbackQuery(DEBT_REPAY, async (ctx) => {
@@ -492,7 +521,10 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
     const personId = Number(ctx.match[1]) as DebtPersonId;
     const direction = ctx.match[2] === 't' ? 'toMe' : 'byMe';
     const start = startRepay(deps, { user: tap.user, personId, direction, now: deps.now() });
-    setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'debts', personId } });
+    setAnchor(deps, tap.user, {
+      ...tap.anchor,
+      screen: { name: 'debts', personId, ...menuMark(tap.anchor.screen) },
+    });
     await showRepayStart(ctx, tap, personId, direction, start);
   });
 
@@ -529,7 +561,7 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, recordedView(result));
+    await renderAnchor(ctx, tap.anchor, recordedView(result, tap.anchor.screen));
   });
 
   bot.callbackQuery(SPLIT_TOGGLE, async (ctx) => {
@@ -617,7 +649,10 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
       return;
     }
-    setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'debts' } });
+    setAnchor(deps, tap.user, {
+      ...tap.anchor,
+      screen: { name: 'debts', ...menuMark(tap.anchor.screen) },
+    });
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, amountPromptView(deps, tap.user, flow));
   });
@@ -651,7 +686,7 @@ export function registerDebts(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, recordedView(result));
+    await renderAnchor(ctx, tap.anchor, recordedView(result, tap.anchor.screen));
   });
 }
 

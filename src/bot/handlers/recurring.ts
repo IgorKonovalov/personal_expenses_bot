@@ -9,6 +9,7 @@ import type { Schedule } from '../../domain/schedule.js';
 import { localDateOf, parseLocalDate, type LocalDate } from '../../domain/time.js';
 import { findActiveLedger } from '../../db/ledgers.js';
 import {
+  menuMark,
   setAnchor,
   startFlow,
   type RecurringAskScreen,
@@ -63,6 +64,7 @@ import {
   showExpenseData,
   undoExpenseData,
 } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { editHtml, joinHtml, replyHtml, type Html } from '../render/html.js';
 import {
@@ -128,18 +130,36 @@ function userToday(deps: HandlerDeps, user: User): LocalDate {
   return localDateOf(deps.now(), resolveUserTimezone(deps, user));
 }
 
-// The list, a button per rule, with a header line above when something just changed.
-export function recurringListView(deps: HandlerDeps, user: User, header?: Html): ScreenView {
+// The list, a button per rule, with a header line above when something just changed, and
+// [« Назад] to the hub when the screen was opened from it.
+export function recurringListView(
+  deps: HandlerDeps,
+  user: User,
+  opts: { readonly header?: Html; readonly fromMenu?: true } = {},
+): ScreenView {
+  const { header } = opts;
   const items = listRules(deps, user).flatMap(({ rule }) => listItem(deps, rule) ?? []);
   const list = messages.recurringList({ rules: items, today: userToday(deps, user) });
-  return {
-    text: header === undefined ? list : joinHtml([header, list], '\n\n'),
-    markup: InlineKeyboard.from([
-      ...items.map((item) => [
-        InlineKeyboard.text(messages.ruleButton(item), ruleOpenData(item.id)),
+  return withMenuBack(
+    {
+      text: header === undefined ? list : joinHtml([header, list], '\n\n'),
+      markup: InlineKeyboard.from([
+        ...items.map((item) => [
+          InlineKeyboard.text(messages.ruleButton(item), ruleOpenData(item.id)),
+        ]),
+        [InlineKeyboard.text(messages.addReminderButton, REMINDER_ADD)],
       ]),
-      [InlineKeyboard.text(messages.addReminderButton, REMINDER_ADD)],
-    ]),
+    },
+    opts.fromMenu,
+  );
+}
+
+// The hub's [Регулярные]: the list, as /recurring shows it, adopting the tapped message as its
+// anchor.
+export function recurringFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  return {
+    view: recurringListView(deps, user, { fromMenu: true }),
+    screen: { name: 'recurring', fromMenu: true },
   };
 }
 
@@ -204,7 +224,11 @@ export async function answerReminder(
     );
     return;
   }
-  const screen: RecurringScreen = { name: 'recurring', reminderText: result.text };
+  const screen: RecurringScreen = {
+    name: 'recurring',
+    reminderText: result.text,
+    ...menuMark(anchor.screen),
+  };
   setAnchor(deps, user, { ...anchor, screen });
   await renderAnchor(ctx, anchor, reminderPickerView(deps, user, result.text));
 }
@@ -249,7 +273,7 @@ export function recurringScreenFor(
 ): ScreenView {
   if (screen.reminderText !== undefined) return reminderPickerView(deps, user, screen.reminderText);
   const rule = screen.ruleId === undefined ? undefined : ruleView(deps, user, screen.ruleId);
-  return rule ?? recurringListView(deps, user);
+  return rule ?? recurringListView(deps, user, menuMark(screen));
 }
 
 // An `ask` occurrence's prompt: [Записать <money>], [Другая сумма] unless `withAmount` is
@@ -400,7 +424,7 @@ export async function showAskResult(
   }
 }
 
-// /recurring and its [☰ Ещё] button: the rule list as a new anchor.
+// /recurring: the rule list as a new anchor.
 export async function sendRecurring(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
@@ -414,7 +438,14 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
     const tap = await recurringTap(ctx, deps);
     if (tap === undefined) return;
     await ctx.answerCallbackQuery();
-    await showRecurring(ctx, deps, tap, { name: 'recurring' }, recurringListView(deps, tap.user));
+    const mark = menuMark(tap.screen);
+    await showRecurring(
+      ctx,
+      deps,
+      tap,
+      { name: 'recurring', ...mark },
+      recurringListView(deps, tap.user, mark),
+    );
   });
 
   bot.callbackQuery(RULE_OPEN, async (ctx) => {
@@ -427,7 +458,13 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       return;
     }
     await ctx.answerCallbackQuery();
-    await showRecurring(ctx, deps, tap, { name: 'recurring', ruleId }, view);
+    await showRecurring(
+      ctx,
+      deps,
+      tap,
+      { name: 'recurring', ruleId, ...menuMark(tap.screen) },
+      view,
+    );
   });
 
   // The mode is in the data: a second tap finds it set.
@@ -478,12 +515,13 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       return;
     }
     await ctx.answerCallbackQuery();
+    const mark = menuMark(tap.screen);
     await showRecurring(
       ctx,
       deps,
       tap,
-      { name: 'recurring' },
-      recurringListView(deps, tap.user, messages.ruleDeleted),
+      { name: 'recurring', ...mark },
+      recurringListView(deps, tap.user, { header: messages.ruleDeleted, ...mark }),
     );
   });
 
@@ -496,7 +534,7 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       ctx,
       deps,
       tap,
-      { name: 'recurring' },
+      { name: 'recurring', ...menuMark(tap.screen) },
       reminderPromptView(deps, tap.user, { firstAsk: true }),
     );
   });
@@ -512,12 +550,17 @@ export function registerRecurring(bot: Composer<Context>, deps: HandlerDeps): vo
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
     }
+    const mark = menuMark(tap.screen);
     deps.db.transaction(() => {
       createReminder(deps, { user: tap.user, text, choice, now: deps.now() });
-      setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'recurring' } });
+      setAnchor(deps, tap.user, { ...tap.anchor, screen: { name: 'recurring', ...mark } });
     })();
     await ctx.answerCallbackQuery();
-    await renderAnchor(ctx, tap.anchor, recurringListView(deps, tap.user, messages.reminderAdded));
+    await renderAnchor(
+      ctx,
+      tap.anchor,
+      recurringListView(deps, tap.user, { header: messages.reminderAdded, ...mark }),
+    );
   });
 
   bot.callbackQuery(REMINDER_EXPENSE, async (ctx) => {

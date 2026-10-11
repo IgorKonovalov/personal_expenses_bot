@@ -1364,6 +1364,12 @@ const menu = {
   week: '📅 Неделя',
   month: '🗓 Месяц',
   budget: '💰 Бюджет',
+  more: '☰ Меню',
+} as const;
+
+// Labels of an earlier bar that a client keeps showing until its next /start (ADR-0050): each
+// still routes, so none may parse as an expense either.
+const menuAliases = {
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
   more: '☰ Ещё',
@@ -1566,6 +1572,7 @@ const versionAnnouncements: Readonly<Record<string, Html>> = {
 
 export const messages = {
   menu,
+  menuAliases,
   // The bot's profile texts, set at boot with setMyDescription (the empty-chat card, at most 512
   // characters) and setMyShortDescription (the profile "About", at most 120). Plain text, no HTML.
   botDescription: [
@@ -1613,22 +1620,27 @@ export const messages = {
     { command: 'unblock', description: 'Разблокировать пользователя по id' },
     { command: 'refund', description: 'Вернуть Stars по id платежа' },
   ],
-  // [☰ Ещё]: every private command that has no menu-bar button, as inline buttons.
-  moreScreen: html`<b>Ещё</b>\nВсе остальные команды — кнопками.`,
+  // [☰ Меню] (ADR-0050): the hub, edited in place into each screen it opens.
+  moreScreen: html`<b>Меню</b>`,
+  // The hub's [Админ] sub-screen, for the admin only.
+  adminScreen: html`<b>Админ</b>`,
   moreButtons: {
     recurring: 'Регулярные',
     debts: 'Долги',
     tags: 'Метки',
     prices: 'Цены',
     export: 'Экспорт',
+    settings: 'Настройки',
+    help: 'Помощь',
     changelog: 'Что нового',
     donate: 'Поддержать',
-    paysupport: 'Возврат пожертвования',
+    paysupport: 'Вопрос о пожертвовании',
     privacy: 'Приватность',
     deleteAccount: 'Удалить аккаунт',
     unlock: 'Открыть учёт',
     lock: 'Закрыть учёт',
-    tag: 'Включить метку',
+    tag: 'Постоянная метка',
+    admin: 'Админ',
     invite: 'Пригласить',
     invites: 'Приглашения',
     stats: 'Статистика',
@@ -1653,7 +1665,7 @@ export const messages = {
     [
       html`Здравствуйте! Я веду учёт трат.`,
       html`Отправьте сумму и описание, например «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».`,
-      html`Итоги открываются кнопками меню внизу, остальные команды — в «${menu.more}». Подробности: /help.`,
+      html`Итоги открываются кнопками меню внизу, всё остальное — в «${menu.more}». Подробности: /help.`,
       html`Ваши траты видны только вам. Выгрузить всё: /export. Как хранятся данные: /privacy.`,
     ],
     '\n\n',
@@ -1882,9 +1894,9 @@ export const messages = {
       html`${menu.today} — траты за сегодня; кнопка [Траты] под ними — список трат по дням, чтобы изменить или удалить любую`,
       html`${menu.week} и ${menu.month} — траты по категориям`,
       html`${menu.budget} — лимит и сколько осталось на сегодня`,
-      html`${menu.settings} — часовой пояс, валюта, категории, итоги и шифрование`,
-      html`${menu.help} — эта подсказка`,
       html`${menu.more} — остальные команды кнопками`,
+      html`/settings — часовой пояс, валюта, категории, итоги и шифрование`,
+      html`/help — эта подсказка`,
       html`/recurring — регулярные траты и напоминания`,
       html`/debts — долги: кто кому должен`,
       html`/tags — метки и траты по ним, /tag — метка для всех новых трат`,
@@ -1940,7 +1952,7 @@ export const messages = {
     { command: 'help', description: 'Как записать трату группы' },
   ],
   // Stray input once the full help was seen (ADR-0037): one line, deleted after a minute.
-  notUnderstood: html`Не понял. Как записать трату — в «${menu.help}».`,
+  notUnderstood: html`Не понял. Как записать трату — в /help.`,
   editedMessageHint: html`Изменение сообщения не меняет запись. Нажмите «Изменить» под подтверждением.`,
   tooManyTags: html`Больше 5 меток на одну трату не бывает. Ничего не записано. Отправьте, например, «450 кофе #отпуск #рим».`,
   // /tags (ADR-0029): one page of the ledger's tags, most recently used first.
@@ -1959,6 +1971,9 @@ export const messages = {
       ],
       '\n',
     ),
+  // The private /tags screen's last line: the sticky tag of the active ledger.
+  stickyTagLine: (name: string | undefined): Html =>
+    name === undefined ? html`Постоянной метки нет` : html`Постоянная метка: #${name}`,
   tagButton: (name: string): string => `#${name}`,
   // The sticky tag (ADR-0029), set with /tag in the active ledger.
   stickyTagOn: ({ ledger, name }: { ledger: LedgerRef; name: string }): Html =>

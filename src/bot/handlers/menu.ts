@@ -10,11 +10,12 @@ import { sendToday } from './today.js';
 
 interface MenuRoute {
   readonly label: string;
-  // The command the button stands for; [☰ Ещё] stands for none.
+  // The command the button stands for; [☰ Меню] stands for none.
   readonly command?: string;
   readonly run: (ctx: Context, deps: AdminDeps) => Promise<void>;
 }
 
+// The bar's buttons (ADR-0050).
 const ROUTES: readonly MenuRoute[] = [
   { label: messages.menu.today, command: 'today', run: sendToday },
   {
@@ -28,9 +29,14 @@ const ROUTES: readonly MenuRoute[] = [
     run: (ctx, deps) => sendSummary(ctx, deps, 'month'),
   },
   { label: messages.menu.budget, command: 'budget', run: sendBudget },
-  { label: messages.menu.settings, command: 'settings', run: sendSettings },
-  { label: messages.menu.help, command: 'help', run: (ctx, deps) => sendHelp(ctx, deps.webappUrl) },
   { label: messages.menu.more, run: sendMore },
+];
+
+// The labels of an earlier bar, still on a client until its next /start: each answers as before.
+const ALIASES: readonly MenuRoute[] = [
+  { label: messages.menuAliases.settings, run: sendSettings },
+  { label: messages.menuAliases.help, run: (ctx, deps) => sendHelp(ctx, deps.webappUrl) },
+  { label: messages.menuAliases.more, run: sendMore },
 ];
 
 // Every command a menu-bar button runs.
@@ -41,7 +47,7 @@ export const MENU_BAR_COMMANDS: readonly string[] = ROUTES.flatMap((r) =>
 // A menu tap arrives as plain text. Only an exact label is a tap: `Сегодня` or `📊 Сегодня!`
 // falls through to the expense parser. Register before the text handler.
 export function registerMenu(bot: Composer<Context>, deps: AdminDeps): void {
-  const routes = new Map(ROUTES.map((r) => [r.label, r.run]));
+  const routes = new Map([...ROUTES, ...ALIASES].map((r) => [r.label, r.run]));
   bot.on('message:text', async (ctx, next) => {
     const route = routes.get(ctx.message.text);
     if (route === undefined) {

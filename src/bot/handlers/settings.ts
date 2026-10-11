@@ -5,6 +5,7 @@ import type { User } from '../../db/users.js';
 import { CURRENCY_CODES, toCurrencyCode } from '../../domain/currencies.js';
 import { TIMEZONES, timezoneBySlug } from '../../domain/timezones.js';
 import {
+  menuMark,
   setAnchor,
   type BudgetScreen,
   type CategoriesScreen,
@@ -50,6 +51,7 @@ import {
   setTimezoneData,
   timezonePageData,
 } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { pageOf, pagerRow } from '../nav.js';
 import { joinHtml, type Html } from '../render/html.js';
@@ -74,11 +76,13 @@ import { ensureUser } from './start.js';
 // Scoped to a shared ledger (the anchor's `ledgerId`, opened from the group's /settings deep
 // link), the same hub and pickers set that ledger's timezone and currency, for its owner only.
 
-// Undefined when the screen is scoped to a ledger the user doesn't own.
+// Undefined when the screen is scoped to a ledger the user doesn't own. The personal hub opened
+// from the [☰ Меню] hub (`fromMenu`) ends in a [« Назад] to it.
 export function settingsView(
   deps: HandlerDeps,
   user: User,
   ledgerId?: LedgerId,
+  fromMenu?: true,
 ): ScreenView | undefined {
   const settings = screenSettings(deps, user, ledgerId);
   if (settings === undefined) return undefined;
@@ -86,50 +90,62 @@ export function settingsView(
     InlineKeyboard.text(messages.timezoneButton, TIMEZONE_PICKER),
     InlineKeyboard.text(messages.currencyButton, CURRENCY_PICKER),
   ];
-  return ledgerId === undefined
-    ? {
-        text: messages.settingsScreen(settings),
-        markup: InlineKeyboard.from([
-          pickers,
-          [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
-          [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
-          [
-            InlineKeyboard.text(
-              summaryPushOn(deps, user, 'monthly')
-                ? messages.pushMonthlyToggleOn
-                : messages.pushMonthlyToggleOff,
-              SETTINGS_PUSH_MONTHLY,
-            ),
-          ],
-          [
-            InlineKeyboard.text(
-              summaryPushOn(deps, user, 'weekly')
-                ? messages.pushWeeklyToggleOn
-                : messages.pushWeeklyToggleOff,
-              SETTINGS_PUSH_WEEKLY,
-            ),
-          ],
-          [
-            InlineKeyboard.text(
-              tipsOn(deps, user) ? messages.tipsToggleOn : messages.tipsToggleOff,
-              SETTINGS_TIPS,
-            ),
-          ],
-          [
-            InlineKeyboard.text(
-              tidyChatOn(deps, user) ? messages.tidyChatToggleOn : messages.tidyChatToggleOff,
-              SETTINGS_TIDY,
-            ),
-          ],
-        ]),
-      }
-    : {
-        text: messages.ledgerSettingsScreen(settings),
-        markup: InlineKeyboard.from([
-          pickers,
-          [InlineKeyboard.text(messages.settingsBudgetButton, SETTINGS_BUDGET)],
-        ]),
-      };
+  if (ledgerId !== undefined) {
+    return {
+      text: messages.ledgerSettingsScreen(settings),
+      markup: InlineKeyboard.from([
+        pickers,
+        [InlineKeyboard.text(messages.settingsBudgetButton, SETTINGS_BUDGET)],
+      ]),
+    };
+  }
+  return withMenuBack(
+    {
+      text: messages.settingsScreen(settings),
+      markup: InlineKeyboard.from([
+        pickers,
+        [InlineKeyboard.text(messages.settingsCategoriesButton, SETTINGS_CATEGORIES)],
+        [InlineKeyboard.text(messages.settingsEncryptionButton, SETTINGS_ENCRYPTION)],
+        [
+          InlineKeyboard.text(
+            summaryPushOn(deps, user, 'monthly')
+              ? messages.pushMonthlyToggleOn
+              : messages.pushMonthlyToggleOff,
+            SETTINGS_PUSH_MONTHLY,
+          ),
+        ],
+        [
+          InlineKeyboard.text(
+            summaryPushOn(deps, user, 'weekly')
+              ? messages.pushWeeklyToggleOn
+              : messages.pushWeeklyToggleOff,
+            SETTINGS_PUSH_WEEKLY,
+          ),
+        ],
+        [
+          InlineKeyboard.text(
+            tipsOn(deps, user) ? messages.tipsToggleOn : messages.tipsToggleOff,
+            SETTINGS_TIPS,
+          ),
+        ],
+        [
+          InlineKeyboard.text(
+            tidyChatOn(deps, user) ? messages.tidyChatToggleOn : messages.tidyChatToggleOff,
+            SETTINGS_TIDY,
+          ),
+        ],
+      ]),
+    },
+    fromMenu,
+  );
+}
+
+// The hub's [Настройки]: the personal hub, as /settings shows it, adopting the tapped message as
+// its anchor. It offers no tip.
+export function settingsFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  const view = settingsView(deps, user, undefined, true);
+  if (view === undefined) throw new Error('the personal settings view always exists');
+  return { view, screen: { name: 'settings', fromMenu: true } };
 }
 
 // Opens the hub scoped to a shared ledger the user owns. False when they don't own it.
@@ -258,6 +274,7 @@ export async function showSettingsInPlace(
 interface SettingsTap extends ScreenTap {
   // The ledger the hub is scoped to; undefined for the user's own settings.
   readonly ledgerId: LedgerId | undefined;
+  readonly fromMenu: true | undefined;
   readonly settings: SettingsView;
 }
 
@@ -273,12 +290,12 @@ async function settingsTap(ctx: Context, deps: HandlerDeps): Promise<SettingsTap
     await ctx.answerCallbackQuery({ text: messages.staleScreen });
     return undefined;
   }
-  return { ...tap, ledgerId: screen.ledgerId, settings };
+  return { ...tap, ledgerId: screen.ledgerId, fromMenu: screen.fromMenu, settings };
 }
 
 // The hub for the tap's scope, after a change.
 function hubView(deps: HandlerDeps, tap: SettingsTap, user: User = tap.user): ScreenView {
-  const view = settingsView(deps, user, tap.ledgerId);
+  const view = settingsView(deps, user, tap.ledgerId, tap.fromMenu);
   if (view === undefined) throw new Error('settings scope vanished mid-tap');
   return view;
 }
@@ -297,8 +314,8 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
         ? from
         : from.name === 'budget'
           ? { name: 'settings', ledgerId: from.ledgerId }
-          : { name: 'settings' };
-    const view = settingsView(deps, tap.user, screen.ledgerId);
+          : { name: 'settings', ...menuMark(from) };
+    const view = settingsView(deps, tap.user, screen.ledgerId, screen.fromMenu);
     if (view === undefined) {
       await ctx.answerCallbackQuery({ text: messages.staleScreen });
       return;
@@ -319,6 +336,7 @@ export function registerSettings(bot: Composer<Context>, deps: HandlerDeps): voi
       name: 'categories',
       ledgerId: view.ledger.id,
       fromSettings: true,
+      ...menuMark(tap.anchor.screen),
     };
     const anchor = { ...tap.anchor, screen };
     setAnchor(deps, tap.user, anchor);

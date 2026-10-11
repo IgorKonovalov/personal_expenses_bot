@@ -25,10 +25,22 @@ export const FLOW_TTL_MS = 10 * 60 * 1000;
 // A non-expense text this soon after a flow expired gets flowExpired instead of help.
 export const EXPIRED_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export interface CategoriesScreen {
+// A screen opened from the [☰ Меню] hub (ADR-0050) carries `fromMenu`: its top level keeps a
+// [« Назад] to the hub through its pagers, sub-screens and prompts.
+export interface FromMenu {
+  readonly fromMenu?: true;
+}
+
+// The screen's hub mark, to spread into the next screen of the same anchor.
+export function menuMark(screen: Screen): { readonly fromMenu?: true } {
+  return 'fromMenu' in screen ? { fromMenu: true } : {};
+}
+
+export interface CategoriesScreen extends FromMenu {
   readonly name: 'categories';
   readonly ledgerId: LedgerId;
-  // Opened from the settings hub: the screen carries a [« Назад] back to it.
+  // Opened from the settings hub: the screen carries a [« Назад] back to it, and `fromMenu`
+  // when that hub was opened from the [☰ Меню] hub.
   readonly fromSettings?: true;
 }
 
@@ -103,7 +115,7 @@ export interface ExpenseScreen {
 
 // The /settings hub; with `ledgerId`, the hub scoped to that shared ledger (its timezone and
 // currency), opened from its group's /settings deep link.
-export interface SettingsScreen {
+export interface SettingsScreen extends FromMenu {
   readonly name: 'settings';
   readonly ledgerId?: LedgerId;
 }
@@ -118,7 +130,7 @@ export interface BudgetScreen {
 
 // /recurring (Plan 0025): the rule list, one rule's screen with `ruleId`, or the reminder
 // schedule picker holding the reminder text typed for it.
-export interface RecurringScreen {
+export interface RecurringScreen extends FromMenu {
   readonly name: 'recurring';
   readonly ruleId?: RuleId;
   readonly reminderText?: string;
@@ -133,14 +145,14 @@ export interface RecurringAskScreen {
 
 // /debts (Plan 0013): the debts list, and the lend/borrow prompts and person picker it opens;
 // with `personId`, that person's card and its repayment prompts.
-export interface DebtsScreen {
+export interface DebtsScreen extends FromMenu {
   readonly name: 'debts';
   readonly personId?: DebtPersonId;
   // The split picker after a `/N` expense: who owes a part of it.
   readonly splitOf?: ExpenseId;
 }
 
-// A [☰ Ещё] button's argument prompt (Plan 0034): its [Отмена] and /cancel need an anchor.
+// A menu button's argument prompt (Plan 0034): its [Отмена] and /cancel need an anchor.
 export interface CommandArgScreen {
   readonly name: 'commandArg';
 }
@@ -150,7 +162,7 @@ export interface CommandArgScreen {
 // the names are that product's, opened from its [Названия], and an answer goes back to it.
 // `newProduct` is the name typed for [Новый продукт], awaiting its unit: the step a unit tap
 // consumes, so a double tap creates one product.
-export interface PricesScreen {
+export interface PricesScreen extends FromMenu {
   readonly name: 'prices';
   readonly ledgerId: LedgerId;
   readonly names?: readonly string[];
@@ -494,10 +506,11 @@ export function routeText(
 function parseScreen(name: string, ctx: string): Screen | undefined {
   const parsed = parseObject(ctx);
   if (name === 'commandArg' && parsed !== undefined) return { name };
+  const fromMenu: FromMenu = parsed?.fromMenu === true ? { fromMenu: true } : {};
   if (name === 'settings' && parsed !== undefined) {
     return typeof parsed.ledgerId === 'string'
-      ? { name, ledgerId: parsed.ledgerId as LedgerId }
-      : { name };
+      ? { name, ledgerId: parsed.ledgerId as LedgerId, ...fromMenu }
+      : { name, ...fromMenu };
   }
   if (name === 'summary' && parsed !== undefined) return parseSummary(parsed);
   if (name === 'day' && parsed !== undefined) return parseDay(parsed);
@@ -513,6 +526,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       ...(Number.isSafeInteger(position) ? { position: position as number } : {}),
       ...(typeof product === 'string' ? { product } : {}),
       ...(typeof newProduct === 'string' ? { newProduct } : {}),
+      ...fromMenu,
     };
   }
   if (name === 'expense' && typeof parsed?.expenseId === 'string') {
@@ -531,6 +545,7 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       name,
       ...(typeof parsed.ruleId === 'string' ? { ruleId: parsed.ruleId as RuleId } : {}),
       ...(typeof parsed.reminderText === 'string' ? { reminderText: parsed.reminderText } : {}),
+      ...fromMenu,
     };
   }
   if (
@@ -545,12 +560,19 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
       name,
       ...(typeof parsed.personId === 'number' ? { personId: parsed.personId as DebtPersonId } : {}),
       ...(typeof parsed.splitOf === 'string' ? { splitOf: parsed.splitOf as ExpenseId } : {}),
+      ...fromMenu,
     };
   }
-  if ((name === 'budget' || name === 'categories') && typeof parsed?.ledgerId === 'string') {
+  if (name === 'budget' && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;
     return parsed.fromSettings === true
       ? { name, ledgerId, fromSettings: true }
+      : { name, ledgerId };
+  }
+  if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
+    const ledgerId = parsed.ledgerId as LedgerId;
+    return parsed.fromSettings === true
+      ? { name, ledgerId, fromSettings: true, ...fromMenu }
       : { name, ledgerId };
   }
   return undefined;

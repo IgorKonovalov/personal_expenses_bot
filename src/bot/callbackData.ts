@@ -538,21 +538,24 @@ export function settleDeleteData(transferId: string): string {
   return assertCallbackData(`stl:del:${transferId}`);
 }
 
-// /tags (ADR-0029): `tag:l:<page>` (at most 10 bytes) shows a 1-based page of the list. It
-// reads the viewer's ledger at tap time, so it carries no ledger id.
-export const TAG_LIST_PAGE = /^tag:l:(\d{1,4})$/;
+// /tags (ADR-0029): `tag:l:<page>` (at most 12 bytes with the hub mark) shows a 1-based page of
+// the list. It reads the viewer's ledger at tap time, so it carries no ledger id.
+export const TAG_LIST_PAGE = /^tag:l:(\d{1,4})(:m)?$/;
 
-export function tagListPageData(page: number): string {
-  return assertCallbackData(`tag:l:${page}`);
+export function tagListPageData(page: number, fromMenu = false): string {
+  return marked(`tag:l:${page}`, fromMenu);
 }
 
-// A tag's button on /tags: `tag:s:<8 hex>` (14 bytes), the tagHash of its name, which the tap
-// resolves against the ledger's tags at that moment.
-export const TAG_SHOW = /^tag:s:([0-9a-f]{8})$/;
+// A tag's button on /tags: `tag:s:<8 hex>` (16 bytes with the hub mark), the tagHash of its
+// name, which the tap resolves against the ledger's tags at that moment.
+export const TAG_SHOW = /^tag:s:([0-9a-f]{8})(:m)?$/;
 
-export function tagShowData(hash: string): string {
-  return assertCallbackData(`tag:s:${hash}`);
+export function tagShowData(hash: string, fromMenu = false): string {
+  return marked(`tag:s:${hash}`, fromMenu);
 }
+
+// [Постоянная метка] on the private /tags screen: asks for the sticky tag, as /tag <name> sets it.
+export const STICKY_TAG_ASK = 'tag:sticky';
 
 // /prices (ADR-0039). Only the current anchor accepts these, and they act on the anchor's
 // ledger. `prc:p:<page>` shows a 1-based page of the products (at most 10 bytes); `prc:o:<ref>`
@@ -617,31 +620,48 @@ export function namePickData(index: number): string {
 export const STICKY_TAG_OFF = 'tag:off';
 
 // The /export picker: `xp:r:<range>` shows the format step, `xp:f:<range>:<format>` builds and
-// sends (at most 13 bytes), `xp:back` returns to the range step. The ledger isn't in the data:
-// the active ledger in a DM, the chat's binding in a group.
-export const EXPORT_RANGE = /^xp:r:(tm|pm|ty|all)$/;
-export const EXPORT_FORMAT = /^xp:f:(tm|pm|ty|all):(csv|xlsx)$/;
-export const EXPORT_BACK = 'xp:back';
+// sends (at most 15 bytes with the hub mark), `xp:back` returns to the range step. The ledger
+// isn't in the data: the active ledger in a DM, the chat's binding in a group.
+export const EXPORT_RANGE = /^xp:r:(tm|pm|ty|all)(:m)?$/;
+export const EXPORT_FORMAT = /^xp:f:(tm|pm|ty|all):(csv|xlsx)(:m)?$/;
+export const EXPORT_BACK = /^xp:back(:m)?$/;
 
 export type ExportFormat = 'csv' | 'xlsx';
 
-export function exportRangeData(range: ExportRange): string {
-  return assertCallbackData(`xp:r:${range}`);
+export function exportRangeData(range: ExportRange, fromMenu = false): string {
+  return marked(`xp:r:${range}`, fromMenu);
 }
 
-export function exportFormatData(range: ExportRange, format: ExportFormat): string {
-  return assertCallbackData(`xp:f:${range}:${format}`);
+export function exportFormatData(
+  range: ExportRange,
+  format: ExportFormat,
+  fromMenu = false,
+): string {
+  return marked(`xp:f:${range}:${format}`, fromMenu);
 }
 
-// A [☰ Ещё] button: `more:<key>` (at most 10 bytes) runs the command its key names. The screen is
-// stateless, so a tap on any old copy works and carries nothing else.
+export function exportBackData(fromMenu = false): string {
+  return marked('xp:back', fromMenu);
+}
+
+// A [☰ Меню] hub button (ADR-0050): `more:<key>` (at most 10 bytes) opens the screen its key
+// names in the tapped message. The hub is stateless, so a tap on any old copy works and carries
+// nothing else. `more:open` redraws the hub itself: the [« Назад] of every screen it opened.
 export const MORE_ACTION = /^more:([a-z]{2,5})$/;
+export const MENU_OPEN = 'more:open';
 
 export function moreData(key: string): string {
   return assertCallbackData(`more:${key}`);
 }
 
-// The admin's row on that screen: `adm:<key>` (at most 9 bytes). Only the admin's taps run.
+// A stateless screen opened from the hub carries `:m` at the end of its own callback data, so
+// its pager and steps keep the [« Назад] to the hub (2 bytes more).
+function marked(data: string, fromMenu: boolean): string {
+  return assertCallbackData(fromMenu ? `${data}:m` : data);
+}
+
+// The admin's buttons, behind the hub's [Админ]: `adm:<key>` (at most 9 bytes). Only the admin's
+// taps run.
 export const ADMIN_ACTION = /^adm:([a-z]{3,5})$/;
 
 export function adminData(key: string): string {

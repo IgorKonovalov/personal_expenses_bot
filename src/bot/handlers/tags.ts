@@ -9,16 +9,19 @@ import {
   type TagList,
 } from '../../services/tagSummary.js';
 import type { HandlerDeps } from '../bot.js';
+import type { User } from '../../db/users.js';
 import {
+  STICKY_TAG_ASK,
   STICKY_TAG_OFF,
   TAG_LIST_PAGE,
   TAG_SHOW,
   tagListPageData,
   tagShowData,
 } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow } from '../nav.js';
-import { editHtml, replyHtml, type Html } from '../render/html.js';
+import { editHtml, joinHtml, replyHtml, type Html } from '../render/html.js';
 import { ensureUser } from './start.js';
 
 // /tags (ADR-0029): the active ledger's tags with their all-time totals, PAGE_SIZE to a page,
@@ -30,20 +33,63 @@ interface View {
   readonly markup: InlineKeyboard;
 }
 
-// The page's tags two per row, then the pager when there is one.
-export function listView(list: TagList, requested: number): View {
+// The page's tags two per row, then the pager when there is one. `fromMenu` marks their data so
+// the screen keeps its [« Назад] to the hub.
+export function listView(list: TagList, requested: number, fromMenu = false): View {
   const shown = pageOf(list.tags, requested);
   const buttons = shown.items.map((tag) =>
-    InlineKeyboard.text(messages.tagButton(tag.name), tagShowData(tagHash(tag.name))),
+    InlineKeyboard.text(messages.tagButton(tag.name), tagShowData(tagHash(tag.name), fromMenu)),
   );
   const rows = [];
   for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
-  const pager = pagerRow(shown, tagListPageData);
+  const pager = pagerRow(shown, (page) => tagListPageData(page, fromMenu));
   if (pager.length > 0) rows.push(pager);
   return {
     text: messages.tagList({ ledger: list.ledger, tags: shown.items }),
     markup: InlineKeyboard.from(rows),
   };
+}
+
+// The private /tags screen: the list (or tagsEmpty) with the active ledger's sticky tag under
+// it, then [Постоянная метка] or, while one is on, [Снять метку], and [« Назад] to the hub when
+// opened from it.
+function privateView(
+  deps: HandlerDeps,
+  user: User,
+  list: TagList,
+  page: number,
+  fromMenu: boolean,
+): View {
+  const sticky = currentStickyTag(deps, user).name;
+  const base =
+    list.tags.length === 0
+      ? { text: messages.tagsEmpty, markup: new InlineKeyboard() }
+      : listView(list, page, fromMenu);
+  const stickyButton =
+    sticky === undefined
+      ? InlineKeyboard.text(messages.moreButtons.tag, STICKY_TAG_ASK)
+      : InlineKeyboard.text(messages.stickyTagOffButton, STICKY_TAG_OFF);
+  return withMenuBack(
+    {
+      text: joinHtml([base.text, messages.stickyTagLine(sticky)], '\n\n'),
+      markup: InlineKeyboard.from([...base.markup.inline_keyboard, [stickyButton]]),
+    },
+    fromMenu,
+  );
+}
+
+// The view a /tags tap shows: the locked message while a sealed ledger is locked.
+function tagsView(deps: HandlerDeps, user: User, fromMenu: boolean): View {
+  const list = activeLedgerTags(deps, user);
+  if (isLocked(list)) {
+    return withMenuBack({ text: messages.ledgerLocked, markup: new InlineKeyboard() }, fromMenu);
+  }
+  return privateView(deps, user, list, 1, fromMenu);
+}
+
+// The hub's [Метки]: page 1, as /tags shows it, with the hub mark in its callback data.
+export function tagsFromMenu(deps: HandlerDeps, user: User): MenuOpened {
+  return { view: tagsView(deps, user, true) };
 }
 
 // The list, or tagsEmpty once no tag is left, edited into the tapped message.
@@ -56,24 +102,17 @@ export async function editList(ctx: Context, list: TagList, page: number): Promi
   await editHtml(ctx, view.text, { reply_markup: view.markup });
 }
 
-// /tags and its [☰ Ещё] button: the first page of the active ledger's tags.
+// /tags: the first page of the active ledger's tags.
 export async function sendTags(ctx: Context, deps: HandlerDeps): Promise<void> {
   if (ctx.from === undefined) return;
   const user = ensureUser(deps, ctx.from.id, deps.now());
-  const list = activeLedgerTags(deps, user);
-  if (isLocked(list)) {
-    await replyHtml(ctx, messages.ledgerLocked);
-    return;
-  }
-  if (list.tags.length === 0) {
-    await replyHtml(ctx, messages.tagsEmpty);
-    return;
-  }
-  const view = listView(list, 1);
-  await replyHtml(ctx, view.text, { reply_markup: view.markup });
+  const view = tagsView(deps, user, false);
+  // The locked message carries no keyboard.
+  const empty = view.markup.inline_keyboard.length === 0;
+  await replyHtml(ctx, view.text, empty ? {} : { reply_markup: view.markup });
 }
 
-// `/tag отпуск` and [Включить метку]'s answer set the sticky tag of the active ledger; `/tag`
+// `/tag отпуск` and [Постоянная метка]'s answer set the sticky tag of the active ledger; `/tag`
 // alone shows it.
 export async function sendTag(ctx: Context, deps: HandlerDeps, arg: string): Promise<void> {
   if (ctx.from === undefined) return;
@@ -133,6 +172,18 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
     await editHtml(ctx, messages.stickyTagOff);
   });
 
+  // The private list, edited into the tapped message.
+  const editPrivate = async (
+    ctx: Context,
+    user: User,
+    list: TagList,
+    page: number,
+    fromMenu: boolean,
+  ) => {
+    const view = privateView(deps, user, list, page, fromMenu);
+    await editHtml(ctx, view.text, { reply_markup: view.markup });
+  };
+
   bot.callbackQuery(TAG_LIST_PAGE, async (ctx) => {
     const user = ensureUser(deps, ctx.from.id, deps.now());
     const list = activeLedgerTags(deps, user);
@@ -141,10 +192,11 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    await editList(ctx, list, Number(ctx.match[1]));
+    await editPrivate(ctx, user, list, Number(ctx.match[1]), ctx.match[2] !== undefined);
   });
 
   bot.callbackQuery(TAG_SHOW, async (ctx) => {
+    const fromMenu = ctx.match[2] !== undefined;
     const user = ensureUser(deps, ctx.from.id, deps.now());
     const result = activeLedgerTagReport(deps, {
       user,
@@ -157,7 +209,7 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
         return;
       case 'gone':
         await ctx.answerCallbackQuery({ text: messages.tagGone });
-        await editList(ctx, result.list, 1);
+        await editPrivate(ctx, user, result.list, 1, fromMenu);
         return;
       case 'report': {
         await ctx.answerCallbackQuery();
@@ -167,7 +219,7 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
             ...(chartUrl === undefined
               ? []
               : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
-            [InlineKeyboard.text(messages.backButton, tagListPageData(result.page))],
+            [InlineKeyboard.text(messages.backButton, tagListPageData(result.page, fromMenu))],
           ]),
         });
         return;

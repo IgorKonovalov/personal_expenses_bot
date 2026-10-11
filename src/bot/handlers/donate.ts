@@ -9,8 +9,11 @@ import {
 import type { Logger } from '../../logger.js';
 import { recordDonation } from '../../services/recordDonation.js';
 import type { HandlerDeps } from '../bot.js';
+import { moreData } from '../callbackData.js';
+import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
 import { replyHtml, type Html } from '../render/html.js';
+import type { ScreenView } from '../screens.js';
 
 // One cached Stars invoice link per preset (ADR-0027). Filled at boot, after the bot exists; a
 // preset whose link could not be created is absent.
@@ -50,23 +53,41 @@ export async function createDonationLinks(
   }
 }
 
-// /donate and its [☰ Ещё] button, private chats only. Group updates never reach the DM
-// composer (ADR-0014).
-export async function sendDonate(ctx: Context, deps: DonateDeps): Promise<void> {
-  if (ctx.chat?.type !== 'private') return;
-  const markup = new InlineKeyboard();
+// The /donate screen: a button per Stars preset, DONATE_URL, then [Вопрос о пожертвовании]
+// (`more:pay`, the /paysupport prompt) on the last row, and [« Назад] to the hub when opened
+// from it.
+function donateView(deps: DonateDeps, fromMenu: boolean): ScreenView {
+  const pay = new InlineKeyboard();
   for (const [stars, link] of deps.donationLinks) {
-    markup.url(messages.donateStarsButton(stars), link);
+    pay.url(messages.donateStarsButton(stars), link);
   }
   if (deps.donateUrl !== undefined) {
-    if (deps.donationLinks.size > 0) markup.row();
-    markup.url(messages.donateExternal, deps.donateUrl);
+    if (deps.donationLinks.size > 0) pay.row();
+    pay.url(messages.donateExternal, deps.donateUrl);
   }
-  if (markup.inline_keyboard.flat().length === 0) {
-    await replyHtml(ctx, messages.donateUnavailable);
-    return;
-  }
-  await replyHtml(ctx, messages.donate, { reply_markup: markup });
+  const rows = pay.inline_keyboard.filter((row) => row.length > 0);
+  return withMenuBack(
+    {
+      text: rows.length === 0 ? messages.donateUnavailable : messages.donate,
+      markup: InlineKeyboard.from([
+        ...rows,
+        [InlineKeyboard.text(messages.moreButtons.paysupport, moreData('pay'))],
+      ]),
+    },
+    fromMenu,
+  );
+}
+
+// The hub's [Поддержать]: the screen /donate shows.
+export function donateFromMenu(deps: DonateDeps): MenuOpened {
+  return { view: donateView(deps, true) };
+}
+
+// /donate, private chats only. Group updates never reach the DM composer (ADR-0014).
+export async function sendDonate(ctx: Context, deps: DonateDeps): Promise<void> {
+  if (ctx.chat?.type !== 'private') return;
+  const view = donateView(deps, false);
+  await replyHtml(ctx, view.text, { reply_markup: view.markup });
 }
 
 export function registerDonate(bot: Composer<Context>, deps: DonateDeps): void {

@@ -61,7 +61,7 @@ import { encodeChartPayload } from '../domain/chartPayload.js';
 import { createBot, inProcessRunner, privateComposer, registerCommands } from './bot.js';
 import { chatImportSweep } from './chatImportSweep.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
-import { MORE_BUTTONS } from './handlers/more.js';
+import { MENU_BUTTONS, MENU_IN_PLACE } from './handlers/more.js';
 import { startReceiptWorker } from './receiptWorker.js';
 import { recurringProvider } from './recurringProvider.js';
 import { scheduledSender } from './scheduledSender.js';
@@ -177,7 +177,7 @@ describe('error boundary', () => {
 const menuKeyboard = {
   keyboard: [
     [{ text: '📊 Сегодня' }, { text: '📅 Неделя' }, { text: '🗓 Месяц' }],
-    [{ text: '💰 Бюджет' }, { text: '⚙️ Настройки' }, { text: '❓ Помощь' }, { text: '☰ Ещё' }],
+    [{ text: '💰 Бюджет' }, { text: '☰ Меню' }],
   ],
   is_persistent: true,
   resize_keyboard: true,
@@ -186,7 +186,7 @@ const withMenu = { reply_markup: menuKeyboard, ...htmlParseMode };
 const WELCOME =
   'Здравствуйте! Я веду учёт трат.' +
   '\n\nОтправьте сумму и описание, например «450 кофе», и я запишу трату. Валюту можно указать после суммы: «12,50 EUR такси».' +
-  '\n\nИтоги открываются кнопками меню внизу, остальные команды — в «☰ Ещё». Подробности: /help.' +
+  '\n\nИтоги открываются кнопками меню внизу, всё остальное — в «☰ Меню». Подробности: /help.' +
   '\n\nВаши траты видны только вам. Выгрузить всё: /export. Как хранятся данные: /privacy.';
 // The setup check's buttons.
 const setupKeyboard = {
@@ -235,10 +235,29 @@ describe('menu and help', () => {
       week: '📅 Неделя',
       month: '🗓 Месяц',
       budget: '💰 Бюджет',
-      settings: '⚙️ Настройки',
-      help: '❓ Помощь',
-      more: '☰ Ещё',
+      more: '☰ Меню',
     });
+  });
+
+  it('draws two rows of three with WEBAPP_URL, and [💰 Бюджет] [☰ Меню] without it', async () => {
+    const plain = createTestBot();
+    const scan = createTestBot({ webappUrl: 'https://example.github.io/bot/' });
+
+    for (const { bot } of [plain, scan]) {
+      await bot.handleUpdate(textUpdate({ updateId: 1, text: '/start' }));
+    }
+
+    const rows = (calls: readonly ApiCall[]) =>
+      (calls[0]?.payload as { reply_markup: { keyboard: { text: string }[][] } }).reply_markup
+        .keyboard;
+    expect(rows(scan.calls).map((row) => row.map((b) => b.text))).toEqual([
+      ['📊 Сегодня', '📅 Неделя', '🗓 Месяц'],
+      ['💰 Бюджет', '📷 Скан', '☰ Меню'],
+    ]);
+    expect(rows(plain.calls).map((row) => row.map((b) => b.text))).toEqual([
+      ['📊 Сегодня', '📅 Неделя', '🗓 Месяц'],
+      ['💰 Бюджет', '☰ Меню'],
+    ]);
   });
 
   it('carries the persistent menu on the /start and /help replies', async () => {
@@ -277,11 +296,12 @@ describe('menu and help', () => {
     const scanMenu = {
       ...menuKeyboard,
       keyboard: [
+        menuKeyboard.keyboard[0],
         [
-          ...(menuKeyboard.keyboard[0] ?? []),
+          { text: '💰 Бюджет' },
           { text: messages.scanButton, web_app: { url: `${webappUrl}#m=scan` } },
+          { text: '☰ Меню' },
         ],
-        menuKeyboard.keyboard[1],
       ],
     };
     const markups = calls
@@ -335,7 +355,7 @@ describe('menu and help', () => {
 
   it('names the menu buttons in the help text', () => {
     expect(messages.help).toContain('📊 Сегодня');
-    expect(messages.help).toContain('❓ Помощь');
+    expect(messages.help).toContain('☰ Меню');
   });
 
   it('tells about the summary pushes and their switches in the help text', () => {
@@ -389,7 +409,7 @@ describe('menu and help', () => {
       letters.flatMap((b) => letters.flatMap((c) => toCurrencyCode(`${a}${b}${c}`) ?? [])),
     );
     expect(codes).toContain('RSD');
-    for (const label of Object.values(messages.menu)) {
+    for (const label of [...Object.values(messages.menu), ...Object.values(messages.menuAliases)]) {
       for (const currency of codes) {
         expect(['recorded', 'expense', 'ambiguous']).not.toContain(
           parseExpenseText(label, currency, '2026-09-30' as LocalDate).kind,
@@ -774,6 +794,8 @@ describe('donations (ADR-0027)', () => {
       .get(String(telegramId));
   }
 
+  // [Вопрос о пожертвовании], the last row of /donate (ADR-0050).
+  const payRow = [{ text: 'Вопрос о пожертвовании', callback_data: 'more:pay' }];
   const starsKeyboard = [
     [
       { text: '⭐ 50', url: invoiceLink('donate:50') },
@@ -815,7 +837,7 @@ describe('donations (ADR-0027)', () => {
         payload: {
           chat_id: ALLOWED_ID,
           text: messages.donate,
-          reply_markup: { inline_keyboard: starsKeyboard },
+          reply_markup: { inline_keyboard: [...starsKeyboard, payRow] },
           ...htmlParseMode,
         },
       },
@@ -980,11 +1002,12 @@ describe('donations (ADR-0027)', () => {
     const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
       .reply_markup;
     const buttons = markup.inline_keyboard.flat();
-    expect(buttons).toHaveLength(4);
+    expect(buttons).toHaveLength(5);
     expect(buttons[3]).toEqual({ text: messages.donateExternal, url: 'https://ko-fi.com/example' });
     expect(markup.inline_keyboard).toEqual([
       ...starsKeyboard,
       [{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }],
+      payRow,
     ]);
   });
 
@@ -997,7 +1020,7 @@ describe('donations (ADR-0027)', () => {
 
     const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: unknown[][] } })
       .reply_markup;
-    expect(markup.inline_keyboard.flat()).toHaveLength(3);
+    expect(markup.inline_keyboard).toEqual([...starsKeyboard, payRow]);
   });
 
   it('shows only [Ko-fi] when every link creation failed and DONATE_URL is set', async () => {
@@ -1017,7 +1040,7 @@ describe('donations (ADR-0027)', () => {
           chat_id: ALLOWED_ID,
           text: messages.donate,
           reply_markup: {
-            inline_keyboard: [[{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }]],
+            inline_keyboard: [[{ text: 'Ko-fi', url: 'https://ko-fi.com/example' }], payRow],
           },
           ...htmlParseMode,
         },
@@ -9078,9 +9101,12 @@ describe('tags (Plan 0012)', () => {
       method: 'sendMessage',
       payload: {
         chat_id: ALLOWED_ID,
-        text: '<b>Метки — «Личные расходы»</b>\n#отпуск — 1 914.04 RSD',
+        text: '<b>Метки — «Личные расходы»</b>\n#отпуск — 1 914.04 RSD\n\nПостоянной метки нет',
         reply_markup: {
-          inline_keyboard: [[{ text: '#отпуск', callback_data: `tag:s:${hashOf('отпуск')}` }]],
+          inline_keyboard: [
+            [{ text: '#отпуск', callback_data: `tag:s:${hashOf('отпуск')}` }],
+            [{ text: 'Постоянная метка', callback_data: 'tag:sticky' }],
+          ],
         },
         ...htmlParseMode,
       },
@@ -9136,7 +9162,9 @@ describe('tags (Plan 0012)', () => {
       method: 'answerCallbackQuery',
       payload: { callback_query_id: expect.any(String) as string, text: messages.tagGone },
     });
-    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
+    expect(lastText(calls)).toBe(
+      '<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD\n\nПостоянной метки нет',
+    );
   });
 
   describe('the 📈 Диаграмма button', () => {
@@ -9429,7 +9457,9 @@ describe('tags (Plan 0012)', () => {
     );
 
     await say('/tags', 3);
-    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#ремонт — 450.00 RSD');
+    expect(lastText(calls)).toBe(
+      '<b>Метки — «Личные расходы»</b>\n#ремонт — 450.00 RSD\n\nПостоянной метки нет',
+    );
   });
 
   it('seals #лечение in a sealed ledger, answers locked, and lists it after /unlock', async () => {
@@ -9457,7 +9487,9 @@ describe('tags (Plan 0012)', () => {
 
     await unlockPersonalLedger(keyDeps, user, now);
     await say('/tags', 4);
-    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#лечение — 450.00 RSD');
+    expect(lastText(calls)).toBe(
+      '<b>Метки — «Личные расходы»</b>\n#лечение — 450.00 RSD\n\nПостоянной метки нет',
+    );
   });
 
   it('keeps a 32-letter Cyrillic tag button at 14 bytes', () => {
@@ -9476,11 +9508,13 @@ describe('tags (Plan 0012)', () => {
     await tap(`exp:undo:${second}`);
 
     await say('/tags', 3);
-    expect(lastText(calls)).toBe('<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD');
+    expect(lastText(calls)).toBe(
+      '<b>Метки — «Личные расходы»</b>\n#отпуск — 450.00 RSD\n\nПостоянной метки нет',
+    );
 
     await tap(`exp:undo:00000000-0000-4000-8000-000000000003`);
     await say('/tags', 4);
-    expect(lastText(calls)).toBe(messages.tagsEmpty);
+    expect(lastText(calls)).toBe(`${messages.tagsEmpty}\n\nПостоянной метки нет`);
   });
 
   it('pages nine tags eight to a page, most recently used first', async () => {
@@ -9496,6 +9530,8 @@ describe('tags (Plan 0012)', () => {
       [
         '<b>Метки — «Личные расходы»</b>',
         ...[9, 8, 7, 6, 5, 4, 3, 2].map((i) => `#t${i} — 100.00 RSD`),
+        '',
+        'Постоянной метки нет',
       ].join('\n'),
     );
     expect(first.reply_markup).toEqual({
@@ -9512,6 +9548,7 @@ describe('tags (Plan 0012)', () => {
           { text: '1/2', callback_data: 'tag:l:1' },
           { text: messages.pagerNext, callback_data: 'tag:l:2' },
         ],
+        [{ text: 'Постоянная метка', callback_data: 'tag:sticky' }],
       ],
     });
 
@@ -9519,7 +9556,9 @@ describe('tags (Plan 0012)', () => {
 
     expect(calls.at(-1)).toMatchObject({
       method: 'editMessageText',
-      payload: { text: '<b>Метки — «Личные расходы»</b>\n#t1 — 100.00 RSD' },
+      payload: {
+        text: '<b>Метки — «Личные расходы»</b>\n#t1 — 100.00 RSD\n\nПостоянной метки нет',
+      },
     });
   });
 });
@@ -10056,30 +10095,30 @@ describe('/prices (Plan 0036)', () => {
   });
 });
 
-describe('[☰ Ещё] (Plan 0034)', () => {
+describe('[☰ Меню] (Plan 0034, ADR-0050)', () => {
   const NOW = new Date('2026-10-06T10:00:00Z');
   const label = messages.moreButtons;
-  type Button = { text: string; callback_data: string };
+  type Button = { text: string; callback_data?: string; url?: string };
+  type Payload = {
+    text: string;
+    message_id?: number;
+    reply_markup?: { inline_keyboard: Button[][] };
+  };
   const more = (text: string, key: string): Button => ({ text, callback_data: `more:${key}` });
   const adm = (text: string, key: string): Button => ({ text, callback_data: `adm:${key}` });
+  const BACK: Button[] = [{ text: messages.backButton, callback_data: 'more:open' }];
 
-  function moreKeyboard(opts: { lockRow?: Button[][]; admin?: boolean } = {}) {
+  function hubKeyboard(opts: { lockRow?: Button[][]; admin?: boolean } = {}) {
     return {
       inline_keyboard: [
         [more(label.donate, 'don')],
         [more(label.recurring, 'rec'), more(label.debts, 'debt')],
-        [more(label.tags, 'tags'), more(label.tag, 'tag')],
-        [more(label.prices, 'prc'), more(label.export, 'exp')],
-        [more(label.changelog, 'chg'), more(label.paysupport, 'pay')],
+        [more(label.tags, 'tags'), more(label.prices, 'prc')],
+        [more(label.export, 'exp'), more(label.settings, 'set')],
         [more(label.privacy, 'prv'), more(label.deleteAccount, 'del')],
+        [more(label.help, 'help')],
         ...(opts.lockRow ?? []),
-        ...(opts.admin === true
-          ? [
-              [adm(label.invite, 'inv'), adm(label.invites, 'invs')],
-              [adm(label.stats, 'stats'), adm(label.block, 'blk')],
-              [adm(label.unblock, 'unb'), adm(label.refund, 'ref')],
-            ]
-          : []),
+        ...(opts.admin === true ? [[more(label.admin, 'adm')]] : []),
       ],
     };
   }
@@ -10094,9 +10133,12 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     );
   }
 
+  const ofMethod = (calls: readonly ApiCall[], method: string) =>
+    calls.filter((c) => c.method === method).map((c) => c.payload as Payload);
+
   function moreBot() {
     const harness = createTestBot({ now: NOW, donateUrl: 'https://example.org/donate' });
-    withMessageIds(harness.bot);
+    const lastMessageId = withMessageIds(harness.bot);
     let updateId = 0;
     const send = (text: string, fromId = ADMIN_ID) =>
       harness.bot.handleUpdate(
@@ -10104,24 +10146,24 @@ describe('[☰ Ещё] (Plan 0034)', () => {
       );
     const tap = (data: string, fromId = ADMIN_ID, messageId = 2) =>
       harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, fromId, messageId }));
-    return { ...harness, send, tap };
+    return { ...harness, send, tap, lastMessageId };
   }
 
   const pendingFlow = (db: Db) => db.prepare('SELECT kind FROM flow_sessions').pluck().all();
 
-  it("answers a user's ☰ Ещё with the more screen, and the admin's with the admin rows", async () => {
+  it("answers a user's ☰ Меню with the hub, and the admin's with [Админ] at the bottom", async () => {
     const { send, calls } = moreBot();
 
-    await send('☰ Ещё', SECOND_ALLOWED_ID);
-    await send('☰ Ещё', ADMIN_ID);
+    await send('☰ Меню', SECOND_ALLOWED_ID);
+    await send('☰ Меню', ADMIN_ID);
 
     expect(calls).toEqual([
       {
         method: 'sendMessage',
         payload: {
           chat_id: SECOND_ALLOWED_ID,
-          text: messages.moreScreen,
-          reply_markup: moreKeyboard(),
+          text: '<b>Меню</b>',
+          reply_markup: hubKeyboard(),
           ...htmlParseMode,
         },
       },
@@ -10129,32 +10171,181 @@ describe('[☰ Ещё] (Plan 0034)', () => {
         method: 'sendMessage',
         payload: {
           chat_id: ADMIN_ID,
-          text: messages.moreScreen,
-          reply_markup: moreKeyboard({ admin: true }),
+          text: '<b>Меню</b>',
+          reply_markup: hubKeyboard({ admin: true }),
           ...htmlParseMode,
         },
       },
     ]);
   });
 
-  it('draws «Поддержать» alone on the first row and delete beside privacy on the last (Plan 0048)', async () => {
-    const { send, calls } = moreBot();
+  it('[Долги] edits the hub message into the debts list, and [« Назад] edits it back', async () => {
+    const { send, tap, calls } = moreBot();
+    await send('☰ Меню');
+    calls.length = 0;
 
-    await send('☰ Ещё', SECOND_ALLOWED_ID);
+    await tap('more:debt', ADMIN_ID, 101);
+    const opened = ofMethod(calls, 'editMessageText');
+    await tap('more:open', ADMIN_ID, 101);
 
-    const markup = (calls[0]?.payload as { reply_markup: { inline_keyboard: Button[][] } })
-      .reply_markup.inline_keyboard;
-    const data = markup.map((row) => row.map((b) => b.callback_data));
-    expect(data[0]).toEqual(['more:don']);
-    expect(data.slice(1).every((row) => row.length === 2)).toBe(true);
-    expect(data.at(-1)).toEqual(['more:prv', 'more:del']);
+    expect(ofMethod(calls, 'sendMessage')).toEqual([]);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.message_id).toBe(101);
+    expect(opened[0]?.text).toBe(messages.debtsScreen([]));
+    expect(opened[0]?.reply_markup?.inline_keyboard.at(-1)).toEqual(BACK);
+    expect(ofMethod(calls, 'editMessageText').at(-1)).toEqual({
+      chat_id: ADMIN_ID,
+      message_id: 101,
+      text: '<b>Меню</b>',
+      reply_markup: hubKeyboard({ admin: true }),
+      ...htmlParseMode,
+    });
   });
 
-  const ARG_COMMANDS = ['tag', 'paysupport', 'block', 'unblock', 'refund'];
-  const direct = MORE_BUTTONS.filter((b) => !ARG_COMMANDS.includes(b.command));
-  const withArg = MORE_BUTTONS.filter((b) => ARG_COMMANDS.includes(b.command));
+  it('keeps [« Назад] on the debts list after [Я дал в долг] → [Отмена]', async () => {
+    const { send, tap, calls } = moreBot();
+    await send('☰ Меню');
+    await tap('more:debt', ADMIN_ID, 101);
+    await tap('dbt:new:l', ADMIN_ID, 101);
+    calls.length = 0;
 
-  it.each(direct.map((b) => [b.data, b.command]))(
+    await tap('flow:cancel', ADMIN_ID, 101);
+
+    const edit = ofMethod(calls, 'editMessageText').at(-1);
+    expect(edit?.message_id).toBe(101);
+    expect(edit?.text).toBe(messages.debtsScreen([]));
+    expect(edit?.reply_markup?.inline_keyboard.at(-1)).toEqual(BACK);
+  });
+
+  it('pages /tags from the hub with [« Назад] kept, and a typed /tags has none', async () => {
+    const { send, tap, calls, lastMessageId } = moreBot();
+    for (let i = 1; i <= 10; i++) await send(`45${i} кофе #t${i}`);
+    await send('☰ Меню');
+    const hub = lastMessageId();
+    calls.length = 0;
+    const tagButtons = (edit: Payload | undefined) =>
+      (edit?.reply_markup?.inline_keyboard ?? [])
+        .flat()
+        .filter((b) => b.callback_data?.startsWith('tag:s:') === true);
+    const pager = (edit: Payload | undefined) =>
+      (edit?.reply_markup?.inline_keyboard ?? [])
+        .flat()
+        .filter((b) => b.callback_data?.startsWith('tag:l:') === true)
+        .map((b) => b.callback_data);
+
+    await tap('more:tags', ADMIN_ID, hub);
+    const page1 = ofMethod(calls, 'editMessageText').at(-1);
+    await tap('tag:l:2:m', ADMIN_ID, hub);
+    const page2 = ofMethod(calls, 'editMessageText').at(-1);
+    calls.length = 0;
+    await send('/tags');
+    const typed = ofMethod(calls, 'sendMessage')[0];
+
+    expect(tagButtons(page1)).toHaveLength(8);
+    expect(pager(page1)).toEqual(['tag:l:1:m', 'tag:l:2:m']);
+    expect(page1?.reply_markup?.inline_keyboard.at(-1)).toEqual(BACK);
+    expect(tagButtons(page2)).toHaveLength(2);
+    expect(pager(page2)).toEqual(['tag:l:1:m', 'tag:l:2:m']);
+    expect(page2?.reply_markup?.inline_keyboard.at(-1)).toEqual(BACK);
+    expect(tagButtons(typed)).toHaveLength(8);
+    expect(pager(typed)).toEqual(['tag:l:1', 'tag:l:2']);
+    expect(typed?.reply_markup?.inline_keyboard.flat()).not.toContainEqual(BACK[0]);
+  });
+
+  it('ends /tags with the sticky tag line and [Постоянная метка], or [Снять метку] while on', async () => {
+    const { send, calls } = moreBot();
+    await send('450 кофе #рим');
+
+    calls.length = 0;
+    await send('/tags');
+    const off = ofMethod(calls, 'sendMessage')[0];
+    await send('/tag отпуск');
+    calls.length = 0;
+    await send('/tags');
+    const on = ofMethod(calls, 'sendMessage')[0];
+
+    expect(off?.text.endsWith('\n\nПостоянной метки нет')).toBe(true);
+    expect(off?.reply_markup?.inline_keyboard.at(-1)).toEqual([
+      { text: 'Постоянная метка', callback_data: 'tag:sticky' },
+    ]);
+    expect(on?.text.endsWith('\n\nПостоянная метка: #отпуск')).toBe(true);
+    expect(on?.reply_markup?.inline_keyboard.at(-1)).toEqual([
+      { text: messages.stickyTagOffButton, callback_data: 'tag:off' },
+    ]);
+  });
+
+  it('puts [Вопрос о пожертвовании] on the last row of /donate', async () => {
+    const { send, calls } = moreBot();
+
+    await send('/donate');
+
+    expect(ofMethod(calls, 'sendMessage')[0]?.reply_markup?.inline_keyboard.at(-1)).toEqual([
+      more('Вопрос о пожертвовании', 'pay'),
+    ]);
+  });
+
+  it('edits the hub into the admin buttons for the admin, then [« Назад]', async () => {
+    const { tap, calls } = moreBot();
+
+    await tap('more:adm');
+
+    expect(ofMethod(calls, 'editMessageText')).toEqual([
+      {
+        chat_id: ADMIN_ID,
+        message_id: 2,
+        text: messages.adminScreen,
+        reply_markup: {
+          inline_keyboard: [
+            [adm(label.invite, 'inv'), adm(label.invites, 'invs')],
+            [adm(label.stats, 'stats'), adm(label.block, 'blk')],
+            [adm(label.unblock, 'unb'), adm(label.refund, 'ref')],
+            BACK,
+          ],
+        },
+        ...htmlParseMode,
+      },
+    ]);
+  });
+
+  it("answers a non-admin's more:adm silently and changes nothing", async () => {
+    const { tap, calls, db } = moreBot();
+
+    await tap('more:adm', SECOND_ALLOWED_ID);
+
+    expect(calls).toEqual([
+      { method: 'answerCallbackQuery', payload: { callback_query_id: 'cb-1' } },
+    ]);
+    expect(pendingFlow(db)).toEqual([]);
+  });
+
+  it.each(MENU_IN_PLACE.map((b) => [b.data, b.command]))(
+    'edits %s into the text /%s sends, with [« Назад] last',
+    async (data, command) => {
+      const typed = moreBot();
+      const tapped = moreBot();
+
+      await typed.send(`/${command}`);
+      await tapped.tap(data);
+
+      const sent = ofMethod(typed.calls, 'sendMessage');
+      const edits = ofMethod(tapped.calls, 'editMessageText');
+      expect(sent).toHaveLength(1);
+      expect(ofMethod(tapped.calls, 'sendMessage')).toEqual([]);
+      expect(edits).toHaveLength(1);
+      expect(edits[0]?.message_id).toBe(2);
+      expect(edits[0]?.text).toBe(sent[0]?.text);
+      expect(edits[0]?.reply_markup?.inline_keyboard.at(-1)).toEqual(BACK);
+      expect(tapped.calls.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(1);
+    },
+  );
+
+  const ARG_COMMANDS = ['tag', 'paysupport', 'block', 'unblock', 'refund'];
+  const runs = MENU_BUTTONS.filter(
+    (b) => !ARG_COMMANDS.includes(b.command) && !MENU_IN_PLACE.some((p) => p.data === b.data),
+  );
+  const withArg = MENU_BUTTONS.filter((b) => ARG_COMMANDS.includes(b.command));
+
+  it.each(runs.map((b) => [b.data, b.command]))(
     'answers %s exactly as /%s does',
     async (data, command) => {
       const typed = moreBot();
@@ -10282,7 +10473,7 @@ describe('[☰ Ещё] (Plan 0034)', () => {
 
   it('runs the command once for a redelivered answer', async () => {
     const { bot, tap, calls } = moreBot();
-    await tap('more:tag');
+    await tap('tag:sticky');
     calls.length = 0;
     const answer = textUpdate({ updateId: 50, text: 'отпуск', messageId: 50 });
 
@@ -10316,18 +10507,18 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     keys.lock(ledger.id);
     calls.length = 0;
 
-    await send('☰ Ещё', SECOND_ALLOWED_ID);
+    await send('☰ Меню', SECOND_ALLOWED_ID);
     await unlockPersonalLedger(keyDeps, user, NOW);
-    await send('☰ Ещё', SECOND_ALLOWED_ID);
+    await send('☰ Меню', SECOND_ALLOWED_ID);
 
     const markups = calls.map((c) => (c.payload as { reply_markup: unknown }).reply_markup);
     expect(markups).toEqual([
-      moreKeyboard({ lockRow: [[more(label.unlock, 'unl')]] }),
-      moreKeyboard({ lockRow: [[more(label.lock, 'lock')]] }),
+      hubKeyboard({ lockRow: [[more(label.unlock, 'unl')]] }),
+      hubKeyboard({ lockRow: [[more(label.lock, 'lock')]] }),
     ]);
   });
 
-  it('clears a pending flow before the command runs, as a typed command does', async () => {
+  it('clears a pending flow before the screen opens, as a typed command does', async () => {
     const { send, tap, db } = moreBot();
     await send('/settings');
     await tap('set:tzother', ADMIN_ID, 101);
@@ -10336,6 +10527,21 @@ describe('[☰ Ещё] (Plan 0034)', () => {
     await tap('more:prv');
 
     expect(pendingFlow(db)).toEqual([null]);
+  });
+
+  it.each([
+    ['⚙️ Настройки', '/settings'],
+    ['❓ Помощь', '/help'],
+    ['☰ Ещё', '☰ Меню'],
+  ])('answers the old label %s as %s does', async (alias, current) => {
+    const viaAlias = moreBot();
+    const viaCurrent = moreBot();
+
+    await viaAlias.send(alias);
+    await viaCurrent.send(current);
+
+    expect(viaAlias.calls.length).toBeGreaterThan(0);
+    expect(viaAlias.calls).toEqual(viaCurrent.calls);
   });
 
   describe('the guard: every private command has a button', () => {
@@ -10369,10 +10575,11 @@ describe('[☰ Ещё] (Plan 0034)', () => {
       }
     }
 
+    // Covered: the bar, the hub, and every button of the screens under it.
     function withoutButton(commands: readonly string[]): string[] {
       const covered = new Set([
         ...MENU_BAR_COMMANDS,
-        ...MORE_BUTTONS.map((b) => b.command),
+        ...MENU_BUTTONS.map((b) => b.command),
         ...REACHED_ELSEWHERE,
       ]);
       return commands.filter((c) => !covered.has(c));
@@ -10382,9 +10589,21 @@ describe('[☰ Ещё] (Plan 0034)', () => {
       const commands = privateCommands();
 
       expect(commands).toEqual(
-        expect.arrayContaining(['today', 'recurring', 'delete_account', 'tag', 'block', 'refund']),
+        expect.arrayContaining([
+          'today',
+          'recurring',
+          'delete_account',
+          'tag',
+          'paysupport',
+          'settings',
+          'help',
+          'block',
+          'refund',
+        ]),
       );
       expect(withoutButton(commands)).toEqual([]);
+      expect(MENU_BAR_COMMANDS).not.toContain('settings');
+      expect(MENU_BAR_COMMANDS).not.toContain('help');
     });
 
     it('names a new command registered with no button', () => {
@@ -10439,7 +10658,7 @@ describe('notices shown once (Plan 0034, ADR-0037)', () => {
     const transientId = lastMessageId();
 
     expect(sentTexts(calls)).toEqual([messages.help, messages.notUnderstood]);
-    expect(messages.notUnderstood).toBe('Не понял. Как записать трату — в «❓ Помощь».');
+    expect(messages.notUnderstood).toBe('Не понял. Как записать трату — в /help.');
     calls.length = 0;
 
     await vi.advanceTimersByTimeAsync(59_999);

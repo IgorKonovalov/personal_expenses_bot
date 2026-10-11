@@ -9,6 +9,7 @@ import {
   isBudgetFlow,
   isEditFlow,
   isSecretFlow,
+  menuMark,
   returnFromPrompt,
   type BudgetScreen,
   type CategoriesScreen,
@@ -60,7 +61,10 @@ function isCommand(ctx: Context, name?: string): boolean {
 // runs. /cancel clears it itself, because it also restores the anchor. Register before every
 // command and menu handler.
 export function clearFlowOnCommand(deps: HandlerDeps): MiddlewareFn {
-  const menuLabels = new Set<string>(Object.values(messages.menu));
+  const menuLabels = new Set<string>([
+    ...Object.values(messages.menu),
+    ...Object.values(messages.menuAliases),
+  ]);
   return async (ctx, next) => {
     const text = ctx.message?.text;
     if (
@@ -128,7 +132,7 @@ export async function restoreScreen(ctx: Context, deps: HandlerDeps, user: User)
   }
   const view =
     screen.name === 'settings'
-      ? settingsView(deps, user, screen.ledgerId)
+      ? settingsView(deps, user, screen.ledgerId, screen.fromMenu)
       : screen.name === 'budget'
         ? budgetView(ctx, deps, user, screen)
         : categoriesScreenFor(deps, user, screen);
@@ -289,9 +293,10 @@ export async function answerFlow(
         await restoreScreen(ctx, deps, user);
         return;
       case 'updated': {
+        const fromMenu = anchor?.screen.name === 'settings' ? anchor.screen.fromMenu : undefined;
         const view =
           ledgerId === undefined
-            ? settingsView(deps, { ...user, timezone: result.timezone })
+            ? settingsView(deps, { ...user, timezone: result.timezone }, undefined, fromMenu)
             : settingsView(deps, user, ledgerId);
         if (view !== undefined) await show(ctx, anchor, view);
         return;
@@ -321,10 +326,10 @@ export async function answerFlow(
             ? messages.categoryRestored(result.category.name)
             : messages.categoryRenamed(result.category.name);
       // The flow's ledger, with the anchor's back route to the settings hub when it has one.
-      const fromSettings = anchor?.screen.name === 'categories' && anchor.screen.fromSettings;
+      const from = anchor?.screen.name === 'categories' ? anchor.screen : undefined;
       const screen: CategoriesScreen =
-        fromSettings === true
-          ? { name: 'categories', ledgerId: flow.ledgerId, fromSettings }
+        from?.fromSettings === true
+          ? { name: 'categories', ledgerId: flow.ledgerId, fromSettings: true, ...menuMark(from) }
           : { name: 'categories', ledgerId: flow.ledgerId };
       const view = categoriesScreenFor(deps, user, screen, header);
       if (view !== undefined) await show(ctx, anchor, view);
