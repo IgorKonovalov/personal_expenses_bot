@@ -30,7 +30,7 @@ by itself. Each plan's live check is owed after the push.
 | F41 | conductor (dev) | **An `api` park on a network error is mechanical** (H14): a transient `EAI_AGAIN` or similar should retry once after a pause, and the half-done work be stashed or left for the re-run, as `usage_limit` waits. | open |
 | F42 | conductor (dev) | **Review sessions are denied read-only `grep` with quoted patterns and a `cd` into the lane** (0047 review, four times). Check whether these are the CLI's substitution guard (as F8) or the allowlist, and steer the review prompt to Grep. | open |
 | F43 | architect | **0047's close left a `.claude/` edit for the owner:** the architect skill's close lens 4 should name the docs site's guide pages beside README and `/help` (`finding 0047 0`). | open |
-| F44 | owner | `claude` 2.1.291 runs unverified (patch warning). Verify and add to `VERIFIED_CLI`. | open |
+| F44 | owner | `claude` 2.1.291 runs unverified (patch warning). Verify and add to `VERIFIED_CLI`. | done: Ritmolux's probe verified it on this machine (Ritmolux `ed8916a1`), ported to `VERIFIED_CLI` |
 | F45 | - | `prune` the merged 0045-0047 from `queue.json`. | open |
 
 F32 (idle timeout) did not bite this time: the suspended session came back on its own. F28-F39 are
