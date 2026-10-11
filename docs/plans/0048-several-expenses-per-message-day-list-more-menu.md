@@ -301,7 +301,7 @@ and `drl:back` are reused. No migration: the new keys fit `expenses.source_key`.
 | 1: «Поддержать» across the top of «Ещё» | dev | done | e9e6a72 |
 | 2: [Траты] under /today | dev | done | 67cc4db |
 | 3: Several expenses in one message | dev | done | 3ce3077 |
-| 4: Live check | human | not started | |
+| 4: Live check | human | owed | |
 
 ### Notes
 
