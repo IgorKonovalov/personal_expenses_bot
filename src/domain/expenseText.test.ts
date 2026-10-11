@@ -16,6 +16,10 @@ describe('readTrailingExpense (ADR-0046, default RSD, today 2026-10-07)', () => 
     ['Краска — 2000', 200000, 'RSD', 'Краска'],
     ['буду в 7', 700, 'RSD', 'буду в'],
     ['Аренда 2 этаж 500', 50000, 'RSD', 'Аренда 2 этаж'],
+    ['Евро кубок 300', 30000, 'RSD', 'Евро кубок'],
+    ['Евро кубок 300 €', 30000, 'EUR', 'Евро кубок'],
+    ['Евро кубок 300€', 30000, 'EUR', 'Евро кубок'],
+    ['Дин такси 300 eur', 30000, 'EUR', 'Дин такси'],
   ])('%j -> %i %s %j', (text, amountMinor, currency, description) => {
     expect(read(text)).toStrictEqual({
       kind: 'expense',

@@ -56,6 +56,18 @@ export function parseExpenseText(
   defaultCurrency: CurrencyCode,
   today?: LocalDate,
 ): ExpenseTextResult {
+  return parseAmountFirst(text, defaultCurrency, today, 'read');
+}
+
+// `currencyWord: 'skip'` keeps the first word after the amount in the description even when it
+// names a currency: amount-last text has its currency word after the amount, so in the rewritten
+// `300 Евро кубок` the «Евро» is the description's.
+function parseAmountFirst(
+  text: string,
+  defaultCurrency: CurrencyCode,
+  today: LocalDate | undefined,
+  currencyWord: 'read' | 'skip',
+): ExpenseTextResult {
   const trimmed = text.trim();
   // A currency symbol or alias glued before the amount: `€300`.
   const prefix = GLUED_ALIASES.find(
@@ -87,7 +99,9 @@ export function parseExpenseText(
     .filter((word) => word !== '');
   const [firstWord] = words;
   const wordCurrency =
-    gluedCurrency === undefined && firstWord !== undefined ? currencyOfWord(firstWord) : undefined;
+    gluedCurrency === undefined && firstWord !== undefined && currencyWord === 'read'
+      ? currencyOfWord(firstWord)
+      : undefined;
   const currency = gluedCurrency ?? wordCurrency ?? defaultCurrency;
   // A standalone `/N` word anywhere in the rest splits the amount; it isn't description.
   const afterCurrency = wordCurrency === undefined ? words : words.slice(1);
@@ -161,7 +175,12 @@ export function readTrailingExpense(
     ...parts.tags,
     ...(parts.date === undefined ? [] : [parts.date]),
   ].join(' ');
-  return parseExpenseText(rewritten, defaultCurrency, today);
+  return parseAmountFirst(
+    rewritten,
+    defaultCurrency,
+    today,
+    parts.currency === undefined ? 'skip' : 'read',
+  );
 }
 
 // The words before the amount that make amount-last text read as chatter, not a purchase:
