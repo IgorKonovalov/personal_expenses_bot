@@ -116,8 +116,8 @@ export interface DatedReceiptItem extends FetchedItem {
 }
 
 // The items of the fetched receipts behind one ledger's live plaintext expenses, each with its
-// expense's local day, currency, author and category, oldest first. A sealed row's items live in its
-// payload (ADR-0020), so none comes from here.
+// expense's local day, currency, author and category, oldest first. A sealed row's items live in
+// its payload (ADR-0020), so none comes from here.
 export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptItem[] {
   return db
     .prepare<
