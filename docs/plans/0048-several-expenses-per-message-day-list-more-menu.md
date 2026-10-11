@@ -225,6 +225,7 @@ flowchart LR
 ### Phase 4: Live check
 
 - **Owner skill:** human
+- **Blocks merge:** no
 - **What:** On the deployed bot: open [☰ Ещё] and see [Поддержать] across the top. Send a
   three-line message, open line 2 from the batch card and change its amount. Open /today →
   [Траты] → [◀] → yesterday, open an expense and delete it.
