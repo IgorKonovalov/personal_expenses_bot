@@ -123,12 +123,15 @@ export interface SettingsScreen extends FromMenu {
   readonly pane?: 'notifications' | 'account';
 }
 
-// The /budget screen of one ledger (ADR-0017). Its setup taps act on this ledger.
+// The /budget screen of one ledger (ADR-0017). Its setup taps act on this ledger. `pane` is what
+// the anchor shows under the read view (ADR-0050): the setup, its scope screen, or the
+// essential-category picker under that.
 export interface BudgetScreen {
   readonly name: 'budget';
   readonly ledgerId: LedgerId;
   // Opened from a settings hub: the screen carries a [« Назад] back to it.
   readonly fromSettings?: true;
+  readonly pane?: 'setup' | 'scope' | 'essential';
 }
 
 // /recurring (Plan 0025): the rule list, one rule's screen with `ruleId`, or the reminder
@@ -571,10 +574,13 @@ function parseScreen(name: string, ctx: string): Screen | undefined {
     };
   }
   if (name === 'budget' && typeof parsed?.ledgerId === 'string') {
-    const ledgerId = parsed.ledgerId as LedgerId;
-    return parsed.fromSettings === true
-      ? { name, ledgerId, fromSettings: true }
-      : { name, ledgerId };
+    const { pane } = parsed;
+    return {
+      name,
+      ledgerId: parsed.ledgerId as LedgerId,
+      ...(parsed.fromSettings === true ? { fromSettings: true } : {}),
+      ...(pane === 'setup' || pane === 'scope' || pane === 'essential' ? { pane } : {}),
+    };
   }
   if (name === 'categories' && typeof parsed?.ledgerId === 'string') {
     const ledgerId = parsed.ledgerId as LedgerId;

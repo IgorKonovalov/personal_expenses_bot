@@ -14,8 +14,18 @@ import {
   type BudgetAnswerResult,
   type BudgetScreenView,
 } from '../../services/budget.js';
-import { cancelFlowIf, type BudgetFlow, type BudgetScreen } from '../../services/flowSessions.js';
+import {
+  cancelFlowIf,
+  setAnchor,
+  type BudgetFlow,
+  type BudgetScreen,
+} from '../../services/flowSessions.js';
 import { isLocked } from '../../services/ledgerKeys.js';
+import {
+  ledgerCategories,
+  setEssential,
+  type CategoriesView,
+} from '../../services/manageCategories.js';
 import type { HandlerDeps } from '../bot.js';
 import {
   BUDGET_CAP,
@@ -25,12 +35,19 @@ import {
   BUDGET_LIMIT,
   BUDGET_OPEN,
   BUDGET_SCOPE,
+  BUDGET_SETUP,
   BUDGET_START_DAY,
+  BUDGET_WHAT,
+  CATEGORY_ESSENTIAL_OPEN,
+  CATEGORY_ESSENTIAL_PAGE,
+  SET_CATEGORY_ESSENTIAL,
   SETTINGS_OPEN,
   budgetCapClearData,
   budgetCapData,
   budgetCapsPageData,
   budgetScopeData,
+  categoryEssentialPageData,
+  setCategoryEssentialData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { PAGE_SIZE, pageOf, pagerRow, pickerKeyboard } from '../nav.js';
@@ -46,19 +63,65 @@ import {
 } from '../screens.js';
 import { ensureUser } from './start.js';
 
-// The /budget screen (ADR-0011, ADR-0017): the ledger's limit and what's left, with its setup.
-// The limit and the period start day are asked through text flows (ADR-0009); flows.ts takes
-// the answers.
+// The /budget screen (ADR-0011, ADR-0017, ADR-0050): the ledger's limit and what's left, its
+// setup one tap further behind [Настроить]. The limit, the period start day and the caps are
+// asked through text flows (ADR-0009); flows.ts takes the answers.
 
-// Opened from a settings hub, the screen ends with [« Назад] to it. With a chart URL, its first
-// row is «📈 Диаграмма», the screen's one read action, above the settings.
-function screenView(
+// The read view: the figures with «📈 Диаграмма» (when there is a chart URL) and [Настроить], or
+// only [Задать лимит] while neither a limit nor a cap is set. Opened from a settings hub, it ends
+// with [« Назад] to it.
+function readView(
   view: BudgetScreenView,
   screen: BudgetScreen,
   chartUrl: string | undefined,
   header?: Html,
 ): ScreenView {
   const body = messages.budgetScreen(view);
+  const { status } = view;
+  const unset = status === undefined || (status.limit === undefined && status.caps.length === 0);
+  return {
+    text: header === undefined ? body : joinHtml([header, body], '\n\n'),
+    markup: InlineKeyboard.from([
+      ...(unset
+        ? [[InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)]]
+        : [
+            ...(chartUrl === undefined
+              ? []
+              : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+            [InlineKeyboard.text(messages.budgetSetupButton, BUDGET_SETUP)],
+          ]),
+      ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
+    ]),
+  };
+}
+
+// Настроить: what is set, a button per setting, then [« Назад] to the read view.
+function setupView(view: BudgetScreenView, header?: Html): ScreenView {
+  const budget = view.status?.budget;
+  const body = messages.budgetSetupScreen({
+    ledger: view.ledger,
+    limit:
+      budget === undefined || budget.limitMinor === null
+        ? undefined
+        : { amountMinor: budget.limitMinor, currency: budget.currency },
+    startDay: budget?.periodStartDay ?? 1,
+    scope: view.status?.scope ?? 'all',
+  });
+  return {
+    text: header === undefined ? body : joinHtml([header, body], '\n\n'),
+    markup: InlineKeyboard.from([
+      [InlineKeyboard.text(messages.budgetLimitSetupButton, BUDGET_LIMIT)],
+      [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
+      [InlineKeyboard.text(messages.budgetScopeSetupButton, BUDGET_WHAT)],
+      [InlineKeyboard.text(messages.budgetCapsButton, BUDGET_CAPS_OPEN)],
+      backRow(BUDGET_OPEN),
+    ]),
+  };
+}
+
+// Что считать: the two scopes, the current one marked, the essential-category picker, then
+// [« Назад] to Настроить.
+function scopeView(view: BudgetScreenView): ScreenView {
   const current = view.status?.scope ?? 'all';
   const scopeButton = (scope: BudgetScope) => {
     const label = messages.budgetScopeButton(scope);
@@ -68,15 +131,31 @@ function screenView(
     );
   };
   return {
-    text: header === undefined ? body : joinHtml([header, body], '\n\n'),
+    text: messages.budgetScopeScreen,
     markup: InlineKeyboard.from([
-      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
-      [InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)],
-      [InlineKeyboard.text(messages.budgetStartDayButton, BUDGET_START_DAY)],
       [scopeButton('all'), scopeButton('optional')],
-      [InlineKeyboard.text(messages.budgetCapsButton, BUDGET_CAPS_OPEN)],
-      ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
+      [InlineKeyboard.text(messages.essentialCategoriesButton, CATEGORY_ESSENTIAL_OPEN)],
+      backRow(BUDGET_SETUP),
     ]),
+  };
+}
+
+// Every active category of the budget's ledger, each button marked by its current value and
+// carrying the opposite one, then [« Назад] to Что считать.
+function essentialPickerView(view: CategoriesView, page: number): ScreenView {
+  const shown = pageOf(view.categories, page);
+  return {
+    text: messages.essentialPicker,
+    markup: pickerKeyboard(
+      shown.items.map((c) =>
+        InlineKeyboard.text(
+          messages.essentialChoice(c.name, c.essential),
+          setCategoryEssentialData(c.id, !c.essential),
+        ),
+      ),
+      pagerRow(shown, categoryEssentialPageData),
+      BUDGET_WHAT,
+    ),
   };
 }
 
@@ -105,9 +184,9 @@ function chartUrlOf(
   return payload === undefined ? undefined : `${deps.webappUrl}#z=${payload}`;
 }
 
-// The screen for the ledger an anchor names; undefined once the user no longer owns it, and the
-// locked message alone while its sealed ledger is locked (ADR-0020). `droppedCapsCurrency` puts
-// the line about deleted category caps above it.
+// The screen for the ledger an anchor names, as its pane shows it; undefined once the user no
+// longer owns it, and the locked message alone while its sealed ledger is locked (ADR-0020).
+// `droppedCapsCurrency` puts the line about deleted category caps above it.
 export function budgetView(
   ctx: Context,
   deps: HandlerDeps,
@@ -123,12 +202,20 @@ export function budgetView(
       markup: InlineKeyboard.from(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
     };
   }
-  return screenView(
-    view,
-    screen,
-    chartUrlOf(ctx, deps, user, view),
-    droppedCapsCurrency === undefined ? undefined : messages.budgetCapsDropped(droppedCapsCurrency),
-  );
+  const header =
+    droppedCapsCurrency === undefined ? undefined : messages.budgetCapsDropped(droppedCapsCurrency);
+  switch (screen.pane) {
+    case 'setup':
+      return setupView(view, header);
+    case 'scope':
+      return scopeView(view);
+    case 'essential': {
+      const categories = ledgerCategories(deps, { user, ledgerId: screen.ledgerId });
+      return categories === undefined ? undefined : essentialPickerView(categories, 1);
+    }
+    case undefined:
+      return readView(view, screen, chartUrlOf(ctx, deps, user, view), header);
+  }
 }
 
 // A flow's prompt in the anchor, naming the value in effect, with a refusal line above it when
@@ -205,7 +292,7 @@ function capsPickerView(view: BudgetScreenView, page: number): ScreenView {
         ),
       ),
       pagerRow(shown, budgetCapsPageData),
-      BUDGET_OPEN,
+      BUDGET_SETUP,
     ),
   };
 }
@@ -265,19 +352,55 @@ async function budgetTap(ctx: Context, deps: HandlerDeps): Promise<BudgetTap | u
   return { ...tap, screen, view };
 }
 
+// Stores `pane` on the tap's anchor, so a prompt, a cancel and a saved answer come back to it.
+function setPane(deps: HandlerDeps, tap: BudgetTap, pane: BudgetScreen['pane']): void {
+  const { ledgerId, fromSettings } = tap.screen;
+  const screen: BudgetScreen = {
+    name: 'budget',
+    ledgerId,
+    ...(fromSettings === true ? { fromSettings } : {}),
+    ...(pane === undefined ? {} : { pane }),
+  };
+  setAnchor(deps, tap.user, { ...tap.anchor, screen });
+}
+
+// Moves the anchor to `pane` and returns its view, read after any change the tap made.
+function showPane(
+  ctx: Context,
+  deps: HandlerDeps,
+  tap: BudgetTap,
+  pane: 'setup' | 'scope' | undefined,
+): ScreenView {
+  setPane(deps, tap, pane);
+  const read = budgetScreen(deps, {
+    user: tap.user,
+    ledgerId: tap.screen.ledgerId,
+    now: deps.now(),
+  });
+  const view = read === undefined || isLocked(read) ? tap.view : read;
+  if (pane === 'setup') return setupView(view);
+  if (pane === 'scope') return scopeView(view);
+  return readView(view, tap.screen, chartUrlOf(ctx, deps, tap.user, view));
+}
+
 export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void {
   bot.command('budget', (ctx) => sendBudget(ctx, deps));
 
-  bot.callbackQuery(BUDGET_OPEN, async (ctx) => {
-    const tap = await budgetTap(ctx, deps);
-    if (tap === undefined) return;
-    await ctx.answerCallbackQuery();
-    await renderAnchor(
-      ctx,
-      tap.anchor,
-      screenView(tap.view, tap.screen, chartUrlOf(ctx, deps, tap.user, tap.view)),
-    );
-  });
+  // The read view, Настроить and Что считать: each a pane of the same anchor.
+  const panes = [
+    [BUDGET_OPEN, undefined],
+    [BUDGET_SETUP, 'setup'],
+    [BUDGET_WHAT, 'scope'],
+  ] as const;
+  for (const [data, pane] of panes) {
+    bot.callbackQuery(data, async (ctx) => {
+      const tap = await budgetTap(ctx, deps);
+      if (tap === undefined) return;
+      const view = showPane(ctx, deps, tap, pane);
+      await ctx.answerCallbackQuery();
+      await renderAnchor(ctx, tap.anchor, view);
+    });
+  }
 
   bot.callbackQuery(BUDGET_SCOPE, async (ctx) => {
     const tap = await budgetTap(ctx, deps);
@@ -294,18 +417,61 @@ export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void 
         return;
       case 'set': {
         await ctx.answerCallbackQuery({ text: messages.budgetScopeChangedToast });
-        const view = budgetView(ctx, deps, tap.user, tap.screen);
-        if (view !== undefined) await renderAnchor(ctx, tap.anchor, view);
+        await renderAnchor(ctx, tap.anchor, showPane(ctx, deps, tap, 'scope'));
         return;
       }
     }
   });
 
-  // The cap list, also reached by [« Назад] on a cap prompt: that prompt's flow is cancelled.
+  // The essential-category picker under Что считать, on the budget's ledger.
+  bot.callbackQuery(CATEGORY_ESSENTIAL_PAGE, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    const view = ledgerCategories(deps, { user: tap.user, ledgerId: tap.screen.ledgerId });
+    if (view === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    setPane(deps, tap, 'essential');
+    await ctx.answerCallbackQuery();
+    await renderAnchor(ctx, tap.anchor, essentialPickerView(view, Number(ctx.match[1] ?? 1)));
+  });
+
+  // The value is in the data: a second tap of the same button finds it set and edits nothing.
+  bot.callbackQuery(SET_CATEGORY_ESSENTIAL, async (ctx) => {
+    const tap = await budgetTap(ctx, deps);
+    if (tap === undefined) return;
+    const { ledgerId } = tap.screen;
+    const categoryId = Number(ctx.match[1]) as CategoryId;
+    const essential = ctx.match[2] === '1';
+    const result = setEssential(deps, { user: tap.user, ledgerId, categoryId, essential });
+    switch (result.kind) {
+      case 'notFound':
+        await ctx.answerCallbackQuery({ text: messages.categoryGoneToast });
+        return;
+      case 'unchanged':
+        await ctx.answerCallbackQuery({ text: messages.essentialUnchanged });
+        return;
+      case 'set': {
+        await ctx.answerCallbackQuery({ text: messages.essentialSetToast(essential) });
+        const view = ledgerCategories(deps, { user: tap.user, ledgerId });
+        if (view === undefined) return;
+        setPane(deps, tap, 'essential');
+        const index = view.categories.findIndex((c) => c.id === categoryId);
+        const page = Math.floor(Math.max(index, 0) / PAGE_SIZE) + 1;
+        await renderAnchor(ctx, tap.anchor, essentialPickerView(view, page));
+        return;
+      }
+    }
+  });
+
+  // The cap list, under Настроить, also reached by [« Назад] on a cap prompt: that prompt's flow
+  // is cancelled.
   bot.callbackQuery(BUDGET_CAPS, async (ctx) => {
     const tap = await budgetTap(ctx, deps);
     if (tap === undefined) return;
     cancelFlowIf(deps, tap.user, (flow) => flow.kind === 'budgetCap');
+    setPane(deps, tap, 'setup');
     await ctx.answerCallbackQuery();
     await renderAnchor(ctx, tap.anchor, capsPickerView(tap.view, Number(ctx.match[1] ?? 1)));
   });

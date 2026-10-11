@@ -397,8 +397,8 @@ and `more:chg` are reused.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: Bar and ☰ Меню hub | dev | done | adb66c4 |
-| 2: Settings split | dev | done | committed with this row |
-| 3: Budget read-first | dev | not started | |
+| 2: Settings split | dev | done | 4dbb764 |
+| 3: Budget read-first | dev | done | committed with this row |
 | 4: Help topics | dev | not started | |
 | 5: Card and labels | dev | not started | |
 | 6: Live check | human | not started | |
@@ -434,6 +434,15 @@ and `more:chg` are reused.
   them gets the silent unknown answer. The reachability guard counts `set:prv` and `set:del`.
 - Phase 2: the `settings` and `privacy` scenarios keep their final screen (the hub; the policy),
   `privacy` and `encryption` now reach it through Аккаунт и данные.
+- Phase 3: `BudgetScreen` gains `pane` but not `fromMenu`: no hub button opens /budget (it is on
+  the bar), so nothing would set it.
+- Phase 3: the read view counts "a cap is set" from the status's caps; a budget row holding only a
+  start day or a scope reads as unset and shows only [Задать лимит]. A limit saved from the read
+  view's [Задать лимит] returns to the read view; one saved from Настроить returns to Настроить.
+- Phase 3: `src/bot/handlers/settings.ts` and `scripts/docs-chats/scenarios/categories.ts` needed
+  no change. The `budget-set` scenario now ends on Настроить.
+- Phase 3: `site/src/content/docs/guide/record.mdx` still says /categories has «Обязательные»; it
+  is outside this phase's files (Phase 5 lists it).
 
 ### Close triggers
 

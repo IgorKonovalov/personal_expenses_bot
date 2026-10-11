@@ -232,12 +232,15 @@ export async function answerFlow(
         await restoreScreen(ctx, deps, user);
         return;
       case 'set': {
-        // The flow's ledger, with the anchor's back route to the settings hub when it has one.
-        const fromSettings = anchor?.screen.name === 'budget' && anchor.screen.fromSettings;
-        const screen: BudgetScreen =
-          fromSettings === true
-            ? { name: 'budget', ledgerId: flow.ledgerId, fromSettings }
-            : { name: 'budget', ledgerId: flow.ledgerId };
+        // The flow's ledger, shown in the anchor's pane (the read view or Настроить) with its back
+        // route to the settings hub when it has one.
+        const from = anchor?.screen.name === 'budget' ? anchor.screen : undefined;
+        const screen: BudgetScreen = {
+          name: 'budget',
+          ledgerId: flow.ledgerId,
+          ...(from?.fromSettings === true ? { fromSettings: true } : {}),
+          ...(from?.pane === undefined ? {} : { pane: from.pane }),
+        };
         const view = budgetView(ctx, deps, user, screen, result.droppedCapsCurrency);
         if (view !== undefined) await show(ctx, anchor, view);
         return;

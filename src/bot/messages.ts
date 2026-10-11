@@ -2680,7 +2680,7 @@ export const messages = {
   categoryArchived: (name: string): Html =>
     html`Категория «${name}» скрыта. Чтобы вернуть её, добавьте её снова.`,
   // The essential-category picker (ADR-0017): a set, not a toggle, per button.
-  essentialCategoriesButton: 'Обязательные',
+  essentialCategoriesButton: 'Обязательные категории',
   essentialPicker: html`Обязательные траты — то, без чего не обойтись: жильё, продукты, связь. Бюджет, который считает только необязательные траты, их не учитывает. Отмеченные ✓ — обязательные; нажмите категорию, чтобы изменить.`,
   essentialChoice: (name: string, essential: boolean): string => (essential ? `✓ ${name}` : name),
   essentialSetToast: (essential: boolean): string =>
@@ -2959,9 +2959,35 @@ export const messages = {
   budgetCapClearButton: 'Убрать лимит',
   capClearedToast: 'Лимит категории убран',
   capUnchanged: 'У категории нет лимита',
+  // The read view's [Настроить] (ADR-0050): the setup screen, which names what is set.
+  budgetSetupButton: 'Настроить',
+  budgetSetupScreen: ({
+    ledger,
+    limit,
+    startDay,
+    scope,
+  }: {
+    readonly ledger: LedgerRef;
+    readonly limit: Money | undefined;
+    readonly startDay: number;
+    readonly scope: 'all' | 'optional';
+  }): Html =>
+    joinHtml(
+      [
+        html`<b>Настройка бюджета «${ledgerName(ledger)}»</b>`,
+        limit === undefined ? html`Лимит: не задан` : html`Лимит: ${formatMoney(limit)} на период`,
+        html`Период начинается ${startDay}-го числа`,
+        scope === 'optional' ? html`Считаются траты без обязательных` : html`Считаются все траты`,
+      ],
+      '\n',
+    ),
+  budgetLimitSetupButton: 'Лимит на период',
+  budgetScopeSetupButton: 'Что считать',
+  // Что считать: the scope, and the essential categories it leaves out.
+  budgetScopeScreen: html`Бюджет может считать все траты или только необязательные. Обязательные — то, без чего не обойтись: жильё, продукты, связь.`,
   // The two scope buttons; the current one is marked with currentChoice.
   budgetScopeButton: (scope: 'all' | 'optional'): string =>
-    scope === 'all' ? 'Считать все' : 'Только необязательные',
+    scope === 'all' ? 'Все траты' : 'Без обязательных',
   budgetScopeChangedToast: 'Готово',
   budgetScopeUnchanged: 'Уже выбрано',
   // A month too short for the day starts its period on its last day (ADR-0017).

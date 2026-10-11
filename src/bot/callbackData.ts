@@ -141,9 +141,10 @@ export function categoryActionPickData(action: CategoryAction, categoryId: Categ
   return assertCallbackData(`cat:${action}:${categoryId}`);
 }
 
-// The essential-category picker (ADR-0017): `cat:ess` opens page 1, `cat:essp:<page>` pages it,
-// and `cat:ess:<id>:<0|1>` sets the value it carries (at most 26 bytes). It is a set, not a
-// toggle, so a double tap converges.
+// The essential-category picker (ADR-0017), under the budget's Что считать: `cat:ess` opens page
+// 1, `cat:essp:<page>` pages it, and `cat:ess:<id>:<0|1>` sets the value it carries (at most 26
+// bytes). It is a set, not a toggle, so a double tap converges. Only a budget anchor accepts
+// these.
 export const CATEGORY_ESSENTIAL_OPEN = 'cat:ess';
 export const CATEGORY_ESSENTIAL_PAGE = /^cat:ess(?:p:(\d{1,4}))?$/;
 export const SET_CATEGORY_ESSENTIAL = /^cat:ess:(\d{1,16}):([01])$/;
@@ -298,9 +299,12 @@ export function dayListData(date: LocalDate, page: number): string {
 }
 
 // The /budget screen (ADR-0017). Only the current screen anchor accepts these, and they act on
-// the anchor's ledger, so none carries a ledger id. `bud:open` shows the screen in the anchor;
-// `bud:lim` asks for the limit, `bud:day` for the period start day.
+// the anchor's ledger, so none carries a ledger id. `bud:open` shows the read view in the anchor,
+// `bud:cfg` its setup and `bud:what` the scope screen under it (ADR-0050); `bud:lim` asks for the
+// limit, `bud:day` for the period start day.
 export const BUDGET_OPEN = 'bud:open';
+export const BUDGET_SETUP = 'bud:cfg';
+export const BUDGET_WHAT = 'bud:what';
 export const BUDGET_LIMIT = 'bud:lim';
 export const BUDGET_START_DAY = 'bud:day';
 // `bud:scope:a` counts every expense, `bud:scope:o` only optional ones: the scope it sets.

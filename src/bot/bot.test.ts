@@ -2852,7 +2852,7 @@ describe('/budget and the card line (ADR-0017)', () => {
       const screen = await screenOf({ spent: '450 кофе' });
 
       expect(screen.reply_markup?.inline_keyboard[0]).toEqual([
-        { text: 'Задать лимит', callback_data: 'bud:lim' },
+        { text: 'Настроить', callback_data: 'bud:cfg' },
       ]);
       expect(JSON.stringify(screen)).not.toContain('web_app');
     });
@@ -2892,15 +2892,7 @@ describe('/budget and the card line (ADR-0017)', () => {
             '<b>Бюджет «Личные расходы»</b>\nЛимит не задан. Задайте лимит на период, и после ' +
             'каждой траты я покажу, сколько осталось на сегодня.',
           reply_markup: {
-            inline_keyboard: [
-              [{ text: 'Задать лимит', callback_data: 'bud:lim' }],
-              [{ text: 'День начала периода', callback_data: 'bud:day' }],
-              [
-                { text: '✓ Считать все', callback_data: 'bud:scope:a' },
-                { text: 'Только необязательные', callback_data: 'bud:scope:o' },
-              ],
-              [{ text: 'Лимиты по категориям', callback_data: 'bud:caps' }],
-            ],
+            inline_keyboard: [[{ text: 'Задать лимит', callback_data: 'bud:lim' }]],
           },
           ...htmlParseMode,
         },
@@ -2933,6 +2925,7 @@ describe('/budget and the card line (ADR-0017)', () => {
           'Осталось на сегодня: 967.74 RSD',
           'Осталось до 31 окт: 30 000.00 RSD',
         ].join('\n'),
+        reply_markup: { inline_keyboard: [[{ text: 'Настроить', callback_data: 'bud:cfg' }]] },
       },
     });
   });
@@ -3016,22 +3009,118 @@ describe('/budget and the card line (ADR-0017)', () => {
     expect(String(lastText(calls))).toContain('· до 9 окт: ');
   });
 
-  it('sets the optional-only scope once on a double tap', async () => {
+  it('[Настроить] → [Что считать] → [Без обязательных] sets the scope once on a double tap', async () => {
     const { say, tap, calls, db } = await withLimit();
     await say('/budget', 3);
+    await tap('bud:cfg', 102);
+    await tap('bud:what', 102);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        message_id: 102,
+        text: messages.budgetScopeScreen,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✓ Все траты', callback_data: 'bud:scope:a' },
+              { text: 'Без обязательных', callback_data: 'bud:scope:o' },
+            ],
+            [{ text: 'Обязательные категории', callback_data: 'cat:ess' }],
+            [{ text: '« Назад', callback_data: 'bud:cfg' }],
+          ],
+        },
+      },
+    });
     calls.length = 0;
 
     await tap('bud:scope:o', 102);
     await tap('bud:scope:o', 102);
 
     expect(db.prepare('SELECT scope FROM ledger_budgets').pluck().get()).toBe('optional');
+    expect(calls[0]).toEqual({
+      method: 'answerCallbackQuery',
+      payload: { callback_query_id: 'cb-7', text: messages.budgetScopeChangedToast },
+    });
     const edits = calls.filter((c) => c.method === 'editMessageText');
     expect(edits).toHaveLength(1);
-    expect(String(sentTexts(edits)[0])).toContain('Считаются только необязательные траты.');
+    expect(edits[0]?.payload).toMatchObject({
+      text: messages.budgetScopeScreen,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Все траты', callback_data: 'bud:scope:a' },
+            { text: '✓ Без обязательных', callback_data: 'bud:scope:o' },
+          ],
+          [{ text: 'Обязательные категории', callback_data: 'cat:ess' }],
+          [{ text: '« Назад', callback_data: 'bud:cfg' }],
+        ],
+      },
+    });
     expect(calls.at(-1)).toEqual({
       method: 'answerCallbackQuery',
-      payload: { callback_query_id: 'cb-6', text: 'Уже выбрано' },
+      payload: { callback_query_id: 'cb-8', text: 'Уже выбрано' },
     });
+
+    // The read view then says so.
+    calls.length = 0;
+    await tap('bud:open', 102);
+    expect(String(lastText(calls))).toContain('Считаются только необязательные траты.');
+  });
+
+  it('keeps the setup off the read view, and [Настроить] shows the four settings and the limit', async () => {
+    const { say, tap, calls } = await withLimit();
+    await say('/budget', 3);
+    const read = calls.at(-1)?.payload as { reply_markup: { inline_keyboard: unknown[][] } };
+
+    await tap('bud:cfg', 102);
+
+    const data = JSON.stringify(read.reply_markup);
+    expect(data).not.toContain('bud:day');
+    expect(data).not.toContain('bud:scope:');
+    expect(data).not.toContain('bud:caps');
+    expect(read.reply_markup.inline_keyboard).toEqual([
+      [{ text: 'Настроить', callback_data: 'bud:cfg' }],
+    ]);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: {
+        message_id: 102,
+        text: [
+          '<b>Настройка бюджета «Личные расходы»</b>',
+          'Лимит: 30 000.00 RSD на период',
+          'Период начинается 1-го числа',
+          'Считаются все траты',
+        ].join('\n'),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Лимит на период', callback_data: 'bud:lim' }],
+            [{ text: 'День начала периода', callback_data: 'bud:day' }],
+            [{ text: 'Что считать', callback_data: 'bud:what' }],
+            [{ text: 'Лимиты по категориям', callback_data: 'bud:caps' }],
+            [{ text: '« Назад', callback_data: 'bud:open' }],
+          ],
+        },
+      },
+    });
+  });
+
+  it('returns a prompt and the cap list opened from Настроить to Настроить', async () => {
+    const { say, tap, calls } = await withLimit();
+    await say('/budget', 3);
+    await tap('bud:cfg', 102);
+    await tap('bud:day', 102);
+    await say('10', 4);
+    expect(String(lastText(calls))).toMatch(/^<b>Настройка бюджета/);
+    expect(String(lastText(calls))).toContain('Период начинается 10-го числа');
+
+    await tap('bud:caps', 102);
+    const caps = calls.at(-1)?.payload as { reply_markup: { inline_keyboard: unknown[][] } };
+    expect(caps.reply_markup.inline_keyboard.at(-1)).toEqual([
+      { text: '« Назад', callback_data: 'bud:cfg' },
+    ]);
+    await tap('bud:lim', 102);
+    await tap('flow:cancel', 102);
+    expect(String(lastText(calls))).toMatch(/^<b>Настройка бюджета/);
   });
 
   it('caps Кафе и рестораны at 5000: the over-cap card uses the overspend copy, такси has no line', async () => {
@@ -4972,7 +5061,6 @@ describe('/categories screen and text flows', () => {
         { text: 'Переименовать', callback_data: 'cat:ren' },
         { text: 'Скрыть', callback_data: 'cat:arc' },
       ],
-      [{ text: 'Обязательные', callback_data: 'cat:ess' }],
     ],
   };
   const cancelKeyboard = { inline_keyboard: [[{ text: 'Отмена', callback_data: 'flow:cancel' }]] };
@@ -5086,9 +5174,11 @@ describe('/categories screen and text flows', () => {
     );
   });
 
-  it('sets essential from the picker: cat:ess:<id>:1 twice leaves 1 and edits once', async () => {
+  it('sets essential from the budget anchor: cat:ess:<id>:1 twice leaves 1 and edits once', async () => {
     const { say, tap, calls, db } = flowBot();
-    await say('/categories', 1);
+    await say('/budget', 1);
+    await tap('bud:cfg', 101);
+    await tap('bud:what', 101);
     const cafe = db
       .prepare("SELECT id FROM categories WHERE name = 'Кафе и рестораны'")
       .pluck()
@@ -5102,6 +5192,9 @@ describe('/categories screen and text flows', () => {
       { text: '✓ Продукты', callback_data: `cat:ess:${String(cafe - 1)}:0` },
       { text: 'Кафе и рестораны', callback_data: `cat:ess:${String(cafe)}:1` },
     ]);
+    expect(picker.reply_markup.inline_keyboard.at(-1)).toEqual([
+      { text: '« Назад', callback_data: 'bud:what' },
+    ]);
     calls.length = 0;
 
     await tap(`cat:ess:${String(cafe)}:1`, 101);
@@ -5111,8 +5204,39 @@ describe('/categories screen and text flows', () => {
     expect(calls.filter((c) => c.method === 'editMessageText')).toHaveLength(1);
     expect(calls.at(-1)).toEqual({
       method: 'answerCallbackQuery',
-      payload: { callback_query_id: 'cb-4', text: 'Уже отмечено' },
+      payload: { callback_query_id: 'cb-6', text: 'Уже отмечено' },
     });
+
+    // [« Назад] returns to Что считать.
+    calls.length = 0;
+    await tap('bud:what', 101);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'editMessageText',
+      payload: { message_id: 101, text: messages.budgetScopeScreen },
+    });
+  });
+
+  it('answers a cat:ess tap on a categories anchor with staleScreen', async () => {
+    const { say, tap, calls, db } = flowBot();
+    await say('/categories', 1);
+    const flags = () => db.prepare('SELECT essential FROM categories ORDER BY id').pluck().all();
+    const before = flags();
+    calls.length = 0;
+
+    await tap('cat:ess', 101);
+    await tap('cat:ess:1:1', 101);
+
+    expect(calls).toEqual([
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-2', text: messages.staleScreen },
+      },
+      {
+        method: 'answerCallbackQuery',
+        payload: { callback_query_id: 'cb-3', text: messages.staleScreen },
+      },
+    ]);
+    expect(flags()).toEqual(before);
   });
 
   it('toasts staleScreen on the first of two /categories, and a card still works', async () => {
@@ -5843,7 +5967,6 @@ describe('/settings hub and the timezone picker', () => {
         { text: 'Переименовать', callback_data: 'cat:ren' },
         { text: 'Скрыть', callback_data: 'cat:arc' },
       ],
-      [{ text: 'Обязательные', callback_data: 'cat:ess' }],
     ];
     const withBack = {
       inline_keyboard: [...categoriesButtons, [{ text: '« Назад', callback_data: 'set:open' }]],
