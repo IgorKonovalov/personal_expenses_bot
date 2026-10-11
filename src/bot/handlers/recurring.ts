@@ -79,8 +79,8 @@ import {
 import { cardAt, cardView, expenseIdOf, recordedCard, tappedMessage } from './card.js';
 import { ensureUser } from './start.js';
 
-// Recurring expenses (Plan 0025): [Повторять] on an expense card turns the card into a schedule
-// picker, and a schedule makes the rule; /recurring lists the user's rules. Like every card
+// Recurring expenses (Plan 0025): [Изменить] → [Повторять] on an expense card turns the card into
+// a schedule picker, and a schedule makes the rule; /recurring lists the user's rules. Like every card
 // action these work on any card however old: the expense's stored state is the guard.
 
 const refusalToast: Record<RepeatRefusal['kind'], string> = {
