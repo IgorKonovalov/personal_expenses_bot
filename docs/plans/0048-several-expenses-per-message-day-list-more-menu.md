@@ -206,7 +206,7 @@ flowchart LR
     | `450 кофе\n1200 такси вчера` | `lines`, line 2 dated 2026-10-07 |
     | `450 кофе\nс Ирой\n1200 такси` | `badLine`, line 2, `unreadable` |
     | `450 кофе\n1.500 лампа` | `badLine`, line 2, `ambiguous` |
-    | `450 кофе\n1200 такси 25.12` | `badLine`, line 2, `future` |
+    | `450 кофе\n1200 такси 25.12.2026` | `badLine`, line 2, `future` (corrected at close: a bare `25.12` reads as 2025-12-25, so `lines`) |
     | `450 кофе\n3000 ужин /3` | `badLine`, line 2, `split` |
     | 21 lines of `100 хлеб` | `tooMany` |
   - Sending `450 кофе\n1200 такси\n12 eur обед` stores three expenses with keys `tg:<c>:<m>`,
