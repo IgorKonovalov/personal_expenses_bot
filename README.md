@@ -113,8 +113,8 @@ up, expired or switched off answers «Ссылка недействительн�
 «Бот работает по приглашениям» reply and then silence. `ADMIT_TELEGRAM_IDS` admits the listed ids
 at boot, without a link.
 
-Admin-only commands (anyone else gets the `/help` answer; the admin's [☰ Ещё] has a button for
-each):
+Admin-only commands (anyone else gets the `/help` answer; the admin's [☰ Меню] → [Админ] screen
+has a button for each):
 
 | Admin sends            | The bot does                                                                                       |
 | ---------------------- | -------------------------------------------------------------------------------------------------- |
