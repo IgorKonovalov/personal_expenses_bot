@@ -299,7 +299,7 @@ for an XLSX `<v>`.
 | 2: Every column, the items file, and a formula-safe CSV | dev | done | `8d09bcf` |
 | 3: The XLSX writer and the [Excel] button | dev | done | `440e551` |
 | 4: Groups, sealed ledgers, help and docs | dev | done | `ad7f90d` |
-| 5: Open the files in real apps | human | owed | (no commit) |
+| 5: Open the files in real apps | human | done (owner-reported 2026-10-11) | (no commit) |
 
 ### Notes
 

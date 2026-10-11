@@ -362,7 +362,7 @@ type DecodedReceipt = {
 | 4: The background fetch fills in the shop and the items | dev | done | 303cd3b |
 | 5: [Позиции] and [Повторить] on the card | dev | done | 764cb13 |
 | 6: Help and the README | dev | done | 112dc4c |
-| 7: Real receipts in production | human | owed | |
+| 7: Real receipts in production | human | done (owner-reported 2026-10-11) | (no commit) |
 
 ### Notes
 
