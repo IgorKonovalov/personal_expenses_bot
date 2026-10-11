@@ -1,8 +1,8 @@
 # 0050: Product prices without cafe and restaurant receipts
 
-> **Status:** in-progress (2026-10-11)
+> **Status:** done (2026-10-11): built as planned, one nit fixed at close, Phase 3 live check owed, v0.40.0
 > **Created:** 2026-10-11
-> **Related ADRs:** [ADR-0051](../adrs/0051-product-prices-leave-out-cafe-receipts-by-category.md), [ADR-0039](../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0041](../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0020](../adrs/0020-sealed-ledgers-write-open-read-locked.md)
+> **Related ADRs:** [ADR-0051](../../adrs/0051-product-prices-leave-out-cafe-receipts-by-category.md), [ADR-0039](../../adrs/0039-products-from-keyword-rules-and-per-user-overrides.md), [ADR-0041](../../adrs/0041-product-matches-memoized-in-process-not-persisted.md), [ADR-0020](../../adrs/0020-sealed-ledgers-write-open-read-locked.md)
 
 ## TL;DR
 
@@ -191,5 +191,108 @@ No migration, no callback data, no new copy in the messages module.
   2339 tests; `pnpm build` exit 0; `pnpm docs:check` exit 0; `node scripts/check-doc-links.mjs`
   exit 0, 363 links.
 - **Outstanding `human` phases:** Phase 3 (live check), `Blocks merge: no`.
+
+## Close review
+
+Round 1, at tip bfbf0a9, by a fresh conductor review session.
+
+**Verdict:** clean. Both dev phases do what the plan contracts, each done-when has a test that
+discriminates, and the gate is green. One nit, nothing that blocks the close.
+
+### Gate (run in the review session, at the tip)
+
+- `pnpm typecheck`: exit 0
+- `pnpm lint`: exit 0
+- `pnpm test`: exit 0, 154 files, 2339 tests
+- `pnpm docs:check`: exit 0
+- `node scripts/check-doc-links.mjs`: exit 0, 363 links
+- `git status --short`: empty before and after
+
+### Lens 1: alignment
+
+- Phases 1 and 2 are done in 20c97e5 and 6efe981. Phase 3 is `human` with `Blocks merge: no`, and
+  the log marks it owed. Each phase has a single owner tag from the allowed set. Every file the
+  plan names was touched, and nothing outside the lists changed except the plan's own log.
+- `src/services/productPrices.test.ts` "cafe receipts (ADR-0051)":
+  - Groceries 15000 plus cafe 40000 gives the September line `[15000, 15000]`. After
+    `setExpenseCategory` moves the cafe expense to groceries, the same read gives
+    `[55000, 27500]`. This matches the done-when arithmetic (55000 / 2 l).
+  - Archiving the cafe category keeps the line at `[15000, 15000]`.
+  - A user-created «Обеды» (`presetKey: null`) counts: `[55000, 27500]`.
+  - After sealing and unlocking, the line is `[15000, 15000]`. `listLedgerDatedItems` filters
+    `e.sealed IS NULL` (`src/db/receiptItems.ts:140`), so this figure can only come from the sealed
+    path. A missing filter there would give 55000, so the test discriminates.
+  - On the group ledger, the other member's groceries receipt for 50000 is excluded, along with the
+    viewer's cafe receipt. Result: `[15000, 15000]`.
+- `src/services/productReview.test.ts`: a cafe `CAPPUCCINO` gives an empty queue and
+  `unmatched === 0`. The same name on a groceries receipt gives `['cappuccino']` and 1.
+- `src/db/categories.test.ts`: an archived cafe id is listed, ids are scoped per ledger, and
+  another preset key returns `[]`. `src/db/receiptItems.test.ts`: `categoryId` is null, then the
+  cafe id after a move.
+- `src/tools/productsCoverage.test.ts`: the report shows rules 1 / 15000, unmatched 0,
+  `cafe: {items: 1, spentMinor: 40000}`, an empty `topUnmatched`, the text line
+  `rules 1 (100.0%)`, the line `  cafe: 1 item, 400.00 RSD`, and no `cappuccino`. The plan's
+  done-when says "matched 1 (100.0%)", but the report's existing label is `rules`, and the log
+  discloses the difference. This is acceptable.
+- Deviations the log discloses:
+  - The plan's diagram shows an `excludedFromPrices` domain function. The code uses a domain
+    constant `PRICES_EXCLUDED_PRESET` and filters in `ownItems`. This matches the plan's own Data
+    shapes and the Decision ("the rule lives in one place in productPrices.ts").
+  - The coverage tool repeats the constant and the repository call instead of calling the service.
+    Acceptable.
+- Sealed rows are opened once: `foldedReceiptWithCategoryOf` returns the receipt and the category
+  from one `open`, and `foldedReceiptOf` delegates to it. This addresses the plan's risk.
+- ADR-0051 has no silent reversal. Its status is `proposed`, to be accepted at close.
+
+### Lens 2: layering
+
+No grammY import outside `src/bot/`, and no bot-layer file changed. The SQL stays in `src/db/`. The
+domain gains only a constant. The plan adds no copy to the messages module.
+
+### Lens 3: correctness
+
+- Money: integer sums of `totalMinor` only, and `formatMoney` for display. No floats.
+- Time: unchanged.
+- Idempotency: read path only.
+- Privacy: nothing is logged. The coverage report prints amounts, but it is the existing local tool
+  that only the owner runs.
+- Freshness: the excluded id set and each row's category are read on every `ownItems` call, so a
+  category move takes effect at once, which the move test confirms.
+
+### Lens 4: docs
+
+`site/src/content/docs/guide/receipts.mdx` gains the sentence the plan asks for. `pnpm docs:check`
+is green. No command, env var or config key changed, and `CLAUDE.md` still matches the tree.
+
+### Findings
+
+- **blocker:** none.
+- **major:** none.
+- **minor:** none.
+- **nit 1:** the comment line exceeds the 100-column width at `src/db/receiptItems.ts:119`
+  (101 characters). Prettier does not reflow comments, so lint stays green. Fixed at close in
+  68451c3 (the three-line comment rewrapped at 100 columns).
+
+### Bookkeeping owed at close (as the review listed it)
+
+- Flip Status to `done` with the date and verdict, `git mv` the plan to `docs/plans/done/`, and
+  repair links, then rerun `node scripts/check-doc-links.mjs`.
+- Accept ADR-0051 (`proposed` to `accepted`) and refresh `docs/adrs/README.md`.
+- Refresh `docs/plans/README.md`: move the row to recently closed and bump the next free number.
+- Bump the version. This is a feature plan that changes what /prices shows, so a minor bump fits.
+  Update `package.json`, `CHANGELOG.md` and the `versionAnnouncements` entry.
+- Phase 3 (human live check) remains owed after the deploy. Record it as outstanding in the close.
+
+### Earlier rounds
+
+None: round 1 was the only review, so no fix round resolved an earlier finding.
+
+### Close
+
+- Done in this close: the plan moved to `done/` with its links repaired, ADR-0051 accepted, both
+  indexes refreshed (the plans index already read `0051` as the next free number), and v0.40.0
+  (minor: /prices shows different figures) in `package.json`, `CHANGELOG.md` and
+  `versionAnnouncements`.
+- **Still owed:** Phase 3 (live check, `human`, `Blocks merge: no`), after the deploy.
 
 ## Followups

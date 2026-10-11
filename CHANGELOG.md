@@ -2,6 +2,17 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.40.0 (2026-10-11)
+
+From Plan 0050 (product prices without cafe and restaurant receipts).
+
+- /prices leaves out receipt items whose expense is filed under «Кафе и рестораны», archived or
+  not: the product list, a product's screen and chart, and the review of unmatched names
+  (ADR-0051). Moving the expense to another category brings its items back.
+- `pnpm products:coverage` leaves the same items out and prints a `cafe:` line per ledger and
+  currency.
+- The guide's /prices section says so.
+
 ## 0.39.0 (2026-10-11)
 
 From Plan 0049 (a ☰ Меню hub, a six-button bar, deeper settings, budget and help).

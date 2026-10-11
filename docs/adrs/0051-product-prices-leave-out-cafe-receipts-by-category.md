@@ -1,8 +1,8 @@
 # ADR-0051: Product prices leave out receipts filed under the cafe category
 
-> **Status:** proposed
+> **Status:** accepted (2026-10-11)
 > **Date:** 2026-10-11
-> **Related plan(s):** [Plan 0050](../plans/0050-prices-without-cafe-receipts.md)
+> **Related plan(s):** [Plan 0050](../plans/done/0050-prices-without-cafe-receipts.md)
 
 ## Context
 
