@@ -1,9 +1,11 @@
+import { listCategoryIdsByPreset } from '../db/categories.js';
 import type { Db } from '../db/connection.js';
 import { listItemProducts } from '../db/itemProducts.js';
 import type { LedgerId, LedgerKind } from '../db/ledgers.js';
 import { listLedgerDatedItems } from '../db/receiptItems.js';
 import { listUserProducts } from '../db/userProducts.js';
 import type { UserId } from '../db/users.js';
+import { PRICES_EXCLUDED_PRESET } from '../domain/categoryPresets.js';
 import type { CurrencyCode } from '../domain/currencies.js';
 import { formatMoney } from '../domain/money.js';
 import { CATALOG } from '../domain/products/catalog.js';
@@ -13,7 +15,9 @@ import { normalize } from '../domain/products/normalize.js';
 // `pnpm products:coverage` (Plan 0036 Phase 5): how much of each ledger's receipt items the
 // product rules and the users' answers (ADR-0039) claim, run by the user on a copy of the
 // production database on their own machine. It only reads. A sealed ledger's items live in its
-// encrypted rows, so only plaintext rows are counted.
+// encrypted rows, so only plaintext rows are counted. An item whose expense sits in a category of
+// PRICES_EXCLUDED_PRESET is left out of the shares as /prices leaves it out (ADR-0051), and
+// counted on its own as `cafe`.
 
 export interface Share {
   readonly items: number;
@@ -27,6 +31,8 @@ export interface LedgerCoverage {
   readonly rules: Share;
   readonly overrides: Share;
   readonly unmatched: Share;
+  // Left out of the three shares above.
+  readonly cafe: Share;
 }
 
 export interface Coverage {
@@ -70,22 +76,33 @@ export function coverage(db: Db): Coverage {
     .prepare<[], { id: string; kind: LedgerKind }>('SELECT id, kind FROM ledgers ORDER BY id')
     .all();
   for (const row of rows) {
-    const byCurrency = new Map<CurrencyCode, Record<Kind, { items: number; spentMinor: number }>>();
-    for (const item of listLedgerDatedItems(db, row.id as LedgerId)) {
-      const nameKey = normalize(item.name);
-      const kind = kindOf(item.createdBy, nameKey);
+    const ledgerId = row.id as LedgerId;
+    const excluded = listCategoryIdsByPreset(db, ledgerId, PRICES_EXCLUDED_PRESET);
+    const byCurrency = new Map<
+      CurrencyCode,
+      Record<Kind | 'cafe', { items: number; spentMinor: number }>
+    >();
+    for (const item of listLedgerDatedItems(db, ledgerId)) {
       const shares = byCurrency.get(item.currency) ?? {
         rules: { items: 0, spentMinor: 0 },
         overrides: { items: 0, spentMinor: 0 },
         unmatched: { items: 0, spentMinor: 0 },
+        cafe: { items: 0, spentMinor: 0 },
       };
+      byCurrency.set(item.currency, shares);
+      if (item.categoryId !== null && excluded.has(item.categoryId)) {
+        shares.cafe.items += 1;
+        shares.cafe.spentMinor += item.totalMinor;
+        continue;
+      }
+      const nameKey = normalize(item.name);
+      const kind = kindOf(item.createdBy, nameKey);
       shares[kind].items += 1;
       shares[kind].spentMinor += item.totalMinor;
-      byCurrency.set(item.currency, shares);
       if (kind === 'unmatched') unmatchedNames.set(nameKey, (unmatchedNames.get(nameKey) ?? 0) + 1);
     }
     for (const [currency, shares] of [...byCurrency].sort(([a], [b]) => a.localeCompare(b))) {
-      ledgers.push({ ledgerId: row.id as LedgerId, kind: row.kind, currency, ...shares });
+      ledgers.push({ ledgerId, kind: row.kind, currency, ...shares });
     }
   }
   const topUnmatched = [...unmatchedNames]
@@ -118,6 +135,10 @@ export function formatCoverage(report: Coverage): string {
     lines.push(`ledger ${ledger.kind} ${ledger.ledgerId} ${ledger.currency}`);
     lines.push(`  items: ${items}: ${line((s) => s.items, items, String)}`);
     lines.push(`  spend: ${money(spent)}: ${line((s) => s.spentMinor, spent, money)}`);
+    const { cafe } = ledger;
+    lines.push(
+      `  cafe: ${cafe.items} ${cafe.items === 1 ? 'item' : 'items'}, ${money(cafe.spentMinor)}`,
+    );
   }
   lines.push(`unmatched names, top ${TOP}:`);
   for (const { nameKey, items } of report.topUnmatched) lines.push(`  ${items}\t${nameKey}`);

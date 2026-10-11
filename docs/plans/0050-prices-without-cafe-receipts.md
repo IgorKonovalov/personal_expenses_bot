@@ -151,8 +151,8 @@ No migration, no callback data, no new copy in the messages module.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: Cafe receipts leave /prices | dev | done | committed with this row |
-| 2: The coverage report and the guide follow | dev | not started | |
+| 1: Cafe receipts leave /prices | dev | done | 20c97e5 |
+| 2: The coverage report and the guide follow | dev | done | committed with this row |
 | 3: Live check | human | not started | |
 
 ### Notes
