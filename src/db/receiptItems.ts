@@ -115,9 +115,10 @@ export interface DatedReceiptItem extends FetchedItem {
   readonly categoryId: CategoryId | null;
 }
 
-// The items of the fetched receipts behind one ledger's live plaintext expenses, each with its
-// expense's local day, currency, author and category, oldest first. A sealed row's items live in
-// its payload (ADR-0020), so none comes from here.
+// The items of the fetched fiscal receipts behind one ledger's live plaintext expenses, each with
+// its expense's local day, currency, author and category, oldest first: the items product prices
+// read. A delivery order's dishes never count toward a price, whatever the category (ADR-0052).
+// A sealed row's items live in its payload (ADR-0020), so none comes from here.
 export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptItem[] {
   return db
     .prepare<
@@ -138,7 +139,7 @@ export function listLedgerDatedItems(db: Db, ledgerId: LedgerId): DatedReceiptIt
          JOIN receipts r ON r.id = i.receipt_id
          JOIN expenses e ON e.id = r.expense_id
         WHERE e.ledger_id = ? AND e.deleted_at IS NULL AND e.sealed IS NULL
-          AND r.fetch_state = 'fetched'
+          AND r.fetch_state = 'fetched' AND r.kind = 'fiscal'
         ORDER BY e.occurred_on, e.occurred_at, e.id, i.position`,
     )
     .all(ledgerId)

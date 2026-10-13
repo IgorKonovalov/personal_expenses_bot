@@ -17,7 +17,8 @@ import { normalize } from '../domain/products/normalize.js';
 // production database on their own machine. It only reads. A sealed ledger's items live in its
 // encrypted rows, so only plaintext rows are counted. An item whose expense sits in a category of
 // PRICES_EXCLUDED_PRESET is left out of the shares as /prices leaves it out (ADR-0051), and
-// counted on its own as `cafe`.
+// counted on its own as `cafe`. A delivery order's dishes are not counted at all: the item list
+// /prices reads holds none (ADR-0052).
 
 export interface Share {
   readonly items: number;

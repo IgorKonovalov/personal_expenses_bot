@@ -133,8 +133,10 @@ interface RawItem {
 
 // The viewer's items in the ledger, oldest first. An item whose expense sits in a category of
 // PRICES_EXCLUDED_PRESET, archived or not, is left out (ADR-0051); the category is read on every
-// call, so moving an expense takes effect at once. A sealed ledger's names go through a matcher
-// of this call's own, so they never outlive the call that decrypted them.
+// call, so moving an expense takes effect at once. A delivery order's dishes are left out
+// whatever the category (ADR-0052): a sealed row's folded order is the one with no link. A
+// sealed ledger's names go through a matcher of this call's own, so they never outlive the call
+// that decrypted them.
 function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean): RawItem[] {
   const excluded = listCategoryIdsByPreset(deps.db, ledger.id, PRICES_EXCLUDED_PRESET);
   const counts = (categoryId: CategoryId | null) =>
@@ -149,7 +151,9 @@ function ownItems(deps: ProductDeps, user: User, ledger: Ledger, sealed: boolean
     const opened = foldedReceiptWithCategoryOf(deps, row);
     if (opened === undefined || !counts(opened.categoryId)) continue;
     const folded = opened.receipt;
-    if (folded === undefined || folded.sellerName === null) continue;
+    if (folded === undefined || folded.sellerName === null || folded.verifyUrl === null) {
+      continue;
+    }
     for (const item of folded.items) {
       items.push({
         ...matcher.match(item.name),

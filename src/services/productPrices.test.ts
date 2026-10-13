@@ -14,13 +14,18 @@ import { runMigrations } from '../db/migrate.js';
 import { insertReceiptItems } from '../db/receiptItems.js';
 import { markReceiptFetched } from '../db/receipts.js';
 import type { User } from '../db/users.js';
+import { woltOrderLines } from '../domain/orders/testing/buildWoltRs.js';
+import { parseWoltRs } from '../domain/orders/woltRs.js';
 import { createLogger } from '../logger.js';
+import { importOrder } from './importOrder.js';
 import { createLedgerKeyring, isLocked, type LedgerKeyring, type Locked } from './ledgerKeys.js';
 import {
   activeProductList,
   ledgerProduct,
   ledgerProductList,
+  resolveItems,
   sharedNameMatcher,
+  unmatchedNames,
   type ProductList,
   type ProductView,
 } from './productPrices.js';
@@ -341,6 +346,53 @@ describe('cafe receipts (ADR-0051)', () => {
     milkIn(other, preset(shared, 'groceries'), 50000);
 
     expect(september(milk(shared))).toEqual([15000, 15000]);
+  });
+});
+
+describe('delivery orders (ADR-0052)', () => {
+  // A Wolt order delivered on 5 October with «Hleb» and an unmatched dish, filed under Продукты.
+  function breadOrder(): ExpenseId {
+    const parsed = parseWoltRs(
+      woltOrderLines({
+        delivered: '05.10.2026 12:00',
+        payments: [{ label: 'Visa: ****0000', amount: '1.144,00' }],
+        items: [
+          { name: 'Hleb', total: '169,00', compact: true },
+          { name: 'Nudle sa povrćem', total: '975,00' },
+        ],
+      }),
+    );
+    if (parsed.kind !== 'order') throw new Error(`setup: order parsed as ${parsed.kind}`);
+    const result = importOrder(deps, { user, order: parsed.order, sentAt: NOW, now: NOW });
+    if (result.kind !== 'recorded') throw new Error(`setup: order was ${result.kind}`);
+    setExpenseCategory(db, result.expense.id, preset(ledgerId, 'groceries'), NOW);
+    return result.expense.id;
+  }
+  const breadOctober = () => {
+    const bread = view(ledgerProduct(deps, { user, ledgerId, ref: 'b:bread' }));
+    return bread.months.find((m) => m.month === '2026-10')?.spentMinor;
+  };
+  const ledger = () => list(ledgerProductList(deps, { user, ledgerId, now: NOW })).ledger;
+
+  it('add nothing to Хлеб’s October under Продукты, and stay out of the review', () => {
+    fixture();
+    breadOrder();
+
+    expect(breadOctober()).toBe(6500);
+    const resolved = resolveItems(deps, user, ledger());
+    if (isLocked(resolved)) throw new Error('locked');
+    // The fixture's 8 items alone, and its one unmatched name.
+    expect(resolved.items).toHaveLength(8);
+    expect(unmatchedNames(resolved)).toEqual(['cokoladno mleko 0,2l', 'kesa']);
+  });
+
+  it('stay out of an unlocked sealed ledger: Хлеб stays at 6500', async () => {
+    fixture();
+    breadOrder();
+    await sealPersonalLedger(deps, user, NOW);
+    await unlockPersonalLedger(deps, user, NOW);
+
+    expect(breadOctober()).toBe(6500);
   });
 });
 
