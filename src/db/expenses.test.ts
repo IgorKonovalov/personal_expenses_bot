@@ -203,16 +203,18 @@ describe('statement source keys', () => {
     ).toEqual(new Set(['stmt:raiffeisen-rs:aa:ledger-a', 'stmt:raiffeisen-rs:bb:ledger-a']));
   });
 
-  it('re-keys statement rows with the other content keys when a ledger is sealed', () => {
+  it('re-keys statement and order rows with the other content keys when a ledger is sealed', () => {
     addExpense('exp-1', LEDGER_A, USER_A, 'stmt:raiffeisen-rs:aa:ledger-a');
     addExpense('exp-2', LEDGER_A, USER_A, 'tg:1:2');
     addExpense('exp-3', LEDGER_B, USER_B, 'stmt:raiffeisen-rs:aa:ledger-b');
+    addExpense('exp-4', LEDGER_A, USER_A, 'order:wolt-rs:abc123:ledger-a');
 
-    expect(rekeyContentSourceKeys(db, LEDGER_A)).toBe(1);
+    expect(rekeyContentSourceKeys(db, LEDGER_A)).toBe(2);
     expect(db.prepare('SELECT id, source_key FROM expenses ORDER BY id').all()).toEqual([
       { id: 'exp-1', source_key: 'sealed:exp-1' },
       { id: 'exp-2', source_key: 'tg:1:2' },
       { id: 'exp-3', source_key: 'stmt:raiffeisen-rs:aa:ledger-b' },
+      { id: 'exp-4', source_key: 'sealed:exp-4' },
     ]);
   });
 });

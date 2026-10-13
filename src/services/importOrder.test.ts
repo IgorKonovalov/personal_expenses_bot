@@ -210,6 +210,9 @@ describe('an order in a sealed ledger', () => {
     const expenseId: ExpenseId = result.expense.id;
     await sealPersonalLedger(deps, alice, SENT);
     expect(rows('SELECT COUNT(*) AS n FROM receipts')).toEqual([{ n: 0 }]);
+    expect(rows(`SELECT source_key FROM expenses WHERE id = '${expenseId}'`)).toEqual([
+      { source_key: `sealed:${expenseId}` },
+    ]);
 
     await unlockPersonalLedger(deps, alice, SENT);
     expect(receiptItems(deps, { user: alice, expenseId })).toMatchObject({

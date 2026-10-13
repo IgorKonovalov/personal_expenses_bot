@@ -466,8 +466,8 @@ export function sealExpenseInPlace(db: Db, id: ExpenseId, sealed: Buffer): boole
 }
 
 // Replaces every content-derived source key of the ledger (`sms:` fingerprints, `rcpt:` fiscal
-// ids, `stmt:` statement-row fingerprints) with `sealed:<expenseId>`, deleted rows included;
-// `tg:` keys stay. Returns the number of rows re-keyed.
+// ids, `stmt:` statement-row fingerprints, `order:` delivery-order ids) with `sealed:<expenseId>`,
+// deleted rows included; `tg:` keys stay. Returns the number of rows re-keyed.
 export function rekeyContentSourceKeys(db: Db, ledgerId: LedgerId): number {
   return db
     .prepare<[string]>(
@@ -475,7 +475,7 @@ export function rekeyContentSourceKeys(db: Db, ledgerId: LedgerId): number {
           SET source_key = 'sealed:' || id
         WHERE ledger_id = ?
           AND (substr(source_key, 1, 4) = 'sms:' OR substr(source_key, 1, 5) = 'rcpt:'
-               OR substr(source_key, 1, 5) = 'stmt:')`,
+               OR substr(source_key, 1, 5) = 'stmt:' OR substr(source_key, 1, 6) = 'order:')`,
     )
     .run(ledgerId).changes;
 }
