@@ -9510,6 +9510,102 @@ describe('delivery order PDFs (Plan 0051)', () => {
     expect(sent()).toEqual([ORDER_CARD, `Уже записано.\n${ORDER_CARD}`]);
   });
 
+  // A 1144 RSD expense typed the day before the delivery.
+  async function typedTheDayBefore(send: (text: string) => Promise<void>) {
+    await send('1144 доставка вчера');
+  }
+  const ASK = 'Похоже, этот заказ уже записан:\n11.10 · 1 144.00 RSD · доставка\nЭто он?';
+  const ASK_KEYBOARD = {
+    inline_keyboard: [
+      [{ text: 'Да, это он', callback_data: 'ord:same' }],
+      [{ text: 'Нет, записать отдельно', callback_data: 'ord:new' }],
+      [{ text: 'Отмена', callback_data: 'ord:x' }],
+    ],
+  };
+
+  it('asks about a matching expense, and [Да] edits the question into its card with the dishes', async () => {
+    const { send, sendPdf, tap, calls, db } = orderBot();
+    await typedTheDayBefore(send);
+    calls.length = 0;
+
+    await sendPdf(woltOrderPdf());
+    expect(calls.filter((call) => call.method === 'sendMessage')).toEqual([
+      {
+        method: 'sendMessage',
+        payload: { chat_id: ALLOWED_ID, text: ASK, reply_markup: ASK_KEYBOARD, ...htmlParseMode },
+      },
+    ]);
+    calls.length = 0;
+
+    await tap('ord:same');
+    await tap('ord:same');
+
+    expect(expenseCount(db)).toEqual({ n: 1 });
+    expect(db.prepare('SELECT kind FROM receipts').all()).toEqual([{ kind: 'order' }]);
+    const edits = sentTexts(calls.filter((call) => call.method === 'editMessageText'));
+    expect(edits).toHaveLength(2);
+    expect(edits[0]).toContain('— доставка ·');
+    expect(edits[0]).toContain(
+      'Primer Kuhinja · 2 позиции\n<blockquote expandable>1. Nudle sa povrćem — 975.00 RSD\n' +
+        '2. Prolećne rolnice — 169.00 RSD</blockquote>',
+    );
+    expect(edits[1]).toBe(messages.flowExpired);
+  });
+
+  it('[Нет] records the order apart, and [Отмена] records nothing', async () => {
+    const { send, sendPdf, tap, calls, db } = orderBot();
+    await typedTheDayBefore(send);
+
+    await sendPdf(woltOrderPdf());
+    calls.length = 0;
+    await tap('ord:new');
+    expect(expenseCount(db)).toEqual({ n: 2 });
+    expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+      ORDER_CARD,
+    ]);
+
+    await sendPdf(woltOrderPdf({ orderId: 'fedcba9876543210fedcba98' }));
+    calls.length = 0;
+    await tap('ord:x');
+    await tap('ord:new');
+    expect(expenseCount(db)).toEqual({ n: 2 });
+    expect(sentTexts(calls.filter((call) => call.method === 'editMessageText'))).toEqual([
+      messages.orderCancelled,
+      messages.flowExpired,
+    ]);
+  });
+
+  it('records a typed expense while the question is pending, and the buttons still work', async () => {
+    const { send, sendPdf, tap, sent, db } = orderBot();
+    await typedTheDayBefore(send);
+    await sendPdf(woltOrderPdf());
+    expect(sent().at(-1)).toBe(ASK);
+
+    await send('450 кофе');
+    await tap('ord:same');
+
+    expect(expenseCount(db)).toEqual({ n: 2 });
+    expect(
+      db
+        .prepare('SELECT e.description FROM receipts r JOIN expenses e ON e.id = r.expense_id')
+        .all(),
+    ).toEqual([{ description: 'доставка' }]);
+  });
+
+  it('after [Да], the same PDF again answers «уже записано» with no question', async () => {
+    const { send, sendPdf, tap, sent, calls } = orderBot();
+    await typedTheDayBefore(send);
+    await sendPdf(woltOrderPdf());
+    await tap('ord:same');
+    calls.length = 0;
+
+    await sendPdf(woltOrderPdf());
+
+    const [reply] = sent();
+    expect(reply).toMatch(/^Уже записано\.\n.*— доставка ·/);
+    expect(reply).toContain('Primer Kuhinja · 2 позиции');
+  });
+
   it('answers an order that fails a check with orderUnreadable and records nothing', async () => {
     const { sendPdf, sent, db } = orderBot();
 

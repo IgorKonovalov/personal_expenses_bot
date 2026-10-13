@@ -42,6 +42,7 @@ import { registerRecurring } from './handlers/recurring.js';
 import { registerRefund } from './handlers/refund.js';
 import { registerSettings } from './handlers/settings.js';
 import { registerStart } from './handlers/start.js';
+import { registerOrder } from './handlers/order.js';
 import { registerStatement } from './handlers/statement.js';
 import { registerItems } from './handlers/items.js';
 import { registerSummary } from './handlers/summary.js';
@@ -191,6 +192,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   const heavy = heavyJobs(options);
   registerChatImport(dm, options, telegramFileDownloader({ token: options.token }));
   registerStatement(dm, options, heavy);
+  registerOrder(dm, options);
   registerReceiptMedia(dm, options, heavy);
   registerNonText(dm, options);
   registerEdited(dm, options);

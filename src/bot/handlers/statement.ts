@@ -1,9 +1,6 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { Document } from 'grammy/types';
-import { parseWoltRs } from '../../domain/orders/woltRs.js';
-import type { PositionedLine } from '../../domain/statements/types.js';
 import { parseRaiffeisenRs } from '../../domain/statements/raiffeisenRs.js';
-import { importOrder } from '../../services/importOrder.js';
 import {
   cancelStatement,
   MAX_STATEMENT_BYTES,
@@ -14,7 +11,6 @@ import {
   type StatementPreview,
 } from '../../services/importStatement.js';
 import type { HandlerDeps } from '../bot.js';
-import { cardFor, cardView } from './card.js';
 import {
   STATEMENT_CANCEL,
   STATEMENT_PAGE,
@@ -25,7 +21,7 @@ import {
 import { messages } from '../messages.js';
 import { pageOf, pagerRow } from '../nav.js';
 import { editHtml, replyHtml } from '../render/html.js';
-import { sendStrayReply } from './help.js';
+import { answerOrderPdf } from './order.js';
 import type { HeavyJobs } from './receipt.js';
 import { ensureUser } from './start.js';
 
@@ -81,51 +77,6 @@ function previewView(preview: StatementPreview, requestedPage: number) {
     }),
     markup: keyboard,
   };
-}
-
-// A PDF that isn't a statement: a delivery order is recorded with its dishes and answered with
-// its card, or with «уже записано» and the stored card. Another PDF gets what the handlers after
-// this one gave it before the hand-off: no receipt-image or other document handler takes a PDF,
-// so it is the stray-message reply. `logRead` writes the PDF's one info line.
-async function answerOrderPdf(
-  ctx: Context,
-  deps: HandlerDeps,
-  input: {
-    readonly fromId: number;
-    readonly lines: readonly PositionedLine[];
-    readonly sentAt: Date;
-    readonly logRead: (outcome: string) => void;
-  },
-): Promise<void> {
-  const parsed = parseWoltRs(input.lines);
-  if (parsed.kind === 'notThisOrder') {
-    input.logRead('notThisStatement');
-    await sendStrayReply(ctx, deps);
-    return;
-  }
-  if (parsed.kind === 'unreadableOrder') {
-    input.logRead('orderUnreadable');
-    await replyHtml(ctx, messages.orderUnreadable);
-    return;
-  }
-  const now = deps.now();
-  const user = ensureUser(deps, input.fromId, now);
-  const result = importOrder(deps, { user, order: parsed.order, sentAt: input.sentAt, now });
-  if (result.kind === 'sealedLedger') {
-    input.logRead('orderSealedLedger');
-    await replyHtml(ctx, messages.receiptSealedLedger);
-    return;
-  }
-  if (result.kind === 'futureOrder') {
-    input.logRead('orderFuture');
-    await replyHtml(ctx, messages.futureReceipt);
-    return;
-  }
-  input.logRead(result.duplicate ? 'orderDuplicate' : 'order');
-  const card = cardFor(cardView(deps, user, result));
-  await replyHtml(ctx, result.duplicate ? messages.alreadyRecorded(card.text) : card.text, {
-    reply_markup: card.markup,
-  });
 }
 
 export function registerStatement(

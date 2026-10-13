@@ -314,8 +314,8 @@ customer's name and card are not in it, because the parser never produced them.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A Wolt PDF records an expense with its dishes | dev | done. Fixture PIB is `123456789`, not `100000001`: the done-when's search for `0000` matches `100000001`. The card text and the real-`readPdfLines` file test are in `src/bot/bot.test.ts`, which is not in Files touched. The parser also requires «Vrsta porudžbine» `Dostava`. The future and sealed refusals reuse `futureReceipt` and `receiptSealedLedger`, and they log `orderFuture` and `orderSealedLedger` | committed with this row |
-| 2: A matching expense is asked about | dev | not started | |
+| 1: A Wolt PDF records an expense with its dishes | dev | done. Fixture PIB is `123456789`, not `100000001`: the done-when's search for `0000` matches `100000001`. The card text and the real-`readPdfLines` file test are in `src/bot/bot.test.ts`, which is not in Files touched. The parser also requires «Vrsta porudžbine» `Dostava`. The future and sealed refusals reuse `futureReceipt` and `receiptSealedLedger`, and they log `orderFuture` and `orderSealedLedger` | dd66240 |
+| 2: A matching expense is asked about | dev | done. `src/bot/flows.ts` is unchanged: `routeText` in `src/services/flowSessions.ts` routes text past a pending `orderImport` the way it does past a statement. `answerOrderPdf` moved from `statement.ts` into `order.ts`. A candidate deleted meanwhile gets the new `messages.orderCandidateGone` line, and [Отмена] gets `messages.orderCancelled`. A PDF that asks logs the outcome `orderAsked`. Handler tests are in `src/bot/bot.test.ts` | committed with this row |
 | 3: Order items stay out of /prices; the guide covers the PDF | dev | not started | |
 | 4: A real order end to end | human | not started | |
 

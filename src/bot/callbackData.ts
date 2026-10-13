@@ -361,6 +361,12 @@ export function statementPageData(page: number): string {
 }
 export const STATEMENT_CANCEL = 'stm:x';
 
+// A delivery order's question (Plan 0051): [Да, это он] `ord:same`, [Нет, записать отдельно]
+// `ord:new` and [Отмена] `ord:x`. They act on the order the user's flow session holds.
+export const ORDER_SAME = 'ord:same';
+export const ORDER_NEW = 'ord:new';
+export const ORDER_CANCEL = 'ord:x';
+
 // A group history import (ADR-0047). Every button carries the user's chat_imports row's 6-char
 // base-36 nonce, so a button from an earlier upload never acts on a later one: [Записать N трат]
 // `imp:rec:<n>`, [Проверить (N)] `imp:rev:<n>`, [Закончить проверку] `imp:end:<n>`, [Отмена]

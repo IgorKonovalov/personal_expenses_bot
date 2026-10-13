@@ -14,6 +14,8 @@ import type { RuleId } from '../db/recurring.js';
 import type { User } from '../db/users.js';
 import { toCurrencyCode, type CurrencyCode } from '../domain/currencies.js';
 import type { DebtDirection } from '../domain/debts.js';
+import type { DeliveryOrder, LocalDateTime } from '../domain/orders/types.js';
+import type { FetchedItem } from '../domain/receipts/types.js';
 import type { StatementPeriod, StatementPurchase } from '../domain/statements/types.js';
 import { parseLocalDate, type LocalDate } from '../domain/time.js';
 
@@ -372,7 +374,34 @@ export interface StatementFlow {
   readonly purchases: readonly StatementPurchase[];
 }
 
+// A delivery order whose total matches a recorded expense (Plan 0051), awaiting [Да, это он] or
+// [Нет, записать отдельно]. Like a statement it takes no typed answer.
+export const ORDER_FLOW = 'orderImport';
+
+export interface OrderFlow {
+  readonly ledgerId: LedgerId;
+  readonly order: DeliveryOrder;
+  readonly candidateExpenseId: ExpenseId;
+}
+
 type Deps = { readonly db: Db };
+
+// Holds the order and its candidate for the question's buttons, replacing any pending flow.
+export function startOrderFlow({ db }: Deps, user: User, flow: OrderFlow, now: Date): void {
+  savePendingFlow(db, user.id, {
+    kind: ORDER_FLOW,
+    payload: JSON.stringify(flow),
+    expiresAt: new Date(now.getTime() + FLOW_TTL_MS),
+  });
+}
+
+// The pending order, unless it expired, was replaced by another flow, or can't be read.
+export function pendingOrderFlow({ db }: Deps, user: User, now: Date): OrderFlow | undefined {
+  const pending = findFlowSession(db, user.id)?.pending ?? null;
+  if (pending === null || pending.kind !== ORDER_FLOW) return undefined;
+  if (now.getTime() >= pending.expiresAt.getTime()) return undefined;
+  return parseOrderFlow(pending.payload);
+}
 
 // Holds a statement's purchases for the buttons under its preview, replacing any pending flow.
 export function startStatementFlow({ db }: Deps, user: User, flow: StatementFlow, now: Date): void {
@@ -495,7 +524,7 @@ export function routeText(
   if (session === undefined) return { kind: 'free', expiredFlow: false };
   if (session.lastInputKey === input.inputKey) return { kind: 'redelivered' };
   const { pending } = session;
-  if (pending === null || pending.kind === STATEMENT_FLOW)
+  if (pending === null || pending.kind === STATEMENT_FLOW || pending.kind === ORDER_FLOW)
     return { kind: 'free', expiredFlow: false };
   const now = input.now.getTime();
   const expiresAt = pending.expiresAt.getTime();
@@ -808,6 +837,56 @@ function parseStatementPurchase(raw: unknown): StatementPurchase | undefined {
     return undefined;
   }
   return { date, amountMinor, currency, merchant, debitRsdMinor, ordinal };
+}
+
+function parseOrderFlow(payload: string): OrderFlow | undefined {
+  const parsed = parseObject(payload);
+  const order = parsed?.order as Record<string, unknown> | undefined;
+  if (
+    typeof parsed?.ledgerId !== 'string' ||
+    typeof parsed.candidateExpenseId !== 'string' ||
+    typeof order !== 'object' ||
+    order.source !== 'wolt-rs' ||
+    order.currency !== 'RSD' ||
+    typeof order.orderId !== 'string' ||
+    typeof order.restaurant !== 'string' ||
+    typeof order.sellerTaxId !== 'string' ||
+    typeof order.deliveredAt !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(order.deliveredAt) ||
+    typeof order.totalMinor !== 'number' ||
+    !Number.isSafeInteger(order.totalMinor) ||
+    !Array.isArray(order.items)
+  ) {
+    return undefined;
+  }
+  const items: FetchedItem[] = [];
+  for (const raw of order.items as unknown[]) {
+    if (typeof raw !== 'object' || raw === null) return undefined;
+    const { name, quantity, totalMinor } = raw as Record<string, unknown>;
+    if (
+      typeof name !== 'string' ||
+      typeof quantity !== 'string' ||
+      typeof totalMinor !== 'number' ||
+      !Number.isSafeInteger(totalMinor)
+    ) {
+      return undefined;
+    }
+    items.push({ name, quantity, totalMinor });
+  }
+  return {
+    ledgerId: parsed.ledgerId as LedgerId,
+    candidateExpenseId: parsed.candidateExpenseId as ExpenseId,
+    order: {
+      source: 'wolt-rs',
+      orderId: order.orderId,
+      restaurant: order.restaurant,
+      sellerTaxId: order.sellerTaxId,
+      deliveredAt: order.deliveredAt as LocalDateTime,
+      totalMinor: order.totalMinor,
+      currency: 'RSD',
+      items,
+    },
+  };
 }
 
 function parseObject(json: string): Record<string, unknown> | undefined {

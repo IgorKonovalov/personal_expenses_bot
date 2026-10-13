@@ -2449,6 +2449,29 @@ export const messages = {
   statementCancelled: html`Выписка не записана.`,
   // A delivery order PDF (Plan 0051) that is an order but failed a check.
   orderUnreadable: html`Не получилось разобрать заказ из PDF. Запишите его текстом, например: 1144 доставка`,
+  // An order whose total matches a recorded expense: the candidate's line, `11.10 · 1 144.00 RSD
+  // · доставка`, and the question.
+  orderAsk: (candidate: {
+    readonly occurredOn: LocalDate;
+    readonly amountMinor: number;
+    readonly currency: CurrencyCode;
+    readonly description: string;
+  }): Html =>
+    joinHtml(
+      [
+        html`Похоже, этот заказ уже записан:`,
+        html`${ddmm(candidate.occurredOn)} · ${formatMoney(candidate)} · ${shownDescription(candidate.description)}`,
+        html`Это он?`,
+      ],
+      '\n',
+    ),
+  orderSameButton: 'Да, это он',
+  orderNewButton: 'Нет, записать отдельно',
+  orderHasItems: (card: Html): Html =>
+    joinHtml([html`Позиции у этой записи уже есть.`, card], '\n'),
+  orderCandidateGone: (card: Html): Html =>
+    joinHtml([html`Та запись удалена, поэтому заказ записан отдельно.`, card], '\n'),
+  orderCancelled: html`Заказ не записан.`,
 
   // A group's history from a Telegram Desktop export (ADR-0047): where its messages stand, above
   // [Записать N трат], [Проверить (N)] and [Отмена].
