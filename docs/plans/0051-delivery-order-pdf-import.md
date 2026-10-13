@@ -322,10 +322,11 @@ customer's name and card are not in it, because the parser never produced them.
 ### Notes
 
 - Deviations are recorded in each phase's row.
-- Followup, not acted on: sealing re-keys `sms:`, `rcpt:` and `stmt:` source keys (`rekeyContentSourceKeys`, `src/db/expenses.ts`), but not `order:`. A sealed ledger therefore keeps the Wolt order id in an order expense's source key.
 - Followup, not acted on: the future-delivery and sealed-ledger replies reuse the receipt copy (`futureReceipt`, «Дата на чеке…»; `receiptSealedLedger`, «…чеки в зашифрованный учёт…»), which names a чек, not a заказ.
 - Observation: `RECEIPTS_PER_DAY` is checked only by `recordReceipt`. An order import is not capped, and its rows count toward a later QR scan's cap (ADR-0052).
 - Observation: an expense that already holds an order is a candidate for the next order with the same total within a day. [Да] then answers `orderHasItems`.
+- Review fix (major): sealing re-keys `order:` source keys to `sealed:<expenseId>` too (`rekeyContentSourceKeys`), so a sealed ledger keeps no Wolt order id (ADR-0020). `68a5120`.
+- Review fix (minor): the README feature list names Wolt Serbia order-confirmation PDFs. `a8c11ec`.
 
 ### Close triggers
 
