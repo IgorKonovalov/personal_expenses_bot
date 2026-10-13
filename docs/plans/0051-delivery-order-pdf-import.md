@@ -316,16 +316,22 @@ customer's name and card are not in it, because the parser never produced them.
 |---|---|---|---|
 | 1: A Wolt PDF records an expense with its dishes | dev | done. Fixture PIB is `123456789`, not `100000001`: the done-when's search for `0000` matches `100000001`. The card text and the real-`readPdfLines` file test are in `src/bot/bot.test.ts`, which is not in Files touched. The parser also requires «Vrsta porudžbine» `Dostava`. The future and sealed refusals reuse `futureReceipt` and `receiptSealedLedger`, and they log `orderFuture` and `orderSealedLedger` | dd66240 |
 | 2: A matching expense is asked about | dev | done. `src/bot/flows.ts` is unchanged: `routeText` in `src/services/flowSessions.ts` routes text past a pending `orderImport` the way it does past a statement. `answerOrderPdf` moved from `statement.ts` into `order.ts`. A candidate deleted meanwhile gets the new `messages.orderCandidateGone` line, and [Отмена] gets `messages.orderCancelled`. A PDF that asks logs the outcome `orderAsked`. Handler tests are in `src/bot/bot.test.ts` | aa1611f |
-| 3: Order items stay out of /prices; the guide covers the PDF | dev | done. The plaintext filter is `r.kind = 'fiscal'` in `listLedgerDatedItems`, which /prices, the review and the coverage tool all read. The coverage tool therefore changes only in its header comment and drops order items without counting them apart. A sealed row's folded order is recognised by its null `verifyUrl` | committed with this row |
+| 3: Order items stay out of /prices; the guide covers the PDF | dev | done. The plaintext filter is `r.kind = 'fiscal'` in `listLedgerDatedItems`, which /prices, the review and the coverage tool all read. The coverage tool therefore changes only in its header comment and drops order items without counting them apart. A sealed row's folded order is recognised by its null `verifyUrl` | f0385b8 |
 | 4: A real order end to end | human | not started | |
 
 ### Notes
 
+- Deviations are recorded in each phase's row.
+- Followup, not acted on: sealing re-keys `sms:`, `rcpt:` and `stmt:` source keys (`rekeyContentSourceKeys`, `src/db/expenses.ts`), but not `order:`. A sealed ledger therefore keeps the Wolt order id in an order expense's source key.
+- Followup, not acted on: the future-delivery and sealed-ledger replies reuse the receipt copy (`futureReceipt`, «Дата на чеке…»; `receiptSealedLedger`, «…чеки в зашифрованный учёт…»), which names a чек, not a заказ.
+- Observation: `RECEIPTS_PER_DAY` is checked only by `recordReceipt`. An order import is not capped, and its rows count toward a later QR scan's cap (ADR-0052).
+- Observation: an expense that already holds an order is a candidate for the next order with the same total within a day. [Да] then answers `orderHasItems`.
+
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** a Wolt Serbia order PDF in DM records one expense with its dishes as `receipts` rows of kind `order` (migration `0030`). A same-amount expense within a day asks first: [Да] attaches the dishes, [Нет] records apart, [Отмена] drops it. Order items are left out of `/prices`, the review and the coverage tool. `guide/receipts.mdx` has a Wolt section.
+- **User-visible surface changed:** PDF handler (`src/bot/handlers/statement.ts`, `src/bot/handlers/order.ts`); new messages `orderUnreadable`, `orderAsk`, `orderSameButton`, `orderNewButton`, `orderHasItems`, `orderCandidateGone`, `orderCancelled`; callback data `ord:same`, `ord:new`, `ord:x`; docs site receipts page.
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 156 files, 2383 tests; `pnpm build` exit 0; `pnpm docs:check` exit 0; `pnpm docs:chats` then `pnpm --dir site build` exit 0, 23 pages; `node scripts/check-doc-links.mjs` exit 0.
+- **Outstanding `human` phases:** Phase 4 (a real order end to end after the deploy).
 
 ## Followups
