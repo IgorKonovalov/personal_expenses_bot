@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.41.0 (2026-10-13)
+
+From Plan 0051 (a delivery-order PDF records one expense with its dishes).
+
+- A Wolt Serbia order confirmation PDF («Potvrda porudžbine») sent in DM records one expense: the
+  restaurant, the order total, the delivery time, and the dishes on the card as a receipt's items
+  (ADR-0052). A PDF the bot recognises but can't check is refused with a hint to type it.
+- If an expense with the same amount is already recorded within a day, the bot asks first:
+  [Да, это он] attaches the dishes to it, [Нет, записать отдельно] records the order apart.
+- Re-sending the same order answers «уже записано». Order dishes stay out of /prices.
+- The guide's receipts page has a Wolt section.
+
 ## 0.40.0 (2026-10-11)
 
 From Plan 0050 (product prices without cafe and restaurant receipts).

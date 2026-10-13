@@ -11,12 +11,12 @@ status and date. What a plan did lives in the plan.
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
-| [0051](0051-delivery-order-pdf-import.md) | A delivery-order PDF records one expense with its dishes | approved (2026-10-12) |
 
 ## Recently closed
 
 | Plan | Title | Status |
 |---|---|---|
+| [0051](done/0051-delivery-order-pdf-import.md) | A delivery-order PDF records one expense with its dishes | done (2026-10-13): built as planned after one fix pass (one major, one minor), two followups open, Phase 4 real order owed, v0.41.0 |
 | [0050](done/0050-prices-without-cafe-receipts.md) | Product prices without cafe and restaurant receipts | done (2026-10-11): built as planned, one nit fixed at close, Phase 3 live check owed, v0.40.0 |
 | [0049](done/0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | done (2026-10-11): built as planned, two minors and one nit fixed at close, two minors and two nits open, Phase 6 live check owed, v0.39.0 |
 | [0048](done/0048-several-expenses-per-message-day-list-more-menu.md) | Several expenses in one message, a tappable day list under /today, and a calmer «Ещё» menu | done (2026-10-11): built as planned, one nit fixed at close, two nits open, Phase 4 live check owed, v0.38.0 |

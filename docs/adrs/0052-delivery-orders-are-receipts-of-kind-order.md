@@ -1,8 +1,8 @@
 # ADR-0052: A delivery order is a `receipts` row of kind `order`, with no fiscal fields
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-10-12
-> **Related plan(s):** [Plan 0051](../plans/0051-delivery-order-pdf-import.md)
+> **Related plan(s):** [Plan 0051](../plans/done/0051-delivery-order-pdf-import.md)
 
 ## Context
 

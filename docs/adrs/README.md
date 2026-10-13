@@ -58,4 +58,4 @@ never rewrite. **Rows are pointers:** link, title (the ADR's H1), status and dat
 | [0049](0049-a-multi-line-message-records-one-expense-per-line-all-or-nothing.md) | A multi-line message records one expense per line, all or nothing, under one card | accepted (2026-10-11) |
 | [0050](0050-a-second-navigation-level-menu-hub-edited-in-place.md) | A second navigation level: a ☰ Меню hub edited in place, and /help as topics | accepted (2026-10-11) |
 | [0051](0051-product-prices-leave-out-cafe-receipts-by-category.md) | Product prices leave out receipts filed under the cafe category | accepted (2026-10-11) |
-| [0052](0052-delivery-orders-are-receipts-of-kind-order.md) | A delivery order is a `receipts` row of kind `order`, with no fiscal fields | proposed (2026-10-12) |
+| [0052](0052-delivery-orders-are-receipts-of-kind-order.md) | A delivery order is a `receipts` row of kind `order`, with no fiscal fields | accepted (2026-10-13) |

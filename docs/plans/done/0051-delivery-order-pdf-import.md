@@ -1,8 +1,8 @@
 # 0051: A delivery-order PDF records one expense with its dishes
 
-> **Status:** in-progress
+> **Status:** done (2026-10-13): built as planned after one fix pass (one major, one minor), two followups open, Phase 4 real order owed, v0.41.0
 > **Created:** 2026-10-12
-> **Related ADRs:** [ADR-0052](../adrs/0052-delivery-orders-are-receipts-of-kind-order.md), [ADR-0032](../adrs/0032-statement-rows-match-recorded-expenses.md), [ADR-0033](../adrs/0033-pdf-statements-via-pdfjs-dist.md), [ADR-0042](../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md)
+> **Related ADRs:** [ADR-0052](../../adrs/0052-delivery-orders-are-receipts-of-kind-order.md), [ADR-0032](../../adrs/0032-statement-rows-match-recorded-expenses.md), [ADR-0033](../../adrs/0033-pdf-statements-via-pdfjs-dist.md), [ADR-0042](../../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md)
 
 ## TL;DR
 
@@ -335,4 +335,19 @@ customer's name and card are not in it, because the parser never produced them.
 - **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 156 files, 2383 tests; `pnpm build` exit 0; `pnpm docs:check` exit 0; `pnpm docs:chats` then `pnpm --dir site build` exit 0, 23 pages; `node scripts/check-doc-links.mjs` exit 0.
 - **Outstanding `human` phases:** Phase 4 (a real order end to end after the deploy).
 
+## Close review
+
+- The first review found one major (sealing kept the `order:` source key, so a sealed ledger still
+  held the Wolt order id, against ADR-0020) and one minor (the README feature list missed the
+  order PDF). `68a5120` adds `order:` to `rekeyContentSourceKeys` with a repo test and a service
+  test asserting `sealed:<expenseId>`. `a8c11ec` updates the README.
+- Gate rerun at the tip on 2026-10-13: `pnpm typecheck`, `pnpm lint`, `pnpm test` (156 files,
+  2383 tests), `pnpm docs:check` and `node scripts/check-doc-links.mjs` all exit 0.
+- Phase 4 (`human`, a real order end to end) is owed after the deploy.
+
 ## Followups
+
+- The future-delivery and sealed-ledger replies to an order reuse the receipt copy, which says
+  чек rather than заказ.
+- An order import is not capped by `RECEIPTS_PER_DAY`, yet its rows count toward a later QR
+  scan's cap.
