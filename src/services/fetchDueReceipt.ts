@@ -20,6 +20,7 @@ import {
   recordReceiptFailure,
   resetFailedReceipt,
   setReceiptCard,
+  type FiscalReceipt,
   type Receipt,
   type ReceiptId,
 } from '../db/receipts.js';
@@ -46,7 +47,7 @@ export type FetchOutcome =
 
 // A per-country adapter over the tax site. It must settle once `signal` aborts.
 export type ReceiptFetcher = (
-  receipt: Pick<Receipt, 'verifyUrl' | 'fiscalId'>,
+  receipt: Pick<FiscalReceipt, 'verifyUrl' | 'fiscalId'>,
   signal: AbortSignal,
 ) => Promise<FetchOutcome>;
 
@@ -120,7 +121,7 @@ export async function fetchDueReceipt(
 
 async function runFetcher(
   deps: FetchDeps,
-  receipt: Receipt,
+  receipt: FiscalReceipt,
   signal: AbortSignal,
 ): Promise<FetchOutcome> {
   try {
@@ -130,7 +131,7 @@ async function runFetcher(
   }
 }
 
-function enrichExpense(deps: FetchDeps, receipt: Receipt, sellerName: string): void {
+function enrichExpense(deps: FetchDeps, receipt: FiscalReceipt, sellerName: string): void {
   const { db } = deps;
   // A user who changed either field has taken the expense over: the worker leaves it alone.
   const state = findReceiptExpenseState(db, receipt.expenseId, deps.placeholder);
@@ -170,7 +171,7 @@ function warnOnMismatch(
 
 function failed(
   deps: FetchDeps,
-  receipt: Receipt,
+  receipt: FiscalReceipt,
   reason: FetchFailure,
   now: Date,
 ): FetchDueResult {
@@ -304,6 +305,8 @@ export function retryReceipt(
   if (ledger === undefined) return { kind: 'forbidden' };
   const receipt = findReceiptByExpense(db, expense.id);
   if (receipt === undefined) return { kind: 'notFound' };
+  // An order is born fetched: it never fails.
+  if (receipt.kind !== 'fiscal') return { kind: 'notFailed' };
   if (!resetFailedReceipt(db, receipt.id, input.now)) return { kind: 'notFailed' };
   deps.logger.info({ receiptId: receipt.id, country: receipt.country }, 'receipt fetch retried');
   return { kind: 'retrying', expense, ledger };

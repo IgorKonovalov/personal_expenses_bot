@@ -141,7 +141,9 @@ function duplicate(deps: RecordDeps, user: User, expense: Expense): RecordReceip
   if (ledger === undefined)
     throw new Error(`receipt source key reused across users (${expense.id})`);
   const receipt = findReceiptByExpense(deps.db, expense.id);
-  if (receipt === undefined) throw new Error(`receipt expense ${expense.id} has no receipt`);
+  if (receipt?.kind !== 'fiscal') {
+    throw new Error(`receipt expense ${expense.id} has no fiscal receipt`);
+  }
   deps.logger.info(
     { receiptId: receipt.id, expenseId: expense.id, country: receipt.country, userId: user.id },
     'duplicate receipt',

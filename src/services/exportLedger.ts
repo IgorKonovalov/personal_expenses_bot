@@ -166,7 +166,7 @@ function receiptLookup(
     if (receipt === undefined) return undefined;
     return {
       sellerName: receipt.sellerName,
-      verifyUrl: receipt.verifyUrl,
+      verifyUrl: receipt.kind === 'fiscal' ? receipt.verifyUrl : null,
       items: itemsByReceipt.get(receipt.id) ?? [],
     };
   };

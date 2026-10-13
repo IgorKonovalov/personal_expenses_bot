@@ -10,13 +10,12 @@ export type ReceiptId = string & { readonly __brand: 'ReceiptId' };
 
 export type FetchState = 'pending' | 'fetched' | 'failed';
 
-export interface Receipt {
+// A fiscal receipt, enriched from the tax site, or a delivery order, born with its seller and
+// items (ADR-0052). Only a fiscal receipt has a country, a fiscal id and a verification link.
+interface ReceiptBase {
   readonly id: ReceiptId;
   readonly expenseId: ExpenseId;
-  readonly country: ReceiptCountry;
-  readonly fiscalId: string;
   readonly merchantKey: string;
-  readonly verifyUrl: string;
   readonly issuedAt: Date;
   readonly sellerName: string | null;
   readonly fetchState: FetchState;
@@ -26,18 +25,40 @@ export interface Receipt {
   readonly createdAt: Date;
 }
 
+export interface FiscalReceipt extends ReceiptBase {
+  readonly kind: 'fiscal';
+  readonly country: ReceiptCountry;
+  readonly fiscalId: string;
+  readonly verifyUrl: string;
+}
+
+export interface OrderReceipt extends ReceiptBase {
+  readonly kind: 'order';
+  // `<source>:<order id>:<ledgerId>`: unique, so a re-sent order is a duplicate.
+  readonly orderKey: string;
+}
+
+export type Receipt = FiscalReceipt | OrderReceipt;
+
 export type NewReceipt = Pick<
-  Receipt,
+  FiscalReceipt,
   'id' | 'expenseId' | 'country' | 'fiscalId' | 'merchantKey' | 'verifyUrl' | 'issuedAt'
 > & { readonly createdAt: Date };
+
+export type NewOrderReceipt = Pick<
+  OrderReceipt,
+  'id' | 'expenseId' | 'orderKey' | 'merchantKey' | 'issuedAt'
+> & { readonly sellerName: string; readonly createdAt: Date };
 
 interface ReceiptRow {
   id: string;
   expense_id: string;
-  country: string;
-  fiscal_id: string;
+  kind: string;
+  country: string | null;
+  fiscal_id: string | null;
+  order_key: string | null;
   merchant_key: string;
-  verify_url: string;
+  verify_url: string | null;
   issued_at: string;
   seller_name: string | null;
   fetch_state: string;
@@ -48,8 +69,8 @@ interface ReceiptRow {
   created_at: string;
 }
 
-const COLUMNS = `id, expense_id, country, fiscal_id, merchant_key, verify_url, issued_at,
-  seller_name, fetch_state, attempts, next_fetch_at, card_chat_id, card_message_id, created_at`;
+const COLUMNS = `id, expense_id, kind, country, fiscal_id, order_key, merchant_key, verify_url,
+  issued_at, seller_name, fetch_state, attempts, next_fetch_at, card_chat_id, card_message_id, created_at`;
 
 // A new receipt is `pending` and due at once.
 export function insertReceipt(db: Db, receipt: NewReceipt): void {
@@ -68,6 +89,33 @@ export function insertReceipt(db: Db, receipt: NewReceipt): void {
     receipt.createdAt.toISOString(),
     receipt.createdAt.toISOString(),
   );
+}
+
+// An order is born `fetched` with its seller: the fetch worker never sees it (ADR-0052).
+export function insertOrderReceipt(db: Db, receipt: NewOrderReceipt): void {
+  db.prepare<[string, string, string, string, string, string, string]>(
+    `INSERT INTO receipts (id, expense_id, kind, order_key, merchant_key, issued_at, seller_name,
+                           fetch_state, attempts, created_at)
+     VALUES (?, ?, 'order', ?, ?, ?, ?, 'fetched', 0, ?)`,
+  ).run(
+    receipt.id,
+    receipt.expenseId,
+    receipt.orderKey,
+    receipt.merchantKey,
+    receipt.issuedAt.toISOString(),
+    receipt.sellerName,
+    receipt.createdAt.toISOString(),
+  );
+}
+
+export function findReceiptByOrderKey(db: Db, orderKey: string): OrderReceipt | undefined {
+  const row = db
+    .prepare<[string], ReceiptRow>(`SELECT ${COLUMNS} FROM receipts WHERE order_key = ?`)
+    .get(orderKey);
+  if (row === undefined) return undefined;
+  const receipt = toReceipt(row);
+  if (receipt.kind !== 'order') throw new Error(`receipt ${row.id} has an order key`);
+  return receipt;
 }
 
 export function findReceiptByExpense(db: Db, expenseId: ExpenseId): Receipt | undefined {
@@ -107,8 +155,9 @@ export function findMerchantCategory(
   return id === undefined ? undefined : (id as CategoryId);
 }
 
-// The pending receipt due earliest at `now`, if any: the worker's queue (ADR-0018).
-export function findDueReceipt(db: Db, now: Date): Receipt | undefined {
+// The pending receipt due earliest at `now`, if any: the worker's queue (ADR-0018). Only a
+// fiscal receipt is ever pending.
+export function findDueReceipt(db: Db, now: Date): FiscalReceipt | undefined {
   const row = db
     .prepare<[string], ReceiptRow>(
       `SELECT ${COLUMNS} FROM receipts
@@ -117,7 +166,10 @@ export function findDueReceipt(db: Db, now: Date): Receipt | undefined {
         LIMIT 1`,
     )
     .get(now.toISOString());
-  return row === undefined ? undefined : toReceipt(row);
+  if (row === undefined) return undefined;
+  const receipt = toReceipt(row);
+  if (receipt.kind !== 'fiscal') throw new Error(`receipt ${row.id} is a pending order`);
+  return receipt;
 }
 
 // Compare-and-set on `pending`: false when another fetch already settled the receipt, and then
@@ -298,9 +350,6 @@ export function deleteLedgerReceipts(db: Db, ledgerId: LedgerId): number {
 }
 
 function toReceipt(row: ReceiptRow): Receipt {
-  if (row.country !== 'RS' && row.country !== 'ME') {
-    throw new Error(`receipt ${row.id} has an unknown country`);
-  }
   if (
     row.fetch_state !== 'pending' &&
     row.fetch_state !== 'fetched' &&
@@ -308,13 +357,10 @@ function toReceipt(row: ReceiptRow): Receipt {
   ) {
     throw new Error(`receipt ${row.id} has an unknown fetch state`);
   }
-  return {
+  const base: ReceiptBase = {
     id: row.id as ReceiptId,
     expenseId: row.expense_id as ExpenseId,
-    country: row.country,
-    fiscalId: row.fiscal_id,
     merchantKey: row.merchant_key,
-    verifyUrl: row.verify_url,
     issuedAt: new Date(row.issued_at),
     sellerName: row.seller_name,
     fetchState: row.fetch_state,
@@ -325,5 +371,23 @@ function toReceipt(row: ReceiptRow): Receipt {
         ? null
         : { chatId: row.card_chat_id, messageId: row.card_message_id },
     createdAt: new Date(row.created_at),
+  };
+  if (row.kind === 'order') {
+    if (row.order_key === null) throw new Error(`order receipt ${row.id} has no order key`);
+    return { ...base, kind: 'order', orderKey: row.order_key };
+  }
+  if (row.kind !== 'fiscal') throw new Error(`receipt ${row.id} has an unknown kind`);
+  if (row.country !== 'RS' && row.country !== 'ME') {
+    throw new Error(`receipt ${row.id} has an unknown country`);
+  }
+  if (row.fiscal_id === null || row.verify_url === null) {
+    throw new Error(`fiscal receipt ${row.id} lacks its fiscal fields`);
+  }
+  return {
+    ...base,
+    kind: 'fiscal',
+    country: row.country,
+    fiscalId: row.fiscal_id,
+    verifyUrl: row.verify_url,
   };
 }

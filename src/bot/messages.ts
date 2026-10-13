@@ -2447,6 +2447,8 @@ export const messages = {
   statementNoText: html`В этом PDF нет текста, похоже на скан. Скачайте выписку в e-banking в формате PDF и отправьте файл.`,
   statementUnreadable: html`Не удалось прочитать этот PDF. Скачайте выписку в e-banking заново и отправьте ещё раз.`,
   statementCancelled: html`Выписка не записана.`,
+  // A delivery order PDF (Plan 0051) that is an order but failed a check.
+  orderUnreadable: html`Не получилось разобрать заказ из PDF. Запишите его текстом, например: 1144 доставка`,
 
   // A group's history from a Telegram Desktop export (ADR-0047): where its messages stand, above
   // [Записать N трат], [Проверить (N)] and [Отмена].

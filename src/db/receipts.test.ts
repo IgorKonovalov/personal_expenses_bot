@@ -13,7 +13,10 @@ import { runMigrations } from './migrate.js';
 import {
   countReceiptsCreatedBy,
   findMerchantCategory,
+  findDueReceipt,
   findReceiptByExpense,
+  findReceiptByOrderKey,
+  insertOrderReceipt,
   insertReceipt,
   type ReceiptId,
 } from './receipts.js';
@@ -94,6 +97,7 @@ describe('receipts', () => {
     expect(findReceiptByExpense(db, expenseId)).toEqual({
       id: 'receipt-1',
       expenseId,
+      kind: 'fiscal',
       country: 'RS',
       fiscalId: 'fiscal-1',
       merchantKey: 'rs:AAAA1111',
@@ -123,6 +127,89 @@ describe('receipts', () => {
 
     softDeleteExpense(db, first, NOW);
     expect(findMerchantCategory(db, LEDGER, 'rs:AAAA1111')).toBe(other);
+  });
+});
+
+function addOrderExpense(n: number): ExpenseId {
+  const expenseId = `order-expense-${n}` as ExpenseId;
+  insertExpenseOrGetExisting(db, {
+    id: expenseId,
+    ledgerId: LEDGER,
+    createdBy: USER,
+    amountMinor: 114400,
+    currency: 'RSD',
+    description: 'Primer Kuhinja',
+    occurredAt: NOW,
+    occurredOn: '2026-10-01' as LocalDate,
+    sourceKey: `order:wolt-rs:order-${n}:${LEDGER}`,
+    createdAt: NOW,
+    categoryId: other,
+  });
+  return expenseId;
+}
+
+describe('order receipts (ADR-0052)', () => {
+  it('stores an order as fetched with its seller, found by expense and by order key', () => {
+    const expenseId = addOrderExpense(1);
+    insertOrderReceipt(db, {
+      id: 'order-1' as ReceiptId,
+      expenseId,
+      orderKey: `wolt-rs:order-1:${LEDGER}`,
+      merchantKey: 'wolt-rs:123456789',
+      issuedAt: NOW,
+      sellerName: 'Primer Kuhinja',
+      createdAt: NOW,
+    });
+
+    const stored = {
+      id: 'order-1',
+      expenseId,
+      kind: 'order',
+      orderKey: `wolt-rs:order-1:${LEDGER}`,
+      merchantKey: 'wolt-rs:123456789',
+      issuedAt: NOW,
+      sellerName: 'Primer Kuhinja',
+      fetchState: 'fetched',
+      attempts: 0,
+      nextFetchAt: null,
+      card: null,
+      createdAt: NOW,
+    };
+    expect(findReceiptByExpense(db, expenseId)).toEqual(stored);
+    expect(findReceiptByOrderKey(db, `wolt-rs:order-1:${LEDGER}`)).toEqual(stored);
+    expect(findDueReceipt(db, new Date('2030-01-01T00:00:00Z'))).toBeUndefined();
+  });
+
+  const insertRaw = (values: string) =>
+    db
+      .prepare(
+        `INSERT INTO receipts (id, expense_id, kind, country, fiscal_id, order_key, merchant_key,
+                               verify_url, issued_at, seller_name, fetch_state, created_at)
+         VALUES ${values}`,
+      )
+      .run();
+
+  it('refuses an order with a fiscal id, and a fiscal receipt with no link, on the CHECK', () => {
+    addOrderExpense(1);
+    addOrderExpense(2);
+    expect(() =>
+      insertRaw(`('r1', 'order-expense-1', 'order', NULL, 'fiscal-1', 'k1', 'm', NULL,
+                  '${NOW.toISOString()}', 'Shop', 'fetched', '${NOW.toISOString()}')`),
+    ).toThrow(/CHECK constraint failed/);
+    expect(() =>
+      insertRaw(`('r2', 'order-expense-2', 'fiscal', 'RS', 'fiscal-2', NULL, 'm', NULL,
+                  '${NOW.toISOString()}', NULL, 'pending', '${NOW.toISOString()}')`),
+    ).toThrow(/CHECK constraint failed/);
+  });
+
+  it('refuses a second order row with the same order key on the unique index', () => {
+    addOrderExpense(1);
+    addOrderExpense(2);
+    const order = (id: string, expenseId: string) =>
+      insertRaw(`('${id}', '${expenseId}', 'order', NULL, NULL, 'same-key', 'm', NULL,
+                  '${NOW.toISOString()}', 'Shop', 'fetched', '${NOW.toISOString()}')`);
+    order('r1', 'order-expense-1');
+    expect(() => order('r2', 'order-expense-2')).toThrow(/UNIQUE constraint failed/);
   });
 });
 

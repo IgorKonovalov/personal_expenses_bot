@@ -237,7 +237,8 @@ export interface SealedPayloadV1 {
 
 export interface SealedReceipt {
   readonly sellerName: string | null;
-  readonly verifyUrl: string;
+  // Null for a delivery order, which has no verification link (ADR-0052).
+  readonly verifyUrl: string | null;
   readonly items: readonly {
     readonly name: string;
     // Decimal source text, e.g. `0.535`: a quantity, not money.
@@ -286,7 +287,9 @@ function decodeReceipt(value: unknown): SealedReceipt {
   if (r.sellerName !== null && typeof r.sellerName !== 'string') {
     throw new Error('sealed seller is no string');
   }
-  if (typeof r.verifyUrl !== 'string') throw new Error('sealed receipt link is no string');
+  if (r.verifyUrl !== null && typeof r.verifyUrl !== 'string') {
+    throw new Error('sealed receipt link is no string');
+  }
   if (!Array.isArray(r.items)) throw new Error('sealed receipt items are no list');
   const items = (r.items as unknown[]).map((item) => {
     if (typeof item !== 'object' || item === null) throw new Error('sealed item is no object');

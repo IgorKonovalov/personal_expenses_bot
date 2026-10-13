@@ -52,7 +52,7 @@ export function sealLedgerRows(
       if (r.fetchState === 'pending') throw new Error(`receipt ${r.id} is still pending`);
       const receipt: SealedReceipt = {
         sellerName: r.sellerName,
-        verifyUrl: r.verifyUrl,
+        verifyUrl: r.kind === 'fiscal' ? r.verifyUrl : null,
         items: listReceiptItems(db, r.id),
       };
       return [r.expenseId, receipt] as const;

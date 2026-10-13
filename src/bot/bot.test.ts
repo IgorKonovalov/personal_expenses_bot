@@ -36,6 +36,7 @@ import { parseExpenseText } from '../domain/expenseText.js';
 import { buildKoriscenjeSms } from '../domain/bankSms/testing/buildKoriscenjeSms.js';
 import { decodeReceiptUrl } from '../domain/receipts/index.js';
 import { buildRsUrl } from '../domain/receipts/testing/buildRsVl.js';
+import { woltOrderPdf } from '../domain/orders/testing/buildWoltRs.js';
 import { buildPdf } from '../domain/statements/testing/buildPdf.js';
 import {
   cardRow,
@@ -9413,6 +9414,136 @@ describe('bank statements (Plan 0027)', () => {
       expect(loads.count).toBe(1);
     } finally {
       vi.doUnmock('pdfjs-dist/legacy/build/pdf.mjs');
+    }
+  });
+});
+
+describe('delivery order PDFs (Plan 0051)', () => {
+  const SENT = new Date('2026-10-12T15:00:00Z');
+  const realFetch = globalThis.fetch;
+  let files: Map<string, Uint8Array>;
+  beforeEach(() => {
+    files = new Map();
+    globalThis.fetch = (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const body = files.get(url.slice(url.lastIndexOf('/') + 1));
+      return Promise.resolve(
+        body === undefined ? new Response('gone', { status: 404 }) : new Response(body),
+      );
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function orderBot(options: { logLevel?: 'info' | 'silent' } = {}) {
+    const harness = createTestBot({ now: SENT, ...options });
+    let updateId = 0;
+    harness.bot.api.config.use((prev, method, payload, signal) => {
+      if (method !== 'getFile') return prev(method, payload, signal);
+      const { file_id } = payload as { file_id: string };
+      return Promise.resolve({
+        ok: true,
+        result: { file_id, file_unique_id: file_id, file_path: `files/${file_id}` } as never,
+      });
+    });
+    const send = (text: string) =>
+      harness.bot.handleUpdate(
+        textUpdate({ updateId: ++updateId, messageId: updateId, text, date: SENT }),
+      );
+    const sendPdf = (bytes: Uint8Array) => {
+      const fileId = `file-${++updateId}`;
+      files.set(fileId, bytes);
+      return harness.bot.handleUpdate({
+        update_id: updateId,
+        message: {
+          message_id: updateId,
+          date: Math.floor(SENT.getTime() / 1000),
+          chat: { id: ALLOWED_ID, type: 'private', first_name: 'Test' },
+          from: { id: ALLOWED_ID, is_bot: false, first_name: 'Test' },
+          document: {
+            file_id: fileId,
+            file_unique_id: fileId,
+            file_name: 'order.pdf',
+            mime_type: 'application/pdf',
+            file_size: bytes.length,
+          },
+        },
+      });
+    };
+    const tap = (data: string) =>
+      harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: 500 }));
+    const sent = () => sentTexts(harness.calls.filter((call) => call.method === 'sendMessage'));
+    return { ...harness, send, sendPdf, tap, sent };
+  }
+
+  const ORDER_CARD =
+    'Записано в «Личные расходы»: <b>1 144.00 RSD</b> — Primer Kuhinja · Кафе и рестораны\n' +
+    'Primer Kuhinja · 2 позиции\n<blockquote expandable>1. Nudle sa povrćem — 975.00 RSD\n' +
+    '2. Prolećne rolnice — 169.00 RSD</blockquote>';
+
+  it('records a Wolt order PDF read by the real PDF reader, and answers with its card', async () => {
+    const { sendPdf, sent, db } = orderBot();
+
+    await sendPdf(woltOrderPdf());
+
+    expect(
+      db.prepare('SELECT amount_minor, currency, occurred_on, description FROM expenses').all(),
+    ).toEqual([
+      {
+        amount_minor: 114400,
+        currency: 'RSD',
+        occurred_on: '2026-10-12',
+        description: 'Primer Kuhinja',
+      },
+    ]);
+    expect(sent()).toEqual([ORDER_CARD]);
+  });
+
+  it('answers a re-sent order with «уже записано» and the stored card', async () => {
+    const { sendPdf, sent, db } = orderBot();
+
+    await sendPdf(woltOrderPdf());
+    await sendPdf(woltOrderPdf());
+
+    expect(expenseCount(db)).toEqual({ n: 1 });
+    expect(sent()).toEqual([ORDER_CARD, `Уже записано.\n${ORDER_CARD}`]);
+  });
+
+  it('answers an order that fails a check with orderUnreadable and records nothing', async () => {
+    const { sendPdf, sent, db } = orderBot();
+
+    await sendPdf(woltOrderPdf({ total: '1.244,00' }));
+
+    expect(expenseCount(db)).toEqual({ n: 0 });
+    expect(sent()).toEqual([messages.orderUnreadable]);
+  });
+
+  it('logs the outcome and sizes, never the restaurant, an amount, the customer or the card', async () => {
+    const { sendPdf, logLines } = orderBot({ logLevel: 'info' });
+
+    await sendPdf(woltOrderPdf());
+    await sendPdf(woltOrderPdf());
+    await sendPdf(woltOrderPdf({ total: '1.244,00' }));
+
+    const reads = logLines
+      .map((line) => JSON.parse(line) as { msg: string; outcome?: string })
+      .filter((line) => line.msg === 'statement read');
+    expect(reads.map((line) => line.outcome)).toEqual([
+      'order',
+      'orderDuplicate',
+      'orderUnreadable',
+    ]);
+    const all = logLines.join('\n');
+    for (const secret of [
+      'Primer Kuhinja',
+      'Test Korisnik',
+      '****0000',
+      '114400',
+      '1.144',
+      'Nudle',
+    ]) {
+      expect(all, secret).not.toContain(secret);
     }
   });
 });

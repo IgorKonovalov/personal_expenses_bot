@@ -166,6 +166,27 @@ describe('payload', () => {
     expect(decodePayload(encodePayload(payload))).toEqual(payload);
   });
 
+  it('round-trips an order receipt with a null link, and still opens a string link', () => {
+    const order = {
+      v: 1 as const,
+      amountMinor: 114400,
+      description: 'Primer Kuhinja',
+      categoryId: 3,
+      receipt: {
+        sellerName: 'Primer Kuhinja',
+        verifyUrl: null,
+        items: [{ name: 'Nudle', quantity: '1', totalMinor: 114400 }],
+      },
+    };
+    expect(decodePayload(encodePayload(order))).toEqual(order);
+    const fiscal = { ...order, receipt: { ...order.receipt, verifyUrl: 'https://example.test/v' } };
+    expect(decodePayload(encodePayload(fiscal))).toEqual(fiscal);
+    const bad = Buffer.from(
+      JSON.stringify({ ...order, receipt: { ...order.receipt, verifyUrl: 1 } }),
+    );
+    expect(() => decodePayload(bad)).toThrow(/link/);
+  });
+
   it('rejects a non-integer amount instead of rounding it', () => {
     const bytes = Buffer.from(
       JSON.stringify({ v: 1, amountMinor: 450.5, description: 'кофе', categoryId: null }),

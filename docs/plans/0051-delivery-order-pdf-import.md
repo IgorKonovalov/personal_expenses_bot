@@ -1,6 +1,6 @@
 # 0051: A delivery-order PDF records one expense with its dishes
 
-> **Status:** approved (2026-10-12)
+> **Status:** in-progress
 > **Created:** 2026-10-12
 > **Related ADRs:** [ADR-0052](../adrs/0052-delivery-orders-are-receipts-of-kind-order.md), [ADR-0032](../adrs/0032-statement-rows-match-recorded-expenses.md), [ADR-0033](../adrs/0033-pdf-statements-via-pdfjs-dist.md), [ADR-0042](../adrs/0042-heavy-jobs-in-a-child-process-handed-off-by-the-handler.md)
 
@@ -314,7 +314,7 @@ customer's name and card are not in it, because the parser never produced them.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: A Wolt PDF records an expense with its dishes | dev | not started | |
+| 1: A Wolt PDF records an expense with its dishes | dev | done. Fixture PIB is `123456789`, not `100000001`: the done-when's search for `0000` matches `100000001`. The card text and the real-`readPdfLines` file test are in `src/bot/bot.test.ts`, which is not in Files touched. The parser also requires «Vrsta porudžbine» `Dostava`. The future and sealed refusals reuse `futureReceipt` and `receiptSealedLedger`, and they log `orderFuture` and `orderSealedLedger` | committed with this row |
 | 2: A matching expense is asked about | dev | not started | |
 | 3: Order items stay out of /prices; the guide covers the PDF | dev | not started | |
 | 4: A real order end to end | human | not started | |
