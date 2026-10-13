@@ -29,7 +29,8 @@ too. In short, the bot:
 - keeps a budget with payday periods and category caps, recurring expenses, debts and split
   bills, and tags for trips and projects;
 - reads Serbian and Montenegrin fiscal receipts (QR photo, link or live scan) with their items
-  and product prices, Serbian bank SMS, and Raiffeisen banka Srbija PDF statements;
+  and product prices, Serbian bank SMS, Raiffeisen banka Srbija PDF statements, and Wolt
+  Serbia order-confirmation PDFs, recorded with their dishes;
 - converts reports between currencies at the NBS middle rate of the expense's day;
 - keeps a group's shared ledger with totals per member and an equal-split settle-up;
 - can seal a personal ledger with a passphrase, and exports everything as CSV or Excel.
