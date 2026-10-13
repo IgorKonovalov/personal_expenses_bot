@@ -64,6 +64,48 @@ describe('parseWoltRs', () => {
     ]);
   });
 
+  it('joins a product name wrapped around a row of numbers alone', () => {
+    const order = orderOf(
+      woltOrderLines({
+        payments: [{ label: 'Visa: ****0000', amount: '1.042,97' }],
+        items: [
+          { name: 'Primer hleb 400g', total: '187,99', compact: true },
+          { name: 'Primer jogurt visoki protein 1.5% m.m -', wrapTail: '150g', total: '71,99' },
+          { name: 'Primer sir polutvrdi u komadu', wrapTail: '480g', total: '736,99' },
+          { name: 'Primer voda 1.5 l', total: '46,00', compact: true },
+        ],
+        total: '1.042,97',
+      }),
+    );
+    expect(order.items).toEqual([
+      { name: 'Primer hleb 400g', quantity: '1', totalMinor: 18799 },
+      { name: 'Primer jogurt visoki protein 1.5% m.m - 150g', quantity: '1', totalMinor: 7199 },
+      { name: 'Primer sir polutvrdi u komadu 480g', quantity: '1', totalMinor: 73699 },
+      { name: 'Primer voda 1.5 l', quantity: '1', totalMinor: 4600 },
+    ]);
+  });
+
+  it('refuses a name-only line midway between two items', () => {
+    const lines = woltOrderLines({
+      items: [
+        { name: 'Nudle sa povrćem', total: '975,00', compact: true },
+        { name: 'Prolećne rolnice', total: '169,00', compact: true },
+      ],
+    });
+    const names = new Set(['Nudle sa povrćem', 'Prolećne rolnice']);
+    const [first, second] = lines.filter((line) => names.has(line.cells[0]?.text ?? ''));
+    if (first === undefined || second === undefined) throw new Error('fixture rows missing');
+    const stray = {
+      page: 1,
+      y: (first.y + second.y) / 2,
+      cells: [{ x: WOLT_ORDER.x.label, text: '150g' }],
+    };
+    const at = lines.indexOf(second);
+    expect(parseWoltRs([...lines.slice(0, at), stray, ...lines.slice(at)])).toEqual({
+      kind: 'unreadableOrder',
+    });
+  });
+
   it('refuses an order whose dishes do not sum to the total', () => {
     expect(parseWoltRs(woltOrderLines({ total: '1.244,00' }))).toEqual({
       kind: 'unreadableOrder',

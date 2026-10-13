@@ -41,6 +41,9 @@ export interface WoltItemFixture {
   readonly vat?: string;
   // One full line at the margin, with no indented dish line or options.
   readonly compact?: boolean;
+  // The rest of a name too long for its column: `name` sits a half row above a row of the
+  // numbers alone, and this a half row below it.
+  readonly wrapTail?: string;
   readonly options?: readonly WoltOptionFixture[];
 }
 
@@ -87,12 +90,18 @@ export const WOLT_ORDER: WoltOrderFixture = {
 const TOP = 40;
 const LINE_GAP = 14;
 
+// A row and its distance below the previous one.
+interface Row {
+  readonly cells: PositionedCell[];
+  readonly gap?: number;
+}
+
 export function woltOrderLines(
   overrides: Partial<WoltOrderFixture> = {},
 ): readonly PositionedLine[] {
   const f = { ...WOLT_ORDER, ...overrides };
   const { x } = f;
-  const rows: PositionedCell[][] = [
+  const before: PositionedCell[][] = [
     [{ x: x.label, text: f.title }],
     [
       { x: x.label, text: 'Korisnik' },
@@ -126,7 +135,8 @@ export function woltOrderLines(
       { x: x.headerGross, text: 'Bruto cena artikla' },
       { x: x.headerTotal, text: 'Cena' },
     ],
-    ...f.items.flatMap((item) => itemRows(item, x)),
+  ];
+  const after: PositionedCell[][] = [
     [
       { x: x.label, text: f.totalLabel },
       { x: x.total, text: f.total },
@@ -134,31 +144,55 @@ export function woltOrderLines(
     [{ x: x.label, text: f.seller }],
     [{ x: x.label, text: `PIB: ${f.pib}` }],
   ];
-  return rows.map((cells, index) => ({ page: 1, y: TOP + index * LINE_GAP, cells }));
+  const all: Row[] = [
+    ...before.map((cells) => ({ cells })),
+    ...f.items.flatMap((item) => itemRows(item, x)),
+    ...after.map((cells) => ({ cells })),
+  ];
+  let y = TOP - LINE_GAP;
+  return all.map(({ cells, gap }) => {
+    y += gap ?? LINE_GAP;
+    return { page: 1, y, cells };
+  });
 }
 
-function itemRows(item: WoltItemFixture, x: typeof WOLT_X): PositionedCell[][] {
-  const full = (left: number, name: string): PositionedCell[] => [
-    { x: left, text: name },
+function itemRows(item: WoltItemFixture, x: typeof WOLT_X): Row[] {
+  const numbers: PositionedCell[] = [
     { x: x.vat, text: item.vat ?? '20%' },
     { x: x.quantity, text: item.quantity ?? '1' },
     { x: x.gross, text: item.total },
     { x: x.itemTotal, text: item.total },
   ];
-  if (item.compact === true) return [full(x.label, item.name)];
+  const full = (left: number, name: string): PositionedCell[] => [
+    { x: left, text: name },
+    ...numbers,
+  ];
+  if (item.wrapTail !== undefined) {
+    const half = LINE_GAP / 2;
+    return [
+      { cells: [{ x: x.label, text: item.name }] },
+      { cells: numbers, gap: half },
+      { cells: [{ x: x.label, text: item.wrapTail }], gap: half },
+    ];
+  }
+  if (item.compact === true) return [{ cells: full(x.label, item.name) }];
   return [
-    [
-      { x: x.label, text: item.name },
-      { x: x.itemTotal, text: item.total },
-    ],
-    full(x.indent, item.name),
-    ...(item.options ?? []).map((option) => [
-      { x: x.indent, text: option.name },
-      { x: x.vat, text: item.vat ?? '20%' },
-      { x: x.quantity, text: '1' },
-      { x: x.optionGross, text: option.gross },
-      { x: x.optionTotal, text: option.total },
-    ]),
+    {
+      cells: [
+        { x: x.label, text: item.name },
+        { x: x.itemTotal, text: item.total },
+      ],
+    },
+    { cells: full(x.indent, item.name) },
+    ...(item.options ?? []).map((option) => ({
+      cells: [
+        { x: x.indent, text: option.name },
+        { x: x.vat, text: item.vat ?? '20%' },
+        { x: x.quantity, text: '1' },
+        { x: x.optionGross, text: option.gross },
+        { x: x.optionTotal, text: option.total },
+      ],
+    })),
   ];
 }
 

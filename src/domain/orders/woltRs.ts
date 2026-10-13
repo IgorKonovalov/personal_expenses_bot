@@ -8,8 +8,9 @@ import type { DeliveryOrder, LocalDateTime, ParseOrderResult } from './types.js'
 // positioned lines (ADR-0033). Labels sit in the left column with their value in the line's
 // last cell. The dish table runs from its header to «Ukupno»: a line at the table's left margin
 // starts an item and carries its total, and the indented lines under it are the dish's own line
-// and its options. Every check that fails gives `unreadableOrder`, never a guess. The customer's
-// name and the card digits are never read.
+// and its options. A product name too long for its column wraps around a row of numbers alone.
+// Every check that fails gives `unreadableOrder`, never a guess. The customer's name and the card
+// digits are never read.
 
 export const WOLT_RS = 'wolt-rs';
 // «Vreme dostave» is a wall-clock time in Serbia.
@@ -22,6 +23,7 @@ const DELIVERED = /^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/;
 // `1.144,00`: dot thousands, comma decimals.
 const AMOUNT = /^(\d{1,3}(?:\.\d{3})*|\d+),(\d{2})$/;
 const QUANTITY = /^\d+(?:,\d+)?$/;
+const VAT_RATE = /^\d+%$/;
 const TOTAL = /^Ukupno u ([A-Z]{3})\b/;
 // A cell within this many points of the table's margin starts at it.
 const MARGIN_TOLERANCE = 2;
@@ -113,20 +115,81 @@ interface OpenItem {
   dishQuantity: string | undefined;
 }
 
+// A margin line holding only text: one line of a product name too long for its column.
+function isNameOnly(row: PositionedLine, columns: TableColumns): boolean {
+  const [first] = row.cells;
+  return (
+    row.cells.length === 1 &&
+    first !== undefined &&
+    Math.abs(first.x - columns.margin) <= MARGIN_TOLERANCE
+  );
+}
+
+// The numbers of an item whose name wraps: no name cell, the row opens on its VAT rate.
+function isNumbersOnly(row: PositionedLine, columns: TableColumns): boolean {
+  const [first] = row.cells;
+  return first !== undefined && first.x > columns.margin && VAT_RATE.test(first.text);
+}
+
+function startsItem(row: PositionedLine, columns: TableColumns): boolean {
+  const [first] = row.cells;
+  if (first === undefined) return false;
+  if (isNumbersOnly(row, columns)) return true;
+  return Math.abs(first.x - columns.margin) <= MARGIN_TOLERANCE && !isNameOnly(row, columns);
+}
+
+// Each item row's name, keyed by its index in `rows`. A wrapped name's lines sit at the margin a
+// few points above and below the one row carrying the item's numbers, while items are a full
+// row apart, so a name-only line belongs to the nearest item row on its page. A tie, or a
+// name-only line with no item row on its page, gives `undefined`.
+function itemNames(
+  rows: readonly PositionedLine[],
+  columns: TableColumns,
+): Map<number, string> | undefined {
+  const starts = rows.flatMap((row, index) => (startsItem(row, columns) ? [index] : []));
+  const parts = new Map<number, { y: number; text: string }[]>(
+    starts.map((index) => {
+      const row = rows[index];
+      const own = row === undefined || isNumbersOnly(row, columns) ? [] : [row];
+      return [index, own.map((line) => ({ y: line.y, text: line.cells[0]?.text ?? '' }))];
+    }),
+  );
+  for (const row of rows) {
+    if (!isNameOnly(row, columns)) continue;
+    const distances = starts
+      .filter((index) => rows[index]?.page === row.page)
+      .map((index) => ({ index, dy: Math.abs((rows[index]?.y ?? 0) - row.y) }))
+      .sort((a, b) => a.dy - b.dy);
+    const [nearest, next] = distances;
+    if (nearest === undefined || nearest.dy === next?.dy) return undefined;
+    parts.get(nearest.index)?.push({ y: row.y, text: row.cells[0]?.text ?? '' });
+  }
+  const names = new Map<number, string>();
+  for (const [index, lines] of parts) {
+    if (lines.length === 0) return undefined;
+    const ordered = lines.toSorted((a, b) => a.y - b.y).map((line) => line.text);
+    names.set(index, ordered.join(' '));
+  }
+  return names;
+}
+
 function readItems(
   rows: readonly PositionedLine[],
   columns: TableColumns,
 ): FetchedItem[] | undefined {
+  const names = itemNames(rows, columns);
+  if (names === undefined) return undefined;
   const items: OpenItem[] = [];
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const [first] = row.cells;
-    if (first === undefined) continue;
-    if (Math.abs(first.x - columns.margin) <= MARGIN_TOLERANCE) {
+    if (first === undefined || isNameOnly(row, columns)) continue;
+    const name = names.get(index);
+    if (name !== undefined) {
       const total = lastCell(row);
       const totalMinor = total === undefined ? undefined : parseAmount(total.text);
       if (totalMinor === undefined) return undefined;
       items.push({
-        name: first.text,
+        name,
         totalMinor,
         ownQuantity: quantityOf(row, columns),
         dishQuantity: undefined,
