@@ -1,6 +1,6 @@
 # Both stages use the same base, pinned by digest (the multi-arch index of node:24-alpine).
 # To update: resolve the new index digest for node:24-alpine and replace it in BOTH FROM lines.
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
 
 # Toolchain for better-sqlite3 in case no prebuilt binary matches; builder stage only.
 RUN apk add --no-cache python3 make g++
@@ -48,7 +48,7 @@ RUN node --input-type=module -e " \
   server.close(); \
   if (result.kind !== 'qr' || result.result.kind !== 'decoded') process.exit(1);"
 
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 
 ENV NODE_ENV=production
 WORKDIR /app
