@@ -58,8 +58,8 @@ sequenceDiagram
     participant T as Telegram
     participant B as bot adapter (src/bot)
     participant S as services + domain
-    U->>B: tap [📈 Диаграмма] (callback `wg`) on the anchor screen
-    B->>S: anchor screen -> period summary -> widget data (<= 1024 B)
+    U->>B: tap [📈 Диаграмма] (callback `wg`, or `wg:t:`/`wg:g:` on stateless screens)
+    B->>S: screen (anchor or callback data) -> summary -> widget data (<= 1024 B)
     B->>T: sendWidget(program, chat_data, caption, [🔍 Подробно] web_app)
     T-->>U: new message: donut in the bubble
     U->>T: tap a slice -> request("d:<periodKey>:<categoryId>")
@@ -75,18 +75,31 @@ This section is the `ux-telegram` design (2026-11-12). Its copy keys are binding
 wording can be tuned in the messages module.
 
 **The chart button.** With `WIDGETS=on`, «📈 Диаграмма» on a screen in a private chat is a
-callback button with data `wg` (2 bytes). The screen's kind, period, ledger and product come from
-the anchor's stored screen (`requireScreen`, as [По категориям] does).
+callback button. Its data follows how that screen's own buttons already work:
+- **Anchor screens** (`/week`, `/month`, budget, `/prices`): data `wg` (2 bytes). The screen's
+  kind, period, ledger and product come from the anchor's stored screen, through `requireScreen`,
+  as [По категориям] does.
+- **Stateless screens:** they carry what they show and read the active ledger again on each tap,
+  as their own buttons do.
+  - `/today`: `wg:t:<date>`, for example `wg:t:2026-11-12`, 15 bytes, as `dayListData` carries
+    the date.
+  - A tag report: `wg:g:<hash>`, 5 + 8 = 13 bytes, as `TAG_SHOW` carries the hash. A locked
+    ledger or a gone tag answers `ledgerLockedToast` or `tagGone`, as `TAG_SHOW` does.
 
 **What a tap does:**
-- **On the anchor:** the callback is answered silently, and a new widget message is sent below
-  the screen. It carries a caption and the inline keyboard [🔍 Подробно]. That button is a
-  `web_app` button with the Mini App URL the screen builds today. /today has no Mini App chart,
-  so its widget gets no button.
-- **Again on the same anchor and period:** a `chartAlreadySent` toast, and nothing is sent.
+- **A tap that is accepted** (on the anchor, or on any stateless screen): the callback is
+  answered silently, and a new widget message is sent below the screen. It carries a caption
+  and the inline keyboard [🔍 Подробно]. That button is a `web_app` button with the Mini App URL
+  the screen builds today. /today has no Mini App chart, so its widget gets no button.
+- **A repeat tap on the same message with the same data:** a `chartAlreadySent` toast, and
+  nothing is sent. The mark that detects this is in-process: one memo keyed by user id, tapped
+  message id and callback data. For an anchor screen, the data is extended with the screen's
+  period key, because the data is only `wg` while the anchor pages. Each mark expires after 24
+  hours, and at most 10,000 marks are kept, the oldest dropped first. A restart forgets them,
+  which can let one repeat through; it sends a duplicate picture and records nothing.
 - **After paging the screen to another period:** a new widget. The old one stays as a snapshot,
   and its caption names its period and time.
-- **On an older copy of the screen:** the `staleScreen` toast (an existing key), and nothing is
+- **On an older copy of an anchor screen:** the `staleScreen` toast (an existing key), and nothing is
   sent.
 
 **When there's no widget button.**
@@ -168,8 +181,8 @@ production until Phase 6.
     `widgets/`), and `pnpm-workspace.yaml` only if ADR-0053's grammY exemption is taken (Risk 3);
   - `src/bot/callbackData.ts` (`wg`), `src/bot/handlers/widgetChart.ts` (new: the `wg` callback),
     `src/bot/handlers/summary.ts`;
-  - `src/services/flowSessions.ts` (the already-sent mark on the anchor screen: its kind and
-    period key);
+  - `src/bot/widgets/sentMarks.ts` + test (the in-process already-sent memo, with an injected
+    clock);
   - `src/bot/messages.ts`, `src/bot/bot.ts`, `src/bot/bot.test.ts`.
 - **Done when:**
   - `programs.test.ts` deflates every exported program with zlib level 9 and fails above
@@ -187,6 +200,8 @@ production until Phase 6.
       - caption `Ноябрь 2026 · на 12 ноября, 14:05` (CET is UTC+1 in November);
       - one `web_app` button, `🔍 Подробно`, whose URL equals the one the screen built.
     - A second `wg` tap on the same anchor answers `chartAlreadySent` and calls nothing.
+      `sentMarks.test.ts` shows a mark expiring after 24 hours, so a tap at +24h01m sends again,
+      and the 10,001st mark dropping the oldest.
     - Paging to October and tapping `wg` sends a second widget, captioned `Октябрь 2026 · …`.
     - A `wg` tap on a message that isn't the anchor answers `staleScreen` and calls nothing.
   - **The cases where the button isn't `wg`:**
@@ -236,14 +251,16 @@ production until Phase 6.
 - **What:** Two more programs, each sent by the same `wg` flow as Phase 1:
   - `burndown`: the budget period's remaining amount against the ideal line, from the same
     service the Mini App burn-down uses. It's sent from the budget screen's existing button.
-  - `days`: `/today`'s last seven day totals, with today highlighted. It's sent from a new
-    «📈 Диаграмма» on `/today`'s last row, shown only when those seven days have spend. This
-    widget has no [🔍 Подробно].
+  - `days`: the seven day totals ending at the date `/today` showed, with that day
+    highlighted. It's sent from a new «📈 Диаграмма» on `/today`'s last row, with data
+    `wg:t:<date>`, shown only when those seven days have spend. A tap reads the active ledger
+    again, as [Список] does. This widget has no [🔍 Подробно].
 - **Files touched:** `widgets/src/burndown.ts`, `widgets/src/days.ts`,
   `src/bot/widgets/programs.generated.ts`, `src/domain/widgetData.ts` (+ test),
-  `src/bot/handlers/budget.ts`, `src/bot/handlers/today.ts`, `src/bot/handlers/widgetChart.ts`,
-  `src/services/todaySummary.ts` (a `recentDayTotals` read if none exists; seven days ending today
-  in the user's timezone), `src/bot/messages.ts`, `src/bot/bot.test.ts`.
+  `src/bot/callbackData.ts` (`wg:t:`), `src/bot/handlers/budget.ts`, `src/bot/handlers/today.ts`,
+  `src/bot/handlers/widgetChart.ts`, `src/services/todaySummary.ts` (a `recentDayTotals` read if
+  none exists; seven days ending at a given local date in the user's timezone),
+  `src/bot/messages.ts`, `src/bot/bot.test.ts`.
 - **Done when:**
   - Both new programs pass the 4096-byte gate.
   - The `recentDayTotals` test puts a user in `Europe/Belgrade` with an expense at
@@ -251,19 +268,26 @@ production until Phase 6.
     2026-11-12T10:00Z, that expense counts in the 12th's total, the last of the seven days, not
     the 11th's.
   - In `bot.test.ts`, a budget with no limit shows no `wg` button, and `/today` with no spend
-    over the seven days shows no chart button. `/today` with spend shows one, and its widget
-    message has no inline keyboard.
+    over the seven days shows no chart button. `/today` with spend shows one with data
+    `wg:t:2026-11-12`. A tap on it sends a widget whose last day is 12 November, with no inline
+    keyboard. The same tap on that message after midnight on the 13th still ends on the 12th. A
+    second tap on the same message answers `chartAlreadySent`.
 
 ### Phase 4: /prices and tag widgets
 - **Owner skill:** dev
 - **What:** A product's price per unit by month reuses the `days` bars program if it fits, or
   else gets a `spark` program. A tag's pie reuses `donut` with drill-down off in its `chatData`:
-  no chevrons, and taps do nothing. Both are sent from the screens' existing buttons by the `wg`
-  flow.
+  no chevrons, and taps do nothing. The product widget is sent from the `/prices` anchor screen's
+  existing button with data `wg`. The tag widget is sent from the tag report's existing button
+  with data `wg:g:<hash>`. A tap on that button reads the active ledger again and answers a
+  locked ledger or a gone tag as `TAG_SHOW` does.
 - **Files touched:** `widgets/src/spark.ts` (only if needed), `src/domain/widgetData.ts`
-  (+ test), `src/bot/handlers/prices.ts`, `src/bot/handlers/tags.ts`,
-  `src/bot/handlers/widgetChart.ts`, `src/bot/bot.test.ts`.
+  (+ test), `src/bot/callbackData.ts` (`wg:g:`), `src/bot/handlers/prices.ts`,
+  `src/bot/handlers/tags.ts`, `src/bot/handlers/widgetChart.ts`, `src/bot/bot.test.ts`.
 - **Done when:**
+  - The tag report's button has data `wg:g:<that tag's hash>`. A tap sends one tag widget. If
+    the tag was deleted since, the tap answers `tagGone` and sends nothing. If the ledger is
+    locked, it answers `ledgerLockedToast` and sends nothing.
   - A product with prices in two currencies sends only the ledger-currency months, matching what
     its Mini App chart shows today.
   - A test drives the donut's tap handler with a stub `TelegramWidget` and tag `chatData`, and
@@ -312,7 +336,7 @@ type DonutData = [
 type DrillAnswer =
   | [v: 1, title: string, points: Array<[label: string, minor: number, amount: string]>]
   | [v: 1, error: string]; // widgetUnavailable or widgetLocked, already worded
-// `wg` callback: 2 bytes. Request data `d:${token}`: `d:2026-11-09:1234567890` is 23 bytes, under 64.
+// Chart callbacks: `wg` 2 bytes; `wg:t:2026-11-12` 15 bytes; `wg:g:<8 hex>` 13 bytes. Request data `d:${token}`: `d:2026-11-09:1234567890` is 23 bytes, under 64.
 ```
 
 `minor` is used only for geometry (angles, heights), as in ADR-0025. No program adds, divides
