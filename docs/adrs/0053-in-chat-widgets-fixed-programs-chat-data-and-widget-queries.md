@@ -1,8 +1,8 @@
 # ADR-0053: In-chat widgets: fixed programs in the repo, numbers in `chatData`, drill-down by widget query
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-11-12
-> **Related plan(s):** [Plan 0052](../plans/0052-in-chat-chart-widgets.md)
+> **Related plan(s):** [Plan 0052](../plans/done/0052-in-chat-chart-widgets.md)
 
 ## Context
 

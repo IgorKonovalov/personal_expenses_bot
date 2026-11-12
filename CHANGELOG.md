@@ -2,6 +2,18 @@
 
 Versions follow semver. There's one entry per closed plan, and the plan holds the detail.
 
+## 0.42.0 (2026-11-12)
+
+From Plan 0052 (charts as in-chat widgets, with tap-to-drill-down answered live by the bot).
+
+- Behind `WIDGETS=on` (off by default): «📈 Диаграмма» under /week, /month, the budget, a /prices
+  product and a tag report sends the chart as a widget message in the chat, with [🔍 Подробно]
+  opening the full Mini App chart (ADR-0053). /today gains a «📈 Диаграмма» for its seven days.
+- In the /week and /month donut, a tap on a category shows its last six periods, read live by
+  the bot. A repeat tap on the same screen and period sends nothing.
+- With `WIDGETS` off, the chart buttons stay the Mini App buttons they were.
+- The help's totals topic and the guide's totals page describe the in-chat chart.
+
 ## 0.41.0 (2026-10-13)
 
 From Plan 0051 (a delivery-order PDF records one expense with its dishes).

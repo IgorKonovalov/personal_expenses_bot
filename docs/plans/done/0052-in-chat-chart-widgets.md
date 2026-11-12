@@ -1,8 +1,8 @@
 # 0052: Charts as in-chat widgets, with tap-to-drill-down answered live by the bot
 
-> **Status:** in-progress
+> **Status:** done (2026-11-12): built as planned after one review fix pass (one minor, one nit), four followups open, Phase 6 live check owed, v0.42.0
 > **Created:** 2026-11-12
-> **Related ADRs:** [ADR-0053](../adrs/0053-in-chat-widgets-fixed-programs-chat-data-and-widget-queries.md) (this plan's decision), [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (the Mini App, kept), [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (the Mini App payload, unchanged), [ADR-0050](../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md) (the screens a widget sits under, unchanged)
+> **Related ADRs:** [ADR-0053](../../adrs/0053-in-chat-widgets-fixed-programs-chat-data-and-widget-queries.md) (this plan's decision), [ADR-0025](../../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (the Mini App, kept), [ADR-0045](../../adrs/0045-chart-payload-v2-deflated-sections.md) (the Mini App payload, unchanged), [ADR-0050](../../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md) (the screens a widget sits under, unchanged)
 
 ## TL;DR
 
