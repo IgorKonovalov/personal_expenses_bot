@@ -2,9 +2,9 @@ import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { User } from '../../db/users.js';
 import { isLocked, type Locked } from '../../services/ledgerKeys.js';
 import { activePeriodItems } from '../../services/periodItems.js';
-import { todaySummary } from '../../services/todaySummary.js';
+import { recentDayTotals, todaySummary } from '../../services/todaySummary.js';
 import type { HandlerDeps } from '../bot.js';
-import { dayItemsData, dayListData, moreData } from '../callbackData.js';
+import { dayItemsData, dayListData, moreData, widgetTodayData } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml, type Html } from '../render/html.js';
 import { offerTip } from '../tips.js';
@@ -12,7 +12,7 @@ import { ensureUser } from './start.js';
 
 export interface TodayReply {
   readonly text: Html;
-  // [Траты], with [Позиции] beside it when the day's receipts list items.
+  // [Траты], with [Позиции] beside it when the day's receipts list items, and the chart row.
   readonly markup: InlineKeyboard;
 }
 
@@ -28,6 +28,15 @@ export function todayReply(deps: HandlerDeps, user: User, now: Date): TodayReply
   const items = activePeriodItems(deps, { user, range: day });
   if (!isLocked(items) && items.groups.length > 0) {
     markup.text(messages.periodItemsButton, dayItemsData(summary.date, 1));
+  }
+  // With WIDGETS on, «📈 Диаграмма» on its own last row when the seven days ending today have
+  // converted spend: it sends them as a widget (handlers/widgetChart.ts, ADR-0053). /today is
+  // private-only, so no chat check.
+  if (deps.widgets === true) {
+    const recent = recentDayTotals(deps, { user, date: summary.date, now });
+    if (!isLocked(recent) && recent.days.some((day) => day.totalMinor > 0)) {
+      markup.row().text(messages.chartButton, widgetTodayData(summary.date));
+    }
   }
   return { text, markup };
 }

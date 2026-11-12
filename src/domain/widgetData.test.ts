@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DONUT_ROWS,
   WIDGET_DATA_BUDGET,
+  encodeBars,
+  encodeBurndown,
   encodeDonut,
   utf8Bytes,
   type DonutData,
@@ -101,5 +103,69 @@ describe('encodeDonut', () => {
     expect(utf8Bytes(json)).toBe(json.length + 40);
     expect(encodeDonut(one, fold, json.length)).toBeUndefined();
     expect(encodeDonut(one, fold, utf8Bytes(json))).toBe(json);
+  });
+});
+
+describe('encodeBars', () => {
+  it('keeps the rows and the highlight as given when they fit', () => {
+    const json = encodeBars({
+      title: '7 дней по 12 ноября',
+      rows: [
+        ['пт, 6 ноя', 8000, '80.00 RSD'],
+        ['чт, 12 ноя', 45000, '450.00 RSD'],
+      ],
+      highlight: 1,
+      extra: '',
+    });
+
+    expect(JSON.parse(json)).toEqual([
+      1,
+      '7 дней по 12 ноября',
+      [
+        ['пт, 6 ноя', 8000, '80.00 RSD'],
+        ['чт, 12 ноя', 45000, '450.00 RSD'],
+      ],
+      1,
+      '',
+    ]);
+  });
+
+  it('drops the oldest rows over the budget, the highlight following its row', () => {
+    const rows: [string, number, string][] = Array.from({ length: 12 }, (_, i) => [
+      'Ж'.repeat(40),
+      i,
+      `${i}`,
+    ]);
+
+    const json = encodeBars({ title: 't', rows, highlight: 11, extra: '' });
+    const data = JSON.parse(json) as [1, string, [string, number, string][], number, string];
+
+    expect(utf8Bytes(json)).toBeLessThanOrEqual(WIDGET_DATA_BUDGET);
+    expect(data[2].at(-1)).toEqual(rows[11]);
+    expect(data[2][data[3]]).toEqual(rows[11]);
+    expect(data[2].length).toBeLessThan(12);
+  });
+});
+
+describe('encodeBurndown', () => {
+  it('sends the remaining amount per day, the limit minus the spend, negative once overspent', () => {
+    const json = encodeBurndown({
+      title: 'Бюджет: 25 сен – 24 окт',
+      status: 'Сегодня можно ещё 1 000.00 RSD',
+      limitMinor: 3000000,
+      days: 30,
+      spent: [0, 100000, 3100000],
+      extra: '',
+    });
+
+    expect(JSON.parse(json ?? '')).toEqual([
+      1,
+      'Бюджет: 25 сен – 24 окт',
+      'Сегодня можно ещё 1 000.00 RSD',
+      [3000000, 2900000, -100000],
+      3000000,
+      30,
+      '',
+    ]);
   });
 });

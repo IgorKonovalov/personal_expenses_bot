@@ -232,6 +232,18 @@ export function widgetSummaryData(period: Period): string {
   return assertCallbackData(`wg:s:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }
 
+// The /budget screen's chart button (4 bytes): the anchor ledger's current budget period, the only
+// one the screen shows.
+export const WIDGET_BUDGET = 'wg:b';
+
+// /today's chart button: `wg:t:<YYYY-MM-DD>` (15 bytes), the seven days ending at the date the
+// screen showed. A tap reads the active ledger again, as [Траты] does.
+export const WIDGET_TODAY = /^wg:t:(\d{4}-\d{2}-\d{2})$/;
+
+export function widgetTodayData(date: LocalDate): string {
+  return assertCallbackData(`wg:t:${date}`);
+}
+
 // [Отключить] under a summary push: `sum:off:m` the monthly push, `sum:off:w` the weekly one
 // (9 bytes). A set-to-value, so a second tap switches nothing more.
 export const SUMMARY_PUSH_OFF = /^sum:off:([mw])$/;

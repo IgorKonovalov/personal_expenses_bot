@@ -422,8 +422,8 @@ for display or formats money.
 | phase | owner | state | commit |
 |---|---|---|---|
 | 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | c10442f |
-| 2: Tap a slice for its last six periods | dev | done | committed with this row |
-| 3: Budget burn-down and /today widgets | dev | not started | |
+| 2: Tap a slice for its last six periods | dev | done | a0d6806 |
+| 3: Budget burn-down and /today widgets | dev | done | committed with this row |
 | 4: /prices and tag widgets | dev | not started | |
 | 5: Docs | dev | not started | |
 | 6: Live check, then switch it on | human | not started | |
@@ -456,6 +456,14 @@ for display or formats money.
 - Phase 2: touched outside `Files touched`: `src/bot/widgets/programs.test.ts` (the donut tap
   tests, run on the built program in a `node:vm` with a stub DOM) and `src/bot/bot.test.ts`
   (Phase 1's assertions now expect drill tokens and `allow_queries: true`).
+- Phase 3: burndown measured 2823 / 1391 bytes, days 2540 / 1282 (HTML / Python zlib 9).
+- Phase 3: the `days` bars are horizontal rows (label, bar, amount), so `days` can carry
+  `/prices` in Phase 4. Its title and caption subject are a new key, `widgetDaysTitle`
+  («7 дней по 12 ноября»).
+- Phase 3: the `/today` button shows when a day of the seven has converted spend; a currency with
+  no rate is left out of the bars.
+- Phase 3: touched outside `Files touched`: `scripts/build-widgets.ts` (registers the two
+  programs) and `src/services/todaySummary.test.ts` (the `recentDayTotals` test).
 
 ### Close triggers
 

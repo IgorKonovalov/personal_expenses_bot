@@ -13,7 +13,7 @@ import ts from 'typescript';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Every program, by the name the bot sends it under.
-export const PROGRAMS = ['donut'] as const;
+export const PROGRAMS = ['donut', 'burndown', 'days'] as const;
 export type ProgramName = (typeof PROGRAMS)[number];
 
 export const GENERATED_PATH = join(root, 'src/bot/widgets/programs.generated.ts');

@@ -2766,7 +2766,7 @@ describe('/budget and the card line (ADR-0017)', () => {
   const OCT_1 = new Date('2026-10-01T10:00:00Z');
   const botInfo = createTestBot().bot.botInfo;
 
-  function budgetBot(opts: { webappUrl?: string | undefined; now?: Date } = {}) {
+  function budgetBot(opts: { webappUrl?: string | undefined; now?: Date; widgets?: boolean } = {}) {
     const clock = { now: opts.now ?? OCT_1 };
     const keys = createLedgerKeyring(() => clock.now);
     const db = openDatabase(':memory:');
@@ -2787,6 +2787,7 @@ describe('/budget and the card line (ADR-0017)', () => {
       keys,
       botInfo,
       webappUrl: opts.webappUrl,
+      widgets: opts.widgets,
     });
     const calls: ApiCall[] = [];
     bot.api.config.use((_prev, method, payload) => {
@@ -2801,7 +2802,9 @@ describe('/budget and the card line (ADR-0017)', () => {
       bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text, date: clock.now }));
     const tap = (data: string, messageId: number) =>
       bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId }));
-    return { bot, db, calls, clock, keys, say, tap };
+    // The id of the last message the bot sent.
+    const lastSent = () => messageId;
+    return { bot, db, calls, clock, keys, say, tap, lastSent };
   }
 
   const lastText = (calls: readonly ApiCall[]) => sentTexts(calls).at(-1);
@@ -2815,6 +2818,145 @@ describe('/budget and the card line (ADR-0017)', () => {
     harness.calls.length = 0;
     return harness;
   }
+
+  describe('the budget and /today widgets (ADR-0053)', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    // 12:00 in Belgrade, 7 October: day 7 of the October budget period.
+    const OCT_7 = new Date('2026-10-07T10:00:00Z');
+    type Markup = {
+      inline_keyboard: { text: string; web_app?: { url: string }; callback_data?: string }[][];
+    };
+    const payloadOf = (call: ApiCall | undefined) =>
+      call?.payload as { text: string; reply_markup?: Markup };
+    const widgetsOf = (calls: readonly ApiCall[]) =>
+      calls.filter((call) => call.method === 'sendWidget');
+    const lastScreen = (calls: readonly ApiCall[]) =>
+      payloadOf(calls.filter((call) => call.method === 'sendMessage').at(-1));
+
+    it('shows wg:b on a budget with a limit and sends its burn-down as a widget', async () => {
+      const h = budgetBot({ now: OCT_7, widgets: true, webappUrl });
+      await h.say('/budget', 1);
+      await h.tap('bud:lim', 101);
+      await h.say('30000', 2);
+      await h.say('450 кофе', 3);
+      await h.say('/budget', 4);
+      const screen = h.lastSent();
+      expect(lastScreen(h.calls).reply_markup?.inline_keyboard[0]).toEqual([
+        { text: messages.chartButton, callback_data: 'wg:b' },
+      ]);
+      h.calls.length = 0;
+
+      await h.tap('wg:b', screen);
+      await h.tap('wg:b', screen);
+
+      const [widget, ...more] = widgetsOf(h.calls);
+      expect(more).toEqual([]);
+      const payload = widget?.payload as {
+        html: string;
+        chat_data: string;
+        caption: string;
+        reply_markup?: Markup;
+        allow_queries?: boolean;
+      };
+      expect(payload.html).toBe(WIDGET_PROGRAMS.burndown);
+      expect(payload.caption).toBe('Бюджет: 1 окт – 31 окт · на 7 октября, 12:00');
+      expect(payload.allow_queries).toBeUndefined();
+      // 450.00 spent on the 7th: 30 000.00 left through the 6th, 29 550.00 after the 7th.
+      expect(JSON.parse(payload.chat_data)).toEqual([
+        1,
+        'Бюджет: 1 окт – 31 окт',
+        expect.stringContaining('Осталось на сегодня'),
+        [3000000, 3000000, 3000000, 3000000, 3000000, 3000000, 2955000],
+        3000000,
+        31,
+        'Потрачено к 7 октября: 450.00 RSD · Лимит: 30 000.00 RSD',
+      ]);
+      expect(payload.reply_markup?.inline_keyboard[0]?.[0]?.text).toBe(messages.chartDetailButton);
+      expect(payload.reply_markup?.inline_keyboard[0]?.[0]?.web_app?.url).toMatch(
+        new RegExp(`^${webappUrl}#z=`),
+      );
+      expect(
+        h.calls
+          .filter((call) => call.method === 'answerCallbackQuery')
+          .map((call) => (call.payload as { text?: string }).text),
+      ).toEqual([undefined, messages.chartAlreadySent]);
+    });
+
+    it('shows no wg:b on a budget with no limit, only a cap', async () => {
+      const h = budgetBot({ now: OCT_7, widgets: true, webappUrl });
+      await h.say('/budget', 1);
+      const cafe = h.db
+        .prepare("SELECT id FROM categories WHERE preset_key = 'cafe'")
+        .pluck()
+        .get() as CategoryId;
+      await h.tap(BUDGET_CAPS_OPEN, 101);
+      await h.tap(budgetCapData(cafe), 101);
+      await h.say('5000', 2);
+      h.calls.length = 0;
+
+      await h.say('/budget', 3);
+
+      expect(JSON.stringify(lastScreen(h.calls).reply_markup)).not.toContain('wg:b');
+      expect(JSON.stringify(lastScreen(h.calls).reply_markup)).not.toContain('web_app');
+    });
+
+    // Thursday 12 November, 14:05 in Belgrade.
+    const NOV_12 = new Date('2026-11-12T13:05:00Z');
+
+    it('gives /today no chart button with no spend over the seven days', async () => {
+      const h = budgetBot({ now: NOV_12, widgets: true });
+      await h.say('/start', 1);
+      h.calls.length = 0;
+
+      await h.say('/today', 2);
+
+      expect(JSON.stringify(lastScreen(h.calls).reply_markup)).not.toContain('wg:t');
+    });
+
+    it('sends the seven days ending on the shown date, even when tapped after midnight', async () => {
+      const h = budgetBot({ now: NOV_12, widgets: true });
+      await h.say('/start', 1);
+      await h.say('450 кофе', 2);
+      await h.say('/today', 3);
+      const screen = h.lastSent();
+      expect(lastScreen(h.calls).reply_markup?.inline_keyboard.at(-1)).toEqual([
+        { text: messages.chartButton, callback_data: 'wg:t:2026-11-12' },
+      ]);
+      h.calls.length = 0;
+      // 00:30 on Friday the 13th in Belgrade.
+      h.clock.now = new Date('2026-11-12T23:30:00Z');
+
+      await h.tap('wg:t:2026-11-12', screen);
+      await h.tap('wg:t:2026-11-12', screen);
+
+      const [widget, ...more] = widgetsOf(h.calls);
+      expect(more).toEqual([]);
+      const payload = widget?.payload as Record<string, unknown>;
+      expect(payload['html']).toBe(WIDGET_PROGRAMS.days);
+      expect(payload['reply_markup']).toBeUndefined();
+      expect(payload['caption']).toBe('7 дней по 12 ноября · на 13 ноября, 00:30');
+      expect(JSON.parse(payload['chat_data'] as string)).toEqual([
+        1,
+        '7 дней по 12 ноября',
+        [
+          ['пт, 6 ноя', 0, '0.00 RSD'],
+          ['сб, 7 ноя', 0, '0.00 RSD'],
+          ['вс, 8 ноя', 0, '0.00 RSD'],
+          ['пн, 9 ноя', 0, '0.00 RSD'],
+          ['вт, 10 ноя', 0, '0.00 RSD'],
+          ['ср, 11 ноя', 0, '0.00 RSD'],
+          ['чт, 12 ноя', 45000, '450.00 RSD'],
+        ],
+        6,
+        '',
+      ]);
+      expect(
+        h.calls
+          .filter((call) => call.method === 'answerCallbackQuery')
+          .map((call) => (call.payload as { text?: string }).text),
+      ).toEqual([undefined, messages.chartAlreadySent]);
+    });
+  });
 
   describe('the 📈 Диаграмма button', () => {
     const webappUrl = 'https://example.github.io/bot/';

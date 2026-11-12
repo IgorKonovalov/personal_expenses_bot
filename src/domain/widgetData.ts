@@ -125,3 +125,85 @@ export function encodeDrillError(error: string): string {
   const answer: DrillAnswer = [WIDGET_DATA_VERSION, error];
   return JSON.stringify(answer);
 }
+
+// One bar of the `days` program: its label, its amount in minor units, and that amount formatted.
+export type BarRow = readonly [label: string, minor: number, amount: string];
+
+// [1, title, rows, highlight, extra]: horizontal bars oldest first, `highlight` the index of the
+// row drawn as current (-1 for none), `extra` a line under them ('' for none).
+export type BarsData = readonly [
+  v: typeof WIDGET_DATA_VERSION,
+  title: string,
+  rows: readonly BarRow[],
+  highlight: number,
+  extra: string,
+];
+
+export interface BarsInput {
+  readonly title: string;
+  // Oldest first.
+  readonly rows: readonly BarRow[];
+  readonly highlight: number;
+  readonly extra: string;
+}
+
+// The `days` program's chatData. Over `budget` bytes the oldest rows go first, the highlight
+// following its row, the newest row always kept.
+export function encodeBars(input: BarsInput, budget: number = WIDGET_DATA_BUDGET): string {
+  let dropped = 0;
+  for (;;) {
+    const rows = input.rows.slice(dropped);
+    const data: BarsData = [
+      WIDGET_DATA_VERSION,
+      input.title,
+      rows,
+      input.highlight - dropped,
+      input.extra,
+    ];
+    const json = JSON.stringify(data);
+    if (utf8Bytes(json) <= budget || rows.length <= 1) return json;
+    dropped++;
+  }
+}
+
+// [1, title, status, remaining, limit, days, extra]: a budget period's burn-down. `remaining` is
+// the limit minus the spend through each elapsed day, day 1 first, negative once overspent;
+// `limit` is the ideal line's start, which falls to 0 at the end of day `days`. `status` is the
+// line above the chart, `extra` the one under it.
+export type BurndownData = readonly [
+  v: typeof WIDGET_DATA_VERSION,
+  title: string,
+  status: string,
+  remaining: readonly number[],
+  limit: number,
+  days: number,
+  extra: string,
+];
+
+export interface BurndownInput {
+  readonly title: string;
+  readonly status: string;
+  readonly limitMinor: number;
+  readonly days: number;
+  // The cumulative spend at the end of each elapsed day, day 1 first.
+  readonly spent: readonly number[];
+  readonly extra: string;
+}
+
+// The `burndown` program's chatData; undefined over `budget` bytes.
+export function encodeBurndown(
+  input: BurndownInput,
+  budget: number = WIDGET_DATA_BUDGET,
+): string | undefined {
+  const data: BurndownData = [
+    WIDGET_DATA_VERSION,
+    input.title,
+    input.status,
+    input.spent.map((spent) => input.limitMinor - spent),
+    input.limitMinor,
+    input.days,
+    input.extra,
+  ];
+  const json = JSON.stringify(data);
+  return utf8Bytes(json) <= budget ? json : undefined;
+}

@@ -27,7 +27,14 @@ import type { LocalDate } from '../domain/time.js';
 import type { TipKey } from '../domain/tips.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { compareVersions } from '../domain/version.js';
-import type { DonutInput, DonutLine, DrillInput, WidgetFold } from '../domain/widgetData.js';
+import type {
+  BarsInput as WidgetBarsInput,
+  BurndownInput,
+  DonutInput,
+  DonutLine,
+  DrillInput,
+  WidgetFold,
+} from '../domain/widgetData.js';
 import type { HelpTopic } from './callbackData.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
@@ -756,6 +763,15 @@ const dayMonth = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', 
 
 function ledgerName(ledger: LedgerRef): string {
   return ledger.kind === 'personal' ? 'Личные расходы' : ledger.name;
+}
+
+// A day's short weekday, Monday first: `пн` … `вс`.
+const SHORT_WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'] as const;
+
+// A local date's ISO weekday index, Monday 0.
+function weekdayOf(date: LocalDate): number {
+  const { year, month, day } = dateParts(date);
+  return (new Date(Date.UTC(Number(year), month, day)).getUTCDay() + 6) % 7;
 }
 
 // `31 окт`: a period's last day in the budget lines.
@@ -2405,6 +2421,53 @@ export const messages = {
   widgetUnavailable: 'Эта категория больше недоступна.',
   // A drill-down request on a sealed ledger that is locked (ADR-0020).
   widgetLocked: 'Учёт закрыт. Откройте его в боте, чтобы смотреть детали.',
+  // The budget widget (ADR-0053): the budget chart's title, what is left for today on top, and the
+  // spend so far with the limit under the chart.
+  widgetBurndown: (input: {
+    readonly currency: CurrencyCode;
+    readonly period: { readonly from: LocalDate; readonly to: LocalDate; readonly days: number };
+    readonly limit: { readonly limitMinor: number; readonly todayLeftMinor: number };
+    readonly points: readonly number[];
+  }): BurndownInput => {
+    const { title, pace } = messages.budgetChart(input);
+    const [spent, left = ''] = pace.captions;
+    return {
+      title,
+      status: left,
+      limitMinor: input.limit.limitMinor,
+      days: input.period.days,
+      spent: input.points,
+      extra: `${spent} · ${limitAmount(input.limit.limitMinor, input.currency)}`,
+    };
+  },
+  // The /today widget: «7 дней по 12 ноября», a bar per day named «чт, 12 ноя», the last one
+  // highlighted, each total in the ledger's currency, `≈` on the title when one holds converted
+  // spending.
+  widgetDays: ({
+    date,
+    days,
+    currency,
+    approximate,
+  }: {
+    readonly date: LocalDate;
+    readonly days: readonly { readonly date: LocalDate; readonly totalMinor: number }[];
+    readonly currency: CurrencyCode;
+    readonly approximate: boolean;
+  }): WidgetBarsInput => ({
+    title: messages.widgetDaysTitle(days.length, date),
+    rows: days.map((day) => [
+      `${SHORT_WEEKDAYS[weekdayOf(day.date)] ?? ''}, ${shortDate(day.date)}`,
+      day.totalMinor,
+      `${approximate && day.totalMinor > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: day.totalMinor, currency })}`,
+    ]),
+    highlight: days.length - 1,
+    extra: '',
+  }),
+  // The /today widget's title and caption subject: «7 дней по 12 ноября».
+  widgetDaysTitle: (n: number, date: LocalDate) => {
+    const { day, month } = dateParts(date);
+    return `${n} дней по ${day} ${GENITIVE_MONTHS[month] ?? ''}`;
+  },
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
   // Each line carries its share of the pie in whole percents (sharesOf), then its change against

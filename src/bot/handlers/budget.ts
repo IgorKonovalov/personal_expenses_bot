@@ -1,4 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { InlineKeyboardButton } from 'grammy/types';
 import type { BudgetScope } from '../../db/budgets.js';
 import type { CategoryId } from '../../db/categories.js';
 import type { User } from '../../db/users.js';
@@ -42,6 +43,7 @@ import {
   CATEGORY_ESSENTIAL_PAGE,
   SET_CATEGORY_ESSENTIAL,
   SETTINGS_OPEN,
+  WIDGET_BUDGET,
   budgetCapClearData,
   budgetCapData,
   budgetCapsPageData,
@@ -74,7 +76,7 @@ import { ensureUser } from './start.js';
 function readView(
   view: BudgetScreenView,
   screen: BudgetScreen,
-  chartUrl: string | undefined,
+  chart: InlineKeyboardButton | undefined,
   header?: Html,
 ): ScreenView {
   const body = messages.budgetScreen(view);
@@ -86,9 +88,7 @@ function readView(
       ...(unset
         ? [[InlineKeyboard.text(messages.budgetLimitButton, BUDGET_LIMIT)]]
         : [
-            ...(chartUrl === undefined
-              ? []
-              : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+            ...(chart === undefined ? [] : [[chart]]),
             [InlineKeyboard.text(messages.budgetSetupButton, BUDGET_SETUP)],
           ]),
       ...(screen.fromSettings === true ? [backRow(SETTINGS_OPEN)] : []),
@@ -160,11 +160,30 @@ function essentialPickerView(view: CategoriesView, page: number): ScreenView {
   };
 }
 
+// The read view's chart button, private chats only: with WIDGETS on, `wg:b` for a budget with a
+// limit, which sends the burn-down as a widget below the screen (handlers/widgetChart.ts,
+// ADR-0053); otherwise the Mini App's `web_app` button on chartUrlOf's URL.
+function chartButtonOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  view: BudgetScreenView,
+): InlineKeyboardButton | undefined {
+  if (ctx.chat?.type !== 'private') return undefined;
+  if (deps.widgets === true) {
+    return view.status?.limit === undefined
+      ? undefined
+      : InlineKeyboard.text(messages.chartButton, WIDGET_BUDGET);
+  }
+  const url = chartUrlOf(ctx, deps, user, view);
+  return url === undefined ? undefined : InlineKeyboard.webApp(messages.chartButton, url);
+}
+
 // The chart button's URL: WEBAPP_URL with the budget period's burn-down in the fragment's `z`
 // (ADR-0025, ADR-0045), rebuilt on every render. Undefined outside a private chat (`web_app`
 // buttons work only there), without WEBAPP_URL, for a budget with no limit, and when the payload
 // can't fit its budget. A locked sealed ledger never gets here: its screen is the locked line.
-function chartUrlOf(
+export function chartUrlOf(
   ctx: Context,
   deps: HandlerDeps,
   user: User,
@@ -219,7 +238,7 @@ export function budgetView(
       return categories === undefined ? undefined : essentialPickerView(categories, 1);
     }
     case undefined:
-      return readView(view, screen, chartUrlOf(ctx, deps, user, view), header);
+      return readView(view, screen, chartButtonOf(ctx, deps, user, view), header);
   }
 }
 
@@ -385,7 +404,7 @@ function showPane(
   const view = read === undefined || isLocked(read) ? tap.view : read;
   if (pane === 'setup') return setupView(view);
   if (pane === 'scope') return scopeView(view);
-  return readView(view, tap.screen, chartUrlOf(ctx, deps, tap.user, view));
+  return readView(view, tap.screen, chartButtonOf(ctx, deps, tap.user, view));
 }
 
 export function registerBudget(bot: Composer<Context>, deps: HandlerDeps): void {
