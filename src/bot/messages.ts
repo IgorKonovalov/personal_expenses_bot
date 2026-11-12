@@ -2347,6 +2347,8 @@ export const messages = {
   periodItemPages,
   // A private screen's `web_app` button: the screen as a chart in the Mini App (ADR-0025).
   chartButton: '📈 Диаграмма',
+  // A tag's chart title, the Mini App's and the widget's: «#отпуск».
+  tagTitle: (name: string) => `#${name}`,
   // An in-chat widget's `web_app` button: the same chart in the Mini App (ADR-0053).
   chartDetailButton: '🔍 Подробно',
   // A repeat tap of a chart button whose widget this message already sent.
@@ -2529,7 +2531,7 @@ export const messages = {
   // on its total when it holds converted spending, and each currency with no rate as a line,
   // never drawn. A tag has no previous period, so no line carries a change.
   tagChart: ({ name, converted, convertedFrom, unconverted }: TagChartView): ChartInput => ({
-    title: `#${name}`,
+    title: messages.tagTitle(name),
     currency: converted.currency,
     totalLabel: `${convertedFrom.length > 0 ? '≈ ' : ''}${formatMoney({ amountMinor: converted.totalMinor, currency: converted.currency })}`,
     lines: chartLines(converted),

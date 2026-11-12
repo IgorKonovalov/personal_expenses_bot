@@ -16,6 +16,7 @@ import { activeLedgerTagReport } from '../../services/tagSummary.js';
 import { recentDayTotals, type RecentDayTotals } from '../../services/todaySummary.js';
 import type { HandlerDeps } from '../bot.js';
 import {
+  WIDGET_ANY,
   WIDGET_BUDGET,
   WIDGET_PRODUCT,
   WIDGET_SUMMARY,
@@ -41,6 +42,14 @@ import { chartUrlOf as tagChartUrlOf } from './tags.js';
 const WIDGET_REQUEST_BYTES = 64;
 
 export function registerWidgetChart(bot: Composer<Context>, deps: HandlerDeps): void {
+  // WIDGETS off: a `wg:` button still in the chat from a run with it on is answered as stale and
+  // sends nothing, so turning the switch off stops every widget send, not only new buttons.
+  if (deps.widgets !== true) {
+    bot.callbackQuery(WIDGET_ANY, async (ctx) => {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+    });
+    return;
+  }
   const marks = createSentMarks(deps.now);
 
   // /week and /month: the period the button names, of the anchor's ledger.
@@ -317,7 +326,7 @@ function tagWidget(
   const { converted } = report;
   const ledger = findActiveLedger(deps.db, user.id);
   if (converted === undefined || ledger === undefined) return undefined;
-  const title = `#${report.name}`;
+  const title = messages.tagTitle(report.name);
   const chatData = encodeDonut(
     messages.widgetDonut({
       title,

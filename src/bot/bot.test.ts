@@ -4897,6 +4897,27 @@ describe('/week and /month', () => {
       expect(JSON.stringify(off.calls)).not.toContain('wg:');
     });
 
+    it('answers a wg: tap left from a WIDGETS-on run with staleScreen and sends nothing when off', async () => {
+      const { say, tap, calls } = await novemberBot();
+      await say('/month', 2);
+      calls.length = 0;
+
+      await tap('wg:s:m:2026-11', 101);
+      await tap('wg:t:2026-11-12', 101);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+        },
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+        },
+      ]);
+      expect(widgetsOf(calls)).toEqual([]);
+    });
+
     it('gives a group /month no chart button of either kind with WIDGETS on', async () => {
       const sept28 = new Date('2026-09-28T08:00:00Z');
       const { bot, calls } = await summaryBot({ fixture: false, widgets: true, webappUrl });

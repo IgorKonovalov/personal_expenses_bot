@@ -228,6 +228,9 @@ export function summaryPageData(period: Period): string {
 // ledger is the one charted.
 export const WIDGET_SUMMARY = /^wg:s:([mw]):([0-9-]{1,10})$/;
 
+// Any chart button's data, of every kind below: what a tap matches with WIDGETS off.
+export const WIDGET_ANY = /^wg:/;
+
 export function widgetSummaryData(period: Period): string {
   return assertCallbackData(`wg:s:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }

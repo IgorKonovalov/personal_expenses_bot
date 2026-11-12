@@ -483,6 +483,11 @@ for display or formats money.
 - Followup, not acted on: every request error code shows `widgetRetry`; `NOT_ALLOWED` in a
   forward is drawn the same way.
 
+- Review fix (minor, kill switch): with `WIDGETS` off, a `wg:` tap answers `staleScreen` and
+  sends nothing (`WIDGET_ANY` in `callbackData.ts`); committed with this note.
+- Review fix (nit): the tag title `#name` is the messages key `tagTitle`, used by the tag widget
+  and the Mini App's `tagChart`; same commit.
+
 ### Close triggers
 
 - **What shipped:** `WIDGETS` config key (`on`/`off`, default off); `widgets/` programs
