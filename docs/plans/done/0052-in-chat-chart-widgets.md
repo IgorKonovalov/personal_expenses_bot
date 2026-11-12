@@ -426,7 +426,7 @@ for display or formats money.
 | 3: Budget burn-down and /today widgets | dev | done | e43f4a9 |
 | 4: /prices and tag widgets | dev | done | 32f9e29 |
 | 5: Docs | dev | done | e976d3b |
-| 6: Live check, then switch it on | human | not started | |
+| 6: Live check, then switch it on | human | partial: WIDGETS=on in production, Android passed (2026-11-12) | |
 
 ### Notes
 
@@ -474,7 +474,15 @@ for display or formats money.
   tap test).
 - Phase 5: `.env.example`'s `WIDGETS` landed in Phase 1 (c10442f); this phase left it as is. The
   guide's section is in `site/src/content/docs/guide/totals.mdx` («Диаграмма прямо в чате»).
-- Followup, not acted on: the `## Followups` entry about `minimumReleaseAgeExclude` does not
+- Followup, not acted on: the `### Phase 6 progress
+
+- 2026-11-12: `WIDGETS=on` set in the production `.env` and the container recreated on v0.42.0.
+  The owner is the only user, so production stands in for the test deploy.
+- 2026-11-12: Android, per the owner: every widget works (the /week and /month donut with the
+  slice drill-down, budget, `/today`, `/prices` and tag widgets).
+- Owed: an iPhone or iPad, and Telegram Desktop.
+
+## Followups` entry about `minimumReleaseAgeExclude` does not
   apply, since no exemption was taken; the typed grammY upgrade stays a later chore under ADR-0053.
 - Followup, not acted on: every program draws at the one `WIDGET_HEIGHT` of 380 px, so the seven
   `days` rows and the burn-down leave empty space under them; Phase 6 sees it on real clients.

@@ -16,7 +16,7 @@ status and date. What a plan did lives in the plan.
 
 | Plan | Title | Status |
 |---|---|---|
-| [0052](done/0052-in-chat-chart-widgets.md) | Charts as in-chat widgets, with tap-to-drill-down answered live by the bot | done (2026-11-12): built as planned after one review fix pass (one minor, one nit), four followups open, Phase 6 live check owed, v0.42.0 |
+| [0052](done/0052-in-chat-chart-widgets.md) | Charts as in-chat widgets, with tap-to-drill-down answered live by the bot | done (2026-11-12): built as planned after one review fix pass (one minor, one nit), four followups open, Phase 6: on in production, Android passed, iOS and Desktop owed, v0.42.0 |
 | [0051](done/0051-delivery-order-pdf-import.md) | A delivery-order PDF records one expense with its dishes | done (2026-10-13): built as planned after one fix pass (one major, one minor), two followups open, Phase 4 real order owed, v0.41.0 |
 | [0050](done/0050-prices-without-cafe-receipts.md) | Product prices without cafe and restaurant receipts | done (2026-10-11): built as planned, one nit fixed at close, Phase 3 live check owed, v0.40.0 |
 | [0049](done/0049-menu-hub-and-deeper-screens.md) | A ☰ Меню hub edited in place, a six-button bar, and deeper settings, budget and help | done (2026-10-11): built as planned, two minors and one nit fixed at close, two minors and two nits open, Phase 6 live check owed, v0.39.0 |
