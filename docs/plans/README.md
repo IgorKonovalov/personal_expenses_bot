@@ -4,13 +4,14 @@ Phased implementation plans written by the `architect` skill and implemented by 
 `NNNN-<slug>.md`. It moves to `done/` at its close ceremony. **Rows are pointers:** link, title,
 status and date. What a plan did lives in the plan.
 
-- **Next free number:** `0052`
+- **Next free number:** `0053`
 
 ## Active
 
 | Plan | Title | Status |
 |---|---|---|
 | [0033](0033-qr-retry-variant-sweep.md) | A committed sweep for more receipt QR retry variants | approved (2026-10-05) |
+| [0052](0052-in-chat-chart-widgets.md) | Charts as in-chat widgets, with tap-to-drill-down answered live by the bot | approved (2026-11-12) |
 
 ## Recently closed
 
