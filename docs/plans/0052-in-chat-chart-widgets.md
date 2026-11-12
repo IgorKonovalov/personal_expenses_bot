@@ -89,9 +89,12 @@ the anchor's stored screen (`requireScreen`, as [По категориям] does
 - **On an older copy of the screen:** the `staleScreen` toast (an existing key), and nothing is
   sent.
 
-**When the button isn't a widget button.** In a group chat, for a locked ledger, or with
-`WIDGETS` absent, the button stays the `web_app` button it is today. With no data (an empty
-period, a budget with no limit, an empty `/today` week) there's no button.
+**When there's no widget button.**
+- **With `WIDGETS` absent:** the button stays the `web_app` button it is today.
+- **Group chats:** they have no chart button today, because `web_app` buttons are private-only
+  and group summaries are a separate composer (ADR-0014). They still get none.
+- **A locked ledger:** it shows its locked message instead of the screen, as today.
+- **No data** (an empty period, a budget with no limit, an empty `/today` week): no button.
 
 **The keyboard fallback.** If Phase 1 finds that a widget message can't carry an inline
 keyboard, the screen's last row becomes `[📈 В чате] [🔍 Подробно]` and the widget has no
@@ -186,9 +189,12 @@ production until Phase 6.
     - A second `wg` tap on the same anchor answers `chartAlreadySent` and calls nothing.
     - Paging to October and tapping `wg` sends a second widget, captioned `Октябрь 2026 · …`.
     - A `wg` tap on a message that isn't the anchor answers `staleScreen` and calls nothing.
-  - **The cases where the button isn't `wg`.** With `WIDGETS` absent, in a group chat, and on a
-    locked ledger, the summary's keyboard has no `wg` button. In the first two it keeps the
-    `web_app` «📈 Диаграмма» exactly as before, and the summary text is unchanged in all three.
+  - **The cases where the button isn't `wg`:**
+    - With `WIDGETS` absent, `/month` in a private chat keeps the `web_app` «📈 Диаграмма» exactly
+      as before, with no `wg` button and unchanged text.
+    - In a group chat, `/month` (`src/bot/group/summary.ts`) is unchanged: no chart button of
+      either kind.
+    - On a locked ledger, `/month` answers the existing locked message and calls no `sendWidget`.
 
 ### Phase 2: Tap a slice for its last six periods
 - **Owner skill:** dev
