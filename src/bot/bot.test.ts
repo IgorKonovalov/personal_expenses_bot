@@ -59,11 +59,13 @@ import { ledgerProduct } from '../services/productPrices.js';
 import { sealPersonalLedger, unlockPersonalLedger } from '../services/testing/sealLedger.js';
 import { createJobQueue, type JobResult, type JobRunner } from '../jobs/queue.js';
 import { encodeChartPayload } from '../domain/chartPayload.js';
+import { encodeDonut } from '../domain/widgetData.js';
 import { createBot, inProcessRunner, privateComposer, registerCommands } from './bot.js';
 import { chatImportSweep } from './chatImportSweep.js';
 import { MENU_BAR_COMMANDS } from './handlers/menu.js';
 import { MENU_BUTTONS, MENU_IN_PLACE } from './handlers/more.js';
 import { startReceiptWorker } from './receiptWorker.js';
+import { WIDGET_PROGRAMS } from './widgets/programs.generated.js';
 import { recurringProvider } from './recurringProvider.js';
 import { scheduledSender } from './scheduledSender.js';
 import {
@@ -104,6 +106,7 @@ import {
   summaryPushShowData,
   tagShowData,
   undoExpenseData,
+  widgetSummaryData,
 } from './callbackData.js';
 import { CHANGELOG_RECENT, messages, visibleLength } from './messages.js';
 import { editHtml, html, htmlParseMode, type Html } from './render/html.js';
@@ -3530,7 +3533,9 @@ describe('/week and /month', () => {
 
   // A bot whose sendMessage answers with real message ids (the anchor needs them), holding the
   // plan's fixture ledger A to H once `/start` has provisioned the user.
-  async function summaryBot(opts: { fixture?: boolean; webappUrl?: string; now?: Date } = {}) {
+  async function summaryBot(
+    opts: { fixture?: boolean; webappUrl?: string; now?: Date; widgets?: boolean } = {},
+  ) {
     const now = opts.now ?? NOW;
     const db = openDatabase(':memory:');
     runMigrations(db, now);
@@ -3538,6 +3543,7 @@ describe('/week and /month', () => {
     let ids = 0;
     // The /start welcome and setup check take 99 and 100, so the first screen after them is 101.
     let messageId = 98;
+    const keys = createLedgerKeyring(() => now);
     const bot = createBot({
       token: '123456:test-token',
       adminTelegramId: ALLOWED_ID,
@@ -3548,9 +3554,10 @@ describe('/week and /month', () => {
       now: () => now,
       defaultTimezone: 'Europe/Belgrade',
       defaultCurrency: 'RSD',
-      keys: createLedgerKeyring(() => now),
+      keys,
       botInfo,
       webappUrl: opts.webappUrl,
+      widgets: opts.widgets,
     });
     const calls: ApiCall[] = [];
     bot.api.config.use((_prev, method, payload) => {
@@ -3608,7 +3615,7 @@ describe('/week and /month', () => {
       add('H', '2026-09-29', 7000, 'RSD', null);
     }
     calls.length = 0;
-    return { bot, db, calls, say, tap, add, userId, ledgerId };
+    return { bot, db, keys, calls, say, tap, add, userId, ledgerId };
   }
 
   const button = (text: string, callback_data: string) => ({ text, callback_data });
@@ -4555,6 +4562,241 @@ describe('/week and /month', () => {
       (calls[0]?.payload as { text: string }).text,
     );
     expect(calls[1]).toEqual(calls[0]);
+  });
+
+  describe('the 📈 Диаграмма widget (ADR-0053)', () => {
+    const webappUrl = 'https://example.github.io/bot/';
+    // Thursday 12 November 2026, 14:05 in Belgrade (CET, UTC+1).
+    const NOV_12 = new Date('2026-11-12T13:05:00Z');
+    type Markup = {
+      inline_keyboard: { text: string; callback_data?: string; web_app?: { url: string } }[][];
+    };
+    const markupOf = (call: ApiCall | undefined) =>
+      (call?.payload as { reply_markup: Markup }).reply_markup;
+    const widgetsOf = (calls: readonly ApiCall[]) =>
+      calls.filter((call) => call.method === 'sendWidget');
+    const answersOf = (calls: readonly ApiCall[]) =>
+      calls
+        .filter((call) => call.method === 'answerCallbackQuery')
+        .map((call) => (call.payload as { text?: string }).text);
+
+    // November: 1 200.00 groceries and 450.00 cafe; October: 300.00 cafe.
+    async function novemberBot(opts: { widgets?: boolean } = {}) {
+      const h = await summaryBot({
+        fixture: false,
+        now: NOV_12,
+        webappUrl,
+        ...(opts.widgets === undefined ? {} : { widgets: opts.widgets }),
+      });
+      h.add('N1', '2026-11-03', 120000, 'RSD', 'groceries');
+      h.add('N2', '2026-11-10', 45000, 'RSD', 'cafe');
+      h.add('O1', '2026-10-15', 30000, 'RSD', 'cafe');
+      return h;
+    }
+
+    // The URL of the Mini App chart a WIDGETS-off /month screen carries.
+    async function miniAppUrl(): Promise<string> {
+      const { say, calls } = await novemberBot();
+      await say('/month', 2);
+      return markupOf(calls[0]).inline_keyboard.at(-1)?.[0]?.web_app?.url ?? '';
+    }
+
+    it('makes «📈 Диаграмма» a wg:s: button whose tap sends the donut widget below the screen', async () => {
+      const { say, tap, calls } = await novemberBot({ widgets: true });
+      await say('/month', 2);
+      expect(markupOf(calls[0]).inline_keyboard.at(-1)).toEqual([
+        button(messages.chartButton, 'wg:s:m:2026-11'),
+      ]);
+      calls.length = 0;
+
+      await tap('wg:s:m:2026-11', 101);
+
+      const expectedData = encodeDonut(
+        {
+          title: 'Ноябрь 2026',
+          total: '1 650.00 RSD',
+          drill: '',
+          lines: [
+            ['Продукты', 120000, '1 200.00 RSD', ''],
+            ['Кафе и рестораны', 45000, '450.00 RSD', ''],
+          ],
+          extra: '',
+          retry: messages.widgetRetry,
+        },
+        messages.widgetFold('RSD'),
+      );
+      expect(answersOf(calls)).toEqual([undefined]);
+      expect(widgetsOf(calls)).toEqual([
+        {
+          method: 'sendWidget',
+          payload: {
+            chat_id: ALLOWED_ID,
+            html: WIDGET_PROGRAMS.donut,
+            height: 380,
+            chat_data: expectedData,
+            caption: 'Ноябрь 2026 · на 12 ноября, 14:05',
+            reply_markup: {
+              inline_keyboard: [[{ text: '🔍 Подробно', web_app: { url: await miniAppUrl() } }]],
+            },
+          },
+        },
+      ]);
+      expect(messages.chartDetailButton).toBe('🔍 Подробно');
+      // The screen itself is left as it was.
+      expect(calls.filter((call) => call.method === 'editMessageText')).toEqual([]);
+    });
+
+    it('answers a second tap on the same screen with chartAlreadySent and sends nothing', async () => {
+      const { say, tap, calls } = await novemberBot({ widgets: true });
+      await say('/month', 2);
+      await tap('wg:s:m:2026-11', 101);
+      calls.length = 0;
+
+      await tap('wg:s:m:2026-11', 101);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: {
+            callback_query_id: expect.any(String) as string,
+            text: messages.chartAlreadySent,
+          },
+        },
+      ]);
+      expect(messages.chartAlreadySent).toBe('Диаграмма уже ниже в чате.');
+    });
+
+    it('carries the paged-to period, whose tap sends a second widget', async () => {
+      const { say, tap, calls } = await novemberBot({ widgets: true });
+      await say('/month', 2);
+      await tap('wg:s:m:2026-11', 101);
+
+      await tap('sum:m:2026-10', 101);
+      const edit = calls.filter((call) => call.method === 'editMessageText').at(-1);
+      expect(markupOf(edit).inline_keyboard.at(-1)).toEqual([
+        button(messages.chartButton, 'wg:s:m:2026-10'),
+      ]);
+      await tap('wg:s:m:2026-10', 101);
+
+      expect(widgetsOf(calls).map((call) => (call.payload as { caption: string }).caption)).toEqual(
+        ['Ноябрь 2026 · на 12 ноября, 14:05', 'Октябрь 2026 · на 12 ноября, 14:05'],
+      );
+      const october = JSON.parse(
+        (widgetsOf(calls)[1]?.payload as { chat_data: string }).chat_data,
+      ) as unknown[];
+      expect(october.slice(1, 5)).toEqual([
+        'Октябрь 2026',
+        '300.00 RSD',
+        '',
+        [['Кафе и рестораны', 30000, '300.00 RSD', '']],
+      ]);
+    });
+
+    it('answers a wg:s: tap on a message that is not the anchor with staleScreen', async () => {
+      const { say, tap, calls } = await novemberBot({ widgets: true });
+      await say('/month', 2);
+      await say('/week', 3);
+      calls.length = 0;
+
+      await tap('wg:s:m:2026-11', 101);
+
+      expect(calls).toEqual([
+        {
+          method: 'answerCallbackQuery',
+          payload: { callback_query_id: expect.any(String) as string, text: messages.staleScreen },
+        },
+      ]);
+    });
+
+    it('marks a converted total ≈ and says so in the caption', async () => {
+      const h = await summaryBot({ fixture: false, widgets: true });
+      storeSept28Rates(h.db);
+      h.add('W1', '2026-09-28', 342000, 'RSD', 'other');
+      h.add('W3', '2026-09-28', 10740, 'EUR', 'telecom');
+      h.add('W5', '2026-09-28', 500000, 'KZT', 'other');
+      await h.say('/week', 2);
+      h.calls.length = 0;
+
+      await h.tap('wg:s:w:2026-09-28', 101);
+
+      const payload = widgetsOf(h.calls)[0]?.payload as { chat_data: string; caption: string };
+      expect(payload.caption).toBe(
+        'Неделя, 28 сентября – 4 октября · на 30 сентября, 12:00 · ≈ по курсу НБС на день траты',
+      );
+      const data = JSON.parse(payload.chat_data) as unknown[];
+      expect(data[2]).toBe('≈ 16 039.42 RSD');
+      expect(data[5]).toBe('+ 5 000.00 KZT без курса');
+    });
+
+    it('keeps the web_app «📈 Диаграмма» and the same text with WIDGETS absent', async () => {
+      const off = await novemberBot();
+      const on = await novemberBot({ widgets: true });
+
+      await off.say('/month', 2);
+      await on.say('/month', 2);
+
+      const offPayload = off.calls[0]?.payload as { text: string };
+      expect(offPayload.text).toBe((on.calls[0]?.payload as { text: string }).text);
+      const row = markupOf(off.calls[0]).inline_keyboard.at(-1);
+      expect(row?.[0]?.text).toBe(messages.chartButton);
+      expect(row?.[0]?.web_app?.url.startsWith(`${webappUrl}#z=`)).toBe(true);
+      expect(JSON.stringify(off.calls)).not.toContain('wg:');
+    });
+
+    it('gives a group /month no chart button of either kind with WIDGETS on', async () => {
+      const sept28 = new Date('2026-09-28T08:00:00Z');
+      const { bot, calls } = await summaryBot({ fixture: false, widgets: true, webappUrl });
+      await bot.handleUpdate(
+        myChatMemberUpdate({
+          updateId: 91,
+          fromId: ALLOWED_ID,
+          oldStatus: 'left',
+          newStatus: 'member',
+        }),
+      );
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 92, text: '450 кофе', messageId: 12, date: sept28 }),
+      );
+      calls.length = 0;
+
+      await bot.handleUpdate(
+        groupTextUpdate({ updateId: 93, text: '/month', messageId: 13, date: sept28 }),
+      );
+
+      expect(sentTexts(calls)[0]).toContain('<b>450.00 RSD</b>');
+      expect(JSON.stringify(calls)).not.toContain('web_app');
+      expect(JSON.stringify(calls)).not.toContain('wg:');
+    });
+
+    it('answers /month on a locked ledger with the locked message and sends no widget', async () => {
+      const h = await novemberBot({ widgets: true });
+      await h.say('/month', 2);
+      const user = findUserByIdentity(h.db, 'telegram', String(ALLOWED_ID));
+      if (user === undefined) throw new Error('setup: no user');
+      const ledger = await sealPersonalLedger(
+        { db: h.db, logger: silentLogger(), keys: h.keys },
+        user,
+        NOV_12,
+      );
+      h.keys.lock(ledger.id);
+      h.calls.length = 0;
+
+      await h.tap('wg:s:m:2026-11', 101);
+      await h.say('/month', 3);
+
+      expect(answersOf(h.calls)).toEqual([messages.ledgerLockedToast]);
+      expect(
+        h.calls
+          .filter((call) => call.method === 'sendMessage')
+          .map((call) => (call.payload as { text: string }).text),
+      ).toEqual([messages.ledgerLocked]);
+      expect(widgetsOf(h.calls)).toEqual([]);
+    });
+
+    it('builds wg:s:w at 17 bytes, the longest summary chart data', () => {
+      expect(widgetSummaryData(weekOf('2026-11-12' as LocalDate))).toBe('wg:s:w:2026-11-09');
+      expect(Buffer.byteLength(widgetSummaryData(weekOf('2026-11-12' as LocalDate)))).toBe(17);
+    });
   });
 
   it('builds sum:m at 13 bytes and sum:w at 16', () => {

@@ -20,6 +20,9 @@ export interface Config {
   readonly donateUrl: string | undefined;
   // The static Mini App page (ADR-0025), behind the private menu's «📷 Скан». Unset hides it.
   readonly webappUrl: string | undefined;
+  // WIDGETS=on: a private screen's «📈 Диаграмма» sends an in-chat widget (ADR-0053). Off, it
+  // stays the Mini App's `web_app` button.
+  readonly widgets: boolean;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -103,6 +106,11 @@ export function loadConfig(env: Env): Config {
     );
   }
 
+  const rawWidgets = optional(env, 'WIDGETS') ?? 'off';
+  if (rawWidgets !== 'on' && rawWidgets !== 'off') {
+    throw new Error(`WIDGETS must be on or off`);
+  }
+
   return {
     botToken,
     adminTelegramId,
@@ -116,6 +124,7 @@ export function loadConfig(env: Env): Config {
     backupKeepWeekly: Number(backupKeepWeekly),
     donateUrl,
     webappUrl,
+    widgets: rawWidgets === 'on',
   };
 }
 

@@ -223,6 +223,15 @@ export function summaryPageData(period: Period): string {
   return assertCallbackData(`sum:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
 }
 
+// A private screen's «📈 Диаграмма» with WIDGETS on (ADR-0053): it sends the screen's chart as a
+// widget below it. `wg:s:<m|w>:<period key>` on /week and /month (at most 17 bytes); the anchor's
+// ledger is the one charted.
+export const WIDGET_SUMMARY = /^wg:s:([mw]):([0-9-]{1,10})$/;
+
+export function widgetSummaryData(period: Period): string {
+  return assertCallbackData(`wg:s:${period.kind === 'month' ? 'm' : 'w'}:${periodKey(period)}`);
+}
+
 // [Отключить] under a summary push: `sum:off:m` the monthly push, `sum:off:w` the weekly one
 // (9 bytes). A set-to-value, so a second tap switches nothing more.
 export const SUMMARY_PUSH_OFF = /^sum:off:([mw])$/;

@@ -27,6 +27,7 @@ import type { LocalDate } from '../domain/time.js';
 import type { TipKey } from '../domain/tips.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { compareVersions } from '../domain/version.js';
+import type { DonutInput, DonutLine, WidgetFold } from '../domain/widgetData.js';
 import type { HelpTopic } from './callbackData.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
@@ -259,6 +260,22 @@ interface ChartView {
         readonly total: Change;
       }
     | undefined;
+}
+
+// A donut widget (ADR-0053): the converted block's lines, largest first, each with the token a
+// tap on it requests ('' for none), and the blocks with no rate. `title` is a period or a text.
+interface WidgetDonutView {
+  readonly title: PeriodRef | string;
+  readonly currency: CurrencyCode;
+  readonly totalMinor: number;
+  readonly approximate: boolean;
+  readonly lines: readonly {
+    readonly name: string | null;
+    readonly amountMinor: number;
+    readonly token: string;
+  }[];
+  readonly unconverted: readonly Money[];
+  readonly drill: string;
 }
 
 // A chart's category line: `categoryId` names the category across periods, null and `name` null
@@ -2297,6 +2314,56 @@ export const messages = {
   periodItemPages,
   // A private screen's `web_app` button: the screen as a chart in the Mini App (ADR-0025).
   chartButton: '📈 Диаграмма',
+  // An in-chat widget's `web_app` button: the same chart in the Mini App (ADR-0053).
+  chartDetailButton: '🔍 Подробно',
+  // A repeat tap of a chart button whose widget this message already sent.
+  chartAlreadySent: 'Диаграмма уже ниже в чате.',
+  // A widget's caption, plain: what it shows and when the bot drew it, in the user's local time:
+  // «Ноябрь 2026 · на 12 ноября, 14:05».
+  widgetCaption: (
+    subject: PeriodRef | string,
+    at: { readonly date: LocalDate; readonly time: string },
+  ) => {
+    const { day, month } = dateParts(at.date);
+    const title = typeof subject === 'string' ? subject : periodTitle(subject);
+    return `${title} · на ${day} ${GENITIVE_MONTHS[month] ?? ''}, ${at.time}`;
+  },
+  // Appended to the caption of a widget whose total holds converted spending (ADR-0022): each
+  // expense converts at its own day's rate, so no single rate date is named.
+  widgetCaptionApprox: ' · ≈ по курсу НБС на день траты',
+  // A donut widget's chatData fields: titled like the screen, its total `≈` when it holds
+  // converted spending, and one line under the legend for the currencies with no rate.
+  widgetDonut: ({
+    title,
+    currency,
+    totalMinor,
+    approximate,
+    lines,
+    unconverted,
+    drill,
+  }: WidgetDonutView): DonutInput => ({
+    title: typeof title === 'string' ? title : periodTitle(title),
+    total: `${approximate ? '≈ ' : ''}${formatMoney({ amountMinor: totalMinor, currency })}`,
+    drill,
+    lines: lines.map((line): DonutLine => [
+      line.name ?? UNCATEGORIZED,
+      line.amountMinor,
+      formatMoney({ amountMinor: line.amountMinor, currency }),
+      line.token,
+    ]),
+    extra: unconverted.length === 0 ? '' : messages.widgetUnconverted(unconverted),
+    retry: messages.widgetRetry,
+  }),
+  // The donut line its smallest categories fold into: the chart's fold line.
+  widgetFold: (currency: CurrencyCode): WidgetFold => {
+    const fold = messages.chartFold(currency);
+    return { name: fold.name, amount: fold.label };
+  },
+  // A donut's line for the currencies with no rate, never drawn: «+ 120.00 EUR без курса».
+  widgetUnconverted: (amounts: readonly Money[]) =>
+    `+ ${amounts.map(formatMoney).join(', ')} без курса`,
+  // What a failed request shows in a widget, in place of what it asked for.
+  widgetRetry: 'Не получилось загрузить. Нажмите ещё раз.',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
   // Each line carries its share of the pie in whole percents (sharesOf), then its change against

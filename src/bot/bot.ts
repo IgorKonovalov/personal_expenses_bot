@@ -51,6 +51,7 @@ import { registerText } from './handlers/text.js';
 import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { registerWebAppData } from './handlers/webAppData.js';
+import { registerWidgetChart } from './handlers/widgetChart.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
 import { onboarding } from './middleware/onboarding.js';
@@ -70,6 +71,8 @@ export interface HandlerDeps {
   readonly keys: LedgerKeyring;
   // WEBAPP_URL: the Mini App page behind the private menu's «📷 Скан» (ADR-0025). Absent hides it.
   readonly webappUrl?: string | undefined;
+  // WIDGETS: a private screen's chart button sends an in-chat widget (ADR-0053). Absent is off.
+  readonly widgets?: boolean | undefined;
 }
 
 // The handlers that check admission or serve the admin (ADR-0024).
@@ -158,6 +161,7 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerStart(dm, options);
   registerToday(dm, options);
   registerSummary(dm, options);
+  registerWidgetChart(dm, options);
   registerSummaryPush(dm, options);
   registerItems(dm, options);
   registerDay(dm, options);

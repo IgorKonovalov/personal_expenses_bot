@@ -1,4 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { InlineKeyboardButton } from 'grammy/types';
 import type { User } from '../../db/users.js';
 import { encodeChartPayload } from '../../domain/chartPayload.js';
 import { parsePeriod, type Period } from '../../domain/periods.js';
@@ -18,6 +19,7 @@ import {
   moreData,
   periodItemsData,
   summaryPageData,
+  widgetSummaryData,
 } from '../callbackData.js';
 import { messages } from '../messages.js';
 import { replyHtml } from '../render/html.js';
@@ -32,8 +34,10 @@ import { ensureUser } from './start.js';
 
 // The last row, «📈 Диаграмма», opens the shown period as a pie chart in the Mini App, with each
 // category's change against the previous period, its spending pace by day over the previous
-// period's, and the trend of its converted totals under it.
-function summaryView(summary: PeriodSummary, chartUrl: string | undefined): ScreenView {
+// period's, and the trend of its converted totals under it. With WIDGETS on it is a callback
+// button instead, which sends the period's donut as a widget below the screen
+// (handlers/widgetChart.ts, ADR-0053).
+function summaryView(summary: PeriodSummary, chart: InlineKeyboardButton | undefined): ScreenView {
   const row = [
     InlineKeyboard.text(messages.periodPrev(summary.previous), summaryPageData(summary.previous)),
     ...(summary.next === undefined
@@ -54,9 +58,27 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
         ...drill,
         InlineKeyboard.text(messages.periodItemsButton, periodItemsData(summary.period, 1)),
       ],
-      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+      ...(chart === undefined ? [] : [[chart]]),
     ]),
   };
+}
+
+// The last row's chart button, private chats only: with WIDGETS on, `wg:s:` whenever the period
+// has a converted block to draw; otherwise the Mini App's `web_app` button on chartUrlOf's URL.
+function chartButtonOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  summary: PeriodSummary,
+): InlineKeyboardButton | undefined {
+  if (ctx.chat?.type !== 'private') return undefined;
+  if (deps.widgets === true) {
+    return summary.currencies[0]?.currency === summary.ledger.defaultCurrency
+      ? InlineKeyboard.text(messages.chartButton, widgetSummaryData(summary.period))
+      : undefined;
+  }
+  const url = chartUrlOf(ctx, deps, user, summary);
+  return url === undefined ? undefined : InlineKeyboard.webApp(messages.chartButton, url);
 }
 
 // The chart button's URL: WEBAPP_URL with the period's chart payload in the fragment's `z`
@@ -65,7 +87,7 @@ function summaryView(summary: PeriodSummary, chartUrl: string | undefined): Scre
 // Undefined outside a private chat (`web_app` buttons work only there), without WEBAPP_URL, when
 // the first block isn't in the ledger's currency (then nothing converted, so there's no pie, as
 // with no expenses at all), and when the payload can't fit its budget.
-function chartUrlOf(
+export function chartUrlOf(
   ctx: Context,
   deps: HandlerDeps,
   user: User,
@@ -117,7 +139,7 @@ export async function sendSummary(
     deps,
     user,
     screen,
-    summaryView(summary, chartUrlOf(ctx, deps, user, summary)),
+    summaryView(summary, chartButtonOf(ctx, deps, user, summary)),
   );
   if (kind === 'month') await offerTip(ctx, deps, user, 'monthShown');
 }
@@ -155,7 +177,7 @@ export function registerSummary(bot: Composer<Context>, deps: HandlerDeps): void
       await renderAnchor(
         ctx,
         tap.anchor,
-        summaryView(summary, chartUrlOf(ctx, deps, tap.user, summary)),
+        summaryView(summary, chartButtonOf(ctx, deps, tap.user, summary)),
       );
       // The picker's [« Назад] lands here: the digest leaves the drill-down.
       if (screen.drill !== undefined) {

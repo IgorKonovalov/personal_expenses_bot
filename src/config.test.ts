@@ -24,6 +24,13 @@ describe('loadConfig', () => {
     expect(config.donateUrl).toBeUndefined();
   });
 
+  it('reads WIDGETS as on or off, off when unset, and refuses anything else', () => {
+    expect(loadConfig(valid).widgets).toBe(false);
+    expect(loadConfig({ ...valid, WIDGETS: 'on' }).widgets).toBe(true);
+    expect(loadConfig({ ...valid, WIDGETS: 'off' }).widgets).toBe(false);
+    expect(() => loadConfig({ ...valid, WIDGETS: 'yes' })).toThrow(/WIDGETS/);
+  });
+
   it('reads an https DONATE_URL', () => {
     expect(loadConfig({ ...valid, DONATE_URL: 'https://ko-fi.com/example' }).donateUrl).toBe(
       'https://ko-fi.com/example',

@@ -1,6 +1,6 @@
 # 0052: Charts as in-chat widgets, with tap-to-drill-down answered live by the bot
 
-> **Status:** approved (2026-11-12)
+> **Status:** in-progress
 > **Created:** 2026-11-12
 > **Related ADRs:** [ADR-0053](../adrs/0053-in-chat-widgets-fixed-programs-chat-data-and-widget-queries.md) (this plan's decision), [ADR-0025](../adrs/0025-static-mini-app-fragment-in-senddata-out.md) (the Mini App, kept), [ADR-0045](../adrs/0045-chart-payload-v2-deflated-sections.md) (the Mini App payload, unchanged), [ADR-0050](../adrs/0050-a-second-navigation-level-menu-hub-edited-in-place.md) (the screens a widget sits under, unchanged)
 
@@ -421,7 +421,7 @@ for display or formats money.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | not started | |
+| 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | committed with this row |
 | 2: Tap a slice for its last six periods | dev | not started | |
 | 3: Budget burn-down and /today widgets | dev | not started | |
 | 4: /prices and tag widgets | dev | not started | |
@@ -429,6 +429,19 @@ for display or formats money.
 | 6: Live check, then switch it on | human | not started | |
 
 ### Notes
+
+- Phase 1: no grammY release with Bot API 10.4 types was out (npm latest 1.46.0, published
+  2026-08-26), so the exemption was not taken: `widgetApi.ts` calls `api.raw` with local types and
+  `pnpm-workspace.yaml` is unchanged.
+- Phase 1: `reply_markup` on `sendWidget` is accepted per the Bot API page's `sendWidget` table
+  (`InlineKeyboardMarkup or ...`); not verified live. The keyboard fallback and
+  `chartInChatButton` were not built.
+- Phase 1: donut program measured 3018 bytes of HTML, 1532 bytes after Python zlib level 9.
+- Phase 1: `widgetCaptionApprox` reads ` · ≈ по курсу НБС на день траты`, not a rate date: each
+  expense converts at its own day's rate (ADR-0022), so no single date exists.
+- Phase 1: `DonutData`'s `drill` is a string, the request prefix (`''` for no taps), not `0 | 1`.
+- Phase 1: touched outside `Files touched`: `src/index.ts` (passes `config.widgets` to
+  `createBot`) and `src/config.test.ts` (the `WIDGETS` parse test). `WIDGETS` takes `on` or `off`.
 
 ### Close triggers
 
