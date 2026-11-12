@@ -4601,8 +4601,18 @@ describe('/week and /month', () => {
       return markupOf(calls[0]).inline_keyboard.at(-1)?.[0]?.web_app?.url ?? '';
     }
 
+    // A preset category's id in the fixture's ledger, as a donut line's token.
+    const tokenOf = (h: { db: Db; ledgerId: LedgerId }, preset: string) =>
+      String(
+        h.db
+          .prepare('SELECT id FROM categories WHERE ledger_id = ? AND preset_key = ?')
+          .pluck()
+          .get(h.ledgerId, preset),
+      );
+
     it('makes «📈 Диаграмма» a wg:s: button whose tap sends the donut widget below the screen', async () => {
-      const { say, tap, calls } = await novemberBot({ widgets: true });
+      const h = await novemberBot({ widgets: true });
+      const { say, tap, calls } = h;
       await say('/month', 2);
       expect(markupOf(calls[0]).inline_keyboard.at(-1)).toEqual([
         button(messages.chartButton, 'wg:s:m:2026-11'),
@@ -4615,10 +4625,10 @@ describe('/week and /month', () => {
         {
           title: 'Ноябрь 2026',
           total: '1 650.00 RSD',
-          drill: '',
+          drill: `2026-11:${h.ledgerId}`,
           lines: [
-            ['Продукты', 120000, '1 200.00 RSD', ''],
-            ['Кафе и рестораны', 45000, '450.00 RSD', ''],
+            ['Продукты', 120000, '1 200.00 RSD', tokenOf(h, 'groceries')],
+            ['Кафе и рестораны', 45000, '450.00 RSD', tokenOf(h, 'cafe')],
           ],
           extra: '',
           retry: messages.widgetRetry,
@@ -4635,6 +4645,7 @@ describe('/week and /month', () => {
             height: 380,
             chat_data: expectedData,
             caption: 'Ноябрь 2026 · на 12 ноября, 14:05',
+            allow_queries: true,
             reply_markup: {
               inline_keyboard: [[{ text: '🔍 Подробно', web_app: { url: await miniAppUrl() } }]],
             },
@@ -4667,7 +4678,8 @@ describe('/week and /month', () => {
     });
 
     it('carries the paged-to period, whose tap sends a second widget', async () => {
-      const { say, tap, calls } = await novemberBot({ widgets: true });
+      const h = await novemberBot({ widgets: true });
+      const { say, tap, calls } = h;
       await say('/month', 2);
       await tap('wg:s:m:2026-11', 101);
 
@@ -4687,8 +4699,8 @@ describe('/week and /month', () => {
       expect(october.slice(1, 5)).toEqual([
         'Октябрь 2026',
         '300.00 RSD',
-        '',
-        [['Кафе и рестораны', 30000, '300.00 RSD', '']],
+        `2026-10:${h.ledgerId}`,
+        [['Кафе и рестораны', 30000, '300.00 RSD', tokenOf(h, 'cafe')]],
       ]);
     });
 

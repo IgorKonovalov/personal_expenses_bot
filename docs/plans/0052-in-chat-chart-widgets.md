@@ -421,8 +421,8 @@ for display or formats money.
 
 | phase | owner | state | commit |
 |---|---|---|---|
-| 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | committed with this row |
-| 2: Tap a slice for its last six periods | dev | not started | |
+| 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | c10442f |
+| 2: Tap a slice for its last six periods | dev | done | committed with this row |
 | 3: Budget burn-down and /today widgets | dev | not started | |
 | 4: /prices and tag widgets | dev | not started | |
 | 5: Docs | dev | not started | |
@@ -442,6 +442,20 @@ for display or formats money.
 - Phase 1: `DonutData`'s `drill` is a string, the request prefix (`''` for no taps), not `0 | 1`.
 - Phase 1: touched outside `Files touched`: `src/index.ts` (passes `config.widgets` to
   `createBot`) and `src/config.test.ts` (the `WIDGETS` parse test). `WIDGETS` takes `on` or `off`.
+- Phase 2: the request is `d:<period key>:<ledger id>:<category id | n>` (`n`: uncategorized).
+  `DonutData.drill` holds `<period key>:<ledger id>` and a line's token the category part, so the
+  tap test asserts `d:<drill>:<token>`. The handler checks membership with `ledgerPeriodSummary`
+  on that ledger and the category with `findCategory`. A token whose request would pass 64 bytes
+  is `''`.
+- Phase 2: `DrillAnswer`'s data form carries a fourth element, the `widgetBack` label, since a
+  program holds no copy.
+- Phase 2: a failure's text shows under the donut's legend, in place of `extra`; the widget stays
+  on the donut.
+- Phase 2: donut with drill-down measured 5071 bytes of HTML, 2231 after Python zlib level 9; no
+  `bars` split.
+- Phase 2: touched outside `Files touched`: `src/bot/widgets/programs.test.ts` (the donut tap
+  tests, run on the built program in a `node:vm` with a stub DOM) and `src/bot/bot.test.ts`
+  (Phase 1's assertions now expect drill tokens and `allow_queries: true`).
 
 ### Close triggers
 

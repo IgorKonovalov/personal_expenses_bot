@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
 import type { Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
-import { parsePeriod } from '../../domain/periods.js';
+import { parsePeriod, periodKey } from '../../domain/periods.js';
 import { localDateOf, type LocalDate } from '../../domain/time.js';
 import { encodeDonut } from '../../domain/widgetData.js';
 import { isLocked } from '../../services/ledgerKeys.js';
@@ -21,6 +21,9 @@ import { chartUrlOf } from './summary.js';
 // widget message below it, read from the database at tap time. The screen stays the anchor and
 // is never edited. A repeat tap with the same data on the same message gets the chartAlreadySent
 // toast and sends nothing (widgets/sentMarks.ts).
+
+// The most a widget's request() may send, in UTF-8 bytes.
+const WIDGET_REQUEST_BYTES = 64;
 
 export function registerWidgetChart(bot: Composer<Context>, deps: HandlerDeps): void {
   const marks = createSentMarks(deps.now);
@@ -96,18 +99,23 @@ function summaryWidget(
 ): WidgetMessage | undefined {
   const [converted, ...unconverted] = summary.currencies;
   if (converted?.currency !== summary.ledger.defaultCurrency) return undefined;
+  // A tap on a line asks for its category's last periods (handlers/widgetQuery.ts).
+  const drill = `${periodKey(summary.period)}:${summary.ledger.id}`;
   const chatData = encodeDonut(
     messages.widgetDonut({
       title: summary.period,
       currency: converted.currency,
       totalMinor: converted.totalMinor,
       approximate: summary.convertedFrom.length > 0,
-      lines: converted.lines.map((line) => ({ ...line, token: '' })),
+      lines: converted.lines.map((line) => ({
+        ...line,
+        token: drillToken(drill, line.categoryId ?? 'n'),
+      })),
       unconverted: unconverted.map((block) => ({
         amountMinor: block.totalMinor,
         currency: block.currency,
       })),
-      drill: '',
+      drill,
     }),
     messages.widgetFold(converted.currency),
   );
@@ -120,11 +128,17 @@ function summaryWidget(
     program: 'donut',
     chatData,
     caption,
-    queries: false,
+    queries: true,
     ...(url === undefined
       ? {}
       : { markup: new InlineKeyboard().webApp(messages.chartDetailButton, url) }),
   };
+}
+
+// A donut line's token: `id` as a request's last part, or '' when `d:<drill>:<id>` would pass
+// the 64 bytes a widget request may carry.
+function drillToken(drill: string, id: number | string): string {
+  return Buffer.byteLength(`d:${drill}:${id}`, 'utf8') <= WIDGET_REQUEST_BYTES ? String(id) : '';
 }
 
 // The ledger's local date and `HH:mm` now, for a caption's «на 12 ноября, 14:05».

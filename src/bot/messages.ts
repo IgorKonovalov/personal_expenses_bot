@@ -27,7 +27,7 @@ import type { LocalDate } from '../domain/time.js';
 import type { TipKey } from '../domain/tips.js';
 import { timezoneByIana, type TimezoneSlug } from '../domain/timezones.js';
 import { compareVersions } from '../domain/version.js';
-import type { DonutInput, DonutLine, WidgetFold } from '../domain/widgetData.js';
+import type { DonutInput, DonutLine, DrillInput, WidgetFold } from '../domain/widgetData.js';
 import type { HelpTopic } from './callbackData.js';
 import { html, joinHtml, type Html } from './render/html.js';
 
@@ -887,6 +887,18 @@ function expenseCountWords(n: number): string {
   if (ones === 1) return `${n} расход`;
   if (ones >= 2 && ones <= 4) return `${n} расхода`;
   return `${n} расходов`;
+}
+
+// `1 месяц`, `2 месяца`, `6 месяцев`; `1 неделю`, `2 недели`, `6 недель`: after «последние».
+function periodCountWords(n: number, kind: PeriodRef['kind']): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  const [one, few, many] =
+    kind === 'month' ? ['месяц', 'месяца', 'месяцев'] : ['неделю', 'недели', 'недель'];
+  if (tens >= 11 && tens <= 14) return `${n} ${many}`;
+  if (ones === 1) return `${n} ${one}`;
+  if (ones >= 2 && ones <= 4) return `${n} ${few}`;
+  return `${n} ${many}`;
 }
 
 // `1 трата`, `2 траты`, `5 трат`, `21 трата`.
@@ -2364,6 +2376,35 @@ export const messages = {
     `+ ${amounts.map(formatMoney).join(', ')} без курса`,
   // What a failed request shows in a widget, in place of what it asked for.
   widgetRetry: 'Не получилось загрузить. Нажмите ещё раз.',
+  // A donut's drill-down title: «Еда · последние 6 месяцев», «Еда · последние 6 недель».
+  widgetDrillTitle: (category: string | null, n: number, kind: PeriodRef['kind']) =>
+    `${category ?? UNCATEGORIZED} · последние ${periodCountWords(n, kind)}`,
+  // The drill-down's button back to the donut.
+  widgetBack: '‹ Все категории',
+  // A drill-down's answer: one category's converted total in each period, oldest first, named
+  // like the pager names periods.
+  widgetDrill: ({
+    category,
+    currency,
+    points,
+  }: {
+    readonly category: string | null;
+    readonly currency: CurrencyCode;
+    readonly points: readonly { readonly period: PeriodRef; readonly amountMinor: number }[];
+  }): DrillInput => ({
+    title: messages.widgetDrillTitle(category, points.length, points[0]?.period.kind ?? 'month'),
+    points: points.map((point) => [
+      periodLabel(point.period),
+      point.amountMinor,
+      formatMoney({ amountMinor: point.amountMinor, currency }),
+    ]),
+    back: messages.widgetBack,
+  }),
+  // A drill-down request the bot won't answer with data: the category, its ledger or the asker's
+  // access is gone, or the request is malformed.
+  widgetUnavailable: 'Эта категория больше недоступна.',
+  // A drill-down request on a sealed ledger that is locked (ADR-0020).
+  widgetLocked: 'Учёт закрыт. Откройте его в боте, чтобы смотреть детали.',
   // A pie chart's text, plain: the page sets it as textContent. `converted` is the block in the
   // ledger's currency, `unconverted` each currency with no rate, never drawn (ADR-0022).
   // Each line carries its share of the pie in whole percents (sharesOf), then its change against

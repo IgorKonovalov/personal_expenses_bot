@@ -86,3 +86,42 @@ export function encodeDonut(
   }
   return undefined;
 }
+
+// One point of a drill-down: its period's label, the amount in minor units, and that amount
+// formatted.
+export type DrillPoint = readonly [label: string, minor: number, amount: string];
+
+// The answer to a donut's drill-down request: [1, title, points, back], the points oldest first
+// and `back` the label of the button that returns to the donut; or [1, error], an error's text
+// already worded.
+export type DrillAnswer =
+  | readonly [
+      v: typeof WIDGET_DATA_VERSION,
+      title: string,
+      points: readonly DrillPoint[],
+      back: string,
+    ]
+  | readonly [v: typeof WIDGET_DATA_VERSION, error: string];
+
+export interface DrillInput {
+  readonly title: string;
+  // Oldest first.
+  readonly points: readonly DrillPoint[];
+  readonly back: string;
+}
+
+// A drill-down answer. Over `budget` bytes the oldest points go first, the newest always kept.
+export function encodeDrill(input: DrillInput, budget: number = WIDGET_DATA_BUDGET): string {
+  let points = input.points;
+  for (;;) {
+    const answer: DrillAnswer = [WIDGET_DATA_VERSION, input.title, points, input.back];
+    const json = JSON.stringify(answer);
+    if (utf8Bytes(json) <= budget || points.length <= 1) return json;
+    points = points.slice(1);
+  }
+}
+
+export function encodeDrillError(error: string): string {
+  const answer: DrillAnswer = [WIDGET_DATA_VERSION, error];
+  return JSON.stringify(answer);
+}

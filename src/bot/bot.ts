@@ -52,6 +52,7 @@ import { registerToday } from './handlers/today.js';
 import { registerUnlock } from './handlers/unlock.js';
 import { registerWebAppData } from './handlers/webAppData.js';
 import { registerWidgetChart } from './handlers/widgetChart.js';
+import { registerWidgetQuery } from './handlers/widgetQuery.js';
 import { messages } from './messages.js';
 import { access } from './middleware/access.js';
 import { onboarding } from './middleware/onboarding.js';
@@ -143,6 +144,9 @@ export function privateComposer(options: BotOptions): Composer<Context> {
   registerReachability(dm, options);
   // A completed payment is recorded whatever the payer's access is now (ADR-0027).
   registerSuccessfulPayment(dm, donateDeps);
+  // A widget's request (ADR-0053) carries no sender grammY can see, so it is admitted by its
+  // own handler, ahead of the gate; onboarding and invites don't apply to it.
+  registerWidgetQuery(dm, options);
   dm.use(access(options));
   // Wraps every handler below: a never-onboarded sender's first message gets the welcome and
   // the setup check after its own reply (ADR-0028).
