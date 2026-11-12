@@ -10220,6 +10220,92 @@ describe('tags (Plan 0012)', () => {
       return harness;
     };
 
+    describe('with WIDGETS on (ADR-0053)', () => {
+      // #отпуск as sendReport builds it, with WIDGETS on.
+      const widgetReport = async () => {
+        const harness = createTestBot({ widgets: true, webappUrl });
+        let updateId = 0;
+        const say = (text: string, messageId: number) =>
+          harness.bot.handleUpdate(textUpdate({ updateId: ++updateId, messageId, text }));
+        const tap = (data: string) =>
+          harness.bot.handleUpdate(callbackUpdate({ updateId: ++updateId, data, messageId: 50 }));
+        storeEurRate(harness.db);
+        await say('450 кофе #отпуск', 1);
+        await say('12,50 EUR такси #отпуск', 2);
+        await say('50 KZT хлеб #отпуск', 3);
+        await tap(`tag:s:${hashOf('отпуск')}`);
+        return { ...harness, say, tap };
+      };
+      const widgetsOf = (calls: readonly ApiCall[]) =>
+        calls.filter((call) => call.method === 'sendWidget');
+      const toasts = (calls: readonly ApiCall[]) =>
+        calls
+          .filter((call) => call.method === 'answerCallbackQuery')
+          .map((call) => (call.payload as { text?: string }).text);
+
+      it("gives the report wg:g:<the tag's hash>, whose tap sends one tag donut with no taps", async () => {
+        const h = await widgetReport();
+        expect(payloadOf(h.calls.at(-1)).reply_markup.inline_keyboard[0]).toEqual([
+          { text: messages.chartButton, callback_data: `wg:g:${hashOf('отпуск')}` },
+        ]);
+        h.calls.length = 0;
+
+        await h.tap(`wg:g:${hashOf('отпуск')}`);
+        await h.tap(`wg:g:${hashOf('отпуск')}`);
+
+        const [widget, ...more] = widgetsOf(h.calls);
+        expect(more).toEqual([]);
+        const payload = widget?.payload as Record<string, unknown>;
+        expect(payload['html']).toBe(WIDGET_PROGRAMS.donut);
+        expect(payload['allow_queries']).toBeUndefined();
+        expect(payload['caption']).toBe(
+          '#отпуск · на 30 сентября, 00:10 · ≈ по курсу НБС на день траты',
+        );
+        expect(JSON.parse(payload['chat_data'] as string)).toEqual([
+          1,
+          '#отпуск',
+          '≈ 1 914.04 RSD',
+          '',
+          [
+            ['Транспорт', 146404, '1 464.04 RSD', ''],
+            ['Кафе и рестораны', 45000, '450.00 RSD', ''],
+          ],
+          '+ 50.00 KZT без курса',
+          messages.widgetRetry,
+        ]);
+        expect(toasts(h.calls)).toEqual([undefined, messages.chartAlreadySent]);
+      });
+
+      it('answers tagGone and sends nothing once the tag is gone', async () => {
+        const h = await widgetReport();
+        h.db.prepare("UPDATE expenses SET deleted_at = '2026-09-29T22:00:00.000Z'").run();
+        h.calls.length = 0;
+
+        await h.tap(`wg:g:${hashOf('отпуск')}`);
+
+        expect(toasts(h.calls)).toEqual([messages.tagGone]);
+        expect(widgetsOf(h.calls)).toEqual([]);
+      });
+
+      it('answers ledgerLockedToast and sends nothing on a locked ledger', async () => {
+        const h = await widgetReport();
+        const user = findUserByIdentity(h.db, 'telegram', String(ALLOWED_ID));
+        if (user === undefined) throw new Error('setup: no user');
+        const ledger = await sealPersonalLedger(
+          { db: h.db, logger: silentLogger(), keys: h.keys },
+          user,
+          new Date('2026-09-29T22:10:00Z'),
+        );
+        h.keys.lock(ledger.id);
+        h.calls.length = 0;
+
+        await h.tap(`wg:g:${hashOf('отпуск')}`);
+
+        expect(toasts(h.calls)).toEqual([messages.ledgerLockedToast]);
+        expect(widgetsOf(h.calls)).toEqual([]);
+      });
+    });
+
     it('decodes Жильё, Транспорт, Еда and 50.00 KZT to a 1 000 000 pie at 60/25/15', async () => {
       const block = (currency: CurrencyCode, lines: [string, number][]) => ({
         currency,
@@ -10585,10 +10671,11 @@ describe('/prices (Plan 0036)', () => {
   // Tuesday 6 October 2026, 12:00 in Belgrade.
   const NOW = new Date('2026-10-06T10:00:00Z');
 
-  async function pricesBot(opts: { webappUrl?: string } = {}) {
+  async function pricesBot(opts: { webappUrl?: string; widgets?: boolean } = {}) {
     const harness = createTestBot({
       now: NOW,
       ...(opts.webappUrl === undefined ? {} : { webappUrl: opts.webappUrl }),
+      ...(opts.widgets === undefined ? {} : { widgets: opts.widgets }),
     });
     withMessageIds(harness.bot, 100);
     const { bot, db } = harness;
@@ -11017,8 +11104,8 @@ describe('/prices (Plan 0036)', () => {
     };
     // Milk in RSD: July 2 l for 259.80, August one unsized item for 150.00, September 1 l for
     // 134.90; and June 1 l for 1.50 EUR.
-    const milkBot = async () => {
-      const bot = await pricesBot({ webappUrl });
+    const milkBot = async (opts: { widgets?: boolean } = {}) => {
+      const bot = await pricesBot({ webappUrl, ...opts });
       bot.receipt('2026-06-15', [['MLEKO 1L', '1', 150]], 'EUR');
       bot.receipt('2026-07-15', [['MLEKO 1L', '2', 25980]]);
       bot.receipt('2026-08-15', [['MLEKO IMLEK', '1', 15000]]);
@@ -11027,6 +11114,47 @@ describe('/prices (Plan 0036)', () => {
       bot.calls.length = 0;
       return bot;
     };
+
+    it('with WIDGETS on, sends only the ledger-currency months as a widget from wg:p:<ref>', async () => {
+      const { tap, calls, anchor } = await milkBot({ widgets: true });
+      await tap('prc:o:b:milk', anchor());
+      expect(rowsOf(calls)?.[0]).toEqual([
+        { text: messages.chartButton, callback_data: 'wg:p:b:milk' },
+      ]);
+      // The Mini App chart the same product shows with WIDGETS off.
+      const off = await milkBot();
+      await off.tap('prc:o:b:milk', off.anchor());
+      const miniApp = rowsOf(off.calls)?.[0]?.[0]?.web_app?.url;
+      calls.length = 0;
+
+      await tap('wg:p:b:milk', anchor());
+
+      const widgets = calls.filter((call) => call.method === 'sendWidget');
+      expect(widgets).toHaveLength(1);
+      const payload = widgets[0]?.payload as {
+        html: string;
+        chat_data: string;
+        caption: string;
+        reply_markup: { inline_keyboard: Row[] };
+      };
+      expect(payload.html).toBe(WIDGET_PROGRAMS.days);
+      expect(payload.caption).toBe('Молоко · на 6 октября, 12:00');
+      // June's 1.50 EUR is left out, as the Mini App chart leaves it out of its bars.
+      expect(JSON.parse(payload.chat_data)).toEqual([
+        1,
+        'Молоко',
+        [
+          ['Июль 2026', 12990, '129.90 RSD/л'],
+          ['Август 2026', 0, 'размер не указан'],
+          ['Сентябрь 2026', 13490, '134.90 RSD/л'],
+        ],
+        -1,
+        'Цена за 1 л',
+      ]);
+      expect(payload.reply_markup.inline_keyboard).toEqual([
+        [{ text: messages.chartDetailButton, web_app: { url: miniApp } }],
+      ]);
+    });
 
     it('charts the price per l by month, an unsized month with no bar, then the spend', async () => {
       const { tap, calls, anchor, deps, keys, user, db } = await milkBot();

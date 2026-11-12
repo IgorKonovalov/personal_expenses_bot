@@ -45,6 +45,8 @@ export interface TestBotOptions {
   readonly donateUrl?: string;
   // WEBAPP_URL.
   readonly webappUrl?: string;
+  // WIDGETS=on (ADR-0053).
+  readonly widgets?: boolean;
   // First contact and tips (ADR-0028), both off unless a test is about them.
   readonly onboarding?: boolean;
   readonly tips?: boolean;
@@ -97,6 +99,7 @@ export function createTestBot(options: TestBotOptions = {}) {
     donationLinks,
     donateUrl: options.donateUrl,
     webappUrl: options.webappUrl,
+    widgets: options.widgets,
     notifyAdmin: (body) => adminNotifier(bot.api, ADMIN_ID)(body),
     jobs,
   });

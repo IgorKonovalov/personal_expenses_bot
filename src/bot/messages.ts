@@ -765,6 +765,53 @@ function ledgerName(ledger: LedgerRef): string {
   return ledger.kind === 'personal' ? 'Личные расходы' : ledger.name;
 }
 
+// A product's chart (messages.productChart): titled with the product, its price per unit by
+// month, then its spend by month.
+function productChartOf({
+  name,
+  unit,
+  currency,
+  months,
+}: {
+  readonly name: string;
+  readonly unit: Unit;
+  readonly currency: CurrencyCode;
+  // Newest first, as the text screen lists them.
+  readonly months: readonly (PriceLineView & { readonly month: string })[];
+}): BarsInput {
+  const oldest = [...months].reverse();
+  const own = oldest.filter((m) => m.currency === currency);
+  const notes = oldest
+    .filter((m) => m.currency !== currency)
+    .map((m) => `${productMonth(m.month)}: ${priceLine(m, unit)}`);
+  return {
+    title: name,
+    primary: {
+      k: 'bars',
+      caption: `Цена за 1 ${UNIT_LABELS[unit]}`,
+      rows: own.map((m): BarsRow =>
+        m.unitPriceMinor === undefined
+          ? [productMonth(m.month), null, messages.chartPriceUnsized]
+          : [
+              productMonth(m.month),
+              m.unitPriceMinor,
+              `${formatMoney({ amountMinor: m.unitPriceMinor, currency })}/${UNIT_LABELS[unit]}`,
+            ],
+      ),
+      ...(notes.length === 0 ? {} : { notes }),
+    },
+    secondary: {
+      k: 'bars',
+      caption: 'Траты по месяцам',
+      rows: own.map((m): BarsRow => [
+        productMonth(m.month),
+        m.spentMinor,
+        formatMoney({ amountMinor: m.spentMinor, currency }),
+      ]),
+    },
+  };
+}
+
 // A day's short weekday, Monday first: `пн` … `вс`.
 const SHORT_WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'] as const;
 
@@ -2193,50 +2240,7 @@ export const messages = {
   // spend by month, both oldest first and only for the months in `currency`, the ledger's. A
   // month with no sized item has a price row with no bar. The months in other currencies are
   // listed under the prices as the text screen lists them.
-  productChart: ({
-    name,
-    unit,
-    currency,
-    months,
-  }: {
-    readonly name: string;
-    readonly unit: Unit;
-    readonly currency: CurrencyCode;
-    // Newest first, as the text screen lists them.
-    readonly months: readonly (PriceLineView & { readonly month: string })[];
-  }): BarsInput => {
-    const oldest = [...months].reverse();
-    const own = oldest.filter((m) => m.currency === currency);
-    const notes = oldest
-      .filter((m) => m.currency !== currency)
-      .map((m) => `${productMonth(m.month)}: ${priceLine(m, unit)}`);
-    return {
-      title: name,
-      primary: {
-        k: 'bars',
-        caption: `Цена за 1 ${UNIT_LABELS[unit]}`,
-        rows: own.map((m): BarsRow =>
-          m.unitPriceMinor === undefined
-            ? [productMonth(m.month), null, messages.chartPriceUnsized]
-            : [
-                productMonth(m.month),
-                m.unitPriceMinor,
-                `${formatMoney({ amountMinor: m.unitPriceMinor, currency })}/${UNIT_LABELS[unit]}`,
-              ],
-        ),
-        ...(notes.length === 0 ? {} : { notes }),
-      },
-      secondary: {
-        k: 'bars',
-        caption: 'Траты по месяцам',
-        rows: own.map((m): BarsRow => [
-          productMonth(m.month),
-          m.spentMinor,
-          formatMoney({ amountMinor: m.spentMinor, currency }),
-        ]),
-      },
-    };
-  },
+  productChart: productChartOf,
   // A product chart's price row for a month with no sized item.
   chartPriceUnsized: 'размер не указан',
   // A product button whose product no item names any more; the list is shown again.
@@ -2463,6 +2467,18 @@ export const messages = {
     highlight: days.length - 1,
     extra: '',
   }),
+  // A product's widget: its price per unit by month in the ledger's currency, oldest first, as
+  // the Mini App chart's first section draws it; a month with no sized item has no bar. The
+  // section's caption, «Цена за 1 кг», goes under the bars.
+  widgetProduct: (input: Parameters<typeof productChartOf>[0]): WidgetBarsInput => {
+    const { title, primary } = productChartOf(input);
+    return {
+      title,
+      rows: primary.rows.map(([label, minor, text]) => [label, minor ?? 0, text]),
+      highlight: -1,
+      extra: primary.caption,
+    };
+  },
   // The /today widget's title and caption subject: «7 дней по 12 ноября».
   widgetDaysTitle: (n: number, date: LocalDate) => {
     const { day, month } = dateParts(date);

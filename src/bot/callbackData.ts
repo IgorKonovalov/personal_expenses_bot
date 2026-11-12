@@ -244,6 +244,22 @@ export function widgetTodayData(date: LocalDate): string {
   return assertCallbackData(`wg:t:${date}`);
 }
 
+// A /prices product's chart button: `wg:p:<ref>`, the ref as PRODUCT_OPEN carries it (at most
+// 31 bytes), read from the anchor's ledger.
+export const WIDGET_PRODUCT = /^wg:p:(b:[a-z0-9_]{1,24}|u:\d{1,16})$/;
+
+export function widgetProductData(ref: string): string {
+  return assertCallbackData(`wg:p:${ref}`);
+}
+
+// A tag report's chart button: `wg:g:<tagHash>` (13 bytes). A tap reads the active ledger again,
+// as TAG_SHOW does.
+export const WIDGET_TAG = /^wg:g:([0-9a-f]{8})$/;
+
+export function widgetTagData(hash: string): string {
+  return assertCallbackData(`wg:g:${hash}`);
+}
+
 // [Отключить] under a summary push: `sum:off:m` the monthly push, `sum:off:w` the weekly one
 // (9 bytes). A set-to-value, so a second tap switches nothing more.
 export const SUMMARY_PUSH_OFF = /^sum:off:([mw])$/;

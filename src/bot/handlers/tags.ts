@@ -1,4 +1,5 @@
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
+import type { InlineKeyboardButton } from 'grammy/types';
 import { encodeChartPayload } from '../../domain/chartPayload.js';
 import { tagHash, type TagReport } from '../../domain/tags.js';
 import { isLocked } from '../../services/ledgerKeys.js';
@@ -17,6 +18,7 @@ import {
   TAG_SHOW,
   tagListPageData,
   tagShowData,
+  widgetTagData,
 } from '../callbackData.js';
 import { withMenuBack, type MenuOpened } from '../keyboards.js';
 import { messages } from '../messages.js';
@@ -145,11 +147,29 @@ export async function sendTag(ctx: Context, deps: HandlerDeps, arg: string): Pro
   );
 }
 
+// The report's chart button, private chats only: with WIDGETS on, `wg:g:<hash>` when something
+// converted, which sends the pie as a widget below the report (handlers/widgetChart.ts,
+// ADR-0053); otherwise the Mini App's `web_app` button on chartUrlOf's URL.
+function chartButtonOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  report: TagReport,
+): InlineKeyboardButton | undefined {
+  if (ctx.chat?.type !== 'private') return undefined;
+  if (deps.widgets === true) {
+    return report.converted === undefined
+      ? undefined
+      : InlineKeyboard.text(messages.chartButton, widgetTagData(tagHash(report.name)));
+  }
+  const url = chartUrlOf(ctx, deps, report);
+  return url === undefined ? undefined : InlineKeyboard.webApp(messages.chartButton, url);
+}
+
 // The chart button's URL: WEBAPP_URL with the tag's pie in the fragment's `z` (ADR-0025,
 // ADR-0045). Undefined outside a private chat (`web_app` buttons work only there), without
 // WEBAPP_URL, when nothing converted (no pie, as with an empty period), and when the payload can't
 // fit its budget. A locked sealed ledger never gets here: its tap is the locked toast.
-function chartUrlOf(ctx: Context, deps: HandlerDeps, report: TagReport): string | undefined {
+export function chartUrlOf(ctx: Context, deps: HandlerDeps, report: TagReport): string | undefined {
   if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
   const { converted } = report;
   if (converted === undefined) return undefined;
@@ -213,12 +233,10 @@ export function registerTags(bot: Composer<Context>, deps: HandlerDeps): void {
         return;
       case 'report': {
         await ctx.answerCallbackQuery();
-        const chartUrl = chartUrlOf(ctx, deps, result.report);
+        const chart = chartButtonOf(ctx, deps, result.report);
         await editHtml(ctx, messages.tagReport(result), {
           reply_markup: InlineKeyboard.from([
-            ...(chartUrl === undefined
-              ? []
-              : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+            ...(chart === undefined ? [] : [[chart]]),
             [InlineKeyboard.text(messages.backButton, tagListPageData(result.page, fromMenu))],
           ]),
         });

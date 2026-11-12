@@ -149,6 +149,39 @@ describe('the donut program', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it('requests nothing on any row or slice of a tag donut, drawn with no chevrons', () => {
+    // A tag's chatData: drill '' and every token ''.
+    const tag = encodeDonut(
+      {
+        title: '#отпуск',
+        total: '≈ 1 914.04 RSD',
+        drill: '',
+        lines: [
+          ['Транспорт', 146404, '1 464.04 RSD', ''],
+          ['Кафе и рестораны', 45000, '450.00 RSD', ''],
+        ],
+        extra: '+ 50.00 KZT без курса',
+        retry: 'Не получилось загрузить. Нажмите ещё раз.',
+      },
+      fold,
+    );
+    if (tag === undefined) throw new Error('setup: the donut does not fit');
+    const request = vi.fn<Request>(() => new Promise(() => undefined));
+    const root = runProgram('donut', tag, request);
+    const rows = rowsOf(root);
+    expect(rows.map((row) => row.text())).toEqual([
+      'Транспорт 1 464.04 RSD',
+      'Кафе и рестораны 450.00 RSD',
+    ]);
+
+    for (const [i, row] of rows.entries()) {
+      row.onclick?.({ target: null });
+      root.children[1]?.onclick?.({ target: { getAttribute: () => String(i) } });
+    }
+
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('shows an error answer text, or the retry text on a failed request, and stays tappable', async () => {
     const request = vi
       .fn<Request>()

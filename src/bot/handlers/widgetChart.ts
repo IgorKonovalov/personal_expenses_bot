@@ -1,25 +1,36 @@
 import { TZDate } from '@date-fns/tz';
 import { format } from 'date-fns';
 import { InlineKeyboard, type Composer, type Context } from 'grammy';
-import type { Ledger } from '../../db/ledgers.js';
+import { findActiveLedger, type Ledger } from '../../db/ledgers.js';
 import type { User } from '../../db/users.js';
 import { parsePeriod, periodKey } from '../../domain/periods.js';
+import type { TagReport } from '../../domain/tags.js';
 import { localDateOf, parseLocalDate, type LocalDate } from '../../domain/time.js';
 import { encodeBars, encodeBurndown, encodeDonut } from '../../domain/widgetData.js';
 import { budgetPace, budgetScreen, type BudgetScreenView } from '../../services/budget.js';
 import { isLocked } from '../../services/ledgerKeys.js';
 import { ledgerPeriodSummary, type PeriodSummary } from '../../services/periodSummary.js';
+import { ledgerProduct, type ProductView } from '../../services/productPrices.js';
 import { effectiveTimezone } from '../../services/recordExpense.js';
+import { activeLedgerTagReport } from '../../services/tagSummary.js';
 import { recentDayTotals, type RecentDayTotals } from '../../services/todaySummary.js';
 import type { HandlerDeps } from '../bot.js';
-import { WIDGET_BUDGET, WIDGET_SUMMARY, WIDGET_TODAY } from '../callbackData.js';
+import {
+  WIDGET_BUDGET,
+  WIDGET_PRODUCT,
+  WIDGET_SUMMARY,
+  WIDGET_TAG,
+  WIDGET_TODAY,
+} from '../callbackData.js';
 import { messages } from '../messages.js';
 import { requireScreen } from '../screens.js';
 import { replyWidget, type WidgetMessage } from '../widgetApi.js';
 import { createSentMarks, sentMarkKey, type SentMarks } from '../widgets/sentMarks.js';
 import { chartUrlOf as budgetChartUrlOf } from './budget.js';
+import { chartUrlOf as productChartUrlOf } from './prices.js';
 import { ensureUser } from './start.js';
 import { chartUrlOf } from './summary.js';
+import { chartUrlOf as tagChartUrlOf } from './tags.js';
 
 // A screen's «📈 Диаграмма» with WIDGETS on (ADR-0053): a `wg:` tap sends the screen's chart as a
 // widget message below it, read from the database at tap time. The screen stays the anchor and
@@ -75,6 +86,48 @@ export function registerWidgetChart(bot: Composer<Context>, deps: HandlerDeps): 
     }
     const widget = view === undefined ? undefined : budgetWidget(ctx, deps, tap.user, view);
     await sendOnce(ctx, marks, widget);
+  });
+
+  // A /prices product: the ref the button names, of the anchor's ledger.
+  bot.callbackQuery(WIDGET_PRODUCT, async (ctx) => {
+    const tap = await requireScreen(ctx, deps);
+    if (tap === undefined) return;
+    const { screen } = tap.anchor;
+    if (screen.name !== 'prices') {
+      await ctx.answerCallbackQuery({ text: messages.staleScreen });
+      return;
+    }
+    const product = ledgerProduct(deps, {
+      user: tap.user,
+      ledgerId: screen.ledgerId,
+      ref: ctx.match[1] ?? '',
+    });
+    if (isLocked(product)) {
+      await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+      return;
+    }
+    if (product === undefined) {
+      await ctx.answerCallbackQuery({ text: messages.productGone });
+      return;
+    }
+    await sendOnce(ctx, marks, productWidget(ctx, deps, tap.user, product));
+  });
+
+  // A tag report: the active ledger's tag the hash names, as TAG_SHOW reads it.
+  bot.callbackQuery(WIDGET_TAG, async (ctx) => {
+    const user = ensureUser(deps, ctx.from.id, deps.now());
+    const result = activeLedgerTagReport(deps, { user, hash: ctx.match[1] ?? '', pageSize: 1 });
+    switch (result.kind) {
+      case 'locked':
+        await ctx.answerCallbackQuery({ text: messages.ledgerLockedToast });
+        return;
+      case 'gone':
+        await ctx.answerCallbackQuery({ text: messages.tagGone });
+        return;
+      case 'report':
+        await sendOnce(ctx, marks, tagWidget(ctx, deps, user, result.report));
+        return;
+    }
   });
 
   // /today: the seven days ending at the date the screen showed, of the active ledger.
@@ -228,6 +281,70 @@ function daysWidget(
         localAt(deps, user, recent.ledger),
       ) + (recent.approximate ? messages.widgetCaptionApprox : ''),
     queries: false,
+  };
+}
+
+// A product's price per unit by month in the ledger's currency: undefined with no such month.
+// [🔍 Подробно] opens the Mini App chart the screen's button would have opened.
+function productWidget(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  product: ProductView,
+): WidgetMessage | undefined {
+  const currency = product.ledger.defaultCurrency;
+  if (!product.months.some((m) => m.currency === currency)) return undefined;
+  const url = productChartUrlOf(ctx, deps, product);
+  return {
+    program: 'days',
+    chatData: encodeBars(messages.widgetProduct({ ...product, currency })),
+    caption: messages.widgetCaption(product.name, localAt(deps, user, product.ledger)),
+    queries: false,
+    ...(url === undefined
+      ? {}
+      : { markup: new InlineKeyboard().webApp(messages.chartDetailButton, url) }),
+  };
+}
+
+// A tag's donut of its converted block, with no taps: undefined when nothing converted, or it
+// can't fit chatData.
+function tagWidget(
+  ctx: Context,
+  deps: HandlerDeps,
+  user: User,
+  report: TagReport,
+): WidgetMessage | undefined {
+  const { converted } = report;
+  const ledger = findActiveLedger(deps.db, user.id);
+  if (converted === undefined || ledger === undefined) return undefined;
+  const title = `#${report.name}`;
+  const chatData = encodeDonut(
+    messages.widgetDonut({
+      title,
+      currency: converted.currency,
+      totalMinor: converted.totalMinor,
+      approximate: report.convertedFrom.length > 0,
+      lines: converted.lines.map((line) => ({ ...line, token: '' })),
+      unconverted: report.unconverted.map((block) => ({
+        amountMinor: block.totalMinor,
+        currency: block.currency,
+      })),
+      drill: '',
+    }),
+    messages.widgetFold(converted.currency),
+  );
+  if (chatData === undefined) return undefined;
+  const url = tagChartUrlOf(ctx, deps, report);
+  return {
+    program: 'donut',
+    chatData,
+    caption:
+      messages.widgetCaption(title, localAt(deps, user, ledger)) +
+      (report.convertedFrom.length > 0 ? messages.widgetCaptionApprox : ''),
+    queries: false,
+    ...(url === undefined
+      ? {}
+      : { markup: new InlineKeyboard().webApp(messages.chartDetailButton, url) }),
   };
 }
 

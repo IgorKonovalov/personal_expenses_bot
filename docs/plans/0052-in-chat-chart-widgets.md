@@ -423,8 +423,8 @@ for display or formats money.
 |---|---|---|---|
 | 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | c10442f |
 | 2: Tap a slice for its last six periods | dev | done | a0d6806 |
-| 3: Budget burn-down and /today widgets | dev | done | committed with this row |
-| 4: /prices and tag widgets | dev | not started | |
+| 3: Budget burn-down and /today widgets | dev | done | e43f4a9 |
+| 4: /prices and tag widgets | dev | done | committed with this row |
 | 5: Docs | dev | not started | |
 | 6: Live check, then switch it on | human | not started | |
 
@@ -464,6 +464,14 @@ for display or formats money.
   no rate is left out of the bars.
 - Phase 3: touched outside `Files touched`: `scripts/build-widgets.ts` (registers the two
   programs) and `src/services/todaySummary.test.ts` (the `recentDayTotals` test).
+- Phase 4: the product widget reuses `days`; no `spark` program. Its bars are the Mini App
+  chart's price rows (an unsized month is a 0 bar labelled `размер не указан`); the other-currency
+  notes and the spend section are not sent. New key `widgetProduct`; `productChart`'s body moved
+  to a module function `productChartOf`, which both use.
+- Phase 4: a `wg:p:` tap on a product that is gone answers `productGone` and sends nothing.
+- Phase 4: touched outside `Files touched`: `src/bot/messages.ts`, `src/bot/testHarness.ts`
+  (`widgets` option for `createTestBot`) and `src/bot/widgets/programs.test.ts` (the tag donut
+  tap test).
 
 ### Close triggers
 

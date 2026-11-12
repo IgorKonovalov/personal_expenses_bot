@@ -46,6 +46,7 @@ import {
   pricesPageData,
   productNamesData,
   productOpenData,
+  widgetProductData,
   productUnitData,
   reviewAnswerData,
   reviewPageData,
@@ -106,11 +107,11 @@ function listOrEmpty(list: ProductList, page: number, fromMenu?: true): ScreenVi
   );
 }
 
-function productView(product: ProductView, chartUrl: string | undefined): ScreenView {
+function productView(product: ProductView, chart: InlineKeyboardButton | undefined): ScreenView {
   return {
     text: messages.productView(product),
     markup: InlineKeyboard.from([
-      ...(chartUrl === undefined ? [] : [[InlineKeyboard.webApp(messages.chartButton, chartUrl)]]),
+      ...(chart === undefined ? [] : [[chart]]),
       ...(product.reviewable
         ? [[InlineKeyboard.text(messages.namesButton, productNamesData(product.ref))]]
         : []),
@@ -119,12 +120,36 @@ function productView(product: ProductView, chartUrl: string | undefined): Screen
   };
 }
 
+// The product's chart button, private chats only: with WIDGETS on, `wg:p:<ref>` for a product
+// with a month in the ledger's currency, which sends its prices as a widget below the screen
+// (handlers/widgetChart.ts, ADR-0053); otherwise the Mini App's `web_app` button on chartUrlOf's
+// URL.
+function chartButtonOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  product: ProductView,
+): InlineKeyboardButton | undefined {
+  if (ctx.chat?.type !== 'private') return undefined;
+  if (deps.widgets === true) {
+    const currency = product.ledger.defaultCurrency;
+    return product.months.some((m) => m.currency === currency)
+      ? InlineKeyboard.text(messages.chartButton, widgetProductData(product.ref))
+      : undefined;
+  }
+  const url = chartUrlOf(ctx, deps, product);
+  return url === undefined ? undefined : InlineKeyboard.webApp(messages.chartButton, url);
+}
+
 // The chart button's URL: WEBAPP_URL with the product's price per unit and spend by month in the
 // fragment's `z` (ADR-0025, ADR-0045), from the month lines the text shows. Undefined outside a
 // private chat (`web_app` buttons work only there), without WEBAPP_URL, for a product with no
 // month in the ledger's currency, and when the payload can't fit its budget. A locked sealed
 // ledger never gets here: its tap is the locked toast.
-function chartUrlOf(ctx: Context, deps: HandlerDeps, product: ProductView): string | undefined {
+export function chartUrlOf(
+  ctx: Context,
+  deps: HandlerDeps,
+  product: ProductView,
+): string | undefined {
   if (ctx.chat?.type !== 'private' || deps.webappUrl === undefined) return undefined;
   const currency = product.ledger.defaultCurrency;
   if (!product.months.some((m) => m.currency === currency)) return undefined;
@@ -231,7 +256,7 @@ async function showProduct(
   }
   await ctx.answerCallbackQuery();
   saveScreen(deps, tap, plain(tap));
-  await renderAnchor(ctx, tap.anchor, productView(product, chartUrlOf(ctx, deps, product)));
+  await renderAnchor(ctx, tap.anchor, productView(product, chartButtonOf(ctx, deps, product)));
 }
 
 // The ledger's items for a review tap, or undefined once the tap is answered: a locked ledger
