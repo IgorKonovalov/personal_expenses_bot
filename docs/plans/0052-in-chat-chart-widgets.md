@@ -424,8 +424,8 @@ for display or formats money.
 | 1: «📈 Диаграмма» under /week and /month sends a donut widget | dev | done | c10442f |
 | 2: Tap a slice for its last six periods | dev | done | a0d6806 |
 | 3: Budget burn-down and /today widgets | dev | done | e43f4a9 |
-| 4: /prices and tag widgets | dev | done | committed with this row |
-| 5: Docs | dev | not started | |
+| 4: /prices and tag widgets | dev | done | 32f9e29 |
+| 5: Docs | dev | done | committed with this row |
 | 6: Live check, then switch it on | human | not started | |
 
 ### Notes
@@ -472,6 +472,8 @@ for display or formats money.
 - Phase 4: touched outside `Files touched`: `src/bot/messages.ts`, `src/bot/testHarness.ts`
   (`widgets` option for `createTestBot`) and `src/bot/widgets/programs.test.ts` (the tag donut
   tap test).
+- Phase 5: `.env.example`'s `WIDGETS` landed in Phase 1 (c10442f); this phase left it as is. The
+  guide's section is in `site/src/content/docs/guide/totals.mdx` («Диаграмма прямо в чате»).
 
 ### Close triggers
 

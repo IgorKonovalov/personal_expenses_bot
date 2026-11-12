@@ -272,6 +272,15 @@ deploys only a push to `main`, so a broken docs build also holds back a Mini App
   (`https://igorkonovalov.github.io/personal_expenses_bot/`), without a `#fragment`. With
   `WEBAPP_URL` set, the private menu gains «📷 Скан» and reports gain «📈 Диаграмма». Telegram
   keeps showing an old menu until the next `/start` or `/help` reply.
+- `WIDGETS=on` turns a private screen's «📈 Диаграмма» into a button that sends the chart into the
+  chat as a Bot API 10.4 widget
+  ([ADR-0053](docs/adrs/0053-in-chat-widgets-fixed-programs-chat-data-and-widget-queries.md)), with
+  [🔍 Подробно] under it opening the Mini App chart when `WEBAPP_URL` is set. A tap on a donut's
+  category reaches the bot over the same long polling as a `widget_query`. Unset or `off`, the
+  button stays the Mini App's. The widget programs live in `widgets/`; `pnpm build:widgets`
+  rebuilds the committed `src/bot/widgets/programs.generated.ts`, and a test fails when it is
+  stale or a program is over Telegram's 4096 compressed bytes. The 📷 Скан scan stays in the Mini
+  App: widgets have no camera.
 - Deploy the page before the bot when a change touches the chart payload: until the Pages run
   has finished, the old page answers a new `#z=` button with its open-from-bot line.
 - The chart payload is capped at 2048 characters. To measure what your clients really open, run

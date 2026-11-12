@@ -30,6 +30,8 @@ src/
 ├── version.ts       # the running version, read from package.json at boot
 └── index.ts         # boot: config, db, bot
 webapp/              # the static Mini App page (ADR-0025): plain tsc, no deps, own messages module
+widgets/             # the in-chat widget programs (ADR-0053): one per chart kind, no copy, built
+                     #   by `pnpm build:widgets` into src/bot/widgets/programs.generated.ts
 site/                # the Russian docs site (ADR-0048): standalone Starlight project, own lockfile,
                      #   published under the Mini App at docs/; never in the bot image
 Dockerfile           # multi-stage: builds dist/, runs it on prod-only deps as uid 1000 (ADR-0006)
