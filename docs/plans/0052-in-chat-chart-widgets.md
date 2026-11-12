@@ -232,9 +232,20 @@ production until Phase 6.
   (`widgetUnavailable`, `widgetLocked`) or a request error (`TIMEOUT`, `RATE_LIMITED`, `BUSY`,
   `FAILED`). A request error shows `widgetRetry`, which the bot sends in `chatData` for that
   purpose.
+
+  **How the query reaches the handler.** grammY 1.46.0 doesn't know `widget_query`, so
+  `ctx.from` and `ctx.chat` are undefined for it. The update falls to `privateComposer`, because
+  it isn't a group chat, but `dm.use(access(...))` (`src/bot/middleware/access.ts`) drops any
+  update without a sender. So `registerWidgetQuery` is mounted in `privateComposer` **before**
+  that gate, as `registerSuccessfulPayment` is. It reads the sender from
+  `ctx.update.widget_query.from` and applies the same admission itself: `accessOf`
+  (`src/services/admission.ts`) must say `admitted`, or the query is answered with
+  `widgetUnavailable` and reads nothing. Onboarding and invites don't apply to a widget query.
+  Once a grammY release types `widget_query`, this ordering can be revisited.
 - **Files touched:** `widgets/src/donut.ts`, `src/bot/widgets/programs.generated.ts`,
   `src/bot/handlers/widgetQuery.ts` (new), `src/bot/handlers/widgetQuery.test.ts`,
-  `src/bot/widgetApi.ts`, `src/bot/bot.ts`, `src/domain/widgetData.ts` (+ test, the answer
+  `src/bot/widgetApi.ts`, `src/bot/bot.ts` (mounting `registerWidgetQuery` before the access
+  gate), `src/domain/widgetData.ts` (+ test, the answer
   encoder), `src/services/periodTrend.ts` (or `periodCategory.ts`, whichever already returns a
   category's periods; no new SQL if one does), `src/bot/messages.ts`.
 - **Done when:**
@@ -248,6 +259,10 @@ production until Phase 6.
       `widgetUnavailable` and reads no amounts.
     - Malformed data (`d:`, `d:x:y`, 65 bytes) is answered with `widgetUnavailable` and no throw.
     - A locked ledger answers `widgetLocked`.
+    - With the allowlist on (`src/bot/middleware/access.ts`), a query from the admitted owner is
+      answered with data, through the full `createBot` chain. A query from a sender whose
+      `accessOf` is `blocked`, or who was never admitted, is answered with `widgetUnavailable`
+      and reads no amounts.
   - The answer is at most 1024 UTF-8 bytes for six periods with the longest category name the
     categories module allows.
   - The same query delivered twice is answered twice with identical data and writes nothing to
