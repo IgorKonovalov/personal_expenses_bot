@@ -425,7 +425,7 @@ for display or formats money.
 | 2: Tap a slice for its last six periods | dev | done | a0d6806 |
 | 3: Budget burn-down and /today widgets | dev | done | e43f4a9 |
 | 4: /prices and tag widgets | dev | done | 32f9e29 |
-| 5: Docs | dev | done | committed with this row |
+| 5: Docs | dev | done | e976d3b |
 | 6: Live check, then switch it on | human | not started | |
 
 ### Notes
@@ -474,13 +474,39 @@ for display or formats money.
   tap test).
 - Phase 5: `.env.example`'s `WIDGETS` landed in Phase 1 (c10442f); this phase left it as is. The
   guide's section is in `site/src/content/docs/guide/totals.mdx` («Диаграмма прямо в чате»).
+- Followup, not acted on: the `## Followups` entry about `minimumReleaseAgeExclude` does not
+  apply, since no exemption was taken; the typed grammY upgrade stays a later chore under ADR-0053.
+- Followup, not acted on: every program draws at the one `WIDGET_HEIGHT` of 380 px, so the seven
+  `days` rows and the burn-down leave empty space under them; Phase 6 sees it on real clients.
+- Followup, not acted on: `rateLimit` passes `widget_query` uncounted (grammY sees no sender);
+  Telegram's own 5 queries per 5 seconds per user applies.
+- Followup, not acted on: every request error code shows `widgetRetry`; `NOT_ALLOWED` in a
+  forward is drawn the same way.
 
 ### Close triggers
 
-- **What shipped:**
-- **User-visible surface changed:**
-- **Gate at the tip:**
-- **Outstanding `human` phases:**
+- **What shipped:** `WIDGETS` config key (`on`/`off`, default off); `widgets/` programs
+  `donut`, `burndown`, `days`, built by `pnpm build:widgets` into
+  `src/bot/widgets/programs.generated.ts`; `src/bot/widgetApi.ts` (`sendWidget`,
+  `answerWidgetQuery` over `api.raw`); `wg:s:`, `wg:b`, `wg:t:`, `wg:p:`, `wg:g:` callbacks in
+  `src/bot/handlers/widgetChart.ts`; the `widget_query` drill-down in
+  `src/bot/handlers/widgetQuery.ts`, mounted before the access gate; `recentDayTotals` in
+  `src/services/todaySummary.ts`; `src/domain/widgetData.ts` encoders; the in-process sent-mark
+  memo.
+- **User-visible surface changed:** with `WIDGETS=on`, private-chat «📈 Диаграмма» on /week,
+  /month, /budget, a /prices product and a tag report is a callback that sends a widget message;
+  /today gains «📈 Диаграмма» on its last row; new copy keys `chartDetailButton`,
+  `chartAlreadySent`, `widgetCaption`, `widgetCaptionApprox`, `widgetDonut`, `widgetFold`,
+  `widgetUnconverted`, `widgetRetry`, `widgetDrillTitle`, `widgetBack`, `widgetDrill`,
+  `widgetUnavailable`, `widgetLocked`, `widgetBurndown`, `widgetDays`, `widgetDaysTitle`,
+  `widgetProduct`. With `WIDGETS` off, buttons are unchanged. Regardless of `WIDGETS`: the help's
+  totals topic gains one line on the chart and the slice tap, and the guide's totals page gains
+  «Диаграмма прямо в чате».
+- **Gate at the tip:** `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm test` exit 0, 160 files,
+  2438 tests; `pnpm build` exit 0; `pnpm build:webapp` exit 0; `pnpm docs:check` exit 0;
+  `node scripts/check-doc-links.mjs` exit 0, 378 links.
+- **Outstanding `human` phases:** Phase 6 (live check on Android, iPhone/iPad and Telegram
+  Desktop with `WIDGETS=on` on a test deploy, then `WIDGETS=on` in production).
 
 ## Followups
 
